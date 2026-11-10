@@ -33,7 +33,9 @@ verdicts computed from the same facts:
       base's profile, each new (VERDICT_NOT_NEW), each on a version the base's roadmap names as due for that
       actor (VERDICT_NOT_DUE), its head a branch of this repository (VERDICTS_FORK) under codex/verdicts/
       (VERDICTS_BRANCH), and every blob it adds cited (TAIL_BLOB_UNCITED);
-    - it changes none of the base's merge.json owner_paths (OWNER_PATHS: the owner merges those);
+    - it changes none of the base's merge.json owner_paths (OWNER_PATHS: the owner merges those), nor a path the
+      interpreter could load one of the listed Python files' modules from instead, nor adds a module, a package, a
+      link or a directory to a directory the interpreter searches for them, nor changes a .gitattributes (owner_paths);
     - every required check merge.json names is green at the head: the latest GitHub Actions check run of that
       name whose workflow run is the named workflow file concluded success, and none of that name comes from
       another workflow (CHECK_MISSING, CHECK_PENDING, CHECK_RED, CHECK_AMBIGUOUS).
@@ -44,10 +46,12 @@ verdicts computed from the same facts:
 The gate (`gate`) merges at most one eligible pull request per run, reading the pull request and the base
 branch again just before (TOCTOU), giving GitHub the assessed head (it refuses the merge when the head
 moved), and then dispatches the required workflows on the base branch (a GITHUB_TOKEN merge starts none)."""
+import importlib.machinery
 import json
 import os
 import re
 import subprocess
+import unicodedata
 from pathlib import PurePosixPath
 
 from . import engine as E
@@ -60,6 +64,11 @@ GATE_FIELDS = ("gate", "base", "required", "hold_label", "owner_paths")
 REPOSITORY_DOC = "repository/3"
 RECORDS, BLOBS = ".warrant/records.jsonl", ".warrant/blobs/"
 REGULAR = "100644"
+FILE_MODES = (REGULAR, "100755", "000000")      # a regular file, an executable one, none (deleted): never a link or a submodule
+# Every ending a module's file can have: this interpreter's own list (FileFinder tries extension modules first, then
+# source, then bytecode), with the endings other builds use, so that the answer does not move with the runner.
+MODULE_SUFFIXES = tuple(sorted({*importlib.machinery.all_suffixes(), ".py", ".pyc", ".pyw", ".pyd", ".so"}))
+ATTRIBUTES = ".gitattributes"                   # it decides the bytes a checkout writes for a path (encoding, eol, ident, filters)
 BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
 WORKFLOW = re.compile(r"\.github/workflows/[A-Za-z0-9._-]+\.ya?ml\Z")
 CHECK = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ()._/-]{0,99}\Z")
@@ -216,14 +225,107 @@ def caught_up(root, x, head, base):
 
 
 def owner_paths(root, base, x, listed):
-    """The paths changed from the merge base of `base` and `x` to `x` that `listed` names (an entry ending in /
-    names a directory), or None when they have no merge base."""
+    """The paths changed from the merge base of `base` and `x` to `x` that are the owner's to merge: those `listed`
+    names (an entry ending in / names a directory) and those the interpreter could load a listed Python file's module
+    from in its place (loadable), names compared folded; or None when they have no merge base. Read from the diff of
+    two trees: nothing of `x` is checked out, imported or run."""
     try:
         mb = git(root, "merge-base", base, x).decode().split()[0]
     except (subprocess.CalledProcessError, IndexError):
         return None
-    raw = git(root, "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", "--name-only", mb, x).decode()
-    return sorted(p for p in raw.split("\0") if p and any(p == e or (e.endswith("/") and p.startswith(e)) for e in listed))
+    modules, searched = import_roots(listed)
+    # A directory was there only when the merge base and the base both hold it: one the base has dropped since is added again.
+    held = {folded(d): subdirectories(root, mb, d) & subdirectories(root, base, d) for d in searched}
+    modules = {folded(d): {folded(n) for n in names} for d, names in modules.items()}
+    listed = [folded(e) for e in listed]
+    raw = git(root, "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", mb, x).decode().split("\0")
+    out = []
+    for meta, path in zip(raw[0::2], raw[1::2]):
+        _, mode, _, _, status = meta.lstrip(":").split()
+        p = folded(path)
+        if any(p == e or (e.endswith("/") and p.startswith(e)) for e in listed) or loadable(p, path, status, mode, modules, held):
+            out.append(path)
+    return sorted(out)
+
+
+def folded(path):
+    """`path` as a file system that folds case and normalizes names compares it (APFS, NTFS; Unicode's canonical
+    caseless match): a checkout there writes two paths of one folded name to one file, so the bytes at a listed path
+    can be another path's."""
+    return unicodedata.normalize("NFD", unicodedata.normalize("NFD", path).casefold())
+
+
+def import_roots(listed):
+    """({directory: module names}, [searched directories]) that the listed Python files tell of: `D/N.py` is module N
+    of directory D, and the directory the interpreter searches to reach it is D, or the one above D while D is a listed
+    package (`D/__init__.py`). In this repository `warrant/` is reached through the root ("") and `tools/gate.py`, a
+    script, puts `tools` on the path: whatever module either holds comes before the standard library's."""
+    modules = {}
+    for e in listed:
+        if e.endswith(".py"):
+            d, _, f = e.rpartition("/")
+            modules.setdefault(d, set()).add(f[:-len(".py")])
+    searched = set()
+    for d in modules:
+        while d and "__init__" in modules.get(d, ()):
+            d = d.rpartition("/")[0]
+        searched.add(d)
+    return modules, sorted(searched)
+
+
+def subdirectories(root, commit, d):
+    """The names of the directories directly in directory `d` ("": the root) of `commit`; none when it has no such
+    directory."""
+    try:
+        rows = git(root, "ls-tree", "-z", f"{commit}:{d}").decode().split("\0")
+    except subprocess.CalledProcessError:
+        return set()
+    return {r.split("\t", 1)[1] for r in rows if r and r.split()[1] == "tree"}
+
+
+def _in(path, d):
+    """`path` relative to directory `d`, or None when it is not in it."""
+    return path if not d else path[len(d) + 1:] if path.startswith(d + "/") else None
+
+
+def _module_file(name, module):
+    """Whether the file name `name` is one the interpreter could load `module` from: the module's name and an ending
+    of the import system, or any ending that starts with a dot (every build's do, but a Windows debug build's)."""
+    rest = name[len(module):]
+    return name.startswith(module) and (rest.startswith(".") or rest in MODULE_SUFFIXES)
+
+
+def loadable(path, written, status, mode, modules, held):
+    """Whether a change to `path` (folded; `written` as the tree spells it; its status and new mode in the diff) can
+    change the bytes the interpreter loads when the gate runs, though no listed path names it; `modules` is {directory:
+    listed module names} and `held` {searched directory: the directories that were in it}. Three rules, each wider
+    than what one interpreter does:
+
+    1. beside a listed module `D/N.py`: `D/N` itself and everything in it (a package of that name is preferred to the
+       file, and a link or a submodule there is whatever it leads to), a file `D/N` with another ending (an extension
+       module is preferred to the source), and `D/__pycache__` (bytecode there is loaded in place of the source);
+    2. in a searched directory, where any module shadows the standard library's and the installed ones (a name the
+       library only tries, as `msvcrt`, too): a module file added, an `__init__` added to a directory, a directory
+       added, and an entry that is a link or a submodule. A file changed there was there, under the name it has;
+    3. `.gitattributes`, in any directory: the checkout writes other bytes than the blob's where it says so."""
+    if path.rpartition("/")[2] == ATTRIBUTES:
+        return True
+    for d, names in modules.items():
+        first, _, deeper = (_in(path, d) or "").partition("/")
+        if first == "__pycache__" or first in names or (not deeper and any(_module_file(first, n) for n in names)):
+            return True
+    for d, were in held.items():
+        first, _, deeper = (_in(path, d) or "").partition("/")
+        if not first:
+            continue
+        if not deeper and (mode not in FILE_MODES or (status == "A" and first.endswith(MODULE_SUFFIXES))):
+            return True
+        # Whether the directory was there is asked of its name as written: where nothing is folded, another case of it is
+        # another directory. Every other comparison here is of folded names, and so refuses more.
+        if deeper and (written.split("/")[d.count("/") + 1 if d else 0] not in were
+                       or (status == "A" and "/" not in deeper and _module_file(deeper, "__init__"))):
+            return True
+    return False
 
 
 def is_ancestor(root, a, b):

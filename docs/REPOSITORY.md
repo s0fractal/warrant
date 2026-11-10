@@ -159,6 +159,10 @@ new since the base. After a merge, `review.py merged --pr N --merge SHA` files t
 merges a pull request whose head version a `pr/acceptor` accepted, whose tail after the reviewed
 commit is record lines and blobs only, whose required checks are green, and which changes no owner
 path (docs/V3.md §14). Holds: the label `hold`, the repository variable `WARRANT_MERGE_GATE=hold`.
+An owner path covers what the interpreter could load in a listed module's place (a package or an extension
+module of its name, the `__pycache__` beside it), and the two directories the gate's interpreter searches
+before the standard library, the root and `tools/`, take nothing new from the gate: a new tool script, a new
+top-level directory or a `.gitattributes` change is the owner's to merge.
 
 When the base moves on after an acceptance (another pull request merged first) and GitHub reports a conflict,
 merge the base locally (`git merge origin/master`: the union drivers of `.gitattributes` keep both sides of

@@ -5,11 +5,17 @@ the exact set of refusal codes (a mutant that removes one rule is seen even wher
     python3 tests/gate_test.py
 """
 import ast
+import importlib
+import importlib.machinery
+import importlib.util
 import json
+import os
+import py_compile
+import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from world import KEYS, Repo, check, finish, git
 
@@ -17,6 +23,7 @@ from warrant import gate as GT
 from warrant import records as R
 
 REPO = "s0fractal/warrant"
+ROOT = Path(__file__).resolve().parents[1]
 MERGE = {"gate": GT.GATE, "base": "master", "required": [{"check": "test", "workflow": ".github/workflows/ci.yml"}],
          "hold_label": "hold", "owner_paths": [".github/", ".warrant/merge.json", ".warrant/v3.json", "AGENTS.md", "tools/gate.py"]}
 
@@ -35,11 +42,11 @@ class PR:
     """A repository with a base commit on master and a pull request #7 from branch `feature` whose author (alice)
     filed its pr-head@1 root and a head version at commit X, and (accept=True) bob's acceptance after X."""
 
-    def __init__(self, accept=True, before_x=None, before_base=None):
+    def __init__(self, accept=True, before_x=None, before_base=None, merge=None):
         self.r = Repo(git_init=False)
         if before_base:
             before_base(self)
-        (self.r.dot / "merge.json").write_text(json.dumps(MERGE))
+        (self.r.dot / "merge.json").write_text(json.dumps(merge or MERGE))
         (self.r.root / "code.py").write_text("x = 1\n")
         (self.r.root / "AGENTS.md").write_text("rules\n")
         git(self.r.root, "init", "-q", "-b", "master")
@@ -282,32 +289,77 @@ def merge_cases():
           m["merged"] and ok.merged == [head] and m["as_assessed"] and m["dispatched"] == [".github/workflows/ci.yml"], m)
 
 
-def imported_modules(root, start):
-    """The package's modules that `start` reaches through import statements, wherever in a file they stand, with the
-    package's __init__.py, which any import of it runs."""
-    seen, todo = set(), ["warrant/__init__.py", start]
+def imported_modules(root, start, searched=("", "tools")):
+    """The files of the repository at `root` that running `start` loads through import statements, wherever in a file
+    they stand: each name is resolved by the import system itself (importlib's finders over the `searched` directories
+    of the repository, as the workflow starts the gate, then this interpreter's own path), so a same-name package or
+    an extension module the interpreter would load is what the walk names, not the .py file of that name (Codex
+    challenge of dda3ad65: the walk followed warrant/{name}.py). A directory without __init__ is named with a trailing
+    slash. Nothing of `root` is imported or run."""
+    importlib.invalidate_caches()
+    root = Path(os.path.realpath(root))
+    here = [str(root / d) for d in searched]
+    outside = [q for q in sys.path if q and ROOT not in (Path(os.path.realpath(q)), *Path(os.path.realpath(q)).parents)]
+
+    def find(name, where):
+        """(repository file, the directories its submodules are searched in or None) of module `name` searched in
+        `where` (None: a top-level name); (None, None) when the interpreter finds it outside `root`, or nowhere."""
+        if where is None and (name in sys.builtin_module_names or importlib.machinery.FrozenImporter.find_spec(name)):
+            return None, None
+        spec = importlib.machinery.PathFinder.find_spec(name, here + outside if where is None else where)
+        if spec is None:
+            return None, None
+        inner = list(spec.submodule_search_locations or []) or None
+        at = Path(spec.origin if spec.has_location else inner[0])
+        if root not in at.parents:
+            return None, None
+        return at.relative_to(root).as_posix() + ("" if spec.has_location else "/"), inner
+
+    seen, todo = set(), [(start, PurePosixPath(start).parent.parts)]
+
+    def load(parts):
+        """Follow a dotted name from the top, queueing each repository file on the way; the directories the last
+        one's submodules are searched in (None: it is a module, or outside)."""
+        where = None
+        for n, name in enumerate(parts):
+            f, where = find(name, where)
+            if f is None:
+                return None
+            todo.append((f, tuple(parts[:n + 1] if where else parts[:n])))
+            if where is None:
+                return None
+        return where
+
     while todo:
-        f = todo.pop()
+        f, package = todo.pop()
         if f in seen:
             continue
         seen.add(f)
+        if not f.endswith(".py"):
+            continue
         for n in ast.walk(ast.parse((root / f).read_text())):
-            names = []
             if isinstance(n, ast.Import):
-                names = [a.name.removeprefix("warrant.") for a in n.names if a.name.startswith("warrant.")]
-            elif isinstance(n, ast.ImportFrom) and (n.level == 1 or (n.module or "").split(".")[0] == "warrant"):
-                mod = (n.module or "").removeprefix("warrant").lstrip(".")
-                names = [mod] if mod else [a.name for a in n.names]
-            todo += [f"warrant/{x}.py" for x in names if (root / f"warrant/{x}.py").exists()]
+                for a in n.names:
+                    load(a.name.split("."))
+            elif isinstance(n, ast.ImportFrom):
+                up = list(package[:len(package) - n.level + 1]) if n.level else []
+                where = load(up + (n.module.split(".") if n.module else []))
+                for a in n.names if where else []:
+                    sub, inner = find(a.name, where)
+                    if sub:
+                        todo.append((sub, tuple(up + (n.module.split(".") if n.module else []) + ([a.name] if inner else []))))
     return seen
 
 
+def listed_by(policy, f):
+    return any(f == e or (e.endswith("/") and f.startswith(e)) for e in policy)
+
+
 def closure_cases():
-    root = Path(__file__).resolve().parents[1]
-    closure = imported_modules(root, "warrant/gate.py")
-    listed = json.loads((root / ".warrant" / "merge.json").read_text())["owner_paths"]
+    policy = json.loads((ROOT / ".warrant" / "merge.json").read_text())["owner_paths"]
+    closure = imported_modules(ROOT, "tools/gate.py")
     check("E32 every module the gate imports, directly or through another, is an owner path of this repository",
-          not [f for f in closure if not any(f == e or (e.endswith("/") and f.startswith(e)) for e in listed)], sorted(closure))
+          "warrant/gate.py" in closure and not [f for f in closure if not listed_by(policy, f)], sorted(closure))
     with tempfile.TemporaryDirectory() as d:
         w = Path(d) / "warrant"
         w.mkdir()
@@ -315,12 +367,185 @@ def closure_cases():
                            "c": "from .d import y\n", "d": "import json\nimport warrant.f\n", "e": "", "f": "from warrant import g\n", "g": ""}.items():
             (w / f"{name}.py").write_text(text)
         found = imported_modules(Path(d), "warrant/a.py")
+        (w / "g").mkdir()
+        (w / "g" / "__init__.py").write_text("")
+        (w / "c" / "deep").mkdir(parents=True)
+        shadowed = imported_modules(Path(d), "warrant/a.py")
     check("E33 ... the walk follows each form of import, one inside a function too, through other modules, and reaches no module nothing imports",
           found == {f"warrant/{x}.py" for x in ("__init__", "a", "b", "c", "d", "f", "g")}, sorted(found))
+    check("E46 ... and it names what the interpreter loads: a same-name package in place of the module's file, and the "
+          "file still where the directory of its name has no __init__",
+          shadowed == {f"warrant/{x}.py" for x in ("__init__", "a", "b", "c", "d", "f")} | {"warrant/g/__init__.py"}, sorted(shadowed))
+    probe = ("import json, os, runpy, sys\nsys.argv = ['tools/gate.py', 'gate', '--help']\nsys.path.insert(0, os.path.abspath('tools'))\n"
+             "sys.stdout = open(os.devnull, 'w')\ntry:\n    runpy.run_path('tools/gate.py', run_name='__main__')\nexcept SystemExit:\n    pass\n"
+             "here = os.path.realpath('.') + os.sep\nfrom_ = lambda m: getattr(m, '__file__', None) or ''.join(list(getattr(m, '__path__', []))[:1])\n"
+             "sys.__stdout__.write(json.dumps(sorted({os.path.realpath(from_(m))[len(here):] for m in list(sys.modules.values())\n"
+             "                                         if from_(m) and os.path.realpath(from_(m)).startswith(here)})))\n")
+    r = subprocess.run([sys.executable, "-B", "-c", probe], cwd=ROOT, capture_output=True, text=True,
+                       env=dict(os.environ, PYTHONPATH=str(ROOT)))          # as merge-on-acceptance.yml starts it
+    try:
+        ran = set(json.loads(r.stdout))
+    except ValueError:
+        ran = {f"unreadable: {r.stderr[-300:]}"}
+    check("E47 a fresh interpreter started as the workflow starts the gate loads, from the checkout, only files the walk found, each an owner path",
+          "warrant/gate.py" in ran and ran <= closure and not [f for f in ran if not listed_by(policy, f)], sorted(ran))
+
+
+# The endings this interpreter loads an extension module from, and one of the merge workflow's runner (CPython 3.11, Linux).
+EXT = importlib.machinery.EXTENSION_SUFFIXES
+RUNNER = ".cpython-311-x86_64-linux-gnu.so"
+LINK, SUBMODULE = "120000", "160000"
+
+
+def plumb(root, *args, data=None, index=None):
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
+               GIT_AUTHOR_DATE="2026-10-27T00:00:00Z", GIT_COMMITTER_DATE="2026-10-27T00:00:00Z", **({"GIT_INDEX_FILE": index} if index else {}))
+    return subprocess.run(["git", "-C", str(root), *args], input=data, capture_output=True, check=True, env=env).stdout.decode().strip()
+
+
+def grown(r, base, entries):
+    """The commit that adds or replaces `entries` ({path: bytes, or (mode, bytes; a commit id for a submodule), or None
+    to remove it}) on commit `base`, written as Git objects alone: its tree can hold what this working tree could not
+    (two names the file system folds into one, a submodule entry), and the gate reads Git objects, never a checkout."""
+    index = str(r.home / "candidate.index")
+    plumb(r.root, "read-tree", base, index=index)
+    for path, v in entries.items():
+        if v is None:
+            plumb(r.root, "update-index", "--force-remove", path, index=index)
+            continue
+        mode, content = v if isinstance(v, tuple) else ("100644", v)
+        oid = content if mode == SUBMODULE else plumb(r.root, "hash-object", "-w", "--stdin", data=content)
+        plumb(r.root, "update-index", "--add", "--cacheinfo", f"{mode},{oid},{path}", index=index)
+    return plumb(r.root, "commit-tree", "-m", "candidate", "-p", base, plumb(r.root, "write-tree", index=index))
+
+
+def package_at(root):
+    """This checkout's package and tools, as files, in the fixture at `root`: the modules the base's policy lists."""
+    for d in ("warrant", "tools"):
+        shutil.copytree(ROOT / d, root / d, ignore=shutil.ignore_patterns("__pycache__"))
+
+
+# What a pull request may add beside the modules the policy lists, by the rule that makes it the owner's to merge. Each
+# row is one candidate: {path: content}. Every row was first tried on the interpreter (which of them it loads is in the
+# cases E48 and E49); the gate refuses more than one interpreter loads, never less.
+SHADOWS = {
+    "E36 a directory, a link or a submodule of a listed module's name is the owner's to merge (Codex challenge of dda3ad65: "
+    "warrant/shapes/__init__.py was eligible)": [
+        {"warrant/shapes/__init__.py": b"X = 1\n"}, {"warrant/shapes/other.py": b""}, {"warrant/gate/__init__.py": b""},
+        {"tools/gate/__init__.py": b""}, {"warrant/shapes": (LINK, b"../docs")}, {"warrant/shapes": (SUBMODULE, None)},
+        {"warrant/__init__/x.py": b""}],
+    "E37 ... a file of that name with another ending the import system reads (an extension module is preferred to the source)":
+        [{f"warrant/shapes{e}": b"\x7fELF"} for e in EXT] + [
+        {f"warrant/keys{RUNNER}": b"\x7fELF"}, {f"warrant/__init__{RUNNER}": b"\x7fELF"}, {"warrant/store.abi3.so": b""},
+        {"warrant/jcs.pyd": b""}, {"warrant/shapes.pyc": b""}, {"tools/gate.pyc": b""}],
+    "E38 ... and the bytecode cache of a directory that holds one (it is loaded in place of the source)": [
+        {"warrant/__pycache__/shapes.cpython-311.pyc": b""}, {"tools/__pycache__/gate.cpython-311.pyc": b""},
+        {"warrant/__pycache__": (LINK, b"../docs")}],
+    "E39 a module added to a directory the interpreter searches before the standard library is the owner's to merge": [
+        {"json.py": b""}, {"tools/pathlib.py": b""}, {"sitecustomize.py": b""}, {"msvcrt.py": b""}, {"warrant.py": b""},
+        {f"_cffi_backend{RUNNER}": b""}, {"tools/zlib.pyd": b""}, {"readline.pyc": b""}],
+    "E40 ... a directory added there": [
+        {"cryptography/__init__.py": b""}, {"json/decoder.py": b""}, {"tools/warrant/__init__.py": b""}, {"pip/__main__.py": b""},
+        {"Docs/notes.py": b""}],      # where nothing is folded this is another directory than docs/
+    "E41 ... an __init__ added to a directory that was there": [
+        {"docs/__init__.py": b""}, {f"docs/__init__{RUNNER}": b""}, {"tests/__init__.pyc": b""}],
+    "E42 ... and an entry there that is a link or a submodule": [
+        {"json": (LINK, b"docs")}, {"tools/pathlib": (LINK, b"../docs")}, {"vendored": (SUBMODULE, None)}, {"NOTES.md": (LINK, b"docs/a.md")}],
+    "E43 a .gitattributes, in any directory, is the owner's to merge (a checkout writes other bytes than the blob's where it says)": [
+        {".gitattributes": b"warrant/*.py working-tree-encoding=UTF-7\n"}, {"warrant/.gitattributes": b"*.py ident\n"},
+        {"docs/deep/.gitattributes": b""}],
+    "E44 a name that a case-folding file system writes over a guarded one is the owner's to merge": [
+        {"warrant/ſhapes.py": b""}, {"warrant/SHAPES/__init__.py": b""}, {"Warrant/gate.py": b""}, {"AGENTS.MD": b""},
+        {"TOOLS/Pathlib.PY": b""}],
+}
+BESIDE = [{"warrant/other.py": b""}, {"warrant/shapes_extra.py": b""}, {"warrant/sub/__init__.py": b""}, {"warrant/claims.py": b"x = 2\n"},
+          {"tools/claims.py": b"x = 2\n"}, {"docs/notes.py": b""}, {"docs/pkg/__init__.py": b""}, {"docs/a.md": b"more\n"}, {"NOTES.md": b""},
+          {"tests/x_test.py": b""}, {"code.py": b"x = 2\n"}, {"warrant/data.json": b"{}"}]
+
+
+def shadow_cases():
+    """R-GATE-CLOSURE, by the base's own policy: what a change may put beside the modules the gate loads."""
+    policy = json.loads((ROOT / ".warrant" / "merge.json").read_text())
+
+    def base(s):
+        package_at(s.r.root)
+        for f, text in {"docs/a.md": "a\n", "tests/a_test.py": "", "tools/claims.py": "x = 1\n", "warrant/claims.py": "x = 1\n"}.items():
+            (s.r.root / f).parent.mkdir(exist_ok=True)
+            (s.r.root / f).write_text(text)
+
+    def shadow(s):
+        (s.r.root / "warrant" / "shapes").mkdir()
+        (s.r.root / "warrant" / "shapes" / "__init__.py").write_text((ROOT / "warrant" / "shapes.py").read_text() + "\nPROBE = True\n")
+    p = PR(accept=False, before_base=base, before_x=shadow, merge=policy)
+    a = p.assess()
+    check("E34 a head that adds a package of the name of a module the gate imports refuses the merge, never the review "
+          "(Codex challenge of dda3ad65, observed at a3917a9f: eligible, no reason)",
+          codes(a) == {"NO_ACCEPT", "OWNER_PATHS"} and a.due and "warrant/shapes/__init__.py" in dict(a.reasons)["OWNER_PATHS"], a.reasons)
+    q = PR(before_base=base, before_x=lambda s: (s.r.root / "warrant" / "other.py").write_text("y = 1\n"), merge=policy)
+    check("E35 ... and one that adds a module nothing listed imports is still the gate's to merge", q.assess().eligible, q.assess().reasons)
+
+    def owned(entries):
+        entries = {f: (v[0], v[1] or p.base) if isinstance(v, tuple) else v for f, v in entries.items()}
+        return GT.owner_paths(p.r.root, p.base, grown(p.r, p.base, entries), policy["owner_paths"])
+    for name, rows in SHADOWS.items():
+        got = [(sorted(row), owned(row)) for row in rows]
+        check(name, all(want == found for want, found in got), [g for g in got if g[0] != g[1]])
+    got = [(sorted(row), owned(row)) for row in BESIDE]
+    check("E45 beside all of these the gate still merges: a new module of the package, a name that only begins like a listed one, "
+          "a file changed where it was, a file deeper in a directory that was there, a file that is no module",
+          all(found == [] for _, found in got), [g for g in got if g[1]])
+    moved = grown(p.r, p.base, {"docs/a.md": None})                 # the base goes on and drops its only file under docs/
+    late = grown(p.r, p.base, {"docs/notes.py": b""})                # a head from before that adds a file there
+    got = GT.owner_paths(p.r.root, moved, late, policy["owner_paths"]), GT.owner_paths(p.r.root, p.base, late, policy["owner_paths"])
+    check("E50 a directory the base has dropped since the merge base is a directory added: the merge would bring it back",
+          got == (["docs/notes.py"], []), got)
+
+
+def interpreter_cases():
+    """Why the rules of E36-E42 are what they are: what this interpreter loads when a pull request's file is there."""
+    def resolved(name, tree, at, make):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(os.path.realpath(d))
+            for f, text in tree.items():
+                (d / f).parent.mkdir(parents=True, exist_ok=True)
+                (d / f).write_text(text)
+            make(d)
+            importlib.invalidate_caches()
+            spec = importlib.machinery.PathFinder.find_spec(name, [str(d / at), *[q for q in sys.path if q]])
+            return Path(spec.origin).relative_to(d).as_posix() if spec and spec.has_location and d in Path(spec.origin).parents else None
+    pkg = {"warrant/__init__.py": "", "warrant/shapes.py": "", "docs/pkg/__init__.py": ""}
+    rows = [("warrant/shapes/__init__.py", "shapes", "warrant", lambda d: (d / "warrant/shapes").mkdir() or (d / "warrant/shapes/__init__.py").write_text("")),
+            ("warrant/shapes/__init__.py", "shapes", "warrant", lambda d: os.symlink("../docs/pkg", d / "warrant/shapes")),
+            *[(f"warrant/shapes{e}", "shapes", "warrant", lambda d, e=e: (d / f"warrant/shapes{e}").write_text("")) for e in EXT],
+            (f"warrant/__init__{EXT[0]}", "warrant", "", lambda d: (d / f"warrant/__init__{EXT[0]}").write_text("")),
+            ("json.py", "json", "", lambda d: (d / "json.py").write_text("")),
+            ("json/__init__.py", "json", "", lambda d: (d / "json").mkdir() or (d / "json/__init__.py").write_text("")),
+            ("msvcrt.py", "msvcrt", "", lambda d: (d / "msvcrt.py").write_text(""))]
+    kept = [("warrant/shapes.py", "shapes", "warrant", lambda d: (d / "warrant/shapes").mkdir() or (d / "warrant/shapes/x.py").write_text("")),
+            ("warrant/shapes.py", "shapes", "warrant", lambda d: (d / "warrant/shapes.pyc").write_text("")),
+            ("warrant/__init__.py", "warrant", "", lambda d: (d / "warrant.py").write_text(""))]
+    got = [(want, resolved(name, pkg, at, make)) for want, name, at, make in rows + kept]
+    check("E48 this interpreter resolves a module to a same-name package, a link to one or an extension module before its .py file, "
+          "and a standard library name to a file of the checkout; a directory without __init__, a .pyc beside the source "
+          "and a file beside the package are not preferred (the gate refuses them all the same)",
+          all(want == found for want, found in got), [g for g in got if g[0] != g[1]])
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d) / "warrant" / "shapes.py"
+        src.parent.mkdir()
+        (src.parent / "__init__.py").write_text("")
+        src.write_text("WHO = 'the cache'\n")
+        py_compile.compile(str(src), cfile=importlib.util.cache_from_source(str(src)), invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+        src.write_text("WHO = 'the source'\n")
+        r = subprocess.run([sys.executable, "-B", "-c", "import warrant.shapes as s; print(s.WHO, 'at', s.__file__[-17:])"], cwd=d,
+                           capture_output=True, text=True, env={k: v for k, v in os.environ.items() if not k.startswith("PYTHON")})
+    check("E49 ... and it runs a committed __pycache__ file in place of the source beside it, whose path it still reports",
+          r.stdout.strip() == "the cache at warrant/shapes.py", r.stdout + r.stderr[-300:])
 
 
 if __name__ == "__main__":
     closure_cases()
+    shadow_cases()
+    interpreter_cases()
     eligible_cases()
     store_cases()
     schema_cases()
