@@ -666,8 +666,11 @@ def handler(app, port):
             code, out = (app.react if path == "/react" else app.adopt)(form)
             if code == 303:
                 self.send(303, "", location=out)
-            else:
-                self.send(code, out, TEXT)
+                return
+            # a signature not filed is said where the reader looks (the page) and where the operator looks (the terminal)
+            sys.stderr.write(f"warrant serve: {path} not filed ({code}): {out}\n")
+            back = f'/l/{quote(form.get("store", ""))}/{quote(form.get("target", ""))}' if form.get("target") else "/"
+            self.send(code, page("Не підписано", f'<h2>Не підписано</h2><p>{E(out)}</p><p><a href="{E(back)}">назад</a></p>'))
     return Handler
 
 
