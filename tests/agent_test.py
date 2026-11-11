@@ -1202,9 +1202,9 @@ def voices_cases():
         page_ = app.page_lineage("w", o, {})[1]
         rep = space.report("w")
         d = app.with_elsewhere("w", SV.lineage(rep, o))
-        gs, notes, independent = SV.voices(rep, "w", d, SV.sources(rep, "w", d)[1])
+        _, notes, independent = SV.voices(rep, "w", d, SV.sources(rep, "w", d)[1])
     except Exception as ex:
-        page_, gs, notes, independent = f"crashed: {type(ex).__name__}: {ex}", [], [], []
+        page_, notes, independent = f"crashed: {type(ex).__name__}: {ex}", [], []
     check("VO1 two names on one key are one source: the author's key under another name is not an independent voice, "
           "and the page says so", "alice = mallory: один ключ" in notes and "mallory" not in independent
           and "alice = mallory: один ключ" in page_ and puppet in rep["_recs"], (notes, independent))
