@@ -320,6 +320,7 @@ MUTANTS = [
     ('A170', 'warrant_agent/serve.py', '        same = past["snapshot"] == r["body"].get("root")', '        same = True', AGENT, ['TL2']),
     ('A171', 'warrant_agent/serve.py', 'CH.subset(snap, CH.before(snap, r["at"] + 1))', 'CH.subset(snap, CH.before(snap, 10 ** 12))', AGENT, ['TL2']),
     ('A172', 'warrant_agent/serve.py', '            q = dict(q, lens=then[1])', '            q = dict(q)', AGENT, ['TL2']),
+    ('A173', 'warrant_agent/commons.py', '    if not (isinstance(name, str) and NAME.match(name)):', '    if False:', AGENT, ['CM6']),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
