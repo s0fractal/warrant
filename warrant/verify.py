@@ -30,6 +30,7 @@ reader of the format. warrant_verify.py at the repository's root is this module 
 standard-library file (tools/build_verify.py)."""
 import argparse
 import base64
+import re
 import hashlib
 import json
 import subprocess
@@ -61,6 +62,11 @@ REFUSALS = {
     "BAD_LINE": "{n} line(s) of the package are not records",
     "LIMITS": "the package is beyond the engine's limits",
 }
+
+
+# A blob in a package: base64 of RFC 4648 §4 in its one padded form, read by this rule and not by binascii, whose strict mode
+# takes and words otherwise from one Python version to the next (R-INTERPRETER: 3.11 decoded "YWJj=", 3.13 refuses it).
+_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
 
 
 class Refusal(ValueError):
@@ -102,10 +108,9 @@ def unpack(pkg, limit=None):
             and isinstance(pkg["lines"], list) and all(isinstance(x, str) for x in pkg["lines"])
             and isinstance(pkg["blobs"], dict) and isinstance(pkg["roots"], list) and all(S.hex64(r) for r in pkg["roots"])):
         raise Refusal("NOT_A_PACKAGE")
-    try:
-        blobs = {h: base64.b64decode(b, validate=True) for h, b in pkg["blobs"].items()}
-    except (ValueError, TypeError) as e:
-        raise Refusal("BAD_BASE64", str(e)) from None
+    if not all(isinstance(b, str) and _BASE64.fullmatch(b) for b in pkg["blobs"].values()):
+        raise Refusal("BAD_BASE64")
+    blobs = {h: base64.b64decode(b) for h, b in pkg["blobs"].items()}
     # A lone surrogate is not UTF-8: its bytes stay what no reader takes for a record (snapshot counts the line).
     lines = [x.encode("utf-8", "surrogatepass") + b"\n" for x in pkg["lines"]]
     if limit is not None and sum(map(len, lines)) + sum(map(len, blobs.values())) > limit:

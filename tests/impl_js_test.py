@@ -736,7 +736,6 @@ def mutation_cases(tally, sources, rng, n):
 # ---------------------------------------------------------------- J5: handoff inspect alone
 
 INSPECTOR = []
-B64_STRICT = (3, 13)
 B64_PROBES = ["abc", "a!==", "====", "YQ==YQ==", "\u00e9", 1, None, [1], {}, True, "Y===", "YR==", " YQ==", "YQ==\n", "YQ=a", "Y=QQ",
               "YWJj=", "YWJjYQ===", "YWJjY", "=YQ", "YQ=", "YWE==", "YWE=a", "", "YQ==a!", "YQ==!a", "YQ===a", "Y=!Q", "YQ=!", "YQ=\n="]
 
@@ -781,13 +780,8 @@ def package_cases(tally, worlds, rng):
         named.append((f"package of {name}", package_of(case, rng)))
         for w, m in mutations(case, rng, 2):
             named.append((f"package of {name} / {w}", package_of(m, rng)))
-    # base64.b64decode(validate=True)'s refusals, word for word, as CPython 3.13 and later give them: 3.11 decodes
-    # "YWJj=" that 3.13 refuses, and words others differently (a reference that answers by its interpreter, reported).
-    probes = B64_PROBES if sys.version_info >= B64_STRICT else []
-    if not probes:
-        print(f"     J5 the {len(B64_PROBES)} base64 probes are left out: CPython {sys.version.split()[0]} answers base64 otherwise "
-              f"than 3.13+, whose answers warrant.mjs gives")
-    for b in probes:
+    # Blobs read by the package's own base64 rule (warrant/verify.py _BASE64), not binascii's: one answer on every interpreter.
+    for b in B64_PROBES:
         named.append((f"a package blob {b!r}", dict(named[0][1], package={"warrant": "package/3", "roots": [], "lines": [], "blobs": {"ab" * 32: b}})))
     named.append(("blobs refused in the order read", dict(named[0][1], package={"warrant": "package/3", "roots": [], "lines": [],
                                                                                "blobs": {"9": "YQ=", "10": "=", "a": 1}})))
@@ -912,7 +906,7 @@ def vector_bytes(tally):
     for v in small:
         counts[v["class"]] = counts.get(v["class"], 0) + 1
     manifest = {"format": VECTOR_FORMAT, "cases": "cases.jsonl.gz", "sha256": hashlib.sha256(gz).hexdigest(), "bytes": len(data),
-                "counts": counts, "reference": "warrant/ (this commit's engine) on CPython 3.13 or later: 3.11 and 3.12 answer base64 otherwise",
+                "counts": counts, "reference": "warrant/ (this commit's engine)",
                 "generator": "python3 tests/impl_js_test.py --vectors impl-js/vectors",
                 "reader": "node impl-js/check_vectors.mjs [impl-js/vectors]",
                 "rule": ("Each gzipped line is {class, name, case, expect}. A case {lines: [base64 line bytes, newline included], "
@@ -939,12 +933,9 @@ def vectors_current(tally):
     """J8: the committed vectors are what this engine answers now, byte for byte, and the reader in impl-js reads them."""
     gz, manifest = vector_bytes(tally)
     have = (VECTORS / "cases.jsonl.gz").read_bytes() if (VECTORS / "cases.jsonl.gz").exists() else b""
-    if sys.version_info < B64_STRICT:
-        print(f"     J8 currency of impl-js/vectors not checked: they are CPython 3.13+'s answers (base64), this is {sys.version.split()[0]}")
-    else:
-        check("J8 impl-js/vectors is what the reference answers now (regenerate: --vectors impl-js/vectors)",
-              have == gz and (VECTORS / "manifest.json").read_bytes() == manifest, f"{len(tally.vectors)} cases, {len(gz)} bytes gzipped",
-              "impl-js/vectors differs from the cases this run made")
+    check("J8 impl-js/vectors is what the reference answers now (regenerate: --vectors impl-js/vectors)",
+          have == gz and (VECTORS / "manifest.json").read_bytes() == manifest, f"{len(tally.vectors)} cases, {len(gz)} bytes gzipped",
+          "impl-js/vectors differs from the cases this run made")
     p = subprocess.run([NODE, str(ROOT / "impl-js" / "check_vectors.mjs"), str(VECTORS)], capture_output=True, text=True, check=False, timeout=600)
     check("J8 node impl-js/check_vectors.mjs agrees with every vector, with no Python", p.returncode == 0,
           p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "", p.stdout[-600:] + p.stderr[-600:])

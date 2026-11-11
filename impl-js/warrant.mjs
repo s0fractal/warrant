@@ -1075,38 +1075,12 @@ export async function codeIdentity(source, backend) {
 
 // ---------------------------------------------------------------- handoff inspect, alone (warrant_agent/api.py)
 
-// base64.b64decode(s, validate=True) as CPython 3.15 answers it, its refusal words included (binascii's strict mode).
-const B64 = /^[A-Za-z0-9+/]$/;
-function pyTypeName(v) {
-  return v === null ? "NoneType" : typeof v === "boolean" ? "bool" : isInt(v) ? "int" : v instanceof PyFloat ? "float" : Array.isArray(v) ? "list" : "dict";
-}
+// A blob in a package: base64 of RFC 4648 §4 in its one padded form (warrant/verify.py _BASE64), a rule of the format and
+// not of any interpreter's decoder (R-INTERPRETER). JS's `$` without the m flag ends the input: no newline is admitted.
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 function b64decode(s) {
-  const no = (why) => { throw new AgentError("BAD_REQUEST", `a blob is not base64: ${why}`); };
-  if (!isStr(s)) no(`argument should be a bytes-like object or ASCII string, not '${pyTypeName(s)}'`);
-  if (/[^\x00-\x7f]/.test(s)) no("string argument should contain only ASCII characters");
-  let qp = 0, pads = 0, started = false, full = 0, end = s.length;
-  const count = () => `Invalid base64-encoded string: number of data characters (${full * 4 + 1}) cannot be 1 more than a multiple of 4`;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (ch === "=") {
-      if (qp === 0) no(i === 0 ? "Leading padding not allowed" : "Excess padding not allowed");
-      if (qp === 1) no(count());
-      started = true;
-      if (qp + ++pads >= 4) {
-        if (i + 1 < s.length) no(s[i + 1] === "=" ? "Excess padding not allowed" : B64.test(s[i + 1]) ? "Excess data after padding" : "Only base64 data is allowed");
-        end = i + 1;
-        break;
-      }
-      continue;
-    }
-    if (!B64.test(ch)) no("Only base64 data is allowed");
-    if (started) no("Discontinuous padding not allowed");
-    qp = (qp + 1) % 4;
-    if (qp === 0) full++;
-  }
-  if (end === s.length && qp === 1) no(count());
-  if (end === s.length && qp !== 0 && !(started && qp + pads >= 4)) no("Incorrect padding");
-  const bin = atob(s.slice(0, end));
+  if (!(isStr(s) && BASE64.test(s))) throw new AgentError("BAD_REQUEST", "a blob is not base64");
+  const bin = atob(s);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;

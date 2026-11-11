@@ -506,6 +506,9 @@ def refusal_cases(src, pkg, d):
            "lines not a list": refused(text(lines="x")), "a line not a string": refused(text(lines=[1])),
            "a float": refused(text(roots=[1.5])), "NaN": refused(json.dumps(pkg).encode().replace(b'"roots": [', b'"roots": [NaN, ', 1)),
            "not base64": refused(text(blobs={hb: "@@@"})), "a blob that is no string": refused(text(blobs={hb: 5})),
+           "a blob with a newline after it": refused(text(blobs={hb: pkg["blobs"][hb] + "\n"})),
+           "a blob with text after it": refused(text(blobs={hb: pkg["blobs"][hb] + "!"})),
+           "a blob padded once more": refused(text(blobs={hb: pkg["blobs"][hb] + "="})),
            "a blob under another name": refused(text(blobs={"00" * 32: pkg["blobs"][hb]})),
            "a blob under no hash": refused(text(blobs={"x": base64.b64encode(b"x").decode()})),
            "a line that is no record": refused(text(lines=pkg["lines"] + ["{}"])),
@@ -514,7 +517,8 @@ def refusal_cases(src, pkg, d):
             "another version": "NOT_A_PACKAGE", "a member more": "NOT_A_PACKAGE", "a member less": "NOT_A_PACKAGE",
             "a root that is no id": "NOT_A_PACKAGE", "a root with a newline": "NOT_A_PACKAGE", "lines not a list": "NOT_A_PACKAGE",
             "a line not a string": "NOT_A_PACKAGE", "a float": "NOT_A_PACKAGE", "NaN": "NOT_A_PACKAGE", "not base64": "BAD_BASE64",
-            "a blob that is no string": "BAD_BASE64", "a blob under another name": "BAD_BLOB", "a blob under no hash": "BAD_BLOB",
+            "a blob that is no string": "BAD_BASE64", "a blob with a newline after it": "BAD_BASE64", "a blob with text after it": "BAD_BASE64",
+            "a blob padded once more": "BAD_BASE64", "a blob under another name": "BAD_BLOB", "a blob under no hash": "BAD_BLOB",
             "a line that is no record": "BAD_LINE", "two lines that are no records": "BAD_LINE"}
     shaped = all(c == 1 and a.get("rely") is False and a.get("roots") == {} and a.get("package") is None and a.get("established") == []
                  and a.get("not_established") == [f"integrity: the package was refused and nothing in it was assessed: {a['refused']['why']}"]
@@ -582,7 +586,7 @@ def refusal_cases(src, pkg, d):
     got = {"shape": agent(dict(pkg, note="x")), "base64": agent(dict(pkg, blobs={hb: "@@@"})), "name": agent(dict(pkg, blobs={"00" * 32: pkg["blobs"][hb]})),
            "line": agent(dict(pkg, lines=pkg["lines"] + ["{}"])), "size": agent(pkg, store_bytes=100)}
     check("U44", got["shape"] == ("BAD_REQUEST", "a package is {warrant: package/3, roots, lines, blobs}")
-          and got["base64"][0] == "BAD_REQUEST" and str(got["base64"][1]).startswith("a blob is not base64: ")
+          and got["base64"][0] == "BAD_REQUEST" and got["base64"][1] == "a blob is not base64"
           and got["name"] == ("BAD_REQUEST", "a blob is not named by its hash") and got["line"] == ("BAD_REQUEST", "1 line(s) of the package are not records")
           and got["size"] == ("RESOURCE_LIMIT", "the package exceeds the workspace's store_bytes"),
           "the agent's handoff refuses a malformed package with the codes and words it had before the core read packages", got)
