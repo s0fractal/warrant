@@ -964,6 +964,7 @@ def main():
     rng = random.Random(a.seed)
     tally = Tally()
     repo = repo_cases(tally, a)
+    second_client_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -1006,6 +1007,71 @@ def main():
         print(f"     vectors: {len(tally.vectors)} cases, {size} bytes gzipped, written to {a.vectors}")
     vectors_current(tally)
     return finish("impl_js_test")
+
+
+READ = ROOT / "impl-js" / "read.mjs"
+
+
+def _serve(directory):
+    """A local HTTP server for `directory` (the second client's resolver); (server, base URL)."""
+    import functools
+    import http.server
+    import threading
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(directory)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}/"
+
+
+def second_client_cases():
+    """The second client (impl-js/read.mjs): the repository's records fetched through another resolver (HTTP) and
+    assessed by the second implementation give the same report, byte for byte, as the store read from disk; a transport
+    that alters a blob is refused, one that alters a record line has it rejected (Codex's second client, OBS-P12)."""
+    srv, base = _serve(ROOT)
+    try:
+        p = subprocess.run([NODE, str(READ), "--base", base], capture_output=True, check=False, timeout=600)
+        q = subprocess.run([NODE, str(JS), "assess", "--store", str(ROOT / ".warrant"), "--config", str(ROOT / ".warrant" / "v3.json")],
+                           capture_output=True, check=False, timeout=600)
+        s = subprocess.run([NODE, str(READ), "--base", base, "--summary"], capture_output=True, check=False, timeout=600)
+    finally:
+        srv.shutdown()
+    doc = json.loads((ROOT / ".warrant" / "v3.json").read_text())
+    py = E.assess(ST.Store(ROOT / ".warrant").snapshot(), doc["trust"], doc["profile"], None)
+    summary = json.loads(s.stdout) if s.stdout.strip() else {}
+    check("J9 the repository read over HTTP by the second client: its report is byte-identical to the store read from "
+          "disk, and its root and every lineage's state and reliance are the Python engine's",
+          p.returncode == 0 and p.stdout == q.stdout and summary.get("root") == py["snapshot"]
+          and summary.get("lineages") == {L: [x["state"], x["reliance"]] for L, x in py["lineages"].items()},
+          (p.returncode, p.stderr[-300:], len(p.stdout), len(q.stdout)))
+    with tempfile.TemporaryDirectory() as d:
+        repo = Path(d) / "repo"
+        (repo / ".warrant").mkdir(parents=True)
+        shutil.copy(ROOT / ".warrant" / "v3.json", repo / ".warrant" / "v3.json")
+        lines = ST.Store(ROOT / ".warrant").lines()
+        blob_dir = ROOT / ".warrant" / "blobs"
+        cited = next((b.name for b in sorted(blob_dir.iterdir()) if any(b.name.encode() in l for l in lines)), None) if blob_dir.is_dir() else None
+        (repo / ".warrant" / "blobs").mkdir()
+        if cited:
+            (repo / ".warrant" / "blobs" / cited).write_bytes(b"altered on the way")
+        (repo / ".warrant" / "records.jsonl").write_bytes(b"".join(lines))
+        srv, base2 = _serve(repo)
+        try:
+            altered_blob = subprocess.run([NODE, str(READ), "--base", base2, "--summary"], capture_output=True, check=False, timeout=600)
+            if cited:
+                (repo / ".warrant" / "blobs" / cited).unlink()
+            tampered = list(lines)
+            tampered[0] = tampered[0].replace(b'"at":', b'"at":1', 1) if b'"at":' in tampered[0] else tampered[0]
+            (repo / ".warrant" / "records.jsonl").write_bytes(b"".join(tampered))
+            altered_line = subprocess.run([NODE, str(READ), "--base", base2, "--summary"], capture_output=True, check=False, timeout=600)
+        finally:
+            srv.shutdown()
+    refused = json.loads(altered_blob.stdout or b"{}")
+    rejected = json.loads(altered_line.stdout or b"{}")
+    check("J9 a transport that alters a blob is refused (its bytes do not hash to its name); one that alters a record line "
+          "has that line rejected by its signature", cited is not None and "transport altered blob" in refused.get("refused", "")
+          and rejected.get("rejected", 0) >= 1, (cited, refused, rejected.get("rejected")))
 
 
 if __name__ == "__main__":
