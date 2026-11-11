@@ -11,8 +11,8 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   outside space..~ escaped and keys in code point order, not as Python's `repr`; a package's blobs are read by the
   format's own base64 rule (RFC 4648 §4, its one padded form) with the single sentence «a blob is not base64», not by
   binascii's words of the running Python. `impl-js/` gives the same bytes; its vectors no longer depend on CPython
-  3.13. Reports with no problem whose reason quotes a value are unchanged. Tests U29 (three blobs), U44; mutants UM43,
-  UM54.
+  3.13. Reports with no problem whose reason quotes a value are unchanged. Tests U29 (three blobs), U44; mutants UM43 (the agent's refusal
+  sentence), UM54, UM55.
 - A second client (`node impl-js/read.mjs --base URL`): a repository's records fetched over HTTP(S) from any root and
   assessed by the JavaScript implementation give the same report, byte for byte, as the store read from disk; an
   altered blob is refused, an altered line rejected. Read through GitHub, master gives the Python engine's root and
