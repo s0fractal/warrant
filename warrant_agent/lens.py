@@ -134,9 +134,12 @@ def visible(d, card):
 
 
 def diff(d, a, b):
-    """(only under card a, only under card b): what one lens shows of the page that the other does not."""
-    va, vb = visible(d, card_of(a)), visible(d, card_of(b))
-    return sorted(va - vb), sorted(vb - va)
+    """(only under card a, only under card b): what one lens shows of the page that the other does not; the general
+    comparison of two views (view.py) with the lens varied and the state held."""
+    va, vb = {"visible": visible(d, card_of(a)), "floor": {}}, {"visible": visible(d, card_of(b)), "floor": {}}
+    from warrant_agent import view as VW
+    found = VW.difference(va, vb)
+    return found["vanished"], found["appeared"]
 
 
 def presentation(a, b):

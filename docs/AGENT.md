@@ -149,6 +149,31 @@ them (CH4). `/changes` reads each state with that state's reactions from other s
 lists the lineage it points at (CH5). A lens comparison also names how two lenses draw what both show: layout, order
 of versions and of members, labels and forms (`lens.presentation`, CH7).
 
+### Two general forms under every page
+
+Everything a reader does or reads here is one of two forms; a new idea is one more instance, not one more code path.
+
+**An observation** (`warrant_agent/observe.py`): an observer that signs what it observed becomes a witness. A reaction
+(`react`), a view (`seen`) and an adoption of a lens (`adopt`) are one record, `{target, verdict: KIND, ...}`, that no
+guard's match holds, so none credits anything; each kind names its fields and where it is filed (the reader's own
+store, or the store holding the record). A new kind is one entry in `KINDS`.
+
+**A difference of views** (`warrant_agent/view.py`): what a reader sees of a lineage is a view (what the lens draws and
+the floor); two views are compared by `difference` (what appeared, what vanished, what in the floor moved), and two
+states are the same for the reader when nothing differs. Each page varies one thing:
+
+| varied | the two views | page |
+|---|---|---|
+| time | the store as the reader last marked it, and now | `/changes` |
+| lens | one state, two cards | `?lens=A&vs=B` |
+| sources | the authors' own records only, and all | the floor's «джерела» |
+| records | the store without some records, and now | `/whatif`, the moves on `/fragile` |
+
+`/whatif` («Що було б») follows minds' `what_if` (vars1.py): a store without its challenges, or without one actor's
+records, is assessed by the same engine on a candidate (nothing filed, nothing moved); every lineage whose view changes
+is named with its witness, from the hypothesis to the store as it is, and equal consequences give an equal digest
+(agent_test WI1–WI3). `/fragile` shows, for each lineage, what its objections move (without them → with them).
+
 ### Before lenses: what already exists, and what is ours
 
 Separating data from its presentation is not new, and neither is signing claims. Read this before the lenses below,
