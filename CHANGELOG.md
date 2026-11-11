@@ -10,6 +10,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   assessed by the JavaScript implementation give the same report, byte for byte, as the store read from disk; an
   altered blob is refused, an altered line rejected. Read through GitHub, master gives the Python engine's root and
   every lineage's state. docs/VERIFY.md; impl_js_test J9, mutants JS1, JS3.
+- A lens's contract (`warrant_agent/contract.py`, P05 of the observer pack): what a card promises of a lineage page
+  (each declared member that has a value, the activity it shows) and what the floor promises (state, reliance, every
+  counted challenge that stands, UNATTESTED, the lens) are read back from the marks of the page drawn. A broken promise
+  is named on the page («сторінка не тримає контракт лінзи») and replayed by `python -m warrant_agent.contract STORE
+  LINEAGE [--lens ID]` (exit 1). The renderer no longer drops a member whose value is not in the card's `as` form,
+  nor a root's statement the heading cut. Every lineage page of the registered stores under four lenses keeps its
+  contract. Tests KC1–KC3, mutants A174–A179.
 - Small tails of the observer pack: a page names what its lineage rests on outside the store (P09); «як бачив тоді»
   rebuilds the page as the reader's last view saw it and says whether its root matches (R06); a warm cache renders
   the same bytes as a cold one (P10). Tests TL1–TL3, mutants A169–A172.

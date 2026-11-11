@@ -321,6 +321,12 @@ MUTANTS = [
     ('A171', 'warrant_agent/serve.py', 'CH.subset(snap, CH.before(snap, r["at"] + 1))', 'CH.subset(snap, CH.before(snap, 10 ** 12))', AGENT, ['TL2']),
     ('A172', 'warrant_agent/serve.py', '            q = dict(q, lens=then[1])', '            q = dict(q)', AGENT, ['TL2']),
     ('A173', 'warrant_agent/commons.py', '    if not (isinstance(name, str) and NAME.match(name)):', '    if False:', AGENT, ['CM6']),
+    ('A174', 'warrant_agent/contract.py', '        out += [(part, x) for x in sorted(w - g)]', '        out += []', AGENT, ['KC2']),
+    ('A175', 'warrant_agent/serve.py', 'len(d["versions"]) > 1 and heads_statement(rep, d)', 'len(d["versions"]) > 1', AGENT, ['KC1']),
+    ('A176', 'warrant_agent/serve.py', "            parts.append(f'<div data-f=\"{E(rid)} {E(k)}\">{drawn}</div>')", '            parts.append(drawn)', AGENT, ['KC1']),
+    ('A177', 'warrant_agent/serve.py', '    if not broken:\n        return ""\n    names =', '    if True:\n        return ""\n    names =', AGENT, ['KC2']),
+    ('A178', 'warrant_agent/serve.py', '    if isinstance(v, list):\n        return head + _ul(', '    if isinstance(v, list) and form != "list":\n        return None\n    if isinstance(v, list):\n        return head + _ul(', AGENT, ['KC1']),
+    ('A179', 'warrant_agent/contract.py', '    if a.store not in space.roots:', '    if False:', AGENT, ['KC3']),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

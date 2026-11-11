@@ -1129,7 +1129,7 @@ def lens_cases():
     hidden = view(look, {"lens": bare})
     check("LN4 the floor: a lens that shows no member and hides the activity still shows the state, the reliance, the "
           "counted challenge that stands with its statement, UNATTESTED and its own name",
-          "a counted counterexample" in hidden and "заперечень, що стоять: <b>1</b>" in hidden and "UNATTESTED" in hidden
+          "a counted counterexample" in hidden and "заперечень, що стоять: <b data-floor=\"standing\">1</b>" in hidden and "UNATTESTED" in hidden
           and "лінза «hides everything»" in hidden and "заперечив" not in hidden and "it holds" not in hidden
           and SV.standing(space.report("w"), SV.lineage(space.report("w"), o)) == [(c, d)], hidden[:0])
     reader = SV.App(space, reader="dave")
@@ -1175,6 +1175,68 @@ def lens_cases():
           sorted(x["actor"] for x in adoptions) == ["dave", "dave", "dave", "eve"]
           and dave.adopt({"token": "x", "store": "w", "target": nested})[0] == 403
           and all(set(x["body"]) == {"target", "verdict"} for x in adoptions), adoptions)
+
+
+def contract_cases():
+    """A lens's contract (warrant_agent/contract.py): what a card promises of a lineage page (each declared member
+    that has a value, the activity it shows) and what the floor promises are read back from the marks of the page
+    drawn; a broken promise is named on the page and by the command, which anyone with the same store replays."""
+    from warrant_agent import contract as CT
+    from warrant_agent import lens as LZ
+    from warrant_agent import serve as SV
+    r = Repo()
+    r.put("alice", "schema", LZ.SCHEMA)
+    long = "the task, said at length: " + "x" * 420
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": long, "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "the task", "serves": [],
+                                           "established": ["it holds"], "residual": ["one gap"]}, lineage=o)
+    c = r.put("bob", "challenge", {"target": d, "statement": "a counted counterexample"}, refs=[d])
+    odd = [{"path": "statement", "label": "", "as": "list"}, {"path": "established", "label": "E", "as": "text"},
+           {"path": "residual", "label": "R", "as": "list"}]
+    nested = r.put("carol", "entity", {"state": "active", "name": "forms it guessed", "applies": "*",
+                                       "card": {"layout": "nested", "fields": odd}}, "lens@1")
+    flat = r.put("carol", "entity", {"state": "active", "name": "flat", "applies": "*",
+                                     "card": {"layout": "flat", "fields": odd, "order": "oldest"}}, "lens@1")
+    space = SV.Space({"w": str(r.root)})
+    app = SV.App(space, reader="dave")
+    rep = space.report("w")
+    want = CT.promise(SV.lineage(rep, o), LZ.card_of(LZ.lenses(rep)[nested]), SV.standing(rep, SV.lineage(rep, o)))
+    kept = {}
+    for name, lid in (("builtin", "builtin"), ("nested", nested), ("flat", flat)):
+        page = app.page_lineage("w", o, {"lens": lid})[1]
+        kept[name] = (app.last_contract["broken"], "не тримає контракт" in page)
+    check("KC1 the renderer keeps every lens's contract: a member drawn in a form other than the card's `as`, the "
+          "root's statement cut in the heading (so drawn in its card), the activity and the floor, under the built-in, "
+          "a nested and a flat lens", all(v == ([], False) for v in kept.values())
+          and {(o, "statement"), (d, "statement"), (d, "established"), (d, "residual"), (c, "")} <= want[0]
+          and want[1] == set(CT.FLOOR) and want[2] == {c}, kept)
+    real = SV.on_html
+    SV.on_html = lambda rep_, x: "" if x["id"] == c else real(rep_, x)      # a renderer that drops one challenge
+    try:
+        page = app.page_lineage("w", o, {"lens": nested})[1]
+        broken = app.last_contract["broken"]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = CT.main([r.root.name, o, "--lens", nested, "--root", str(r.root), "--reader", "dave"])
+    except Exception as ex:                   # a crash is this case's FAIL, never a missing line
+        page, broken, code, out = f"crashed: {type(ex).__name__}: {ex}", None, None, io.StringIO()
+    finally:
+        SV.on_html = real
+    check("KC2 a renderer that drops a challenge the lens shows breaks the contract: the page names it and the command "
+          "replays it (exit 1), while the floor still counts it", broken == [("visible", (c, ""))]
+          and "сторінка не тримає контракт лінзи: 1" in page and code == 1 and '"kept": false' in out.getvalue()
+          and "заперечень, що стоять: <b data-floor=\"standing\">1</b>" in page, (broken, code, page[:0]))
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = CT.main([r.root.name, o, "--root", str(r.root)])
+    err = io.StringIO()
+    try:                                      # a crash is this case's FAIL, never a missing line
+        with contextlib.redirect_stdout(err):
+            missing = CT.main(["no-such-store", o, "--root", str(r.root)])
+    except Exception as ex:
+        missing = f"crashed: {type(ex).__name__}"
+    check("KC3 the command on a page that keeps its contract: exit 0; on a store it does not read: exit 2, named",
+          code == 0 and '"kept": true' in out.getvalue() and missing == 2 and "no-such-store" in err.getvalue(), out.getvalue()[:200])
 
 
 def changes_cases():
@@ -1546,7 +1608,7 @@ def commons_cases():
     check("CM2 every page shows the voice from outside, and no store's rules count it: the lineage's reliance stays the "
           "store's, the floor counts the voice among those who spoke, /fragile lists it uncounted",
           "заперечив (у commons)" in page_ and "голос ззовні" in page_ and "ignores the cold start" in page_
-          and "опора <span class=\"tag ELIGIBLE\"" in page_ and "висловились:" in page_ and "key:" in page_
+          and "опора <span data-floor=\"reliance\"><span class=\"tag ELIGIBLE\"" in page_ and "висловились:" in page_ and "key:" in page_
           and "ignores the cold start" in fragile and space.report("w")["lineages"][o]["reliance"] == "ELIGIBLE", page_[:0])
     impostor = R.record("challenge", "claude", 1_900_000_001, {"target": d, "statement": "I am claude"}, refs=[d])
     from warrant.store import Store as ST
@@ -1663,4 +1725,5 @@ if __name__ == "__main__":
     overlay_cases()
     commons_cases()
     tails_cases()
+    contract_cases()
     sys.exit(finish())
