@@ -256,6 +256,7 @@ E = html.escape
 TEXT = "text/plain; charset=utf-8"
 END = "</div>"
 MISSING = "Немає"
+WHATIF = "Що було б"
 CSS = """
 :root{--bg:#fbfaf7;--fg:#1d1d1b;--mute:#6b6a65;--line:#e4e1d8;--card:#fff;--ok:#2f7a4b;--warn:#a26a00;--bad:#b3261e;--acc:#3b5bdb}
 @media (prefers-color-scheme:dark){:root{--bg:#161614;--fg:#ecebe6;--mute:#9a988f;--line:#2e2d29;--card:#1e1e1b;--ok:#6cc58f;--warn:#e0a83a;--bad:#f2867d;--acc:#8fa6ff}}
@@ -786,16 +787,16 @@ class App:
              'нічого не записано і нічого не зрушено. Показано кожну лінію, чий вигляд змінюється, зі свідком; однакові '
              f'наслідки дають однаковий дайджест (як what_if у minds).</p><p class="rest">{presets}</p>')
         if not store:
-            return 200, page("Що було б", h)
+            return 200, page(WHATIF, h)
         found = self.hypothesis(store, without)
         if found is None:
-            return 404, page("Що було б", h + f"<p>Невідоме сховище або гіпотеза: {E(store)}, {E(without)}.</p>")
+            return 404, page(WHATIF, h + f"<p>Невідоме сховище або гіпотеза: {E(store)}, {E(without)}.</p>")
         h += (f'<div class="card"><b>{E(store)}</b> {E(VW.HYPOTHESES.get(without.split(":")[0], without))}'
               f'{E(without[6:]) if without.startswith("actor:") else ""} · прибрано записів: {found["dropped"]} · '
               f'змінилось ліній: {len(found["rows"])} · дайджест <code>{E(found["digest"][:12])}</code>'
               '<p class="rest">кожна лінія: від гіпотези до того, як є</p>'
               + "".join(change_html(self.space.report(store), store, x, self.reports()) for x in found["rows"][:300]) + END)
-        return 200, page("Що було б", h, foot(store, self.space.report(store),
+        return 200, page(WHATIF, h, foot(store, self.space.report(store),
                                               {"op": "whatif", "without": without, "with": self.other_roots(store)}))
 
     def page_fragile(self, q=None):
