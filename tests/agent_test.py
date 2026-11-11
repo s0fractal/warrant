@@ -1234,9 +1234,29 @@ def changes_cases():
     page_o, page_lone = bob.page_lineage("w", o)[1], bob.page_lineage("w", lone)[1]
     check("SV8 the floor names who stands behind a lineage: its authors, every other actor who filed on it here or in "
           "another store read, and how many stores; a lineage only its author spoke about says so, under any lens",
-          "автор alice" in page_o and "інші учасники:" in page_o and "bob" in page_o.split("інші учасники:")[1][:80]
+          "автор alice" in page_o and "висловились:" in page_o and "bob" in page_o.split("висловились:")[1][:80]
           and "сховищ: 2" in page_o and "лише автор" in page_lone and "сховищ: 1" in page_lone
           and "лише автор" in bob.page_lineage("w", lone, {"lens": "builtin"})[1], page_lone[:0])
+    guard_d = {k: two.report("w")["versions"][d][k] for k in ("guard", "accepted_by")}
+    read_d = bob.read({"token": bob.token, "store": "w", "target": d, "lens": "builtin"})
+    read_lone = bob.read({"token": bob.token, "store": "w", "target": lone, "lens": "builtin"})
+    bad_lens = bob.read({"token": bob.token, "store": "w", "target": lone, "lens": "<script>"})
+    views = [x for x in two.report("me")["_recs"].values() if x["body"].get("verdict") == "seen"]
+    after_read = bob.page_lineage("w", lone)[1]
+    newer = r.entity("alice", "obligation@1", {"state": "open", "statement": "nobody else spoke, again", "serves": []}, lineage=lone)
+    behind = bob.page_lineage("w", lone)[1]
+    bob.read({"token": bob.token, "store": "w", "target": newer, "lens": "builtin"})
+    caught_up = bob.page_lineage("w", lone)[1]
+    check("SV9 a view is the reader's signed word that they saw a version, under which lens, at which root of its store: "
+          "filed in the reader's own store, it credits nothing; the floor counts who saw apart from who spoke, so a "
+          "silence after a view is not an empty one, and tells the reader which version they saw last",
+          read_d[0] == read_lone[0] == 303 and bad_lens[0] == 400 and len(views) == 2
+          and {x["body"]["target"] for x in views} == {d, lone}
+          and all(x["body"]["lens"] == "builtin" and len(x["body"]["root"]) == 64 for x in views)
+          and {k: two.report("w")["versions"][d][k] for k in ("guard", "accepted_by")} == guard_d
+          and "бачили 1, і ніхто не прийняв і не заперечив" in after_read and "ти бачив останню версію" in after_read
+          and "ти бачив версію 1 з 2" in behind and "ти бачив останню версію" in caught_up
+          and newer in two.report("w")["_recs"], (read_d, read_lone, bad_lens, len(views)))
     lost = SV.App(two, "bob", KEYS["bob"], mine="nowhere")
     w_now, me_now = len(two.report("w")["_recs"]), len(two.report("me")["_recs"])
     try:                                   # a crash is this case's FAIL, never a missing line
