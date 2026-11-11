@@ -13,12 +13,13 @@ import json
 import re
 import sys
 
+from warrant import shapes as S
 from warrant_agent import lens as LZ
 
 FLOOR = ("state", "reliance", "standing", "unattested", "lens")
-_F = re.compile(r'data-f="([0-9a-f]{64}) ([a-z][a-z_]{0,39})"')
-_A = re.compile(r'data-a="([0-9a-f]{64})"')
-_C = re.compile(r'data-c="([0-9a-f]{64})"')
+_F = re.compile(r'data-f="([^" ]*) ([a-z][a-z_]{0,39})"')       # ids are read as text and kept only if S.hex64
+_A = re.compile(r'data-a="([^"]*)"')
+_C = re.compile(r'data-c="([^"]*)"')
 _FLOOR = re.compile(r'data-floor="([a-z]+)"')
 
 
@@ -29,8 +30,8 @@ def promise(d, card, standing):
 
 def shown(page):
     """What the page marks as drawn, in the same three parts."""
-    return ({(i, k) for i, k in _F.findall(page)} | {(i, "") for i in _A.findall(page)},
-            set(_FLOOR.findall(page)), set(_C.findall(page)))
+    return ({(i, k) for i, k in _F.findall(page) if S.hex64(i)} | {(i, "") for i in _A.findall(page) if S.hex64(i)},
+            set(_FLOOR.findall(page)), {i for i in _C.findall(page) if S.hex64(i)})
 
 
 def check(d, card, standing, page):
