@@ -356,6 +356,21 @@ def on_html(rep, x):
             + (f'<div class="rest">{E(note)}</div>' if isinstance(note, str) else "") + END)
 
 
+def _ul(items):
+    return "<ul>" + "".join(f"<li>{E(x)}</li>" for x in items) + "</ul>"
+
+
+def _drawn(head, v, form):
+    """A member's value drawn: as a count when the card says so, else in the form the value has (None: an empty list)."""
+    if form == "count":
+        return f"<p>{head} {len(v) if isinstance(v, (list, dict)) else 1}</p>"
+    if isinstance(v, list):
+        return head + _ul(x if isinstance(x, str) else json.dumps(x, ensure_ascii=False) for x in v) if v else None
+    if isinstance(v, dict):
+        return f"{head}<p><code>{E(json.dumps(v, ensure_ascii=False, sort_keys=True))}</code></p>"
+    return f"{head}<p>{E(str(v))}</p>"
+
+
 def fields_html(body, card, skip_statement=False, rid=""):
     """The members the card draws, each marked `data-f="RID PATH"` (contract.py reads the marks back). A value whose
     form is not the field's `as` is drawn in the form it has: a lens promises the member, not the form it guessed."""
@@ -364,18 +379,9 @@ def fields_html(body, card, skip_statement=False, rid=""):
         k, v = f["path"], body.get(f["path"])
         if v is None or (skip_statement and k == "statement"):
             continue
-        head = f"<b>{E(f['label'])}</b>" if f["label"] else ""
-        if f["as"] == "count":
-            drawn = f"<p>{head} {len(v) if isinstance(v, (list, dict)) else 1}</p>"
-        elif isinstance(v, list):
-            if not v:
-                continue
-            drawn = head + "<ul>" + "".join(f"<li>{E(x if isinstance(x, str) else json.dumps(x, ensure_ascii=False))}</li>" for x in v) + "</ul>"
-        elif isinstance(v, dict):
-            drawn = f"{head}<p><code>{E(json.dumps(v, ensure_ascii=False, sort_keys=True))}</code></p>"
-        else:
-            drawn = f"{head}<p>{E(str(v))}</p>"
-        parts.append(f'<div data-f="{E(rid)} {E(k)}">{drawn}</div>')
+        drawn = _drawn(f"<b>{E(f['label'])}</b>" if f["label"] else "", v, f["as"])
+        if drawn is not None:
+            parts.append(f'<div data-f="{E(rid)} {E(k)}">{drawn}</div>')
     return "".join(parts)
 
 
@@ -510,7 +516,7 @@ def floor_html(rep, store, d, used, note="", objections=(), reader=None, hidden=
             + "</p>"
             + (f'<p class="rest"><b class="PENDING">не прочитано сховищ: {len(unavailable)}</b> ('
                + E("; ".join(f"{n}: {why[:80]}" for n, why in unavailable)) + '): чого в них є, сторінка не знає</p>' if unavailable else "")
-            + ("<ul class='standing'>" + "".join(f"<li>{E(t)}</li>" for t in objections) + "</ul>" if objections else ""))
+            + (_ul(objections).replace("<ul>", "<ul class='standing'>", 1) if objections else ""))
 
 
 CONTRACT = "<!--contract-->"

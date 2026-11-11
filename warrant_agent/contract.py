@@ -59,7 +59,7 @@ def main(argv=None):
         print(json.dumps({"error": f"no store {a.store!r} is read", "stores": sorted(space.roots)}, ensure_ascii=False))
         return 2
     app = SV.App(space, reader=a.reader)
-    code, page = app.page_lineage(a.store, a.lineage, {"lens": a.lens} if a.lens else {})
+    code, _ = app.page_lineage(a.store, a.lineage, {"lens": a.lens} if a.lens else {})
     if code != 200:
         print(json.dumps({"error": code}))
         return 2
