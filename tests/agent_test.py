@@ -1600,6 +1600,47 @@ def commons_cases():
           outcomes[:2] == [True, True] and bool(outcomes[2]) and r.store.file.read_bytes() == w_bytes, outcomes)
 
 
+def tails_cases():
+    """Small tails of Codex's observer pack: P09 references held elsewhere are named; R06 the page as the reader saw
+    it then, rebuilt from the dates and checked against the root the view recorded; P10 a warm cache changes nothing."""
+    from warrant_agent import serve as SV
+    other = Repo()
+    far = other.entity("carol", "obligation@1", {"state": "open", "statement": "held elsewhere", "serves": []})
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the claim", "serves": []}, refs=[far])
+    me = Repo()
+    space = SV.Space({"w": str(r.root), "me": str(me.root)})
+    page_ = SV.App(space, reader="bob").page_lineage("w", o)[1]
+    check("TL1 a page names the records its lineage rests on that this store does not hold, unchecked (P09)",
+          "тримається й на 1 записах поза цим сховищем" in page_ and far[:12] in page_, page_[:0])
+    root_then = r.store.snapshot().digest
+    seen = me.put("bob", "attest", {"target": o, "verdict": "seen", "lens": "builtin", "root": root_then}, refs=[o], at=r.t + 1)
+    wrong = me.put("bob", "attest", {"target": o, "verdict": "seen", "lens": "builtin", "root": "0" * 64}, refs=[o], at=r.t + 2)
+    from warrant_agent import lens as LZ
+    me.put("alice", "schema", LZ.SCHEMA)
+    flat = me.put("carol", "entity", {"state": "active", "name": "flat then", "applies": "*",
+                                      "card": {"layout": "flat", "fields": []}}, "lens@1")
+    under = me.put("bob", "attest", {"target": o, "verdict": "seen", "lens": flat, "root": root_then}, refs=[o], at=r.t + 3)
+    r.t += 10
+    later = r.entity("alice", "obligation@1", {"state": "open", "statement": "the claim, later", "serves": []}, lineage=o)
+    app = SV.App(space, reader="bob")
+    then = app.page_lineage("w", o, {"asof": seen})[1]
+    approx = app.page_lineage("w", o, {"asof": wrong})[1]
+    now = app.page_lineage("w", o)[1]
+    check("TL2 «як бачив тоді»: the store rebuilt from the records dated no later than the reader's view, under the lens "
+          "it names; the same root reads «відтворено точно», another «наближено»; the floor links the reader's last view (R06)",
+          "відтворено точно" in then and later[:12] not in then and later[:12] in now and "наближено" in approx
+          and "лінза «flat then»" in app.page_lineage("w", o, {"asof": under})[1] and "лінза «flat then»" not in now
+          and f"asof={under}" in now, then[:0])
+    cold = SV.App(SV.Space({"w": str(r.root), "me": str(me.root)}), reader="bob")
+    warm = SV.App(space, reader="bob")
+    pages = lambda a: [a.page_lineage("w", o)[1], a.page_scene("w", o)[1], a.page_fragile(), a.page_feed({}),
+                       a.page_whatif({"store": "w", "without": "challenges"})[1]]
+    first, again = pages(warm), pages(warm)
+    check("TL3 a warm cache is an optimisation, never another page: a fresh space and a warmed one render every page "
+          "byte for byte the same (P10)", pages(cold) == first == again, [len(x) for x in first])
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1621,4 +1662,5 @@ if __name__ == "__main__":
     audit_cases()
     overlay_cases()
     commons_cases()
+    tails_cases()
     sys.exit(finish())
