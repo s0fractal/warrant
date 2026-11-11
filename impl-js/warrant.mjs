@@ -165,13 +165,14 @@ const pyStr = (v) => (isStr(v) ? v : pyRepr(v));
 // How a reason quotes a value: Python's json.dumps(v, ensure_ascii=True, separators=(",", ":"), sort_keys=True).
 // Every UTF-16 unit outside space..~ is escaped (\\uXXXX, lowercase), so no interpreter's Unicode tables enter
 // the bytes (R-INTERPRETER); keys in code point order, as Python sorts them.
-const ESC = { '"': '\\"', "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+const BS = String.fromCodePoint(0x5c);         // the backslash, named once
+const ESC = { '"': BS + '"', [BS]: BS + BS, "\b": BS + "b", "\f": BS + "f", "\n": BS + "n", "\r": BS + "r", "\t": BS + "t" };
 export function quoteStr(s) {
   let out = '"';
   for (let i = 0; i < s.length; i++) {
-    const ch = s[i], c = s.charCodeAt(i);
+    const ch = s[i], c = s.charCodeAt(i);       // NOSONAR S7758: a UTF-16 unit, as Python's ensure_ascii escapes it
     if (has(ESC, ch)) out += ESC[ch];
-    else if (c < 0x20 || c > 0x7e) out += "\\u" + c.toString(16).padStart(4, "0");
+    else if (c < 0x20 || c > 0x7e) out += BS + "u" + c.toString(16).padStart(4, "0");
     else out += ch;
   }
   return out + '"';
