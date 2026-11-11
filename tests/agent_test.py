@@ -1177,6 +1177,50 @@ def lens_cases():
           and all(set(x["body"]) == {"target", "verdict"} for x in adoptions), adoptions)
 
 
+def voices_cases():
+    """Who a voice is (warrant_agent/voices.py): the keys a store's trust binds to a name, not the name. Two names on
+    one key are one source; one name on two keys (two stores) is two; a record admitted unsigned is no one's voice;
+    the floor counts the voices independent of the author."""
+    from warrant_agent import serve as SV
+    from warrant_agent import voices as VC
+    r = Repo()
+    r.trust["keys"]["mallory"] = [KEYS["alice"].public]                  # alice's key under a second name
+    r.write_config()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the task", "serves": []})
+    r.t += 1
+    puppet = r.store.append(R.record("challenge", "mallory", r.t, {"target": o, "statement": "a puppet's objection"}, refs=[o]),
+                            KEYS["alice"], r.trust)
+    r.put("bob", "challenge", {"target": o, "statement": "bob objects"}, refs=[o])
+    x = Repo()
+    x.trust["keys"]["bob"] = [KEYS["carol"].public]                      # another store's bob is carol's key
+    x.write_config()
+    x.t = r.t + 1
+    x.store.append(R.record("challenge", "bob", x.t, {"target": o, "statement": "the other bob"}, refs=[o]), KEYS["carol"], x.trust)
+    space = SV.Space({"w": str(r.root), "x": str(x.root)})
+    app = SV.App(space, reader="dave")
+    try:                                      # a crash is this case's FAIL, never a missing line
+        page_ = app.page_lineage("w", o, {})[1]
+        rep = space.report("w")
+        d = app.with_elsewhere("w", SV.lineage(rep, o))
+        gs, notes, independent = SV.voices(rep, "w", d, SV.sources(rep, "w", d)[1])
+    except Exception as ex:
+        page_, gs, notes, independent = f"crashed: {type(ex).__name__}: {ex}", [], [], []
+    check("VO1 two names on one key are one source: the author's key under another name is not an independent voice, "
+          "and the page says so", "alice = mallory: один ключ" in notes and "mallory" not in independent
+          and "alice = mallory: один ключ" in page_ and puppet in rep["_recs"], (notes, independent))
+    check("VO2 one name on two keys in two stores is two sources, each independent of the author: the page names the split",
+          any(n.startswith("bob: 2 різні джерела (w, x)") for n in notes) and independent == ["bob"]
+          and "незалежних від автора: 1" in page_, (notes, independent))
+    bob_id = next(i for i, y in rep["_recs"].items() if y["actor"] == "bob" and y["kind"] == "challenge")
+    unsigned = dict(rep, _basis=dict(rep["_basis"], **{bob_id: "UNSIGNED"}))
+    _, notes_u, ind_u = SV.voices(unsigned, "w", SV.lineage(unsigned, o), ["bob", "mallory"])
+    check("VO3 a record its store admitted unsigned is no one's key: never an independent voice, and named as keyless",
+          ind_u == [] and any(n.startswith("bob (у w): без ключа") for n in notes_u), (notes_u, ind_u))
+    gs2 = VC.groups([("a", "s", {"k"}), ("b", "t", {"k", "m"}), ("c", "u", {"m"}), ("d", "s", set()), ("d", "s", set())])
+    check("VO4 voices join through any shared key, transitively; keyless voices of one name in one store are one",
+          [g["names"] for g in gs2] == [["a", "b", "c"], ["d"]] and gs2[0]["keys"] == ["k", "m"], gs2)
+
+
 def changes_cases():
     """What changed for a reader (warrant_agent/changes.py): the past is the set of records the reader marked as
     seen, assessed by the same engine; a lineage is listed only when its floor or what the reader's lens draws of it
@@ -1621,4 +1665,5 @@ if __name__ == "__main__":
     audit_cases()
     overlay_cases()
     commons_cases()
+    voices_cases()
     sys.exit(finish())

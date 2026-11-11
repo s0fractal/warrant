@@ -37,6 +37,7 @@ from warrant_agent import lens as LZ
 from warrant_agent import observe as OB
 from warrant_agent import overlay as OVL
 from warrant_agent import view as VW
+from warrant_agent import voices as VC
 from warrant_agent.observe import DIMENSIONS, NOTE_MAX
 from warrant_agent import scene as SC
 
@@ -244,7 +245,7 @@ class Space:
         try:
             repo = Repo(root)
             rep = repo.report()
-            rep["_profile"] = repo.config()[1]      # the report names its profile by digest; the frontier reads it
+            rep["_trust"], rep["_profile"] = repo.config()[:2]   # named by digest in the report; the frontier and voices read them
         except (Failed, OSError, ValueError) as e:
             rep = {"_error": f"{type(e).__name__}: {e}"}
         self.cache[name] = (stamp, rep)
@@ -446,6 +447,24 @@ def sources(rep, store, d):
     return authors, spoke, saw, stores
 
 
+def voices(rep, store, d, spoke):
+    """(groups, notes, independent): the voices behind the lineage joined by key (voices.py), the sentences where names
+    mislead, and those of `spoke` who signed and share no key with an author: the voices independent of it. A record
+    its store admitted UNSIGNED is a name anyone could write: it is no one's key, and never independent."""
+    trust, basis = rep.get("_trust"), rep.get("_basis", {})
+    def keys(i, actor):
+        return VC.keys_of(trust, actor) if basis.get(i) == "SIGNED" else set()
+    vs = [(v["record"]["actor"], store, keys(v["id"], v["record"]["actor"])) for v in d["versions"]]
+    authored = len(vs)
+    for v in d["versions"]:
+        for x in v["on"]:
+            a = x["sentence"][0]
+            vs.append((a, x.get("store") or store, set(x["keys"]) if "keys" in x else keys(x["id"], a)))
+    gs = VC.groups(vs)
+    independent = sorted({n for g in gs if min(g["members"]) >= authored and g["keys"] for n in g["names"] if n in spoke})
+    return gs, VC.notes(gs), independent
+
+
 def last_seen(rep, d, reader):
     """(index of the version the reader last signed that they saw, counted from the oldest; how many versions there
     are), or None when the reader signed no view of this lineage."""
@@ -456,6 +475,13 @@ def last_seen(rep, d, reader):
 
 def sources_html(rep, store, d, reader=None):
     authors, spoke, saw, stores = sources(rep, store, d)
+    _, notes, independent = voices(rep, store, d, spoke)
+    if spoke and not independent:
+        spoke_note = ' · <b class="PENDING">усі, хто висловився, підписують ключем автора</b>'
+    elif len(independent) < len(spoke):
+        spoke_note = f' · незалежних від автора: {len(independent)}'
+    else:
+        spoke_note = ""
     challenged = sum(1 for v in d["versions"] for x in v["on"] if x["challenge"] is not None)
     if spoke:
         who = f'висловились: {E(", ".join(spoke))}'
@@ -472,7 +498,8 @@ def sources_html(rep, store, d, reader=None):
     elif reader:
         mine = f" · <b>ти бачив версію {ls[0] + 1} з {ls[1]}</b>"
     return (f'<p class="rest">джерела: автор {E(", ".join(authors))} · {who} · бачили: {len(saw)} · заперечень: {challenged}'
-            f' · сховищ: {len(stores)}{mine}</p>')
+            f' · сховищ: {len(stores)}{mine}{spoke_note}'
+            + (f' · <b class="PENDING">імена вводять в оману</b>: {E("; ".join(notes))}' if notes else "") + '</p>')
 
 
 def floor_html(rep, store, d, used, note="", objections=(), reader=None, hidden=0, unavailable=()):

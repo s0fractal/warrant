@@ -317,6 +317,12 @@ MUTANTS = [
     ('A167', 'warrant_agent/commons.py', '        if not is_commons(doc):', '        if False:', AGENT, ['CM6']),
     ('A168', 'warrant_agent/commons.py', '    if store is not None and p.resolve().is_relative_to(Path(store).resolve()):', '    if False:', AGENT, ['CM6']),
     ('A173', 'warrant_agent/commons.py', '    if not (isinstance(name, str) and NAME.match(name)):', '    if False:', AGENT, ['CM6']),
+    ('A180', 'warrant_agent/voices.py', '                parent[find(i)] = find(seen[k])', '                pass', AGENT, ['VO1', 'VO4']),
+    ('A181', 'warrant_agent/serve.py', 'if min(g["members"]) >= authored and g["keys"] for n', 'if min(g["members"]) >= authored for n', AGENT, ['VO3']),
+    ('A182', 'warrant_agent/serve.py', '        return VC.keys_of(trust, actor) if basis.get(i) == "SIGNED" else set()', '        return VC.keys_of(trust, actor)', AGENT, ['VO3']),
+    ('A183', 'warrant_agent/voices.py', '            for n, v in sorted(by_name.items()) if len(v) > 1]', '            for n, v in sorted(by_name.items()) if len(v) > 9]', AGENT, ['VO2']),
+    ('A184', 'warrant_agent/serve.py', '    elif len(independent) < len(spoke):', '    elif False:', AGENT, ['VO2']),
+    ('A185', 'warrant_agent/voices.py', '            for g in gs if not g["keys"]]', '            for g in gs if False]', AGENT, ['VO3']),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

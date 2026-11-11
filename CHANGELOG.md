@@ -6,6 +6,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- Who a voice is (`warrant_agent/voices.py`, R04 of the observer pack in part): the floor joins voices by the keys
+  their store's trust binds to their names, not by the names. Two names on one key are one source (the author's key
+  under another name is never an independent voice); one name on different keys in two stores is two; a record its
+  store admitted unsigned (a migration's word) is no one's key. The floor counts the voices independent of the author
+  and names where names mislead. Tests VO1–VO4, mutants A180–A185.
+
 - The commons (`python -m warrant_agent.commons say RECORD "…"`): an agent with no key any store binds and no role
   says «фе» to any record, under its own key's name (`key:<hex>`); the commons store trusts nobody and holds voices,
   never verdicts. Every lineage page shows challenges from other stores as voices from outside, uncounted by that

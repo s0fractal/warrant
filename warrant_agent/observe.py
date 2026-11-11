@@ -12,6 +12,7 @@ record is in; refused when that store is not read; the record's own store when t
 (the store holding the record). Every kind here is the reader's, so every one is `mine`: a reader adopts a lens it
 cannot write to (Codex's observer pack, OBS-P01). A new kind is one entry here, not a new code path."""
 from warrant import shapes as S
+from warrant_agent import voices as VC
 
 DIMENSIONS = (("agree", -100, 100, "згода"), ("confidence", 0, 100, "впевненість"),
               ("importance", 0, 100, "важливість"), ("evidence", 0, 100, "якість доказу"))
@@ -100,7 +101,8 @@ def elsewhere(reports, store, d):
         if name == store or "_error" in r:
             continue
         for i in sorted({i for v in vs for i in _by_target(r).get(v, [])}):
-            item = _item(name, i, r["_recs"][i])
+            signed = r.get("_basis", {}).get(i) == "SIGNED"
+            item = _item(name, i, r["_recs"][i], VC.keys_of(r.get("_trust"), r["_recs"][i]["actor"]) if signed else set())
             if item is not None:
                 out.setdefault(r["_recs"][i]["body"]["target"], []).append(item)
     return out
@@ -117,17 +119,17 @@ def _by_target(r):
     return r["_by_target"]
 
 
-def _item(name, i, x):
+def _item(name, i, x, keys=frozenset()):
     """A record of store `name` about a version, as a lineage page's item: an observation, or a challenge (a voice from
     outside, never counted by the page's store); None for anything else."""
     b = x["body"]
     kind = KINDS.get(b.get("verdict"))
     if x["kind"] == "attest" and kind is not None:
-        return {"id": i, "at": x["at"], "challenge": None, "note": b.get("note"), "store": name, "verdict": b["verdict"],
+        return {"id": i, "at": x["at"], "challenge": None, "note": b.get("note"), "store": name, "verdict": b["verdict"], "keys": sorted(keys),
                 "sentence": (x["actor"], f"{kind.verb} (у {name})", "", kind.rest(b))}
     if x["kind"] == "challenge":
         # a voice from outside (the commons, or any other store): shown, never counted by this store's rules
-        return {"id": i, "at": x["at"], "note": None, "store": name, "verdict": None,
+        return {"id": i, "at": x["at"], "note": None, "store": name, "verdict": None, "keys": sorted(keys),
                 "challenge": {"target": b["target"], "counted": False, "stands": False, "replays": [], "outside": name},
                 "sentence": (x["actor"], f"заперечив (у {name})", "", str(b.get("statement", "")))}
     return None
