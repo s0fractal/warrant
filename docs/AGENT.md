@@ -137,6 +137,13 @@ silence after views reads apart from a silence with no reader, and tells the rea
 (SV9). Views are private while the reader's store is unpublished, and counted only from keys some store's trust
 binds.
 
+**What a page binds and what it admits it cannot see** (Codex's observer pack, 2026-11-11). A page's lens names the
+whole interpreter (every module of `warrant_agent`, by bytes) and, for every other store it read, that store's root,
+trust and profile. Its floor says what the reader's lens leaves out of it (counted against the built-in view) and which
+stores the server could not read; `/changes` says when the reader's lens changed since the mark. No page runs a
+script: the policy is `script-src 'none'`. An adoption is filed in the reader's own store like any observation, so a
+reader adopts a lens of a store it cannot write to. agent_test AU1–AU4, LN10.
+
 **The reader's own store.** With `--mine NAME` (default: the repository Home registers as `space`, if any) a reaction
 is filed in that store whatever store its record is in, so a project's store is never changed by its readers'
 reactions; an attest on a record held elsewhere is admitted as any other. A lineage page shows, under each version,

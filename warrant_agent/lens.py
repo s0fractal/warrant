@@ -92,29 +92,37 @@ def _depths(recs, actor):
     return depth
 
 
-def adopted(rep, reader):
-    """[((depth, at), version id)] of this report's lens versions the reader adopted, each by its latest adoption
-    (the deepest in the reader's chain)."""
-    lv, out = lenses(rep), {}
-    depth = _depths(rep["_recs"], reader)
-    for i, r in rep["_recs"].items():
-        b = r["body"]
-        if r["kind"] == "attest" and r["actor"] == reader and b.get("verdict") == "adopt" and b.get("target") in lv:
-            key = (depth[i], r["at"])
-            out[b["target"]] = max(out.get(b["target"], key), key)
-    return [(key, v) for v, key in out.items()]
-
-
-def choose(reports, reader, schema):
-    """(store, version id, body) of the lens the reader adopted last for `schema` over every report, or None."""
-    best = None
+def adopted(reports, reader):
+    """[(key, store, version id)] of the lens versions the reader adopted, read over every report: an adoption is the
+    reader's own record and may live in any store (the reader's own, most often), the lens in another. Each version
+    once, by its latest adoption: `key` is (at, the adoption's place in the reader's chain in its store, its id), so
+    two adoptions in one second in one store follow the chain, and across stores the dates decide, then the ids."""
+    lv = {}
+    for name, rep in sorted(reports.items()):
+        if "_error" not in rep:
+            for v, b in lenses(rep).items():
+                lv.setdefault(v, (name, b))
+    out = {}
     for name, rep in sorted(reports.items()):
         if "_error" in rep or not reader:
             continue
-        lv = lenses(rep)
-        for at, v in adopted(rep, reader):
-            if lv[v].get("applies") in (schema, "*") and (best is None or (at, v) > best[0]):
-                best = ((at, v), name, v, lv[v])
+        depth = _depths(rep["_recs"], reader)
+        for i, r in rep["_recs"].items():
+            b = r["body"]
+            if r["kind"] == "attest" and r["actor"] == reader and b.get("verdict") == "adopt" and b.get("target") in lv:
+                key = (r["at"], depth[i], i)
+                if b["target"] not in out or key > out[b["target"]][0]:
+                    out[b["target"]] = (key, lv[b["target"]][0])
+    return [(key, store, v) for v, (key, store) in out.items()]
+
+
+def choose(reports, reader, schema):
+    """(store holding the lens, version id, body) of the lens the reader adopted last for `schema`, or None."""
+    best = None
+    for key, store, v in adopted(reports, reader):
+        body = reports[store] and lenses(reports[store])[v]
+        if body.get("applies") in (schema, "*") and (best is None or key > best[0]):
+            best = (key, store, v, body)
     return None if best is None else best[1:]
 
 

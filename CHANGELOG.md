@@ -6,6 +6,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- Codex's observer pack, audited: an adoption is filed in the reader's own store (a reader adopts a lens it cannot
+  write to); a page's lens names the whole interpreter and every other store's root, trust and profile; the floor
+  says what the lens leaves out and which stores were not read; `/changes` says when the reader's lens changed; no
+  page runs a script (`script-src 'none'`). Tests LN10, AU1–AU4, mutants A148–A154.
+
 - Two general forms under `warrant serve`: observations (`observe.py`: reactions, views and adoptions are one record
   kind registry) and differences of views (`view.py`: `/changes`, the lens comparison, the floor's sources and
   fragility are one comparison with time, lens, sources or records varied). New: `/whatif` («Що було б»), after

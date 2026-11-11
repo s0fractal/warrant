@@ -1052,7 +1052,7 @@ def serve_cases():
         srv.server_close()
     check("SV5 the server answers only on its own host (a rebound name is refused, 421) and refuses a POST without the "
           "run's token (403); every page carries a content security policy",
-          home[0] == 200 and "default-src 'none'" in (home[1] or "") and other[0] == 421 and rebound[0] == 421
+          home[0] == 200 and "default-src 'none'" in (home[1] or "") and "script-src 'none'" in (home[1] or "") and other[0] == 421 and rebound[0] == 421
           and no_token[0] == 403 and "Не підписано" in no_token[2] and "token" in no_token[2],
           (home[0], other[0], rebound[0], no_token[0]))
     me = Repo()                                     # the reader's own store: the same keys, its own records
@@ -1159,6 +1159,17 @@ def lens_cases():
           (d, "established") in only_nested and (c, "") in only_nested and only_bare == []
           and f"Показує лише «nested card»: {len(only_nested)}" in cmp_ and "Показує лише «hides everything»: 0" in cmp_
           and f"vs={bare}" in view(look, {"lens": nested}), (only_nested, only_bare))
+    # Codex's observer pack OBS-P01: a reader adopts a lens of a store it cannot write to, in its own store.
+    me = Repo()
+    pub_bytes = r.store.file.read_bytes()
+    two = SV.Space({"w": str(r.root), "me": str(me.root)})
+    reader = SV.App(two, "bob", KEYS["bob"], mine="me")              # bob has adopted nothing anywhere
+    got = reader.adopt({"token": reader.token, "store": "w", "target": nested})
+    mine_adopts = [x for x in two.report("me")["_recs"].values() if x["body"].get("verdict") == "adopt"]
+    check("LN10 a reader adopts a lens of another store in its own: the lens's store is unchanged, the adoption is the "
+          "reader's record, and it draws the reader's pages", got[0] == 303 and r.store.file.read_bytes() == pub_bytes
+          and [x["body"]["target"] for x in mine_adopts] == [nested]
+          and "лінза «nested card»" in SV.App(two, reader="bob").page_lineage("w", o, {})[1], (got, len(mine_adopts)))
     adoptions = [x for x in space.report("w")["_recs"].values() if x["body"].get("verdict") == "adopt"]
     check("LN6 an adoption is the reader's attest {verdict: adopt} on a lens version, filed only with the run's token",
           sorted(x["actor"] for x in adoptions) == ["dave", "dave", "dave", "eve"]
@@ -1406,6 +1417,43 @@ def whatif_cases():
           and app.page_whatif({"store": "w", "without": "nothing"})[0] == 404, kept["floor"])
 
 
+def audit_cases():
+    """Codex's observer pack (2026-11-11), the gaps it found: OBS-P02 the interpreter's identity, OBS-P03 what a page
+    cannot see, OBS-A07 a lens changed since the mark, OBS-P11 no script at all."""
+    import re as _re
+    from warrant_agent import changes as CH
+    from warrant_agent import lens as LZ
+    from warrant_agent import serve as SV
+    r = Repo()
+    r.put("alice", "schema", LZ.SCHEMA)
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the task", "serves": []})
+    r.put("bob", "attest", {"target": o, "verdict": "note"}, refs=[o])
+    bare = r.put("carol", "entity", {"state": "active", "name": "bare", "applies": "*",
+                                     "card": {"layout": "nested", "fields": [], "activity": "hidden"}}, "lens@1")
+    me = Repo()
+    missing = r.home / "not-a-store"
+    space = SV.Space({"w": str(r.root), "me": str(me.root), "gone": str(missing)})
+    dave = SV.App(space, "dave", KEYS["dave"], marks=CH.Marks(r.home / "seen.json"))
+    loaded = {m.split(".")[1] for m in sys.modules if m.startswith("warrant_agent.")}
+    names = {p.stem for p in SV.ADAPTER_FILES}
+    page_ = dave.page_lineage("w", o)[1]
+    check("AU1 a page's lens names the whole interpreter (every module of warrant_agent it runs, by bytes) and every "
+          "other store it read with that store's trust and profile (OBS-P02)", loaded <= names and "lens" in names
+          and space.report("me")["trust"] in page_ and space.report("me")["profile"] in page_, sorted(loaded - names))
+    dave.seen({"token": dave.token})
+    dave.adopt({"token": dave.token, "store": "w", "target": bare})
+    hid = dave.page_lineage("w", o)[1]
+    check("AU2 a page says what the reader's lens leaves out of it and which stores it could not read (OBS-P03)",
+          "лінза не показує тут" not in page_ and "лінза не показує тут 2" in hid and "не прочитано сховищ: 1" in hid
+          and "gone" in hid, hid[:0])
+    changed = dave.page_changes({})
+    check("AU3 /changes says when the reader's lens changed since the mark, and that both states are read under the "
+          "lens of now (OBS-A07)", "твоя лінза змінилась відтоді" in changed and "«вбудована» → «bare»" in changed, changed[:0])
+    pages = [page_, hid, changed, dave.page_feed({}), dave.page_fragile(), dave.page_scene("w", o)[1]]
+    check("AU4 no page holds a script or an event handler, and the policy allows none (OBS-P11)",
+          not any("<script" in h.lower() or _re.search(r"\son[a-z]+=", h) for h in pages), [h[:0] for h in pages])
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1424,4 +1472,5 @@ if __name__ == "__main__":
     scene_cases()
     fragile_cases()
     whatif_cases()
+    audit_cases()
     sys.exit(finish())
