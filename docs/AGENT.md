@@ -137,6 +137,12 @@ silence after views reads apart from a silence with no reader, and tells the rea
 (SV9). Views are private while the reader's store is unpublished, and counted only from keys some store's trust
 binds.
 
+**What the page rests on outside, and how you saw it then.** «Обґрунтоване» names the records the lineage rests on
+that this store does not hold (grounded's `outside`), unchecked. Beside «ти бачив версію N з M» a link rebuilds the page
+as the reader's last view saw it: the records dated no later than that view, assessed by the same engine, under the
+lens the view names; the root the view recorded decides whether it reads «відтворено точно» or «наближено» (filers'
+dates are their own word). A fresh and a warmed server render every page byte for byte the same. agent_test TL1–TL3.
+
 **What a page binds and what it admits it cannot see** (Codex's observer pack, 2026-11-11). A page's lens names the
 whole interpreter (every module of `warrant_agent`, by bytes) and, for every other store it read, that store's root,
 trust and profile. Its floor says what the reader's lens leaves out of it (counted against the built-in view) and which
