@@ -930,12 +930,21 @@ def write_vectors(tally, out):
 
 
 def vectors_current(tally):
-    """J8: the committed vectors are what this engine answers now, byte for byte, and the reader in impl-js reads them."""
+    """J8: the committed vectors are what this engine answers now, case for case, and the reader in impl-js reads them.
+    The cases are compared unzipped: gzip's bytes are zlib's, which differ between builds of one Python (3.11 on CI,
+    3.15 here gave one content and two archives); the committed manifest must name the committed archive's SHA-256."""
     gz, manifest = vector_bytes(tally)
     have = (VECTORS / "cases.jsonl.gz").read_bytes() if (VECTORS / "cases.jsonl.gz").exists() else b""
+    m_have = json.loads((VECTORS / "manifest.json").read_text()) if (VECTORS / "manifest.json").exists() else {}
+    m_want = json.loads(manifest)
+    try:
+        same = gzip.decompress(have) == gzip.decompress(gz)
+    except (OSError, EOFError):
+        same = False
     check("J8 impl-js/vectors is what the reference answers now (regenerate: --vectors impl-js/vectors)",
-          have == gz and (VECTORS / "manifest.json").read_bytes() == manifest, f"{len(tally.vectors)} cases, {len(gz)} bytes gzipped",
-          "impl-js/vectors differs from the cases this run made")
+          same and m_have.get("sha256") == hashlib.sha256(have).hexdigest()
+          and {k: v for k, v in m_have.items() if k != "sha256"} == {k: v for k, v in m_want.items() if k != "sha256"},
+          f"{len(tally.vectors)} cases, {len(gz)} bytes gzipped", "impl-js/vectors differs from the cases this run made")
     p = subprocess.run([NODE, str(ROOT / "impl-js" / "check_vectors.mjs"), str(VECTORS)], capture_output=True, text=True, check=False, timeout=600)
     check("J8 node impl-js/check_vectors.mjs agrees with every vector, with no Python", p.returncode == 0,
           p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "", p.stdout[-600:] + p.stderr[-600:])
