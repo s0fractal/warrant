@@ -17,6 +17,7 @@ its own, and a POST without the token of this run (another page in the browser c
 import argparse
 import hashlib
 import html
+import json
 import os
 import secrets
 import sys
@@ -32,6 +33,7 @@ from warrant import records as R
 from warrant.repo import Failed, Repo, load_key
 from warrant_agent import glossary as GL
 from warrant_agent import changes as CH
+from warrant_agent import contract as CT
 from warrant_agent import fragile as FR
 from warrant_agent import lens as LZ
 from warrant_agent import observe as OB
@@ -353,26 +355,45 @@ def on_html(rep, x):
     a, verb, _, rest = x["sentence"]
     a = who(a)
     note = x["note"] if "note" in x else rep["_recs"][x["id"]]["body"].get("note")
-    return (f'<div class="item"><span class="when">{when(x["at"])}</span> <span class="actor">{E(a)}</span> '
+    return (f'<div class="item" data-a="{E(x["id"])}"><span class="when">{when(x["at"])}</span> <span class="actor">{E(a)}</span> '
             f'{E(verb)}{E(challenge_state(x["challenge"]))}' + (f' <span class="rest">— {E(rest)}</span>' if rest else "")
             + (f'<div class="rest">{E(note)}</div>' if isinstance(note, str) else "") + END)
 
 
-def fields_html(body, card, skip_statement=False):
+def _ul(items):
+    return "<ul>" + "".join(f"<li>{E(x)}</li>" for x in items) + "</ul>"
+
+
+def _drawn(head, v, form):
+    """A member's value drawn: as a count when the card says so, else in the form the value has (None: an empty list)."""
+    if form == "count":
+        return f"<p>{head} {len(v) if isinstance(v, (list, dict)) else 1}</p>"
+    if isinstance(v, list):
+        return head + _ul(x if isinstance(x, str) else json.dumps(x, ensure_ascii=False) for x in v) if v else None
+    if isinstance(v, dict):
+        return f"{head}<p><code>{E(json.dumps(v, ensure_ascii=False, sort_keys=True))}</code></p>"
+    return f"{head}<p>{E(str(v))}</p>"
+
+
+def fields_html(body, card, skip_statement=False, rid=""):
+    """The members the card draws, each marked `data-f="RID PATH"` (contract.py reads the marks back). A value whose
+    form is not the field's `as` is drawn in the form it has: a lens promises the member, not the form it guessed."""
     parts = []
     for f in card["fields"]:
         k, v = f["path"], body.get(f["path"])
         if v is None or (skip_statement and k == "statement"):
             continue
-        head = f"<b>{E(f['label'])}</b>" if f["label"] else ""
-        if f["as"] == "count":
-            parts.append(f"<p>{head} {len(v) if isinstance(v, (list, dict)) else 1}</p>")
-        elif f["as"] == "list" and isinstance(v, list):
-            if v:
-                parts.append(head + "<ul>" + "".join(f"<li>{E(str(x))}</li>" for x in v) + "</ul>")
-        elif not isinstance(v, (list, dict)):
-            parts.append(f"{head}<p>{E(str(v))}</p>")
+        drawn = _drawn(f"<b>{E(f['label'])}</b>" if f["label"] else "", v, f["as"])
+        if drawn is not None:
+            parts.append(f'<div data-f="{E(rid)} {E(k)}">{drawn}</div>')
     return "".join(parts)
+
+
+def heads_statement(rep, d):
+    """Whether the page's heading is the lineage root's whole statement (its title, not cut): then the root's card
+    need not draw it again, and the heading carries its mark."""
+    t = rep["_recs"].get(d["lineage"], {}).get("body", {}).get("statement")
+    return isinstance(t, str) and t.strip() != "" and title(rep, d["lineage"], 400) == t.strip()
 
 
 def version_head(d, v):
@@ -386,8 +407,8 @@ def version_head(d, v):
 
 def version_html(rep, d, v, card=LZ.card_of(LZ.BUILTIN)):
     gd = v["guard"]
-    repeated = v["id"] == d["lineage"] and len(d["versions"]) > 1
-    parts = [f'<div class="card"><div>{version_head(d, v)}{END}', fields_html(v["record"]["body"], card, repeated)]
+    repeated = v["id"] == d["lineage"] and len(d["versions"]) > 1 and heads_statement(rep, d)
+    parts = [f'<div class="card"><div>{version_head(d, v)}{END}', fields_html(v["record"]["body"], card, repeated, v["id"])]
     if gd.get("waiting"):
         parts.append("<p class='rest'>Чекає: " + E("; ".join(gd["waiting"])) + "</p>")
     if card["activity"] == "shown":
@@ -404,7 +425,7 @@ def versions_html(rep, d, card):
     events = []
     for v in vs:
         events.append((v["record"]["at"], 0, v["id"], f'<div class="item"><div>{version_head(d, v)}{END}'
-                       f'{fields_html(v["record"]["body"], card)}{END}'))
+                       f'{fields_html(v["record"]["body"], card, rid=v["id"])}{END}'))
         if card["activity"] == "shown":
             events += [(x["at"], 1, x["id"], on_html(rep, x)) for x in v["on"]]
     events.sort(key=lambda e: e[:3], reverse=card["order"] == "newest")
@@ -518,20 +539,36 @@ def floor_html(rep, store, d, used, note="", objections=(), reader=None, hidden=
     completeness is UNATTESTED, which lens drew the page (a portal: the same root and lens give this page), and
     every challenge against that lens, and who stands behind the lineage (`sources`)."""
     held = standing(rep, d)
-    rows = "".join(f"<li>{E(title(rep, c, LZ.MAX_NAME * 8))} <span class='rest'>(на {E(v[:12])})</span></li>" for c, v in held)
+    rows = "".join(f"<li data-c=\"{E(c)}\">{E(title(rep, c, LZ.MAX_NAME * 8))} <span class='rest'>(на {E(v[:12])})</span></li>" for c, v in held)
     lens_id, lens_name = used
     portal = f'/l/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}'
-    return (f'<h2>{E(d["label"])}: {E(d["title"])}</h2><p>{E(d["schema"])} · стан <b>{E(str(d["state"]))}</b> · '
-            f'опора {tag(d["reliance"])} · заперечень, що стоять: <b>{len(held)}</b> · повнота {tag("UNATTESTED")}</p>'
+    head = f' data-f="{E(d["lineage"])} statement"' if heads_statement(rep, d) else ""
+    return (f'<h2{head}>{E(d["label"])}: {E(d["title"])}</h2><p>{E(d["schema"])} · стан <b data-floor="state">{E(str(d["state"]))}</b> · '
+            f'опора <span data-floor="reliance">{tag(d["reliance"])}</span> · заперечень, що стоять: <b data-floor="standing">{len(held)}</b> · '
+            f'повнота <span data-floor="unattested">{tag("UNATTESTED")}</span></p>'
             + (f'<ul class="standing">{rows}</ul>' if held else "") + sources_html(rep, store, d, reader)
-            + f'<p class="rest">вигляд: лінза «{E(lens_name)}» · <a href="{portal}">відтворити цей вигляд</a> · '
+            + f'<p class="rest">вигляд: <span data-floor="lens">лінза «{E(lens_name)}»</span> · <a href="{portal}">відтворити цей вигляд</a> · '
             f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}">карта</a>{note}'
             + (f' · <b class="CHALLENGED">заперечень на цю лінзу: {len(objections)}</b>' if objections else "")
             + (f' · <b class="PENDING">лінза не показує тут {hidden}</b> з того, що показала б вбудована' if hidden else "")
             + "</p>"
             + (f'<p class="rest"><b class="PENDING">не прочитано сховищ: {len(unavailable)}</b> ('
                + E("; ".join(f"{n}: {why[:80]}" for n, why in unavailable)) + '): чого в них є, сторінка не знає</p>' if unavailable else "")
-            + ("<ul class='standing'>" + "".join(f"<li>{E(t)}</li>" for t in objections) + "</ul>" if objections else ""))
+            + (_ul(objections).replace("<ul>", "<ul class='standing'>", 1) if objections else ""))
+
+
+CONTRACT = "<!--contract-->"
+
+
+def contract_html(broken):
+    """The promises of the lens and the floor this page does not keep (contract.py): a replayable fact, shown on it."""
+    if not broken:
+        return ""
+    names = {"visible": "не показано", "floor": "немає в підлозі", "standing": "не показано заперечення"}
+    rows = "".join(f"<li>{E(names[p])}: {E(x if isinstance(x, str) else (x[0][:12] + (' «' + x[1] + '»' if x[1] else '')))}</li>"
+                   for p, x in broken[:30])
+    return (f'<div class="card"><b class="CHALLENGED">сторінка не тримає контракт лінзи: {len(broken)}</b> '
+            f'<span class="rest">(python -m warrant_agent.contract відтворює)</span><ul>{rows}</ul>{END}')
 
 
 def diff_html(rep, d, names, only_a, only_b, drawn=()):
@@ -728,7 +765,7 @@ class App:
         full = VW.observe(sys.modules[__name__], rep, d, dict(LZ.card_of(LZ.BUILTIN), activity="shown"))
         hidden = len(VW.difference(VW.observe(sys.modules[__name__], rep, d, LZ.card_of(body)), full)["appeared"])
         h = (floor_html(rep, store, d, (lens_id, body["name"]), note, lens_objections(self.reports(), lens_store, lens_id),
-                        self.reader, hidden, self.unavailable()) + grounded_html(rep, store, d["grounded"]))
+                        self.reader, hidden, self.unavailable()) + CONTRACT + grounded_html(rep, store, d["grounded"]))
         if q.get("vs") and d["schema"] != LZ.LENS:
             other = LZ.find(self.reports(), q["vs"])
             if other is not None and LZ.problem(other[1]) is None:
@@ -747,6 +784,9 @@ class App:
         if self.actor and self.key and d["leaf"]:
             h += self.read_form(store, d["leaf"], lens_id) + self.form(store, d["leaf"])
         h += versions_html(rep, d, LZ.card_of(body))
+        broken = CT.check(d, LZ.card_of(body), standing(rep, d), h)
+        self.last_contract = {"lens": lens_id, "broken": broken}
+        h = h.replace(CONTRACT, contract_html(broken), 1)
         query = {"op": "lineage", "target": d["lineage"], "lens": lens_id, "with": self.other_roots(store)}
         return 200, page(d["label"], h, foot(store, rep, query))
 
