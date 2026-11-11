@@ -302,6 +302,13 @@ MUTANTS = [
     ('A152', 'warrant_agent/serve.py', '        return [(n, r["_error"]) for n, r in sorted(self.reports().items()) if "_error" in r]', '        return []', AGENT, ['AU2']),
     ('A153', 'warrant_agent/serve.py', '        moved = [(sc, a, b) for sc, a, b in moved if (a and a[1]) != (b and b[1])]', '        moved = []', AGENT, ['AU3']),
     ('A154', 'warrant_agent/serve.py', "script-src 'none'; form-action", "script-src 'unsafe-inline'; form-action", AGENT, ['SV5']),
+    ('A155', 'warrant_agent/overlay.py', '        if len(distinct) == 1:\n', '        if True:\n', AGENT, ['OV3']),
+    ('A156', 'warrant_agent/overlay.py', '        if actor in keys:\n            continue\n', '        pass\n', AGENT, ['OV3']),
+    ('A157', 'warrant_agent/overlay.py', '    lines = sorted({raw for s in snaps.values() for raw in s.raw})', '    lines = sorted(next(iter(snaps.values())).raw)', AGENT, ['OV1']),
+    ('A158', 'warrant_agent/overlay.py', '"trust": C.doc_id(trust), "profile": C.doc_id(profile), "code": code})', '"trust": C.doc_id(trust), "code": code})', AGENT, ['OV2']),
+    ('A159', 'warrant_agent/serve.py', '        trust, profile, _ = Repo(self.space.roots[self.mine]).config()', '        trust, profile, _ = Repo(self.space.roots[store]).config()', AGENT, ['OV4']),
+    ('A160', 'warrant_agent/serve.py', ' if x["lineage"] in base["lineages"]]', ']', AGENT, ['OV5']),
+    ('A161', 'warrant_agent/serve.py', '        unnamed = [r for r in asked if not p["roles"].get(r)]', '        unnamed = []', AGENT, ['OV5']),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

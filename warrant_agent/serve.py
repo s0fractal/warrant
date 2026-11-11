@@ -35,6 +35,7 @@ from warrant_agent import changes as CH
 from warrant_agent import fragile as FR
 from warrant_agent import lens as LZ
 from warrant_agent import observe as OB
+from warrant_agent import overlay as OVL
 from warrant_agent import view as VW
 from warrant_agent.observe import DIMENSIONS, NOTE_MAX
 from warrant_agent import scene as SC
@@ -302,7 +303,7 @@ def page(title_, body, footer=""):
     return (f'<!doctype html><html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,'
             f'initial-scale=1"><title>{E(title_)}</title><style>{CSS}</style></head><body><header><a href="/">warrant</a>'
             f'<nav><a href="/">Стрічка</a><a href="/changes">Що змінилось</a><a href="/whatif">Що було б</a><a href="/fragile">Крихке</a>'
-            f'<a href="/wait">Чекає на мене</a>'
+            f'<a href="/overlay">Для мене</a><a href="/wait">Чекає на мене</a>'
             f'<a href="/stores">Сховища</a></nav></header>'
             f'<main>{body}</main><footer>{footer}</footer></body></html>')
 
@@ -799,6 +800,43 @@ class App:
         return 200, page(WHATIF, h, foot(store, self.space.report(store),
                                               {"op": "whatif", "without": without, "with": self.other_roots(store)}))
 
+    def page_overlay(self, q):
+        """A store as the reader reads it with the other stores the reader chose, under the reader's own trust and roles
+        (overlay.py): beside the store's own verdict, never in its place; each lineage that reads otherwise, why."""
+        h = ('<h2>Для мене: з усіма джерелами, за моїми правилами</h2><p class="rest">Сховище читається разом із вибраними '
+             'тобою сховищами, за довірою й ролями з твого власного сховища. Вердикт сховища за його правилами лишається; '
+             'поруч — твій, з власною ідентичністю. Чого нема у вибраних сховищах, тут нема.</p>')
+        if self.mine not in self.space.roots:
+            return 400, page("Для мене", h + "<p>Потрібне твоє сховище (<code>--mine</code>): його довіра й ролі — твої правила.</p>")
+        store = q.get("store") or next((n for n in self.space.roots if n != self.mine), None)
+        readable = [n for n, r in self.reports().items() if "_error" not in r]
+        if store not in readable:
+            return 404, page("Для мене", h + f"<p>Немає такого сховища: {E(str(store))}.</p>")
+        chosen = [n for n in (q.get("with").split(",") if q.get("with") else readable) if n in readable and n != store]
+        names = [store] + chosen
+        snaps = {n: Repo(self.space.roots[n]).store.snapshot() for n in names}
+        trust, profile, _ = Repo(self.space.roots[self.mine]).config()
+        t, p, conflicts = OVL.receiver(trust, profile, {n: Repo(self.space.roots[n]).config()[0] for n in names})
+        over = OVL.assess(snaps, t, p)
+        base = self.space.report(store)
+        card = lambda schema: LZ.card_of(self.pick(schema, None)[1])
+        rows = [x for x in VW.delta(sys.modules[__name__], base, over, card)[0] if x["lineage"] in base["lineages"]]
+        ident = OVL.identity(snaps, t, p, over["code"])
+        asked = sorted({r for v in base["versions"].values() for r in v.get("roles", [])})
+        unnamed = [r for r in asked if not p["roles"].get(r)]
+        picks = " · ".join(f'<a href="/overlay?store={quote(n)}">{E(n)}</a>' for n in readable if n != self.mine)
+        h += (f'<p class="rest">сховище: {picks}</p><div class="card"><b>{E(store)}</b> разом із {E(", ".join(chosen) or "нічим")} · '
+              f'за правилами сховища <b>{E(self.mine)}</b> · змінилось для тебе ліній: {len(rows)} · ідентичність '
+              f'<code title="{E(ident)}">{E(ident[:12])}</code><p class="rest">кожна лінія: у {E(store)} за його правилами → для тебе</p>'
+              + (f'<p><b class="PENDING">твої правила не називають, хто має ці ролі: {E(", ".join(unnamed))}</b>: '
+                 f'версії, яких вони чекають, для тебе не прийняті (впиши ролі в .warrant/v3.json сховища {E(self.mine)})</p>'
+                 if unnamed else "")
+              + (f'<p><b class="PENDING">не прийнято прив\'язок ключів: {len(conflicts)}</b> ('
+                 + E("; ".join(f"{a}: {', '.join(sorted(by))}" for a, by in conflicts)) + '): сховища не згодні, чий це ключ</p>'
+                 if conflicts else "")
+              + "".join(change_html(over, store, x, self.reports()) for x in rows[:200]) + END)
+        return 200, page("Для мене", h, foot(store, base, {"op": "overlay", "with": self.other_roots(store), "overlay": ident}))
+
     def page_fragile(self, q=None):
         """Where attention went and where one objection holds against it (warrant_agent/fragile.py)."""
         found = FR.rows(sys.modules[__name__], self.reports())
@@ -934,6 +972,8 @@ def handler(app, port):
                     self.send(200, app.page_feed(q))
                 elif parts == ["changes"]:
                     self.send(200, app.page_changes(q))
+                elif parts == ["overlay"]:
+                    self.send(*app.page_overlay(q))
                 elif parts == ["whatif"]:
                     self.send(*app.page_whatif(q))
                 elif parts == ["fragile"]:
