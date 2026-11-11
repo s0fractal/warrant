@@ -91,17 +91,43 @@ def verdict_of(rep, x):
 
 
 def elsewhere(reports, store, d):
-    """{version id: [item]} of the observations filed in other stores on this lineage's versions (a reader's own store
-    holds them for records of every other one), each naming its store and verdict."""
+    """{version id: [item]} of the observations and the challenges filed in other stores on this lineage's versions (a
+    reader's own store holds observations for records of every other one; the commons holds the voices of agents with
+    no rights, commons.py), each naming its store. A challenge from another store is a voice from outside: this store's
+    rules do not count it, a reader's overlay may."""
     vs, out = {v["id"] for v in d["versions"]}, {}
     for name, r in sorted(reports.items()):
         if name == store or "_error" in r:
             continue
-        for i, x in r["_recs"].items():
-            b = x["body"]
-            kind = KINDS.get(b.get("verdict"))
-            if x["kind"] == "attest" and kind is not None and b.get("target") in vs:
-                out.setdefault(b["target"], []).append(
-                    {"id": i, "at": x["at"], "challenge": None, "note": b.get("note"), "store": name, "verdict": b["verdict"],
-                     "sentence": (x["actor"], f"{kind.verb} (у {name})", "", kind.rest(b))})
+        for i in sorted({i for v in vs for i in _by_target(r).get(v, [])}):
+            item = _item(name, i, r["_recs"][i])
+            if item is not None:
+                out.setdefault(r["_recs"][i]["body"]["target"], []).append(item)
     return out
+
+
+def _by_target(r):
+    """{target: [record ids]} of a report's attests and challenges, built once and kept on the report."""
+    if "_by_target" not in r:
+        idx = {}
+        for i, x in r["_recs"].items():
+            if x["kind"] in ("attest", "challenge") and isinstance(x["body"].get("target"), str):
+                idx.setdefault(x["body"]["target"], []).append(i)
+        r["_by_target"] = idx
+    return r["_by_target"]
+
+
+def _item(name, i, x):
+    """A record of store `name` about a version, as a lineage page's item: an observation, or a challenge (a voice from
+    outside, never counted by the page's store); None for anything else."""
+    b = x["body"]
+    kind = KINDS.get(b.get("verdict"))
+    if x["kind"] == "attest" and kind is not None:
+        return {"id": i, "at": x["at"], "challenge": None, "note": b.get("note"), "store": name, "verdict": b["verdict"],
+                "sentence": (x["actor"], f"{kind.verb} (у {name})", "", kind.rest(b))}
+    if x["kind"] == "challenge":
+        # a voice from outside (the commons, or any other store): shown, never counted by this store's rules
+        return {"id": i, "at": x["at"], "note": None, "store": name, "verdict": None,
+                "challenge": {"target": b["target"], "counted": False, "stands": False, "replays": [], "outside": name},
+                "sentence": (x["actor"], f"заперечив (у {name})", "", str(b.get("statement", "")))}
+    return None

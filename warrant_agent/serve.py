@@ -330,6 +330,8 @@ def grounded_html(rep, store, g):
 def challenge_state(c):
     if c is None:
         return ""
+    if c.get("outside"):
+        return " · голос ззовні: правила цього сховища його не рахують"
     out = " · " + ("зараховане" if c.get("counted") else "не зараховане")
     if c.get("stands"):
         out += ", стоїть"
@@ -338,8 +340,14 @@ def challenge_state(c):
     return out
 
 
+def who(actor):
+    """An actor as a page shows it: a key that names itself (`key:<hex>`) by its first and last characters."""
+    return f"{actor[:12]}…{actor[-4:]}" if actor.startswith("key:") and len(actor) > 24 else actor
+
+
 def on_html(rep, x):
     a, verb, _, rest = x["sentence"]
+    a = who(a)
     note = x["note"] if "note" in x else rep["_recs"][x["id"]]["body"].get("note")
     return (f'<div class="item"><span class="when">{when(x["at"])}</span> <span class="actor">{E(a)}</span> '
             f'{E(verb)}{E(challenge_state(x["challenge"]))}' + (f' <span class="rest">— {E(rest)}</span>' if rest else "")

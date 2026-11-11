@@ -20,7 +20,7 @@ def challenges_on(rep, d):
             c = x["challenge"]
             if c is None:
                 continue
-            r = rep["_recs"].get(x["id"]) or {"actor": "?", "body": {}}
+            r = rep["_recs"].get(x["id"]) or {"actor": x["sentence"][0], "body": {"statement": x["sentence"][3]}}
             out.append({"id": x["id"], "actor": r["actor"], "statement": r["body"].get("statement", ""),
                         "counted": bool(c.get("counted")), "stands": bool(c.get("stands")), "version": v["id"],
                         "reproduced": any(on == c["target"] and verdict == "reproduces" for on, verdict, _ in c["replays"])})
@@ -58,11 +58,13 @@ def rows(serve, reports):
             continue
         for L in sorted(rep["lineages"]):
             d = serve.lineage(rep, L)
-            if d is None or not any(x["challenge"] is not None for v in d["versions"] for x in v["on"]):
+            if d is None:
                 continue
-            elsewhere = serve.reactions_elsewhere(reports, name, d)
+            elsewhere = serve.reactions_elsewhere(reports, name, d)      # observations and voices from other stores
             for v in d["versions"]:
                 v["on"] = sorted(v["on"] + elsewhere.get(v["id"], []), key=lambda x: (x["at"], x["id"]))
+            if not any(x["challenge"] is not None for v in d["versions"] for x in v["on"]):
+                continue
             out.append({"store": name, "lineage": L, "label": d["label"], "title": d["title"],
                         "attention": attention(rep, d, serve._is_view), "challenges": challenges_on(rep, d)})
     out.sort(key=lambda r: (-len(r["attention"]["all"]), -sum(credited(c) for c in r["challenges"]), r["store"], r["lineage"]))
