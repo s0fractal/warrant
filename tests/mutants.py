@@ -312,8 +312,10 @@ MUTANTS = [
     ('A162', 'warrant_agent/commons.py', '    if not (isinstance(target, str) and S.hex64(target)):', '    if False:', AGENT, ['CM5']),
     ('A163', 'warrant_agent/commons.py', '    if not 0 < len(statement) <= STATEMENT_MAX:', '    if False:', AGENT, ['CM5']),
     ('A164', 'warrant_agent/commons.py', 'os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)', 'os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)', AGENT, ['CM1']),
-    ('A165', 'warrant_agent/observe.py', '            elif x["kind"] == "challenge" and b.get("target") in vs:', '            elif False:', AGENT, ['CM2']),
+    ('A165', 'warrant_agent/observe.py', '    if x["kind"] == "challenge":\n        # a voice', '    if False:\n        # a voice', AGENT, ['CM2']),
     ('A166', 'warrant_agent/serve.py', '    if c.get("outside"):\n        return " · голос ззовні', '    if False:\n        return " · голос ззовні', AGENT, ['CM2']),
+    ('A167', 'warrant_agent/commons.py', '        if not is_commons(doc):', '        if False:', AGENT, ['CM6']),
+    ('A168', 'warrant_agent/commons.py', '    if store is not None and p.resolve().is_relative_to(Path(store).resolve()):', '    if False:', AGENT, ['CM6']),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

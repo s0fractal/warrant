@@ -1574,6 +1574,17 @@ def commons_cases():
             refused.append(isinstance(e, CM.Refused))
     check("CM5 the commons refuses what is no voice: a target that is no record id, an empty statement, one beyond "
           f"{CM.STATEMENT_MAX} characters", refused == [True, True, True], refused)
+    outcomes = []
+    for attempt in (lambda: CM.say(r.root, d, "фе into a store that trusts", stranger, at=1_900_000_020),
+                    lambda: CM.seed(commons / "inside.seed", commons)):
+        try:                                 # a crash is this case's FAIL; only the commons' own refusal counts
+            attempt()
+            outcomes.append(False)
+        except Exception as e:
+            outcomes.append(isinstance(e, CM.Refused))
+    check("CM6 a voice is written only into a commons (a store that trusts nobody and gives nobody a role): pointed at "
+          "a project's store it is refused, nothing appended; a seed inside the store it writes to is refused",
+          outcomes == [True, True] and r.store.file.read_bytes() == w_bytes, outcomes)
 
 
 if __name__ == "__main__":

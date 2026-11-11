@@ -39,10 +39,24 @@ class Refused(Exception):
     pass
 
 
+def is_commons(doc):
+    """Whether a store's configuration is a commons: it trusts nobody and gives nobody a role."""
+    return (isinstance(doc, dict) and doc.get("warrant") == "repository/3" and isinstance(doc.get("trust"), dict)
+            and doc["trust"].get("keys") == {} and isinstance(doc.get("profile"), dict) and doc["profile"].get("roles") == {})
+
+
 def init(store):
-    """A commons store at `store` (a directory holding `.warrant/`): trusting nobody, no roles; an existing one as it is."""
-    dot = Path(store) / ".warrant"
+    """A commons store at `store` (a directory holding `.warrant/`): trusting nobody, no roles. An existing store is used
+    only when it is a commons: a voice is never written into a store that trusts someone (an agent pointing `--store` at
+    a project's store is refused, not appended to)."""
+    dot = Path(store).resolve() / ".warrant"   # NOSONAR S8707: the agent names its own commons; any other store is refused below
     if (dot / "v3.json").exists():
+        try:
+            doc = json.loads((dot / "v3.json").read_text())
+        except ValueError:
+            doc = None
+        if not is_commons(doc):
+            raise Refused(f"{dot.parent} is no commons: its store trusts someone or gives a role; a voice goes to a commons")
         return dot
     dot.mkdir(parents=True, exist_ok=True)
     (dot / "v3.json").write_text(json.dumps(DOC, indent=1, sort_keys=True) + "\n")
@@ -50,11 +64,14 @@ def init(store):
     return dot
 
 
-def seed(path):
-    """The agent's key from its seed file, made (0600) on first use; refused when the file is a link."""
-    p = Path(path)
+def seed(path, store=None):
+    """The agent's key from its seed file, made (0600) on first use; refused when the file is a link, or lies inside the
+    store it would write to (a seed lives outside every store)."""
+    p = Path(path)   # NOSONAR S8707: the agent's own seed file, refused below when it is a link or inside the store
     if p.is_symlink():
         raise Refused(f"{p}: a seed is a regular file, not a link")
+    if store is not None and p.resolve().is_relative_to(Path(store).resolve()):
+        raise Refused(f"{p}: a seed lives outside the store it writes to")
     if not p.exists():
         p.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -105,7 +122,7 @@ def main(argv=None):
         if a.cmd == "init":
             print(init(a.store))
         elif a.cmd == "say":
-            key = seed(a.seed)
+            key = seed(a.seed, a.store)
             print(json.dumps({"filed": say(a.store, a.target, a.statement, key), "actor": "key:" + key.public}))
         else:
             for i, actor, target, text in voices(a.store):
