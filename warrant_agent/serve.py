@@ -442,17 +442,35 @@ def lens_objections(reports, lens_store, lens_id):
     return [title(r, c, LZ.MAX_NAME * 8) for c, x in sorted(r["challenges"].items()) if x["target"] == lens_id]
 
 
+def sources(rep, store, d):
+    """Who stands behind a lineage, from what the page holds: its authors (who filed its versions), the other actors
+    who filed an attest or a challenge on one of them (here or in another store read), and the stores those records
+    are in. It shows how many voices there are, never that the record is complete: a source that kept silent leaves
+    nothing to count."""
+    authors = sorted({v["record"]["actor"] for v in d["versions"]})
+    others = sorted({x["sentence"][0] for v in d["versions"] for x in v["on"]} - set(authors))
+    stores = sorted({store} | {x["store"] for v in d["versions"] for x in v["on"] if x.get("store")})
+    return authors, others, stores
+
+
+def sources_html(rep, store, d):
+    authors, others, stores = sources(rep, store, d)
+    who = (f'інші учасники: {E(", ".join(others))}' if others
+           else '<b class="PENDING">лише автор: ніхто інший не прийняв, не заперечив і не відреагував</b>')
+    return f'<p class="rest">джерела: автор {E(", ".join(authors))} · {who} · сховищ: {len(stores)}</p>'
+
+
 def floor_html(rep, store, d, used, note="", objections=()):
     """What no lens decides: state and reliance, every counted challenge that stands with its statement, that
     completeness is UNATTESTED, which lens drew the page (a portal: the same root and lens give this page), and
-    every challenge against that lens."""
+    every challenge against that lens, and who stands behind the lineage (`sources`)."""
     held = standing(rep, d)
     rows = "".join(f"<li>{E(title(rep, c, LZ.MAX_NAME * 8))} <span class='rest'>(на {E(v[:12])})</span></li>" for c, v in held)
     lens_id, lens_name = used
     portal = f'/l/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}'
     return (f'<h2>{E(d["label"])}: {E(d["title"])}</h2><p>{E(d["schema"])} · стан <b>{E(str(d["state"]))}</b> · '
             f'опора {tag(d["reliance"])} · заперечень, що стоять: <b>{len(held)}</b> · повнота {tag("UNATTESTED")}</p>'
-            + (f'<ul class="standing">{rows}</ul>' if held else "")
+            + (f'<ul class="standing">{rows}</ul>' if held else "") + sources_html(rep, store, d)
             + f'<p class="rest">вигляд: лінза «{E(lens_name)}» · <a href="{portal}">відтворити цей вигляд</a> · '
             f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}">карта</a>{note}'
             + (f' · <b class="CHALLENGED">заперечень на цю лінзу: {len(objections)}</b>' if objections else "") + "</p>"
@@ -620,6 +638,7 @@ class App:
             return 404, page(MISSING, f"<p>Немає лінії з записом <code>{E(i)}</code> у {E(store)}.</p>")
         q = q or {}
         lens_id, body, note, lens_store = self.pick(d["schema"], q.get("lens"))
+        self.with_elsewhere(store, d)
         h = (floor_html(rep, store, d, (lens_id, body["name"]), note, lens_objections(self.reports(), lens_store, lens_id))
              + grounded_html(rep, store, d["grounded"]))
         if q.get("vs") and d["schema"] != LZ.LENS:
@@ -639,7 +658,6 @@ class App:
                 h += self.adopt_form(store, d["leaf"])
         if self.actor and self.key and d["leaf"]:
             h += self.form(store, d["leaf"])
-        self.with_elsewhere(store, d)
         h += versions_html(rep, d, LZ.card_of(body))
         query = {"op": "lineage", "target": d["lineage"], "lens": lens_id, "with": self.other_roots(store)}
         return 200, page(d["label"], h, foot(store, rep, query))

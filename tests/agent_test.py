@@ -1230,6 +1230,13 @@ def changes_cases():
           "its witness, and the reaction is not counted among the records that changed nothing",
           "seen from my own store" in seen_page and "відреагував на (у me)" in seen_page
           and "не змінили нічого, що ти бачиш: 0" in seen_page, __import__("re").sub("<[^>]+>", " ", seen_page[seen_page.find("</form>"):])[:600])
+    lone = r.entity("alice", "obligation@1", {"state": "open", "statement": "nobody else spoke", "serves": []})
+    page_o, page_lone = bob.page_lineage("w", o)[1], bob.page_lineage("w", lone)[1]
+    check("SV8 the floor names who stands behind a lineage: its authors, every other actor who filed on it here or in "
+          "another store read, and how many stores; a lineage only its author spoke about says so, under any lens",
+          "автор alice" in page_o and "інші учасники:" in page_o and "bob" in page_o.split("інші учасники:")[1][:80]
+          and "сховищ: 2" in page_o and "лише автор" in page_lone and "сховищ: 1" in page_lone
+          and "лише автор" in bob.page_lineage("w", lone, {"lens": "builtin"})[1], page_lone[:0])
     lost = SV.App(two, "bob", KEYS["bob"], mine="nowhere")
     w_now, me_now = len(two.report("w")["_recs"]), len(two.report("me")["_recs"])
     try:                                   # a crash is this case's FAIL, never a missing line
