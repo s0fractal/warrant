@@ -19,7 +19,6 @@ from warrant import home as H
 from warrant import repo as RP
 from warrant import records as R
 from warrant import engine as EN
-from warrant import graph as G
 from warrant.store import Snapshot
 
 DAY = 86400
@@ -51,66 +50,8 @@ def report_of(root, snap):
     return rep
 
 
-def floor(serve, rep, d):
-    g = d["grounded"]
-    return {"state": d["state"], "reliance": d["reliance"], "standing": serve.standing(rep, d),
-            "grounded": None if g is None else g["grounded"]}
-
-
-def candidates(rep0, rep1, touched_from_elsewhere=()):
-    """({lineage: the new records touching it}, new record ids): the lineages of rep1 a new record touches (an entity
-    of it, an attest or a challenge on one of its versions), those a new record of another store points at (a
-    reaction in a reader's own store), and those whose state, reliance or leaf moved (G.delta: a record elsewhere
-    can move them)."""
-    new = set(rep1["_recs"]) - set(rep0["_recs"])
-    roots = {v: L for L, lin in rep1["lineages"].items() for v in lin["versions"]}
-    out = {}
-    for i in new:
-        r = rep1["_recs"][i]
-        t = r["body"].get("target") if r["kind"] in ("attest", "challenge") else i
-        if t in roots:
-            out.setdefault(roots[t], set()).add(i)
-    for i, t in touched_from_elsewhere:
-        if t in roots:
-            out.setdefault(roots[t], set()).add(i)
-    d = G.delta(rep0, rep1)
-    for L in set(d["changed"]) | set(d["lineages_added"]):
-        out.setdefault(L, set())
-    return out, new
-
-
-def _with(d, foreign):
-    """`d` with the items filed in other stores (`foreign(d)`: {version: [item]}) among each version's activity."""
-    if d is None or foreign is None:
-        return d
-    extra = foreign(d)
-    for v in d["versions"]:
-        v["on"] = sorted(v["on"] + extra.get(v["id"], []), key=lambda x: (x["at"], x["id"]))
-    return d
-
-
-def delta(serve, rep0, rep1, card_of_schema, foreign0=None, foreign1=None, touched_from_elsewhere=()):
-    """([{lineage, schema, title, label, appeared, vanished, floor_before, floor_after}] of the lineages whose page
-    differs for the reader, the new record ids (of this store and of others) that those changes account for): two
-    states are the same for the reader on a lineage when its floor and what its lens draws are the same. A page
-    shows reactions filed in other stores, so each state is read with that state's reactions (foreign0, foreign1)."""
-    from warrant_agent import lens as LZ
-    touched, _ = candidates(rep0, rep1, touched_from_elsewhere)
-    rows, accounted = [], set()
-    for L in sorted(touched):
-        d1 = _with(serve.lineage(rep1, L), foreign1)
-        if d1 is None:
-            continue
-        card = card_of_schema(d1["schema"])
-        v1, f1 = LZ.visible(d1, card), floor(serve, rep1, d1)
-        d0 = _with(serve.lineage(rep0, L), foreign0) if L in rep0["lineages"] else None
-        v0, f0 = (LZ.visible(d0, card), floor(serve, rep0, d0)) if d0 else (set(), None)
-        if v0 == v1 and f0 == f1:
-            continue
-        accounted |= touched[L] | {i for i, _ in v1 - v0}
-        rows.append({"lineage": L, "schema": d1["schema"], "title": d1["title"], "label": d1["label"],
-                     "appeared": sorted(v1 - v0), "vanished": sorted(v0 - v1), "floor_before": f0, "floor_after": f1})
-    return rows, accounted
+# What changed is the general comparison of two views (view.py) with time varied: the marked past, and now.
+from warrant_agent.view import candidates, delta  # noqa: E402,F401  (changes.delta stays this module's name)
 
 
 class Marks:

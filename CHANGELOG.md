@@ -6,6 +6,14 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- Two general forms under `warrant serve`: observations (`observe.py`: reactions, views and adoptions are one record
+  kind registry) and differences of views (`view.py`: `/changes`, the lens comparison, the floor's sources and
+  fragility are one comparison with time, lens, sources or records varied). New: `/whatif` («Що було б»), after
+  minds' `what_if`: a store without its challenges or one actor's records, assessed on a candidate by the same
+  engine, every changed lineage with its witness and one digest (equal consequences, equal digest); `/fragile` shows
+  what each lineage's objections move. Pages are byte-identical before and after but for what is new. Tests
+  WI1–WI3, mutants A144–A147; ten mutants retargeted to the lines' new homes.
+
 - `/fragile`: the lineages someone objected to, the most attended first, each objection beside the attention it met
   and its fate (counted, standing, reproduced); «Хто вказав» names whoever filed a reproduced or standing challenge
   with the attention of what it held against. Recognition read from the records, never a score a guard reads. Tests

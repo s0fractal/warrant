@@ -27,7 +27,6 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from warrant import jcs as C
 from warrant import graph as G
-from warrant import shapes as S
 from warrant import home as H
 from warrant import records as R
 from warrant.repo import Failed, Repo, load_key
@@ -35,13 +34,13 @@ from warrant_agent import glossary as GL
 from warrant_agent import changes as CH
 from warrant_agent import fragile as FR
 from warrant_agent import lens as LZ
+from warrant_agent import observe as OB
+from warrant_agent import view as VW
+from warrant_agent.observe import DIMENSIONS, NOTE_MAX
 from warrant_agent import scene as SC
 
-DIMENSIONS = (("agree", -100, 100, "згода"), ("confidence", 0, 100, "впевненість"),
-              ("importance", 0, 100, "важливість"), ("evidence", 0, 100, "якість доказу"))
 MACHINES = ("claims-checker", "review-replayer")        # actors that sign by program; hidden from the feed by default
 ADAPTER = "warrant-serve/0:" + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-NOTE_MAX = 4000
 
 
 def is_machine(actor):
@@ -103,8 +102,7 @@ def label(rep, i):
     return (r.get("schema") or r["kind"]).split("@")[0]
 
 
-def dims(body):
-    return {k: body[k] for k, lo, hi, _ in DIMENSIONS if R.is_int(body.get(k)) and lo <= body[k] <= hi}
+dims = OB.dims
 
 
 ENTITY_VERBS = {("obligation", "open"): "відкрив обов'язок", ("obligation", "done"): "закрив обов'язок",
@@ -131,9 +129,7 @@ def _entity_sentence(rep, i, r):
     return r["actor"], verb, _about(rep, i), rest
 
 
-def _dimensions_text(body):
-    d = dims(body)
-    return ", ".join(f"{n} {d[x]:+d}" if x == "agree" else f"{n} {d[x]}" for x, _, _, n in DIMENSIONS if x in d)
+_dimensions_text = OB.dimensions_text
 
 
 def sentence(rep, i):
@@ -168,21 +164,7 @@ def feed(rep, limit=200, actor=None, machines=False):
     return out[:limit]
 
 
-def reactions_elsewhere(reports, store, d):
-    """{version id: [item]} of the reactions and views on this lineage's versions filed in other stores (a reader's own
-    store holds them for records of every other one), each item naming the store it was filed in."""
-    vs, out = {v["id"] for v in d["versions"]}, {}
-    for name, r in sorted(reports.items()):
-        if name == store or "_error" in r:
-            continue
-        for i, x in r["_recs"].items():
-            b = x["body"]
-            if x["kind"] == "attest" and b.get("verdict") in ("react", "seen") and b.get("target") in vs:
-                verb = "відреагував" if b["verdict"] == "react" else "переглянув"
-                out.setdefault(b["target"], []).append(
-                    {"id": i, "at": x["at"], "challenge": None, "note": b.get("note"), "store": name, "seen": b["verdict"] == "seen",
-                     "sentence": (x["actor"], f"{verb} (у {name})", "", _dimensions_text(b))})
-    return out
+reactions_elsewhere = OB.elsewhere          # every observation filed in other stores (observe.py)
 
 
 def lineage(rep, i):
@@ -221,27 +203,8 @@ def waiting(rep, actor):
 
 
 def reaction_body(target, form):
-    """The body of a reaction from a submitted form, or a reason it is none."""
-    body = {"target": target, "verdict": "react"}
-    for k, lo, hi, _ in DIMENSIONS:
-        raw = form.get(k, "")
-        if raw == "":
-            continue
-        try:
-            n = int(raw)
-        except ValueError:
-            return None, f"{k} is not an integer"
-        if not lo <= n <= hi:
-            return None, f"{k} lies outside {lo}..{hi}"
-        body[k] = n
-    note = form.get("note", "").strip()
-    if len(note) > NOTE_MAX:
-        return None, f"a note is at most {NOTE_MAX} characters"
-    if note:
-        body["note"] = note
-    if len(body) == 2:
-        return None, "a reaction names one dimension or a note"
-    return body, None
+    """The body of a reaction from a submitted form, or a reason it is none (observe.py's `react`)."""
+    return OB.body("react", None, target, form)
 
 
 def lens(rep, query):
@@ -333,7 +296,8 @@ def item(store, x, show_store=True):
 def page(title_, body, footer=""):
     return (f'<!doctype html><html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,'
             f'initial-scale=1"><title>{E(title_)}</title><style>{CSS}</style></head><body><header><a href="/">warrant</a>'
-            f'<nav><a href="/">Стрічка</a><a href="/changes">Що змінилось</a><a href="/fragile">Крихке</a><a href="/wait">Чекає на мене</a>'
+            f'<nav><a href="/">Стрічка</a><a href="/changes">Що змінилось</a><a href="/whatif">Що було б</a><a href="/fragile">Крихке</a>'
+            f'<a href="/wait">Чекає на мене</a>'
             f'<a href="/stores">Сховища</a></nav></header>'
             f'<main>{body}</main><footer>{footer}</footer></body></html>')
 
@@ -446,22 +410,25 @@ def lens_objections(reports, lens_store, lens_id):
 
 
 def _is_view(rep, x):
-    if "seen" in x:
-        return x["seen"]
-    r = rep["_recs"].get(x["id"])
-    return bool(r and r["kind"] == "attest" and r["body"].get("verdict") == "seen")
+    return OB.verdict_of(rep, x) == "seen"
 
 
 def sources(rep, store, d):
-    """Who stands behind a lineage, from what the page holds: its authors (who filed its versions); the other actors
-    who spoke on one of them (an attest or a challenge, here or in another store read); those who only signed that
-    they saw it (`verdict: seen`); and the stores those records are in. It counts voices, never completeness: a source
-    that kept silent leaves nothing to count, but a reader who saw and kept silent does."""
+    """Who stands behind a lineage: its authors (who filed its versions); the other actors who spoke on one of them
+    (an attest or a challenge, here or in another store read); those who only signed that they saw it (`seen`); and the
+    stores those records are in. It is the general comparison of two views (view.py) with the sources varied: the page
+    holding only its authors' own records, and the page as it is; what appears between them is everyone else. It
+    counts voices, never completeness: a source that kept silent leaves nothing to count, a reader who saw does."""
+    from warrant_agent import view as VW
     authors = sorted({v["record"]["actor"] for v in d["versions"]})
-    items = [x for v in d["versions"] for x in v["on"]]
-    spoke = sorted({x["sentence"][0] for x in items if not _is_view(rep, x)} - set(authors))
-    saw = sorted({x["sentence"][0] for x in items if _is_view(rep, x)} - set(authors))
-    stores = sorted({store} | {x["store"] for x in items if x.get("store")})
+    items = {x["id"]: x for v in d["versions"] for x in v["on"]}
+    full = dict(LZ.card_of(LZ.BUILTIN), activity="shown")
+    alone = VW.observe(sys.modules[__name__], rep, d, full, keep=lambda x: x["sentence"][0] in authors)
+    others = [items[i] for i, member in VW.difference(alone, VW.observe(sys.modules[__name__], rep, d, full))["appeared"]
+              if not member and i in items]
+    spoke = sorted({x["sentence"][0] for x in others if not _is_view(rep, x)})
+    saw = sorted({x["sentence"][0] for x in others if _is_view(rep, x)})
+    stores = sorted({store} | {x["store"] for x in items.values() if x.get("store")})
     return authors, spoke, saw, stores
 
 
@@ -587,8 +554,8 @@ class App:
             pointing = [(i, now[m]["_recs"][i]["body"].get("target")) for m in now if m != n for i in new[m]
                         if now[m]["_recs"][i]["kind"] == "attest" and now[m]["_recs"][i]["body"].get("verdict") == "react"]
             rows, acc = CH.delta(sys.modules[__name__], past[n], now[n], card,
-                                 foreign0=lambda d, n=n: reactions_elsewhere(past, n, d),
-                                 foreign1=lambda d, n=n: reactions_elsewhere(now, n, d), touched_from_elsewhere=pointing)
+                                 foreign_a=lambda d, n=n: reactions_elsewhere(past, n, d),
+                                 foreign_b=lambda d, n=n: reactions_elsewhere(now, n, d), touched_from_elsewhere=pointing)
             results[n] = rows
             accounted |= acc
         h, foots = "", []
@@ -776,9 +743,45 @@ class App:
             foots.append(foot(n, rep, {"op": "frontier", "actor": actor}))
         return page("Чекає", h, "<br>".join(foots))
 
+    def hypothesis(self, store, without):
+        """view.what_if of one store under hypothesis `without`, or None when the store or the hypothesis is unknown."""
+        rep = self.space.report(store) if store in self.space.roots else {"_error": "no such store"}
+        drop = None if "_error" in rep else VW.dropped(rep, without)
+        if drop is None:
+            return None
+        card = lambda schema: LZ.card_of(self.pick(schema, None)[1])
+        return VW.what_if(sys.modules[__name__], self.space.roots[store], Repo(self.space.roots[store]).store.snapshot(),
+                          drop, card, now=rep)
+
+    def page_whatif(self, q):
+        """What would follow if a store held none of some records: assessed by the same engine on a candidate, nothing
+        filed (view.what_if, after minds' what_if)."""
+        store, without = q.get("store"), q.get("without", "challenges")
+        presets = " · ".join(f'<a href="/whatif?store={quote(n)}&amp;without=challenges">{E(n)}: без заперечень</a>'
+                             for n in self.space.roots)
+        h = ('<h2>Що було б, якби…</h2><p class="rest">Сховище без деяких записів, оцінене тим самим рушієм на кандидаті: '
+             'нічого не записано і нічого не зрушено. Показано кожну лінію, чий вигляд змінюється, зі свідком; однакові '
+             f'наслідки дають однаковий дайджест (як what_if у minds).</p><p class="rest">{presets}</p>')
+        if not store:
+            return 200, page("Що було б", h)
+        found = self.hypothesis(store, without)
+        if found is None:
+            return 404, page("Що було б", h + f"<p>Невідоме сховище або гіпотеза: {E(store)}, {E(without)}.</p>")
+        h += (f'<div class="card"><b>{E(store)}</b> {E(VW.HYPOTHESES.get(without.split(":")[0], without))}'
+              f'{E(without[6:]) if without.startswith("actor:") else ""} · прибрано записів: {found["dropped"]} · '
+              f'змінилось ліній: {len(found["rows"])} · дайджест <code>{E(found["digest"][:12])}</code>'
+              '<p class="rest">кожна лінія: від гіпотези до того, як є</p>'
+              + "".join(change_html(self.space.report(store), store, x, self.reports()) for x in found["rows"][:300]) + END)
+        return 200, page("Що було б", h, foot(store, self.space.report(store), {"op": "whatif", "without": without}))
+
     def page_fragile(self, q=None):
         """Where attention went and where one objection holds against it (warrant_agent/fragile.py)."""
         found = FR.rows(sys.modules[__name__], self.reports())
+        moves = {}
+        for n in sorted({r["store"] for r in found}):
+            hyp = self.hypothesis(n, "challenges")
+            for x in (hyp or {"rows": []})["rows"]:
+                moves[(n, x["lineage"])] = _floor_moves(x["floor_before"], x["floor_after"])
         def status(c):
             if c["reproduced"]:
                 return '<b class="CHALLENGED">відтворене</b>'
@@ -792,7 +795,9 @@ class App:
             a = r["attention"]
             h += (f'<div class="card">{link_l(r["store"], r["lineage"], E(r["label"] + ": " + r["title"]))} '
                   f'<span class="rest">({E(r["store"])}) · увага: {len(a["all"])} (бачили {len(a["saw"])}, прийняли '
-                  f'{len(a["accepted"])}, відреагували {len(a["reacted"])})</span><ul>'
+                  f'{len(a["accepted"])}, відреагували {len(a["reacted"])})</span>'
+                  + (f'<p class="rest">що зрушують заперечення (без них → з ними): {"; ".join(moves[(r["store"], r["lineage"])])}</p>'
+                     if moves.get((r["store"], r["lineage"])) else "") + '<ul>'
                   + "".join(f'<li><span class="actor">{E(c["actor"])}</span> заперечив · {status(c)} — {E(c["statement"][:300])}</li>'
                             for c in r["challenges"]) + "</ul></div>")
         who = FR.finders(found)
@@ -848,34 +853,23 @@ class App:
             return 400, f"the reader's own store {self.mine!r} is not read by this server: nothing is filed"
         return None
 
-    def read(self, form):
-        """A view: `{target, verdict: "seen", lens, root}`, the reader's signed word that they saw this version under
-        that lens at that root of its store; filed in the reader's own store like a reaction; it credits nothing."""
-        lost = self.mine_lost()
+    def observe(self, form, kind):
+        """File the reader's observation of `kind` (observe.py): in the reader's own store for a `mine` kind (refused when
+        that store is not read: nothing is filed), else in the store holding the record."""
+        mine = OB.KINDS[kind].into == "mine"
+        lost = self.mine_lost() if mine else None
         if lost:
             return lost
+        return self._file(form, lambda rep, target, f: OB.body(kind, rep, target, f), into=self.mine if mine else None)
 
-        def body(rep, target, f):
-            lens_id = f.get("lens", "builtin")
-            if lens_id != "builtin" and not S.hex64(lens_id):
-                return None, "lens is builtin or a lens version's id"
-            return {"target": target, "verdict": "seen", "lens": lens_id, "root": rep["snapshot"]}, None
-        return self._file(form, body, into=self.mine)
+    def read(self, form):
+        return self.observe(form, "seen")
 
     def react(self, form):
-        lost = self.mine_lost()
-        if lost:
-            return lost
-        return self._file(form, lambda rep, target, f: reaction_body(target, f), into=self.mine)
+        return self.observe(form, "react")
 
     def adopt(self, form):
-        def body(rep, target, f):
-            r = rep["_recs"][target]
-            if r["kind"] != "entity" or r.get("schema") != LZ.LENS:
-                return None, "only a lens version is adopted"
-            why = LZ.problem(r["body"])
-            return ({"target": target, "verdict": "adopt"}, None) if why is None else (None, f"this lens is not drawn: {why}")
-        return self._file(form, body)
+        return self.observe(form, "adopt")
 
 
 def handler(app, port):
@@ -914,6 +908,8 @@ def handler(app, port):
                     self.send(200, app.page_feed(q))
                 elif parts == ["changes"]:
                     self.send(200, app.page_changes(q))
+                elif parts == ["whatif"]:
+                    self.send(*app.page_whatif(q))
                 elif parts == ["fragile"]:
                     self.send(200, app.page_fragile(q))
                 elif parts == ["wait"]:

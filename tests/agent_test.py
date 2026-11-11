@@ -1372,6 +1372,40 @@ def fragile_cases():
           and "Хто вказав" in page_ and "eve" in page_.split("Хто вказав")[1], page_[:0])
 
 
+def whatif_cases():
+    """What-if (warrant_agent/view.py, after minds' what_if): a store without some records, assessed by the same engine
+    on a candidate; every lineage whose view changes is named with its witness; equal consequences, equal digest."""
+    from warrant_agent import lens as LZ
+    from warrant_agent import serve as SV
+    from warrant_agent import view as VW
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the task", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "the task", "serves": []}, lineage=o)
+    c = r.put("bob", "challenge", {"target": d, "statement": "counted, it stands"}, refs=[d])
+    other = r.entity("carol", "obligation@1", {"state": "open", "statement": "untouched", "serves": []})
+    space = SV.Space({"w": str(r.root)})
+    app = SV.App(space)
+    lines_before = len(r.store.lines())
+    no_ch = app.hypothesis("w", "challenges")
+    no_bob = app.hypothesis("w", "actor:bob")
+    no_carol = app.hypothesis("w", "actor:carol")
+    row = (no_ch or {"rows": [{}]})["rows"][0] if no_ch and no_ch["rows"] else {}
+    check("WI1 a hypothesis is assessed on a candidate and files nothing: without its challenges the lineage it stood "
+          "against is named, its floor before (none standing) and after (the challenge stands)",
+          no_ch["dropped"] == 1 and [x["lineage"] for x in no_ch["rows"]] == [o] and row["floor_before"]["standing"] == []
+          and row["floor_after"]["standing"] == [(c, d)] and len(r.store.lines()) == lines_before
+          and other not in [x["lineage"] for x in no_ch["rows"]], no_ch)
+    check("WI2 equal consequences give an equal digest whatever produced them (no challenge, or no record of the one who "
+          "filed it), and other consequences another", no_ch["digest"] == no_bob["digest"] and no_carol["digest"] != no_ch["digest"]
+          and VW.dropped(space.report("w"), "nothing") is None, (no_ch["digest"], no_bob["digest"], no_carol["digest"]))
+    page_d = SV.lineage(space.report("w"), o)
+    kept = VW.observe(SV, space.report("w"), page_d, LZ.card_of(LZ.BUILTIN), keep=lambda x: x["id"] != c)
+    check("WI3 a view that keeps only some activity drops what it does not keep, a challenge that no longer stands included; "
+          "the page says what follows and its direction", kept["floor"]["standing"] == [] and (c, "") not in kept["visible"]
+          and "від гіпотези до того, як є" in app.page_whatif({"store": "w", "without": "challenges"})[1]
+          and app.page_whatif({"store": "w", "without": "nothing"})[0] == 404, kept["floor"])
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1389,4 +1423,5 @@ if __name__ == "__main__":
     changes_cases()
     scene_cases()
     fragile_cases()
+    whatif_cases()
     sys.exit(finish())
