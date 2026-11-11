@@ -325,8 +325,11 @@ def grounded_html(rep, store, g):
     cls, word = ("yes", "так") if g["grounded"] else ("no", "ні")
     failing = "".join(f"<br>· {link_l(store, v, E(label(rep, v) + ': ' + title(rep, v, 90)))} — {E(why)}"
                       for v, why in g["failing"][:12])
+    outside = g.get("outside") or []
+    held = (f'<br><span class="rest">тримається й на {len(outside)} записах поза цим сховищем, яких сторінка не перевіряла: '
+            + ", ".join(E(x[:12]) for x in outside[:8]) + "</span>") if outside else ""
     return (f'<p>Обґрунтоване: <b class="{cls}">{word}</b> (усе, на чому воно тримається, транзитивно: '
-            f'{g["closure"]} версій){failing}</p>')
+            f'{g["closure"]} версій){failing}{held}</p>')
 
 
 def challenge_state(c):
@@ -475,6 +478,12 @@ def last_seen(rep, d, reader):
     return (max(seen), len(order)) if seen else None
 
 
+def last_view(rep, d, reader):
+    """The id of the reader's latest signed view of this lineage, or None."""
+    views = [x for v in d["versions"] for x in v["on"] if _is_view(rep, x) and x["sentence"][0] == reader]
+    return max(views, key=lambda x: (x["at"], x["id"]))["id"] if views else None
+
+
 def sources_html(rep, store, d, reader=None):
     authors, spoke, saw, stores = sources(rep, store, d)
     challenged = sum(1 for v in d["versions"] for x in v["on"] if x["challenge"] is not None)
@@ -492,6 +501,8 @@ def sources_html(rep, store, d, reader=None):
         mine = " · ти бачив останню версію"
     elif reader:
         mine = f" · <b>ти бачив версію {ls[0] + 1} з {ls[1]}</b>"
+    if reader and ls is not None:
+        mine += f' (<a href="/l/{quote(store)}/{E(d["lineage"])}?asof={E(last_view(rep, d, reader))}">як бачив тоді</a>)'
     return (f'<p class="rest">джерела: автор {E(", ".join(authors))} · {who} · бачили: {len(saw)} · заперечень: {challenged}'
             f' · сховищ: {len(stores)}{mine}</p>')
 
@@ -693,15 +704,36 @@ class App:
                               if b.get("applies") in (schema, "*") and LZ.problem(b) is None)
         return out
 
+    def seen_then(self, store, seen_id):
+        """(report, lens id, note) of the store as the reader's view `seen_id` recorded it: the records dated no later
+        than that view, assessed by the same engine, under the lens it names. Its root is checked against the root the
+        view recorded: the same root says the page is the one seen; another, that the dates do not rebuild it."""
+        r = next((x["_recs"][seen_id] for x in self.reports().values() if "_error" not in x and seen_id in x["_recs"]), None)
+        if r is None or r["body"].get("verdict") != "seen":
+            return None
+        snap = Repo(self.space.roots[store]).store.snapshot()
+        past = CH.report_of(self.space.roots[store], CH.subset(snap, CH.before(snap, r["at"] + 1)))
+        same = past["snapshot"] == r["body"].get("root")
+        note = (f' · як ти бачив {when(r["at"])}: '
+                + ("відтворено точно (той самий root)" if same else
+                   f'<b class="PENDING">наближено</b>: тоді root був <code>{E(str(r["body"].get("root"))[:12])}</code>, '
+                   f'записи до тієї дати дають <code>{E(past["snapshot"][:12])}</code>'))
+        return past, r["body"].get("lens", "builtin"), note
+
     def page_lineage(self, store, i, q=None):
-        rep = self.space.report(store)
+        q = q or {}
+        then = self.seen_then(store, q["asof"]) if q.get("asof") else None
+        if then is not None:
+            q = dict(q, lens=then[1])
+        rep = then[0] if then else self.space.report(store)
         if "_error" in rep:
             return 404, page(MISSING, f"<p>{E(rep['_error'])}</p>")
         d = lineage(rep, i)
         if d is None:
             return 404, page(MISSING, f"<p>Немає лінії з записом <code>{E(i)}</code> у {E(store)}.</p>")
-        q = q or {}
         lens_id, body, note, lens_store = self.pick(d["schema"], q.get("lens"))
+        if then is not None:
+            note += then[2]
         self.with_elsewhere(store, d)
         full = VW.observe(sys.modules[__name__], rep, d, dict(LZ.card_of(LZ.BUILTIN), activity="shown"))
         hidden = len(VW.difference(VW.observe(sys.modules[__name__], rep, d, LZ.card_of(body)), full)["appeared"])
