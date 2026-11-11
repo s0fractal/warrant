@@ -13,6 +13,21 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   binascii's words of the running Python. `impl-js/` gives the same bytes; its vectors no longer depend on CPython
   3.13. Reports with no problem whose reason quotes a value are unchanged. Tests U29 (three blobs), U44; mutants UM43,
   UM54.
+- Who a voice is (`warrant_agent/voices.py`, R04 of the observer pack in part): the floor joins voices by the keys
+  their store's trust binds to their names, not by the names. Two names on one key are one source (the author's key
+  under another name is never an independent voice); one name on different keys in two stores is two; a record its
+  store admitted unsigned (a migration's word) is no one's key. The floor counts the voices independent of the author
+  and names where names mislead. Tests VO1–VO4, mutants A180–A185.
+- A lens's contract (`warrant_agent/contract.py`, P05 of the observer pack): what a card promises of a lineage page
+  (each declared member that has a value, the activity it shows) and what the floor promises (state, reliance, every
+  counted challenge that stands, UNATTESTED, the lens) are read back from the marks of the page drawn. A broken promise
+  is named on the page («сторінка не тримає контракт лінзи») and replayed by `python -m warrant_agent.contract STORE
+  LINEAGE [--lens ID]` (exit 1). The renderer no longer drops a member whose value is not in the card's `as` form,
+  nor a root's statement the heading cut. Every lineage page of the registered stores under four lenses keeps its
+  contract. Tests KC1–KC3, mutants A174–A179.
+- Small tails of the observer pack: a page names what its lineage rests on outside the store (P09); «як бачив тоді»
+  rebuilds the page as the reader's last view saw it and says whether its root matches (R06); a warm cache renders
+  the same bytes as a cold one (P10). Tests TL1–TL3, mutants A169–A172.
 
 - The commons (`python -m warrant_agent.commons say RECORD "…"`): an agent with no key any store binds and no role
   says «фе» to any record, under its own key's name (`key:<hex>`); the commons store trusts nobody and holds voices,

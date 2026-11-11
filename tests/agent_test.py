@@ -1129,7 +1129,7 @@ def lens_cases():
     hidden = view(look, {"lens": bare})
     check("LN4 the floor: a lens that shows no member and hides the activity still shows the state, the reliance, the "
           "counted challenge that stands with its statement, UNATTESTED and its own name",
-          "a counted counterexample" in hidden and "заперечень, що стоять: <b>1</b>" in hidden and "UNATTESTED" in hidden
+          "a counted counterexample" in hidden and "заперечень, що стоять: <b data-floor=\"standing\">1</b>" in hidden and "UNATTESTED" in hidden
           and "лінза «hides everything»" in hidden and "заперечив" not in hidden and "it holds" not in hidden
           and SV.standing(space.report("w"), SV.lineage(space.report("w"), o)) == [(c, d)], hidden[:0])
     reader = SV.App(space, reader="dave")
@@ -1175,6 +1175,112 @@ def lens_cases():
           sorted(x["actor"] for x in adoptions) == ["dave", "dave", "dave", "eve"]
           and dave.adopt({"token": "x", "store": "w", "target": nested})[0] == 403
           and all(set(x["body"]) == {"target", "verdict"} for x in adoptions), adoptions)
+
+
+def voices_cases():
+    """Who a voice is (warrant_agent/voices.py): the keys a store's trust binds to a name, not the name. Two names on
+    one key are one source; one name on two keys (two stores) is two; a record admitted unsigned is no one's voice;
+    the floor counts the voices independent of the author."""
+    from warrant_agent import serve as SV
+    from warrant_agent import voices as VC
+    r = Repo()
+    r.trust["keys"]["mallory"] = [KEYS["alice"].public]                  # alice's key under a second name
+    r.write_config()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the task", "serves": []})
+    r.t += 1
+    puppet = r.store.append(R.record("challenge", "mallory", r.t, {"target": o, "statement": "a puppet's objection"}, refs=[o]),
+                            KEYS["alice"], r.trust)
+    r.put("bob", "challenge", {"target": o, "statement": "bob objects"}, refs=[o])
+    x = Repo()
+    x.trust["keys"]["bob"] = [KEYS["carol"].public]                      # another store's bob is carol's key
+    x.write_config()
+    x.t = r.t + 1
+    x.store.append(R.record("challenge", "bob", x.t, {"target": o, "statement": "the other bob"}, refs=[o]), KEYS["carol"], x.trust)
+    space = SV.Space({"w": str(r.root), "x": str(x.root)})
+    app = SV.App(space, reader="dave")
+    try:                                      # a crash is this case's FAIL, never a missing line
+        page_ = app.page_lineage("w", o, {})[1]
+        rep = space.report("w")
+        d = app.with_elsewhere("w", SV.lineage(rep, o))
+        _, notes, independent = SV.voices(rep, "w", d, SV.sources(rep, "w", d)[1])
+    except Exception as ex:
+        page_, notes, independent = f"crashed: {type(ex).__name__}: {ex}", [], []
+    check("VO1 two names on one key are one source: the author's key under another name is not an independent voice, "
+          "and the page says so", "alice = mallory: один ключ" in notes and "mallory" not in independent
+          and "alice = mallory: один ключ" in page_ and puppet in rep["_recs"], (notes, independent))
+    check("VO2 one name on two keys in two stores is two sources, each independent of the author: the page names the split",
+          any(n.startswith("bob: 2 різні джерела (w, x)") for n in notes) and independent == ["bob"]
+          and "незалежних від автора: 1" in page_, (notes, independent))
+    bob_id = next(i for i, y in rep["_recs"].items() if y["actor"] == "bob" and y["kind"] == "challenge")
+    unsigned = dict(rep, _basis=dict(rep["_basis"], **{bob_id: "UNSIGNED"}))
+    _, notes_u, ind_u = SV.voices(unsigned, "w", SV.lineage(unsigned, o), ["bob", "mallory"])
+    check("VO3 a record its store admitted unsigned is no one's key: never an independent voice, and named as keyless",
+          ind_u == [] and any(n.startswith("bob (у w): без ключа") for n in notes_u), (notes_u, ind_u))
+    gs2 = VC.groups([("a", "s", {"k"}), ("b", "t", {"k", "m"}), ("c", "u", {"m"}), ("d", "s", set()), ("d", "s", set())])
+    check("VO4 voices join through any shared key, transitively; keyless voices of one name in one store are one",
+          [g["names"] for g in gs2] == [["a", "b", "c"], ["d"]] and gs2[0]["keys"] == ["k", "m"], gs2)
+
+
+def contract_cases():
+    """A lens's contract (warrant_agent/contract.py): what a card promises of a lineage page (each declared member
+    that has a value, the activity it shows) and what the floor promises are read back from the marks of the page
+    drawn; a broken promise is named on the page and by the command, which anyone with the same store replays."""
+    from warrant_agent import contract as CT
+    from warrant_agent import lens as LZ
+    from warrant_agent import serve as SV
+    r = Repo()
+    r.put("alice", "schema", LZ.SCHEMA)
+    long = "the task, said at length: " + "x" * 420
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": long, "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "the task", "serves": [],
+                                           "established": ["it holds"], "residual": ["one gap"]}, lineage=o)
+    c = r.put("bob", "challenge", {"target": d, "statement": "a counted counterexample"}, refs=[d])
+    odd = [{"path": "statement", "label": "", "as": "list"}, {"path": "established", "label": "E", "as": "text"},
+           {"path": "residual", "label": "R", "as": "list"}]
+    nested = r.put("carol", "entity", {"state": "active", "name": "forms it guessed", "applies": "*",
+                                       "card": {"layout": "nested", "fields": odd}}, "lens@1")
+    flat = r.put("carol", "entity", {"state": "active", "name": "flat", "applies": "*",
+                                     "card": {"layout": "flat", "fields": odd, "order": "oldest"}}, "lens@1")
+    space = SV.Space({"w": str(r.root)})
+    app = SV.App(space, reader="dave")
+    rep = space.report("w")
+    want = CT.promise(SV.lineage(rep, o), LZ.card_of(LZ.lenses(rep)[nested]), SV.standing(rep, SV.lineage(rep, o)))
+    kept = {}
+    for name, lid in (("builtin", "builtin"), ("nested", nested), ("flat", flat)):
+        page = app.page_lineage("w", o, {"lens": lid})[1]
+        kept[name] = (app.last_contract["broken"], "не тримає контракт" in page)
+    check("KC1 the renderer keeps every lens's contract: a member drawn in a form other than the card's `as`, the "
+          "root's statement cut in the heading (so drawn in its card), the activity and the floor, under the built-in, "
+          "a nested and a flat lens", all(v == ([], False) for v in kept.values())
+          and {(o, "statement"), (d, "statement"), (d, "established"), (d, "residual"), (c, "")} <= want[0]
+          and want[1] == set(CT.FLOOR) and want[2] == {c}, kept)
+    real = SV.on_html
+    SV.on_html = lambda rep_, x: "" if x["id"] == c else real(rep_, x)      # a renderer that drops one challenge
+    try:
+        page = app.page_lineage("w", o, {"lens": nested})[1]
+        broken = app.last_contract["broken"]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = CT.main([r.root.name, o, "--lens", nested, "--root", str(r.root), "--reader", "dave"])
+    except Exception as ex:                   # a crash is this case's FAIL, never a missing line
+        page, broken, code, out = f"crashed: {type(ex).__name__}: {ex}", None, None, io.StringIO()
+    finally:
+        SV.on_html = real
+    check("KC2 a renderer that drops a challenge the lens shows breaks the contract: the page names it and the command "
+          "replays it (exit 1), while the floor still counts it", broken == [("visible", (c, ""))]
+          and "сторінка не тримає контракт лінзи: 1" in page and code == 1 and '"kept": false' in out.getvalue()
+          and "заперечень, що стоять: <b data-floor=\"standing\">1</b>" in page, (broken, code, page[:0]))
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = CT.main([r.root.name, o, "--root", str(r.root)])
+    err = io.StringIO()
+    try:                                      # a crash is this case's FAIL, never a missing line
+        with contextlib.redirect_stdout(err):
+            missing = CT.main(["no-such-store", o, "--root", str(r.root)])
+    except Exception as ex:
+        missing = f"crashed: {type(ex).__name__}"
+    check("KC3 the command on a page that keeps its contract: exit 0; on a store it does not read: exit 2, named",
+          code == 0 and '"kept": true' in out.getvalue() and missing == 2 and "no-such-store" in err.getvalue(), out.getvalue()[:200])
 
 
 def changes_cases():
@@ -1546,7 +1652,7 @@ def commons_cases():
     check("CM2 every page shows the voice from outside, and no store's rules count it: the lineage's reliance stays the "
           "store's, the floor counts the voice among those who spoke, /fragile lists it uncounted",
           "заперечив (у commons)" in page_ and "голос ззовні" in page_ and "ignores the cold start" in page_
-          and "опора <span class=\"tag ELIGIBLE\"" in page_ and "висловились:" in page_ and "key:" in page_
+          and "опора <span data-floor=\"reliance\"><span class=\"tag ELIGIBLE\"" in page_ and "висловились:" in page_ and "key:" in page_
           and "ignores the cold start" in fragile and space.report("w")["lineages"][o]["reliance"] == "ELIGIBLE", page_[:0])
     impostor = R.record("challenge", "claude", 1_900_000_001, {"target": d, "statement": "I am claude"}, refs=[d])
     from warrant.store import Store as ST
@@ -1600,6 +1706,47 @@ def commons_cases():
           outcomes[:2] == [True, True] and bool(outcomes[2]) and r.store.file.read_bytes() == w_bytes, outcomes)
 
 
+def tails_cases():
+    """Small tails of Codex's observer pack: P09 references held elsewhere are named; R06 the page as the reader saw
+    it then, rebuilt from the dates and checked against the root the view recorded; P10 a warm cache changes nothing."""
+    from warrant_agent import serve as SV
+    other = Repo()
+    far = other.entity("carol", "obligation@1", {"state": "open", "statement": "held elsewhere", "serves": []})
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the claim", "serves": []}, refs=[far])
+    me = Repo()
+    space = SV.Space({"w": str(r.root), "me": str(me.root)})
+    page_ = SV.App(space, reader="bob").page_lineage("w", o)[1]
+    check("TL1 a page names the records its lineage rests on that this store does not hold, unchecked (P09)",
+          "тримається й на 1 записах поза цим сховищем" in page_ and far[:12] in page_, page_[:0])
+    root_then = r.store.snapshot().digest
+    seen = me.put("bob", "attest", {"target": o, "verdict": "seen", "lens": "builtin", "root": root_then}, refs=[o], at=r.t + 1)
+    wrong = me.put("bob", "attest", {"target": o, "verdict": "seen", "lens": "builtin", "root": "0" * 64}, refs=[o], at=r.t + 2)
+    from warrant_agent import lens as LZ
+    me.put("alice", "schema", LZ.SCHEMA)
+    flat = me.put("carol", "entity", {"state": "active", "name": "flat then", "applies": "*",
+                                      "card": {"layout": "flat", "fields": []}}, "lens@1")
+    under = me.put("bob", "attest", {"target": o, "verdict": "seen", "lens": flat, "root": root_then}, refs=[o], at=r.t + 3)
+    r.t += 10
+    later = r.entity("alice", "obligation@1", {"state": "open", "statement": "the claim, later", "serves": []}, lineage=o)
+    app = SV.App(space, reader="bob")
+    then = app.page_lineage("w", o, {"asof": seen})[1]
+    approx = app.page_lineage("w", o, {"asof": wrong})[1]
+    now = app.page_lineage("w", o)[1]
+    check("TL2 «як бачив тоді»: the store rebuilt from the records dated no later than the reader's view, under the lens "
+          "it names; the same root reads «відтворено точно», another «наближено»; the floor links the reader's last view (R06)",
+          "відтворено точно" in then and later[:12] not in then and later[:12] in now and "наближено" in approx
+          and "лінза «flat then»" in app.page_lineage("w", o, {"asof": under})[1] and "лінза «flat then»" not in now
+          and f"asof={under}" in now, then[:0])
+    cold = SV.App(SV.Space({"w": str(r.root), "me": str(me.root)}), reader="bob")
+    warm = SV.App(space, reader="bob")
+    pages = lambda a: [a.page_lineage("w", o)[1], a.page_scene("w", o)[1], a.page_fragile(), a.page_feed({}),
+                       a.page_whatif({"store": "w", "without": "challenges"})[1]]
+    first, again = pages(warm), pages(warm)
+    check("TL3 a warm cache is an optimisation, never another page: a fresh space and a warmed one render every page "
+          "byte for byte the same (P10)", pages(cold) == first == again, [len(x) for x in first])
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1621,4 +1768,7 @@ if __name__ == "__main__":
     audit_cases()
     overlay_cases()
     commons_cases()
+    tails_cases()
+    contract_cases()
+    voices_cases()
     sys.exit(finish())
