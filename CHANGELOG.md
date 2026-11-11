@@ -6,6 +6,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- Small tails of the observer pack: a page names what its lineage rests on outside the store (P09); «як бачив тоді»
+  rebuilds the page as the reader's last view saw it and says whether its root matches (R06); a warm cache renders
+  the same bytes as a cold one (P10). Tests TL1–TL3, mutants A169–A172.
+
 - The commons (`python -m warrant_agent.commons say RECORD "…"`): an agent with no key any store binds and no role
   says «фе» to any record, under its own key's name (`key:<hex>`); the commons store trusts nobody and holds voices,
   never verdicts. Every lineage page shows challenges from other stores as voices from outside, uncounted by that
