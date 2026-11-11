@@ -5,11 +5,12 @@ here is an attest `{target, verdict: KIND, ...}` that no guard's match holds, so
 
     react   a reaction: integer dimensions (agree -100..100; confidence, importance, evidence 0..100) and a note
     seen    a view: the reader saw this version, under which lens, at which root of its store
-    adopt   an adoption: the reader draws its pages with this lens version (lens.py)
+    adopt   an adoption: the reader draws its pages with this lens version (lens.py), wherever the lens lives
 
 Each kind says which fields it carries and where it is filed: `mine` (the reader's own store, whatever store the
-record is in; refused when that store is not read) or `record` (the store holding the record: a lens is adopted where
-it lives). A new kind is one entry here, not a new code path."""
+record is in; refused when that store is not read; the record's own store when the reader names none) or `record`
+(the store holding the record). Every kind here is the reader's, so every one is `mine`: a reader adopts a lens it
+cannot write to (Codex's observer pack, OBS-P01). A new kind is one entry here, not a new code path."""
 from warrant import shapes as S
 
 DIMENSIONS = (("agree", -100, 100, "згода"), ("confidence", 0, 100, "впевненість"),
@@ -72,7 +73,7 @@ class Kind:
 
 KINDS = {"react": Kind("відреагував", "mine", _react, dimensions_text),
          "seen": Kind("переглянув", "mine", _seen),
-         "adopt": Kind("прийняв для себе лінзу", "record", _adopt)}
+         "adopt": Kind("прийняв для себе лінзу", "mine", _adopt)}
 
 
 def body(kind, rep, target, form):

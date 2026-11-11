@@ -40,7 +40,11 @@ from warrant_agent.observe import DIMENSIONS, NOTE_MAX
 from warrant_agent import scene as SC
 
 MACHINES = ("claims-checker", "review-replayer")        # actors that sign by program; hidden from the feed by default
-ADAPTER = "warrant-serve/0:" + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+# The interpreter's identity: every module of this package, by name and bytes (a page depends on lens.py, view.py,
+# scene.py and the rest as much as on this file; Codex's observer pack OBS-P02 found the adapter named this file alone).
+ADAPTER_FILES = sorted(Path(__file__).parent.glob("*.py"))
+ADAPTER = "warrant-serve/0:" + hashlib.sha256(b"".join(
+    p.name.encode() + b"\0" + hashlib.sha256(p.read_bytes()).digest() for p in ADAPTER_FILES)).hexdigest()
 
 
 def is_machine(actor):
@@ -461,7 +465,7 @@ def sources_html(rep, store, d, reader=None):
             f' · сховищ: {len(stores)}{mine}</p>')
 
 
-def floor_html(rep, store, d, used, note="", objections=(), reader=None):
+def floor_html(rep, store, d, used, note="", objections=(), reader=None, hidden=0, unavailable=()):
     """What no lens decides: state and reliance, every counted challenge that stands with its statement, that
     completeness is UNATTESTED, which lens drew the page (a portal: the same root and lens give this page), and
     every challenge against that lens, and who stands behind the lineage (`sources`)."""
@@ -474,7 +478,11 @@ def floor_html(rep, store, d, used, note="", objections=(), reader=None):
             + (f'<ul class="standing">{rows}</ul>' if held else "") + sources_html(rep, store, d, reader)
             + f'<p class="rest">вигляд: лінза «{E(lens_name)}» · <a href="{portal}">відтворити цей вигляд</a> · '
             f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}">карта</a>{note}'
-            + (f' · <b class="CHALLENGED">заперечень на цю лінзу: {len(objections)}</b>' if objections else "") + "</p>"
+            + (f' · <b class="CHALLENGED">заперечень на цю лінзу: {len(objections)}</b>' if objections else "")
+            + (f' · <b class="PENDING">лінза не показує тут {hidden}</b> з того, що показала б вбудована' if hidden else "")
+            + "</p>"
+            + (f'<p class="rest"><b class="PENDING">не прочитано сховищ: {len(unavailable)}</b> ('
+               + E("; ".join(f"{n}: {why[:80]}" for n, why in unavailable)) + '): чого в них є, сторінка не знає</p>' if unavailable else "")
             + ("<ul class='standing'>" + "".join(f"<li>{E(t)}</li>" for t in objections) + "</ul>" if objections else ""))
 
 
@@ -559,6 +567,14 @@ class App:
             results[n] = rows
             accounted |= acc
         h, foots = "", []
+        schemas = sorted({x["schema"] for rows in results.values() for x in rows})
+        moved = [(sc, LZ.choose(past, self.reader, sc), LZ.choose(now, self.reader, sc)) for sc in schemas]
+        moved = [(sc, a, b) for sc, a, b in moved if (a and a[1]) != (b and b[1])]
+        if moved:
+            name = lambda c: c[2]["name"] if c else LZ.BUILTIN["name"]
+            h += ('<p><b class="PENDING">твоя лінза змінилась відтоді</b>: ' + "; ".join(
+                f"{E(sc)}: «{E(name(a))}» → «{E(name(b))}»" for sc, a, b in moved)
+                + '. Обидва стани нижче порівняно під теперішньою лінзою.</p>')
         for n in now:
             rows, quiet = results[n], len(new[n] - accounted)
             if not new[n] and not rows:
@@ -640,8 +656,10 @@ class App:
         q = q or {}
         lens_id, body, note, lens_store = self.pick(d["schema"], q.get("lens"))
         self.with_elsewhere(store, d)
+        full = VW.observe(sys.modules[__name__], rep, d, dict(LZ.card_of(LZ.BUILTIN), activity="shown"))
+        hidden = len(VW.difference(VW.observe(sys.modules[__name__], rep, d, LZ.card_of(body)), full)["appeared"])
         h = (floor_html(rep, store, d, (lens_id, body["name"]), note, lens_objections(self.reports(), lens_store, lens_id),
-                        self.reader) + grounded_html(rep, store, d["grounded"]))
+                        self.reader, hidden, self.unavailable()) + grounded_html(rep, store, d["grounded"]))
         if q.get("vs") and d["schema"] != LZ.LENS:
             other = LZ.find(self.reports(), q["vs"])
             if other is not None and LZ.problem(other[1]) is None:
@@ -670,10 +688,15 @@ class App:
             v["on"] = sorted(v["on"] + elsewhere.get(v["id"], []), key=lambda x: (x["at"], x["id"]))
         return d
 
+    def unavailable(self):
+        """[(store, why)] of every store this server was asked to read and could not."""
+        return [(n, r["_error"]) for n, r in sorted(self.reports().items()) if "_error" in r]
+
     def other_roots(self, store):
-        """{store: snapshot root} of every other store a page read (the lens chosen, the reactions filed elsewhere,
-        the challenges against the lens): a page is a function of all of them, so its lens names them."""
-        return {n: r["snapshot"] for n, r in sorted(self.reports().items()) if n != store and "_error" not in r}
+        """{store: [snapshot root, trust, profile]} of every other store a page read (the lens chosen, the observations
+        filed elsewhere, the challenges against the lens): a page is a function of all of them, so its lens names them."""
+        return {n: [r["snapshot"], r["trust"], r["profile"]] for n, r in sorted(self.reports().items())
+                if n != store and "_error" not in r}
 
     def page_scene(self, store, i, q=None):
         """The lineage as a map under the reader's lens (or `?lens=`), the floor above it; `?vs=` sets a second lens's
@@ -717,7 +740,7 @@ class App:
 
     def form(self, store, v):
         rows = "".join(f'<label for="{k}">{E(n)}</label><input type="range" id="{k}" name="{k}" min="{lo}" max="{hi}" '
-                       f'value="{0 if lo < 0 else 50}" oninput="this.nextElementSibling.value=this.value"><output>{0 if lo < 0 else 50}</output>'
+                       f'value="{0 if lo < 0 else 50}"><span class="rest">{lo}..{hi}</span>'
                        for k, lo, hi, n in DIMENSIONS)
         return (f'<details class="card"><summary>Відреагувати як <b>{E(self.actor)}</b> на останню версію</summary>'
                 f'<form class="react" method="post" action="/react"><input type="hidden" name="token" value="{self.token}">'
@@ -772,7 +795,8 @@ class App:
               f'змінилось ліній: {len(found["rows"])} · дайджест <code>{E(found["digest"][:12])}</code>'
               '<p class="rest">кожна лінія: від гіпотези до того, як є</p>'
               + "".join(change_html(self.space.report(store), store, x, self.reports()) for x in found["rows"][:300]) + END)
-        return 200, page("Що було б", h, foot(store, self.space.report(store), {"op": "whatif", "without": without}))
+        return 200, page("Що було б", h, foot(store, self.space.report(store),
+                                              {"op": "whatif", "without": without, "with": self.other_roots(store)}))
 
     def page_fragile(self, q=None):
         """Where attention went and where one objection holds against it (warrant_agent/fragile.py)."""
@@ -808,7 +832,8 @@ class App:
                   + "".join(f'<li><span class="actor">{E(actor)}</span>: ' + "; ".join(
                       f'{link_l(r["store"], r["lineage"], E(r["label"]))} ×{n} (увага {len(r["attention"]["all"])})' for r, n in items[:12])
                       + "</li>" for actor, items in who) + "</ul>")
-        return page("Крихке", h, "<br>".join(foot(n, r, {"op": "fragile"}) for n, r in self.reports().items() if "_error" not in r))
+        return page("Крихке", h, "<br>".join(foot(n, r, {"op": "fragile", "with": self.other_roots(n)})
+                                             for n, r in self.reports().items() if "_error" not in r))
 
     def page_stores(self):
         h = "<h2>Сховища</h2>"
@@ -884,7 +909,7 @@ def handler(app, port):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'")
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'none'; form-action 'self'")
             self.send_header("X-Frame-Options", "DENY")
             if location:
                 self.send_header("Location", location)
