@@ -281,6 +281,8 @@ MUTANTS = [
     ("A131", "warrant_agent/lens.py", '        if why:\n            return f"scene: {why}"', '        if False:\n            return f"scene: {why}"', AGENT, ["SC4"]),
     ("A132", "warrant_agent/scene.py", '<title>{E(describe(n["id"]))}</title>', '<title>{describe(n["id"])}</title>', AGENT, ["SC7"]),
     ("A133", "warrant_agent/scene.py", 'x = rank[n["id"]] if b["x"] == "time" else i', 'x = i', AGENT, ["SC5"]),
+    ("A134", "warrant_agent/serve.py", """who = (f'інші учасники: {E(", ".join(others))}' if others""", """who = (f'інші учасники: {E(", ".join(others))}' if True""", AGENT, ["SV8"]),
+    ("A135", "warrant_agent/serve.py", '    stores = sorted({store} | {x["store"] for v in d["versions"] for x in v["on"] if x.get("store")})', '    stores = [store]', AGENT, ["SV8"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

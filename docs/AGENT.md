@@ -157,7 +157,9 @@ the one its adoption draws. A lens's own lineage is always drawn by the built-in
 
 No lens decides the floor, drawn above any card: the lineage's state and reliance, every counted challenge that
 stands against one of its versions with its statement, that completeness is UNATTESTED, and which lens drew the
-page — and every challenge filed against that lens version (a lens has no guard, so none is counted; each is shown
+page, who stands behind the lineage (its authors, every other actor who filed on it here or in another store read,
+the number of stores; «лише автор» when nobody else spoke: completeness cannot be shown, a single voice can, SV8),
+and every challenge filed against that lens version (a lens has no guard, so none is counted; each is shown
 wherever the lens draws). A lens may apply to one schema or to `*`.
 
 **Comparing lenses.** `?lens=A&vs=B` adds what one lens shows of the page that the other does not: each body member

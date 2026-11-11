@@ -6,6 +6,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The floor of every lineage page names who stands behind it: its authors, every other actor who filed an attest or a
+  challenge on it (here or in another store read), the number of stores; «лише автор» when nobody else spoke.
+  Completeness cannot be shown; a single voice can. Test SV8, mutants A134–A135.
+
 - **Watched paths** (`.warrant/merge.json` `watched`): the modules the gate imports are merged by the models, the
   owner watching: by the gate after two model families accepted and a 24-hour window with no veto; with one family
   only, by an agent once the gate says `solo_ready` (72 hours). The trust, the rules, the gate and CI stay owner
