@@ -6,6 +6,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- Views: «Прочитав» signs `{verdict: "seen", lens, root}` in the reader's own store; it credits nothing. The floor
+  counts who saw apart from who spoke and tells the reader which version they saw last. docs/AGENT.md gains
+  «Before lenses»: what Solid, the AT Protocol, Verifiable Credentials, PROV-O and the WoT Thing Description already
+  do, and the combination this repository adds. Test SV9, mutants A136–A139.
+
 - The floor of every lineage page names who stands behind it: its authors, every other actor who filed an attest or a
   challenge on it (here or in another store read), the number of stores; «лише автор» when nobody else spoke.
   Completeness cannot be shown; a single voice can. Test SV8, mutants A134–A135.

@@ -130,6 +130,13 @@ credits nothing; it is the reader's own signed word, and it leaves that version 
 by the actor). The server listens on 127.0.0.1 only, answers only to its own Host, and refuses a POST without the
 token of its run. agent_test SV1–SV7; mutants A99–A104, A121–A122.
 
+**A view** («Прочитав»): `{target, verdict: "seen", lens, root}`, the reader's signed word that they saw a version
+under that lens at that root of its store, filed in the reader's own store like a reaction. It credits nothing (no
+guard's match holds `seen`). The floor counts who saw apart from who spoke ("бачили: N · заперечень: M"), so a
+silence after views reads apart from a silence with no reader, and tells the reader which version they saw last
+(SV9). Views are private while the reader's store is unpublished, and counted only from keys some store's trust
+binds.
+
 **The reader's own store.** With `--mine NAME` (default: the repository Home registers as `space`, if any) a reaction
 is filed in that store whatever store its record is in, so a project's store is never changed by its readers'
 reactions; an attest on a record held elsewhere is admitted as any other. A lineage page shows, under each version,
@@ -141,6 +148,39 @@ against that lens come from other stores, so a lineage page's lens names their r
 them (CH4). `/changes` reads each state with that state's reactions from other stores, and a new reaction elsewhere
 lists the lineage it points at (CH5). A lens comparison also names how two lenses draw what both show: layout, order
 of versions and of members, labels and forms (`lens.presentation`, CH7).
+
+### Before lenses: what already exists, and what is ours
+
+Separating data from its presentation is not new, and neither is signing claims. Read this before the lenses below,
+so the emphasis falls where the novelty is.
+
+| What exists | What it already does | What we take from it |
+|---|---|---|
+| **Solid** (W3C Solid CG) | data in stores the user controls, applications apart from storage, access rules per resource | the reader's own store (`space`, `--mine`): a reader's records live with the reader, not with the project |
+| **AT Protocol** (Bluesky) | per-user signed repositories of typed records (Lexicons); independent App Views index and present them; users pick custom feeds | records travel without HTML/CSS/JS; a reader chooses how they are selected and ordered |
+| **Verifiable Credentials 2.0** (W3C) | signed statements of an issuer about a subject, checked by a verifier | a record is a signed statement whose author is checked by key, never by the host |
+| **PROV-O** (W3C) | provenance as entities, activities and agents | every record names its author, its time and what it rests on (`refs`, lineage) |
+| **WoT Thing Description** (W3C) | the actions a thing offers, their inputs and effects, apart from any UI | an action can be described as data; describing it grants no right to run it |
+
+What none of them does, and the combination this repository builds:
+
+1. **State is the receiver's, not the record's.** The same records are ELIGIBLE for one receiver and PENDING or
+   CHALLENGED for another, each under its own trust and profile (docs/V3.md); trust is never merged across stores. A
+   credential is valid or not; here a lineage is relied on *by someone*.
+2. **Objection is first-class.** A challenge is a record, counted or not by the receiver's rules; a reproduced
+   counterexample (a replay) refutes, and the witness ledger credits whoever found it (`warrant.graph.ledger`).
+3. **A lens is a record, and so is choosing it.** A feed or an App View is a service someone runs; a lens here is
+   declarative data, applied only when the reader adopted it, reproducible (`root` + `lens`), comparable with another
+   (what each shows, how each draws) and open to challenge like any claim.
+4. **A floor no lens decides.** Whatever the lens, the page shows the state, the reliance, every counted challenge that
+   stands, who stands behind the lineage (a single voice is named), and that completeness is UNATTESTED.
+5. **Incompleteness is shown, not hidden.** A view is a signed record too, so silence after many views reads apart
+   from silence with no reader.
+6. **Evidence executes.** A normative sentence of the specification is a claim backed by test cases and mutants a
+   checker re-runs (docs/REPOSITORY.md).
+
+None of this asks anyone to leave Solid, the AT Protocol or W3C credentials: an adapter can carry their records in,
+keeping who signed what; this layer records what was attested, objected to and how it was seen.
 
 ### Lenses: the reader chooses how a page is drawn
 

@@ -27,6 +27,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from warrant import jcs as C
 from warrant import graph as G
+from warrant import shapes as S
 from warrant import home as H
 from warrant import records as R
 from warrant.repo import Failed, Repo, load_key
@@ -110,7 +111,7 @@ ENTITY_VERBS = {("obligation", "open"): "відкрив обов'язок", ("ob
                 ("pr-head", "open"): "відкрив", ("pr-head", "head"): "подав нову голову", ("pr-head", "merged"): "злив",
                 ("lens", "active"): "подав лінзу", ("lens", "retired"): "відкликав лінзу"}
 ATTEST_VERBS = {"accept": "прийняв", "react": "відреагував на", "reproduces": "відтворив заперечення",
-                "does_not_reproduce": "не відтворив заперечення", "adopt": "прийняв для себе лінзу"}
+                "does_not_reproduce": "не відтворив заперечення", "adopt": "прийняв для себе лінзу", "seen": "переглянув"}
 
 
 def _about(rep, t):
@@ -167,18 +168,19 @@ def feed(rep, limit=200, actor=None, machines=False):
 
 
 def reactions_elsewhere(reports, store, d):
-    """{version id: [item]} of the reactions on this lineage's versions filed in other stores (a reader's own store
-    holds the reactions on records of every other one), each item naming the store it was filed in."""
+    """{version id: [item]} of the reactions and views on this lineage's versions filed in other stores (a reader's own
+    store holds them for records of every other one), each item naming the store it was filed in."""
     vs, out = {v["id"] for v in d["versions"]}, {}
     for name, r in sorted(reports.items()):
         if name == store or "_error" in r:
             continue
         for i, x in r["_recs"].items():
             b = x["body"]
-            if x["kind"] == "attest" and b.get("verdict") == "react" and b.get("target") in vs:
+            if x["kind"] == "attest" and b.get("verdict") in ("react", "seen") and b.get("target") in vs:
+                verb = "відреагував" if b["verdict"] == "react" else "переглянув"
                 out.setdefault(b["target"], []).append(
-                    {"id": i, "at": x["at"], "challenge": None, "note": b.get("note"), "store": name,
-                     "sentence": (x["actor"], f"відреагував (у {name})", "", _dimensions_text(b))})
+                    {"id": i, "at": x["at"], "challenge": None, "note": b.get("note"), "store": name, "seen": b["verdict"] == "seen",
+                     "sentence": (x["actor"], f"{verb} (у {name})", "", _dimensions_text(b))})
     return out
 
 
@@ -442,25 +444,56 @@ def lens_objections(reports, lens_store, lens_id):
     return [title(r, c, LZ.MAX_NAME * 8) for c, x in sorted(r["challenges"].items()) if x["target"] == lens_id]
 
 
+def _is_view(rep, x):
+    if "seen" in x:
+        return x["seen"]
+    r = rep["_recs"].get(x["id"])
+    return bool(r and r["kind"] == "attest" and r["body"].get("verdict") == "seen")
+
+
 def sources(rep, store, d):
-    """Who stands behind a lineage, from what the page holds: its authors (who filed its versions), the other actors
-    who filed an attest or a challenge on one of them (here or in another store read), and the stores those records
-    are in. It shows how many voices there are, never that the record is complete: a source that kept silent leaves
-    nothing to count."""
+    """Who stands behind a lineage, from what the page holds: its authors (who filed its versions); the other actors
+    who spoke on one of them (an attest or a challenge, here or in another store read); those who only signed that
+    they saw it (`verdict: seen`); and the stores those records are in. It counts voices, never completeness: a source
+    that kept silent leaves nothing to count, but a reader who saw and kept silent does."""
     authors = sorted({v["record"]["actor"] for v in d["versions"]})
-    others = sorted({x["sentence"][0] for v in d["versions"] for x in v["on"]} - set(authors))
-    stores = sorted({store} | {x["store"] for v in d["versions"] for x in v["on"] if x.get("store")})
-    return authors, others, stores
+    items = [x for v in d["versions"] for x in v["on"]]
+    spoke = sorted({x["sentence"][0] for x in items if not _is_view(rep, x)} - set(authors))
+    saw = sorted({x["sentence"][0] for x in items if _is_view(rep, x)} - set(authors))
+    stores = sorted({store} | {x["store"] for x in items if x.get("store")})
+    return authors, spoke, saw, stores
 
 
-def sources_html(rep, store, d):
-    authors, others, stores = sources(rep, store, d)
-    who = (f'інші учасники: {E(", ".join(others))}' if others
-           else '<b class="PENDING">лише автор: ніхто інший не прийняв, не заперечив і не відреагував</b>')
-    return f'<p class="rest">джерела: автор {E(", ".join(authors))} · {who} · сховищ: {len(stores)}</p>'
+def last_seen(rep, d, reader):
+    """(index of the version the reader last signed that they saw, counted from the oldest; how many versions there
+    are), or None when the reader signed no view of this lineage."""
+    order = sorted(d["versions"], key=lambda v: (v["record"]["at"], v["id"]))
+    seen = [i for i, v in enumerate(order) for x in v["on"] if _is_view(rep, x) and x["sentence"][0] == reader]
+    return (max(seen), len(order)) if seen else None
 
 
-def floor_html(rep, store, d, used, note="", objections=()):
+def sources_html(rep, store, d, reader=None):
+    authors, spoke, saw, stores = sources(rep, store, d)
+    challenged = sum(1 for v in d["versions"] for x in v["on"] if x["challenge"] is not None)
+    if spoke:
+        who = f'висловились: {E(", ".join(spoke))}'
+    elif saw:
+        who = f'<b class="PENDING">лише автор висловився; бачили {len(saw)}, і ніхто не прийняв і не заперечив</b>'
+    else:
+        who = '<b class="PENDING">лише автор: ніхто інший не прийняв, не заперечив, не відреагував і не підписав, що бачив</b>'
+    mine = ""
+    ls = last_seen(rep, d, reader) if reader else None
+    if reader and ls is None:
+        mine = " · ти не підписував, що бачив"
+    elif reader and ls[0] == ls[1] - 1:
+        mine = " · ти бачив останню версію"
+    elif reader:
+        mine = f" · <b>ти бачив версію {ls[0] + 1} з {ls[1]}</b>"
+    return (f'<p class="rest">джерела: автор {E(", ".join(authors))} · {who} · бачили: {len(saw)} · заперечень: {challenged}'
+            f' · сховищ: {len(stores)}{mine}</p>')
+
+
+def floor_html(rep, store, d, used, note="", objections=(), reader=None):
     """What no lens decides: state and reliance, every counted challenge that stands with its statement, that
     completeness is UNATTESTED, which lens drew the page (a portal: the same root and lens give this page), and
     every challenge against that lens, and who stands behind the lineage (`sources`)."""
@@ -470,7 +503,7 @@ def floor_html(rep, store, d, used, note="", objections=()):
     portal = f'/l/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}'
     return (f'<h2>{E(d["label"])}: {E(d["title"])}</h2><p>{E(d["schema"])} · стан <b>{E(str(d["state"]))}</b> · '
             f'опора {tag(d["reliance"])} · заперечень, що стоять: <b>{len(held)}</b> · повнота {tag("UNATTESTED")}</p>'
-            + (f'<ul class="standing">{rows}</ul>' if held else "") + sources_html(rep, store, d)
+            + (f'<ul class="standing">{rows}</ul>' if held else "") + sources_html(rep, store, d, reader)
             + f'<p class="rest">вигляд: лінза «{E(lens_name)}» · <a href="{portal}">відтворити цей вигляд</a> · '
             f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}">карта</a>{note}'
             + (f' · <b class="CHALLENGED">заперечень на цю лінзу: {len(objections)}</b>' if objections else "") + "</p>"
@@ -639,8 +672,8 @@ class App:
         q = q or {}
         lens_id, body, note, lens_store = self.pick(d["schema"], q.get("lens"))
         self.with_elsewhere(store, d)
-        h = (floor_html(rep, store, d, (lens_id, body["name"]), note, lens_objections(self.reports(), lens_store, lens_id))
-             + grounded_html(rep, store, d["grounded"]))
+        h = (floor_html(rep, store, d, (lens_id, body["name"]), note, lens_objections(self.reports(), lens_store, lens_id),
+                        self.reader) + grounded_html(rep, store, d["grounded"]))
         if q.get("vs") and d["schema"] != LZ.LENS:
             other = LZ.find(self.reports(), q["vs"])
             if other is not None and LZ.problem(other[1]) is None:
@@ -657,7 +690,7 @@ class App:
             if self.actor and self.key and why is None:
                 h += self.adopt_form(store, d["leaf"])
         if self.actor and self.key and d["leaf"]:
-            h += self.form(store, d["leaf"])
+            h += self.read_form(store, d["leaf"], lens_id) + self.form(store, d["leaf"])
         h += versions_html(rep, d, LZ.card_of(body))
         query = {"op": "lineage", "target": d["lineage"], "lens": lens_id, "with": self.other_roots(store)}
         return 200, page(d["label"], h, foot(store, rep, query))
@@ -702,6 +735,12 @@ class App:
                 f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}&amp;vs={E(v)}">{E(n)}</a>' for v, n in alts) + "</p>")
         query = {"op": "scene", "target": d["lineage"], "lens": lens_id, "vs": q.get("vs"), "with": self.other_roots(store)}
         return 200, page(d["label"], h, foot(store, rep, query))
+
+    def read_form(self, store, v, lens_id):
+        return (f'<form method="post" action="/read"><input type="hidden" name="token" value="{self.token}">'
+                f'<input type="hidden" name="store" value="{E(store)}"><input type="hidden" name="target" value="{E(v)}">'
+                f'<input type="hidden" name="lens" value="{E(lens_id)}">'
+                f'<button type="submit">Прочитав: підписати, що бачив цю версію</button></form>')
 
     def adopt_form(self, store, v):
         return (f'<form method="post" action="/adopt"><input type="hidden" name="token" value="{self.token}">'
@@ -773,9 +812,30 @@ class App:
             return 400, f"{type(e).__name__}: {e}"
         return 303, f"/l/{quote(store)}/{target}"
 
-    def react(self, form):
+    def mine_lost(self):
+        """(400, why) when the reader named an own store this server does not read: nothing is filed (fail closed)."""
         if self.mine is not None and self.mine not in self.space.roots:
             return 400, f"the reader's own store {self.mine!r} is not read by this server: nothing is filed"
+        return None
+
+    def read(self, form):
+        """A view: `{target, verdict: "seen", lens, root}`, the reader's signed word that they saw this version under
+        that lens at that root of its store; filed in the reader's own store like a reaction; it credits nothing."""
+        lost = self.mine_lost()
+        if lost:
+            return lost
+
+        def body(rep, target, f):
+            lens_id = f.get("lens", "builtin")
+            if lens_id != "builtin" and not S.hex64(lens_id):
+                return None, "lens is builtin or a lens version's id"
+            return {"target": target, "verdict": "seen", "lens": lens_id, "root": rep["snapshot"]}, None
+        return self._file(form, body, into=self.mine)
+
+    def react(self, form):
+        lost = self.mine_lost()
+        if lost:
+            return lost
         return self._file(form, lambda rep, target, f: reaction_body(target, f), into=self.mine)
 
     def adopt(self, form):
@@ -841,13 +901,13 @@ def handler(app, port):
             if not self.host_ok():
                 return
             path = urlparse(self.path).path
-            if path not in ("/react", "/adopt", "/seen"):
+            if path not in ("/react", "/adopt", "/seen", "/read"):
                 return self.send(404, "no such endpoint", TEXT)
             n = int(self.headers.get("Content-Length") or 0)
             if n > 64 * 1024:
                 return self.send(413, "too large", TEXT)
             form = {k: v[0] for k, v in parse_qs(self.rfile.read(n).decode("utf-8", "replace")).items()}
-            code, out = {"/react": app.react, "/adopt": app.adopt, "/seen": app.seen}[path](form)
+            code, out = {"/react": app.react, "/adopt": app.adopt, "/seen": app.seen, "/read": app.read}[path](form)
             if code == 303:
                 self.send(303, "", location=out)
                 return
