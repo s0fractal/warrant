@@ -12,7 +12,7 @@
 // The assessment is warrant.mjs's (held byte for byte to the Python engine), with warrant.mjs's code identity: given
 // the same bytes, the report equals `node impl-js/warrant.mjs assess --store DIR --config V3JSON`. `--summary` prints
 // {root, lineages: {id: [state, reliance]}, rejected, unresolved}: what a reader needs to compare two clients.
-import { assess, canonStr, codeIdentity, hex64, loadsLenient, nodeBackend, Refused } from "./warrant.mjs";
+import { assess, canonStr, codeIdentity, hex64, loadsLenient, nodeBackend, Refused, utf16 } from "./warrant.mjs";
 
 const SPLIT = (raw) => {
   const lines = [];
@@ -45,8 +45,8 @@ function cited(lines) {
   for (const l of lines) {
     try {
       const env = JSON.parse(dec.decode(l));
-      walk(env.record && env.record.refs);
-      walk(env.record && env.record.body);
+      walk(env.record?.refs);
+      walk(env.record?.body);
     } catch { /* an unreadable line is the assessment's to reject */ }
   }
   return named;
@@ -61,16 +61,17 @@ export async function read(base, backend) {
   const lines = SPLIT(raw);
   const named = cited(lines);
   const blobs = new Map(), missing = [];
-  const wanted = [...named].sort(), got = new Array(wanted.length);
+  const wanted = [...named].sort(utf16), got = new Array(wanted.length);
   let next = 0;
   const worker = async () => {             // 16 requests at a time; the results are put back in order
-    while (next < wanted.length) { const k = next++; got[k] = await get(root + ".warrant/blobs/" + wanted[k]); }
+    while (next < wanted.length) { const k = next++; got[k] = await get(root + ".warrant/blobs/" + wanted[k]); } // NOSONAR S9382: one request after another within a worker, 16 workers at once
   };
   await Promise.all(Array.from({ length: 16 }, worker));
+  const hashes = await Promise.all(got.map((b) => (b === null ? null : backend.sha256(b))));
   for (let k = 0; k < wanted.length; k++) {
     const h = wanted[k], b = got[k];
     if (b === null) { missing.push(h); continue; }
-    if ((await backend.sha256(b)) !== h) throw new Refused(`the transport altered blob ${h}: its bytes do not hash to its name`);
+    if (hashes[k] !== h) throw new Refused(`the transport altered blob ${h}: its bytes do not hash to its name`);
     blobs.set(h, b);
   }
   return { lines, blobs, doc, missing };

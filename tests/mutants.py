@@ -310,7 +310,7 @@ MUTANTS = [
     ('A159', 'warrant_agent/serve.py', '        trust, profile, _ = Repo(self.space.roots[self.mine]).config()', '        trust, profile, _ = Repo(self.space.roots[store]).config()', AGENT, ['OV4']),
     ('A160', 'warrant_agent/serve.py', ' if x["lineage"] in base["lineages"]]', ']', AGENT, ['OV5']),
     ('A161', 'warrant_agent/serve.py', '        unnamed = [r for r in asked if not p["roles"].get(r)]', '        unnamed = []', AGENT, ['OV5']),
-    ('JS1', 'impl-js/read.mjs', '    if ((await backend.sha256(b)) !== h) throw new Refused(', '    if (false) throw new Refused(', IMPL_JS, ['J9']),
+    ('JS1', 'impl-js/read.mjs', '    if (hashes[k] !== h) throw new Refused(', '    if (false) throw new Refused(', IMPL_JS, ['J9']),
     ('JS3', 'impl-js/read.mjs', '    if (b === null) { missing.push(h); continue; }', '    if (b === null) { missing.push(h); blobs.set(h, new Uint8Array()); continue; }', IMPL_JS, ['J9']),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
