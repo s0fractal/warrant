@@ -317,6 +317,12 @@ MUTANTS = [
     ('A167', 'warrant_agent/commons.py', '        if not is_commons(doc):', '        if False:', AGENT, ['CM6']),
     ('A168', 'warrant_agent/commons.py', '    if store is not None and p.resolve().is_relative_to(Path(store).resolve()):', '    if False:', AGENT, ['CM6']),
     ('A173', 'warrant_agent/commons.py', '    if not (isinstance(name, str) and NAME.match(name)):', '    if False:', AGENT, ['CM6']),
+    ('A174', 'warrant_agent/contract.py', '        out += [(part, x) for x in sorted(w - g)]', '        out += []', AGENT, ['KC2']),
+    ('A175', 'warrant_agent/serve.py', 'len(d["versions"]) > 1 and heads_statement(rep, d)', 'len(d["versions"]) > 1', AGENT, ['KC1']),
+    ('A176', 'warrant_agent/serve.py', "        parts.append(f'<div data-f=\"{E(rid)} {E(k)}\">{drawn}</div>')", '        parts.append(drawn)', AGENT, ['KC1']),
+    ('A177', 'warrant_agent/serve.py', '    if not broken:\n        return ""\n    names =', '    if True:\n        return ""\n    names =', AGENT, ['KC2']),
+    ('A178', 'warrant_agent/serve.py', '        elif isinstance(v, list):\n            if not v:', '        elif isinstance(v, list):\n            if not v or f["as"] != "list":', AGENT, ['KC1']),
+    ('A179', 'warrant_agent/contract.py', '    if a.store not in space.roots:', '    if False:', AGENT, ['KC3']),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
