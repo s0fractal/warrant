@@ -29,6 +29,7 @@ CORE, AGENT, GATE, TOOLS, WAKER = ("tests/core_test.py", "tests/agent_test.py", 
                                    "tests/tools_test.py", "integrations/warrant-review/test_plugin.py")
 E, S, RC = "warrant/engine.py", "warrant/store.py", "warrant/records.py"
 SHAPES_TEST = "tests/shapes_test.py"
+IMPL_JS = "tests/impl_js_test.py"
 E, S, RC, DR = "warrant/engine.py", "warrant/store.py", "warrant/records.py", "warrant/drift.py"
 VERIFY, VF = "tests/verify_test.py", "warrant/verify.py"
 ONE, ONE_SRC, ONE_BUILD = "warrant_verify.py", "tools/verify_single.py", "tools/build_verify.py"
@@ -309,6 +310,8 @@ MUTANTS = [
     ('A159', 'warrant_agent/serve.py', '        trust, profile, _ = Repo(self.space.roots[self.mine]).config()', '        trust, profile, _ = Repo(self.space.roots[store]).config()', AGENT, ['OV4']),
     ('A160', 'warrant_agent/serve.py', ' if x["lineage"] in base["lineages"]]', ']', AGENT, ['OV5']),
     ('A161', 'warrant_agent/serve.py', '        unnamed = [r for r in asked if not p["roles"].get(r)]', '        unnamed = []', AGENT, ['OV5']),
+    ('JS1', 'impl-js/read.mjs', '    if ((await backend.sha256(b)) !== h) throw new Refused(', '    if (false) throw new Refused(', IMPL_JS, ['J9']),
+    ('JS3', 'impl-js/read.mjs', '    if (b === null) { missing.push(h); continue; }', '    if (b === null) { missing.push(h); blobs.set(h, new Uint8Array()); continue; }', IMPL_JS, ['J9']),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

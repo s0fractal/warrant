@@ -6,6 +6,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- A second client (`node impl-js/read.mjs --base URL`): a repository's records fetched over HTTP(S) from any root and
+  assessed by the JavaScript implementation give the same report, byte for byte, as the store read from disk; an
+  altered blob is refused, an altered line rejected. Read through GitHub, master gives the Python engine's root and
+  every lineage's state. docs/VERIFY.md; impl_js_test J9, mutants JS1, JS3.
+
 - `/overlay` («Для мене»): a store read together with the stores the reader chose, under the reader's own trust and
   roles (`overlay.py`): a challenge the publisher never took in counts for a reader whose rules count it, beside the
   store's own verdict, never in its place; each result has its own identity; key bindings the sources disagree on are
