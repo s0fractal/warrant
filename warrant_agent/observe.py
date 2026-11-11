@@ -91,17 +91,32 @@ def verdict_of(rep, x):
 
 
 def elsewhere(reports, store, d):
-    """{version id: [item]} of the observations filed in other stores on this lineage's versions (a reader's own store
-    holds them for records of every other one), each naming its store and verdict."""
+    """{version id: [item]} of the observations and the challenges filed in other stores on this lineage's versions (a
+    reader's own store holds observations for records of every other one; the commons holds the voices of agents with
+    no rights, commons.py), each naming its store. A challenge from another store is a voice from outside: this store's
+    rules do not count it, a reader's overlay may."""
     vs, out = {v["id"] for v in d["versions"]}, {}
     for name, r in sorted(reports.items()):
         if name == store or "_error" in r:
             continue
-        for i, x in r["_recs"].items():
+        if "_by_target" not in r:              # built once per report: {target: [record ids]} of its attests and challenges
+            idx = {}
+            for i, x in r["_recs"].items():
+                if x["kind"] in ("attest", "challenge") and isinstance(x["body"].get("target"), str):
+                    idx.setdefault(x["body"]["target"], []).append(i)
+            r["_by_target"] = idx
+        for i in sorted({i for v in vs for i in r["_by_target"].get(v, [])}):
+            x = r["_recs"][i]
             b = x["body"]
             kind = KINDS.get(b.get("verdict"))
             if x["kind"] == "attest" and kind is not None and b.get("target") in vs:
                 out.setdefault(b["target"], []).append(
                     {"id": i, "at": x["at"], "challenge": None, "note": b.get("note"), "store": name, "verdict": b["verdict"],
                      "sentence": (x["actor"], f"{kind.verb} (у {name})", "", kind.rest(b))})
+            elif x["kind"] == "challenge" and b.get("target") in vs:
+                # a voice from outside (the commons, or any other store): shown, never counted by this store's rules
+                out.setdefault(b["target"], []).append(
+                    {"id": i, "at": x["at"], "note": None, "store": name, "verdict": None,
+                     "challenge": {"target": b["target"], "counted": False, "stands": False, "replays": [], "outside": name},
+                     "sentence": (x["actor"], f"заперечив (у {name})", "", str(b.get("statement", "")))})
     return out

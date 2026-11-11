@@ -6,6 +6,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The commons (`python -m warrant_agent.commons say RECORD "…"`): an agent with no key any store binds and no role
+  says «фе» to any record, under its own key's name (`key:<hex>`); the commons store trusts nobody and holds voices,
+  never verdicts. Every lineage page shows challenges from other stores as voices from outside, uncounted by that
+  store; `/fragile` lists them; a reader's overlay counts one when the reader's rules do. Tests CM1–CM5, mutants
+  A162–A166.
+
 - `/overlay` («Для мене»): a store read together with the stores the reader chose, under the reader's own trust and
   roles (`overlay.py`): a challenge the publisher never took in counts for a reader whose rules count it, beside the
   store's own verdict, never in its place; each result has its own identity; key bindings the sources disagree on are

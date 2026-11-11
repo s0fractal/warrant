@@ -1519,6 +1519,63 @@ def overlay_cases():
           "the critic own lineage" not in p5 and "твої правила не називають, хто має ці ролі: roadmap/acceptor" in p5, p5[:0])
 
 
+def commons_cases():
+    """The commons (warrant_agent/commons.py): an agent with no key any store binds, no role and no part in a record
+    says «фе» to it; every page shows the voice, no store's rules count it, a reader's rules may."""
+    from warrant_agent import commons as CM
+    from warrant_agent import overlay as OV
+    from warrant_agent import serve as SV
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the claim", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "the claim", "serves": []}, lineage=o)
+    r.attest("bob", d)
+    commons = r.home / "commons"
+    w_bytes = r.store.file.read_bytes()
+    stranger = CM.seed(r.home / "stranger.seed")
+    filed = CM.say(commons, d, "фе: the claim ignores the cold start", stranger, at=1_900_000_000)
+    from warrant.repo import Repo as RR
+    rep_c = RR(str(commons)).report()
+    check("CM1 an agent bound by no trust and holding no role files a challenge against a record of another store, in "
+          "the commons, under its own key's name; the commons admits it and the store objected to is untouched",
+          filed in rep_c["_recs"] and rep_c["_recs"][filed]["actor"] == "key:" + stranger.public
+          and not rep_c["rejected"] and not rep_c["problems"] and r.store.file.read_bytes() == w_bytes
+          and (r.home / "stranger.seed").stat().st_mode & 0o777 == 0o600, rep_c["rejected"])
+    space = SV.Space({"w": str(r.root), "commons": str(commons)})
+    page_ = SV.App(space, reader="dave").page_lineage("w", o)[1]
+    fragile = SV.App(space).page_fragile()
+    check("CM2 every page shows the voice from outside, and no store's rules count it: the lineage's reliance stays the "
+          "store's, the floor counts the voice among those who spoke, /fragile lists it uncounted",
+          "заперечив (у commons)" in page_ and "голос ззовні" in page_ and "ignores the cold start" in page_
+          and "опора <span class=\"tag ELIGIBLE\"" in page_ and "висловились:" in page_ and "key:" in page_
+          and "ignores the cold start" in fragile and space.report("w")["lineages"][o]["reliance"] == "ELIGIBLE", page_[:0])
+    impostor = R.record("challenge", "claude", 1_900_000_001, {"target": d, "statement": "I am claude"}, refs=[d])
+    from warrant.store import Store as ST
+    ST(commons / ".warrant").extend([impostor], stranger, CM.DOC["trust"])
+    loud = R.record("attest", "key:" + stranger.public, 1_900_000_002, {"target": d, "verdict": "accept"}, refs=[d])
+    ST(commons / ".warrant").extend([loud], stranger, CM.DOC["trust"])
+    rep_c2 = RR(str(commons)).report()
+    check("CM3 nobody speaks in another's name and a stranger's key speaks only to object: a challenge signed as "
+          "'claude' with another key, and an acceptance under a key's own name, are rejected", len(rep_c2["rejected"]) == 2
+          and filed in rep_c2["_recs"], rep_c2["rejected"])
+    lab = Repo()
+    lab.put("carol", "attest", {"target": filed, "verdict": "reproduces", "on": d}, refs=[filed, d])
+    snaps = {"w": r.store.snapshot(), "commons": ST(commons / ".warrant").snapshot(), "lab": lab.store.snapshot()}
+    t, _, _ = OV.receiver(r.trust, r.profile, {"w": r.trust, "lab": lab.trust})
+    counted = OV.assess(snaps, t, r.profile)
+    check("CM4 a reader whose rules trust a replayer that reproduces the voice counts it: the claim the store relies on "
+          "reads CHALLENGED for that reader, and still ELIGIBLE in its store", counted["lineages"][o]["reliance"] == "CHALLENGED"
+          and space.report("w")["lineages"][o]["reliance"] == "ELIGIBLE", counted["challenges"].get(filed))
+    refused = []
+    for target, text in (("nope", "x"), (d, ""), (d, "x" * (CM.STATEMENT_MAX + 1))):
+        try:                                 # a crash is this case's FAIL; only the commons' own refusal counts
+            CM.say(commons, target, text, stranger, at=1_900_000_010)
+            refused.append(False)
+        except Exception as e:
+            refused.append(isinstance(e, CM.Refused))
+    check("CM5 the commons refuses what is no voice: a target that is no record id, an empty statement, one beyond "
+          f"{CM.STATEMENT_MAX} characters", refused == [True, True, True], refused)
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1539,4 +1596,5 @@ if __name__ == "__main__":
     whatif_cases()
     audit_cases()
     overlay_cases()
+    commons_cases()
     sys.exit(finish())

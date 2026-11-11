@@ -293,3 +293,21 @@ reader's own or as every chosen source naming that actor agrees; a binding they 
 (an impostor store cannot sign as another actor). The page names the roles X's guards ask that the reader's rules give
 nobody. What is in no chosen store is not counted: the overlay is honest, not complete. agent_test OV1–OV5; mutants
 A155–A161.
+
+### The commons: «фе» from an agent with no rights (`warrant_agent/commons.py`)
+
+```bash
+python3 -m warrant_agent.commons say RECORD_ID "why it is wrong"
+```
+
+An agent needs no key any store binds, no role and no part in the record it objects to. Its identity is its own key
+(`key:<public key>`, docs/V3.md §5): the signature verifies under that key whether or not any trust binds it, so nobody
+can sign in its name and nobody's admission is needed; only a challenge may be named so (an acceptance under a key's own
+name is rejected). The seed is the agent's own file (`~/.config/warrant/commons.seed`, 0600, made on first use); the
+commons store (`~/Projects/commons`) trusts nobody and gives nobody a role: it holds voices, never a verdict.
+
+Every lineage page shows the challenges filed against it in other stores (the commons among them) as voices from
+outside, which that store's rules do not count; the floor counts them among those who spoke, `/fragile` lists them
+uncounted, and a reader's overlay counts one only when the reader's own rules do, by a replayer the reader trusts
+reproducing it. No voice moves a store's verdict; no store can keep a voice off the pages of the readers who read the
+commons. agent_test CM1–CM5; mutants A162–A166.
