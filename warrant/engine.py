@@ -1,6 +1,7 @@
 """Assessment (docs/V3.md §§3-7, 10): one pure pass over a snapshot under the receiver's trust and
 profile. Authentication, actor chains, schemas, lineages with FORK, guards, challenges, reliance
 and the graph come out of the same View."""
+import json
 import hashlib
 from pathlib import Path
 
@@ -223,7 +224,7 @@ class View:
             if r["kind"] == "schema" or (r["schema"] is None and r["kind"] != "entity") or (r["schema"] == R.MIGRATION and r["kind"] == "attest"):
                 continue
             s = self.schemas.get(r["schema"])
-            why = f"schema {r['schema']!r} is not one this receiver counts" if s is None else _body_problem(r, s)
+            why = f"schema {quote(r['schema'])} is not one this receiver counts" if s is None else _body_problem(r, s)
             if why:
                 self.problem("INVALID", i, why)
                 self.drop(i, f"INVALID: {why}")
@@ -273,7 +274,7 @@ class View:
             self.problem("LINEAGE_BROKEN", x, f"it succeeds {p[:12]}, which is no admitted version of its kind and schema")
         elif not may_succeed(r, self.recs[rt]):
             root_of[x] = None
-            self.problem("LINEAGE_NOT_AUTHOR", x, f"filed by {r['actor']!r}; the lineage is {self.recs[rt]['actor']!r}'s")
+            self.problem("LINEAGE_NOT_AUTHOR", x, f"filed by {quote(r['actor'])}; the lineage is {quote(self.recs[rt]['actor'])}'s")
         else:
             root_of[x] = rt
             if r["at"] < self.recs[p]["at"]:
@@ -514,6 +515,13 @@ def _reliance(lin, eff, standing):
 SCHEMA_MEMBERS = {"name", "fields", "states", "closed", "successors"}
 
 
+def quote(v):
+    """A value as a reason quotes it: JSON with every character past ASCII escaped, no spaces, keys in code point order.
+    It reads the same under every interpreter (repr follows the interpreter's Unicode tables: R-INTERPRETER) and never
+    raises, whatever the record carried."""
+    return json.dumps(v, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+
+
 def _schema_problem(b):
     ok = isinstance(b, dict) and SCHEMA_MEMBERS <= set(b) <= SCHEMA_MEMBERS | {"pinned"} \
         and isinstance(b["name"], str) and 0 < len(b["name"]) <= 100 and b["name"] != R.MIGRATION \
@@ -534,19 +542,19 @@ def _body_problem(r, s):
         f = dict(f, target="ref")
     extra, missing = set(b) - set(f), {k for k, t in f.items() if not t.endswith("?")} - set(b)
     if extra or missing:
-        return f"members {sorted(extra)} are not in {s['name']}, or {sorted(missing)} are missing"
+        return f"members {quote(sorted(extra))} are not in {s['name']}, or {quote(sorted(missing))} are missing"
     bad = [k for k, v in b.items() if not R.type_ok(f[k], v)]
     if bad:
-        return f"members {bad} do not have their types in {s['name']}"
+        return f"members {quote(bad)} do not have their types in {s['name']}"
     if not R.body_refs(f, b) <= set(r["refs"]):
         return "a reference in the body is not in refs"
     if r["kind"] != "entity":
         return None
     if not isinstance(s["states"], dict) or b.get("state") not in s["states"]:
-        return f"state {b.get('state')!r} is not a state of {s['name']}"
+        return f"state {quote(b.get('state'))} is not a state of {s['name']}"
     need = s["states"][b["state"]]
     if need is not None and _weaker(r["guard"], need):
-        return f"its guard is weaker than {s['name']}'s for state {b['state']!r}"
+        return f"its guard is weaker than {s['name']}'s for state {quote(b['state'])}"
     return None
 
 

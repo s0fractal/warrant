@@ -130,7 +130,7 @@ class Store:
         blobs = {p.name: p.read_bytes() for p in sorted(self.blobs.iterdir())} if self.blobs.is_dir() else {}
         bad = [h for h, b in blobs.items() if hashlib.sha256(b).hexdigest() != h]
         if bad:
-            raise Refused(f"blobs not named by their hash: {bad[:3]}")
+            raise Refused(f"blobs not named by their hash: {json.dumps(bad[:3], ensure_ascii=True, separators=(',', ':'))}")
         return Snapshot(lines, blobs)
 
     @contextlib.contextmanager

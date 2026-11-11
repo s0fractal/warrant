@@ -162,6 +162,30 @@ export function pyRepr(v) {
   return "{" + keysOf(v).map((k) => pyReprStr(k) + ": " + pyRepr(v[k])).join(", ") + "}";
 }
 const pyStr = (v) => (isStr(v) ? v : pyRepr(v));
+// How a reason quotes a value: Python's json.dumps(v, ensure_ascii=True, separators=(",", ":"), sort_keys=True).
+// Every UTF-16 unit outside space..~ is escaped (\\uXXXX, lowercase), so no interpreter's Unicode tables enter
+// the bytes (R-INTERPRETER); keys in code point order, as Python sorts them.
+const ESC = { '"': '\\"', "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+export function quoteStr(s) {
+  let out = '"';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i], c = s.charCodeAt(i);
+    if (has(ESC, ch)) out += ESC[ch];
+    else if (c < 0x20 || c > 0x7e) out += "\\u" + c.toString(16).padStart(4, "0");
+    else out += ch;
+  }
+  return out + '"';
+}
+export function quote(v) {
+  if (v === null || v === undefined) return "null";
+  if (v === true) return "true";
+  if (v === false) return "false";
+  if (typeof v === "number" || typeof v === "bigint") return String(v);
+  if (isStr(v)) return quoteStr(v);
+  if (v instanceof PyFloat) return v.text;
+  if (Array.isArray(v)) return "[" + v.map(quote).join(",") + "]";
+  return "{" + Object.keys(v).sort(cmp).map((k) => quoteStr(k) + ":" + quote(v[k])).join(",") + "}";
+}
 
 // ---------------------------------------------------------------- JSON reading (jcs.loads, and json.loads for a configuration)
 
@@ -254,7 +278,7 @@ function parseJSON(s, strict) {
     }
     const o = dict();
     for (const [k, v] of pairs) {
-      if (strict && has(o, k)) throw new NotCanonical(`duplicate member ${pyReprStr(k)}`);
+      if (strict && has(o, k)) throw new NotCanonical(`duplicate member ${quoteStr(k)}`);
       o[k] = v;
     }
     if (!strict) Object.defineProperty(o, ORDER, { value: [...new Set(pairs.map(([k]) => k))] });   // a dict's order, where Python's matters
@@ -638,15 +662,15 @@ function bodyProblem(r, s) {
   let f = s.fields;
   if ((r.kind === "attest" || r.kind === "challenge") && !has(f, "target")) { f = Object.assign(dict(), f); f.target = "ref"; }
   const extra = keysOf(b).filter((k) => !has(f, k)), missing = keysOf(f).filter((k) => !f[k].endsWith("?") && !has(b, k));
-  if (extra.length || missing.length) return `members ${pyRepr(sorted(extra))} are not in ${s.name}, or ${pyRepr(sorted(missing))} are missing`;
+  if (extra.length || missing.length) return `members ${quote(sorted(extra))} are not in ${s.name}, or ${quote(sorted(missing))} are missing`;
   const badTypes = keysOf(b).filter((k) => !typeOk(f[k], b[k]));
-  if (badTypes.length) return `members ${pyRepr(badTypes)} do not have their types in ${s.name}`;
+  if (badTypes.length) return `members ${quote(badTypes)} do not have their types in ${s.name}`;
   for (const x of bodyRefs(f, b)) if (!r.refs.includes(x)) return "a reference in the body is not in refs";
   if (r.kind !== "entity") return null;
   const state = getOr(b, "state", null);
-  if (!isObj(s.states) || !(isStr(state) && has(s.states, state))) return `state ${pyRepr(state)} is not a state of ${s.name}`;
+  if (!isObj(s.states) || !(isStr(state) && has(s.states, state))) return `state ${quote(state)} is not a state of ${s.name}`;
   const req = s.states[state];
-  if (req !== null && weaker(r.guard, req)) return `its guard is weaker than ${s.name}'s for state ${pyRepr(state)}`;
+  if (req !== null && weaker(r.guard, req)) return `its guard is weaker than ${s.name}'s for state ${quote(state)}`;
   return null;
 }
 
@@ -811,7 +835,7 @@ class View {
     for (const [i, r] of this.sortedRecs()) {
       if (r.kind === "schema" || (r.schema === null && r.kind !== "entity") || (r.schema === MIGRATION && r.kind === "attest")) continue;
       const s = this.schemas.get(r.schema);
-      const why = s === undefined ? `schema ${pyRepr(r.schema)} is not one this receiver counts` : bodyProblem(r, s);
+      const why = s === undefined ? `schema ${quote(r.schema)} is not one this receiver counts` : bodyProblem(r, s);
       if (why) { this.problem("INVALID", i, why); this.drop(i, `INVALID: ${why}`); }
     }
   }
@@ -857,7 +881,7 @@ class View {
       this.problem("LINEAGE_BROKEN", x, `it succeeds ${p.slice(0, 12)}, which is no admitted version of its kind and schema`);
     } else if (!maySucceed(r, this.recs.get(rt))) {
       rootOf.set(x, null);
-      this.problem("LINEAGE_NOT_AUTHOR", x, `filed by ${pyRepr(r.actor)}; the lineage is ${pyRepr(this.recs.get(rt).actor)}'s`);
+      this.problem("LINEAGE_NOT_AUTHOR", x, `filed by ${quote(r.actor)}; the lineage is ${quote(this.recs.get(rt).actor)}'s`);
     } else {
       rootOf.set(x, rt);
       if (r.at < this.recs.get(p).at) this.problem("LINEAGE_BACKDATED", x, "dated before the version it succeeds");
@@ -1182,7 +1206,7 @@ async function readStore(dir, backend) {
   if (fs.existsSync(bdir) && fs.statSync(bdir).isDirectory()) for (const n of sorted(fs.readdirSync(bdir))) blobs.set(n, new Uint8Array(fs.readFileSync(path.join(bdir, n))));
   const bad = [];
   for (const [h, b] of blobs) if ((await backend.sha256(b)) !== h) bad.push(h);
-  if (bad.length) throw new Refused(`blobs not named by their hash: ${pyRepr(bad.slice(0, 3))}`);
+  if (bad.length) throw new Refused(`blobs not named by their hash: ${quote(bad.slice(0, 3))}`);
   return { lines, blobs };
 }
 

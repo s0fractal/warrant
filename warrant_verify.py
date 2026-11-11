@@ -30,14 +30,14 @@ import types
 
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
-    "warrant/jcs.py": "edf1c844a8471a79b4ef96a7d28735d0a348c0cf972da4ea0ce701c88610b250",
+    "warrant/jcs.py": "1caa6890ea01355224cb4dd4010777b388b51a2b3e5bc405192eeff717b3f9d3",
     "warrant/graph.py": "773c51a6d9c72ddfebdd17ca44af9eeb5eeb8c82c5f083ffa603a03f6930d9c8",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
-    "warrant/store.py": "3f388f16125b6ae0b661c526e72481dfbd0bedb4abe182948524f776bcf88a2f",
-    "warrant/engine.py": "667c1b771fe4ad87da21d56c8f618f0d6b5cbb6c24766df69dae999a5dc7ac00",
+    "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
+    "warrant/engine.py": "647ecaeb64b471dc92202d4f56bc68126cf4554a76cddb6d05faa2108d7ff2a7",
     "warrant/verify.py": "bd91ee2f73f930fe98d9f4ac58143d45235eaa78fc5b6b7f13a7fba3dad77f5a",
 }
 ORDER = ('jcs', 'graph', 'shapes', 'keys', 'pins', 'records', 'store', 'engine', 'verify')
@@ -126,7 +126,7 @@ def _pairs(pairs):
     d = {}
     for k, v in pairs:
         if k in d:
-            raise NotCanonical(f"duplicate member {k!r}")
+            raise NotCanonical(f"duplicate member {json.dumps(k, ensure_ascii=True)}")
         d[k] = v
     return d
 
@@ -989,7 +989,7 @@ class Store:
         blobs = {p.name: p.read_bytes() for p in sorted(self.blobs.iterdir())} if self.blobs.is_dir() else {}
         bad = [h for h, b in blobs.items() if hashlib.sha256(b).hexdigest() != h]
         if bad:
-            raise Refused(f"blobs not named by their hash: {bad[:3]}")
+            raise Refused(f"blobs not named by their hash: {json.dumps(bad[:3], ensure_ascii=True, separators=(',', ':'))}")
         return Snapshot(lines, blobs)
 
     @contextlib.contextmanager
@@ -1063,6 +1063,7 @@ class Store:
 SOURCES["engine"] = r'''"""Assessment (docs/V3.md §§3-7, 10): one pure pass over a snapshot under the receiver's trust and
 profile. Authentication, actor chains, schemas, lineages with FORK, guards, challenges, reliance
 and the graph come out of the same View."""
+import json
 import hashlib
 from pathlib import Path
 
@@ -1285,7 +1286,7 @@ class View:
             if r["kind"] == "schema" or (r["schema"] is None and r["kind"] != "entity") or (r["schema"] == R.MIGRATION and r["kind"] == "attest"):
                 continue
             s = self.schemas.get(r["schema"])
-            why = f"schema {r['schema']!r} is not one this receiver counts" if s is None else _body_problem(r, s)
+            why = f"schema {quote(r['schema'])} is not one this receiver counts" if s is None else _body_problem(r, s)
             if why:
                 self.problem("INVALID", i, why)
                 self.drop(i, f"INVALID: {why}")
@@ -1335,7 +1336,7 @@ class View:
             self.problem("LINEAGE_BROKEN", x, f"it succeeds {p[:12]}, which is no admitted version of its kind and schema")
         elif not may_succeed(r, self.recs[rt]):
             root_of[x] = None
-            self.problem("LINEAGE_NOT_AUTHOR", x, f"filed by {r['actor']!r}; the lineage is {self.recs[rt]['actor']!r}'s")
+            self.problem("LINEAGE_NOT_AUTHOR", x, f"filed by {quote(r['actor'])}; the lineage is {quote(self.recs[rt]['actor'])}'s")
         else:
             root_of[x] = rt
             if r["at"] < self.recs[p]["at"]:
@@ -1576,6 +1577,13 @@ def _reliance(lin, eff, standing):
 SCHEMA_MEMBERS = {"name", "fields", "states", "closed", "successors"}
 
 
+def quote(v):
+    """A value as a reason quotes it: JSON with every character past ASCII escaped, no spaces, keys in code point order.
+    It reads the same under every interpreter (repr follows the interpreter's Unicode tables: R-INTERPRETER) and never
+    raises, whatever the record carried."""
+    return json.dumps(v, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+
+
 def _schema_problem(b):
     ok = isinstance(b, dict) and SCHEMA_MEMBERS <= set(b) <= SCHEMA_MEMBERS | {"pinned"} \
         and isinstance(b["name"], str) and 0 < len(b["name"]) <= 100 and b["name"] != R.MIGRATION \
@@ -1596,19 +1604,19 @@ def _body_problem(r, s):
         f = dict(f, target="ref")
     extra, missing = set(b) - set(f), {k for k, t in f.items() if not t.endswith("?")} - set(b)
     if extra or missing:
-        return f"members {sorted(extra)} are not in {s['name']}, or {sorted(missing)} are missing"
+        return f"members {quote(sorted(extra))} are not in {s['name']}, or {quote(sorted(missing))} are missing"
     bad = [k for k, v in b.items() if not R.type_ok(f[k], v)]
     if bad:
-        return f"members {bad} do not have their types in {s['name']}"
+        return f"members {quote(bad)} do not have their types in {s['name']}"
     if not R.body_refs(f, b) <= set(r["refs"]):
         return "a reference in the body is not in refs"
     if r["kind"] != "entity":
         return None
     if not isinstance(s["states"], dict) or b.get("state") not in s["states"]:
-        return f"state {b.get('state')!r} is not a state of {s['name']}"
+        return f"state {quote(b.get('state'))} is not a state of {s['name']}"
     need = s["states"][b["state"]]
     if need is not None and _weaker(r["guard"], need):
-        return f"its guard is weaker than {s['name']}'s for state {b['state']!r}"
+        return f"its guard is weaker than {s['name']}'s for state {quote(b['state'])}"
     return None
 
 

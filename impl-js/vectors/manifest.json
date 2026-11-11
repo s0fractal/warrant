@@ -1,5 +1,5 @@
 {
- "bytes": 3952078,
+ "bytes": 3952714,
  "cases": "cases.jsonl.gz",
  "counts": {
   "J2": 189,
@@ -12,5 +12,5 @@
  "reader": "node impl-js/check_vectors.mjs [impl-js/vectors]",
  "reference": "warrant/ (this commit's engine) on CPython 3.13 or later: 3.11 and 3.12 answer base64 otherwise",
  "rule": "Each gzipped line is {class, name, case, expect}. A case {lines: [base64 line bytes, newline included], blobs: {name: base64}, trust, profile, as_of} is assess(snapshot of the lines and blobs, trust, profile, as_of) (docs/V3.md \u00a710); a case {package, trust, profile} is handoff inspect alone (\u00a713). expect is the answer of the Python reference: a report, {refused: why}, a handoff result or {error, message}, with the engine's identity left out (assessment, code; adapter). An implementation agrees when every member of its answer but those is canonically equal to expect's (RFC 8785, docs/V3.md \u00a71) and its own assessment is the SHA-256 of canon({snapshot, trust, profile, as_of, code}) with its own code.",
- "sha256": "b3b8dde2fef8ef809858e912b6cd576c5fca0862cfaa9d9d518da9f8450276f1"
+ "sha256": "22ba505338991e7f7978e754bf27251c9bccd8919ce020bd70d5066547a65d5d"
 }
