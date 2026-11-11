@@ -144,6 +144,30 @@ made in this order:
    which the roadmap acceptor accepts (the waker wakes Codex for it);
 3. the owner tags `vVERSION` on master after that acceptance merged.
 
+## Watched paths: the models merge, the owner watches
+
+`.warrant/merge.json` splits what decides merging in two. `owner_paths` (the trust, these rules, the gate, CI) the
+owner merges. `watched.paths` (the modules the gate imports: engine, store, records, keys, jcs, shapes, the package's
+`__init__`) the models merge, the owner watching (docs/V3.md §14, AGENTS.md rule 1):
+
+- **two families**: the gate merges once two distinct `pr/acceptor`s accepted the head version (its author counted)
+  and `window_hours` (24) have passed since the required checks completed, with no `hold` label and no challenge by
+  the `veto_role` (`pr/owner`) on the head version;
+- **one family** (the others out of budget): the gate merges nothing, and an agent of that family merges by hand once
+  the gate's own assessment says `solo_ready`: `solo_window_hours` (72) passed, checks green, no veto, no hold,
+  nothing else refusing. The pull request needs its review lineage (`tools/review.py open --pr N --title T`, then
+  `head --pr N`), and the assessment is read with
+
+```bash
+python3 tools/gate.py gate --base "$(git rev-parse origin/master)" --pr N --json
+```
+
+  (`facts.solo_ready`, `facts.solo_from`: when the solo window opens). The merge names that assessment.
+
+A place a watched file implies (a package of its module's name, a module added where the interpreter searches) is
+still the owner's: only a change to a watched file itself is watched. The owner reads every merge on `warrant serve`'s
+«Що змінилось» and vetoes with the `hold` label or a challenge.
+
 ## Reviews as records
 
 A pull request is a `pr-head@1` lineage: `python3 tools/review.py open --pr N --title T` files its

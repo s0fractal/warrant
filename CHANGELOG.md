@@ -6,6 +6,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- **Watched paths** (`.warrant/merge.json` `watched`): the modules the gate imports are merged by the models, the
+  owner watching: by the gate after two model families accepted and a 24-hour window with no veto; with one family
+  only, by an agent once the gate says `solo_ready` (72 hours). The trust, the rules, the gate and CI stay owner
+  paths, and every place a watched file implies stays the owner's. Gate cases E53–E59, mutants G45–G54; claims
+  V3-14-33 (new text) and V3-14-38..43.
+
 - `python -m warrant_agent.serve` (v0): the records as pages a person reads, over every repository Home registers:
   the feed (one sentence per record), a lineage (versions, what each established and left open, guard, who
   accepted, challenges, groundedness) and what waits for an actor; each page names its root and lens. A reader with

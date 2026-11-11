@@ -47,10 +47,12 @@ The gate (`gate`) merges at most one eligible pull request per run, reading the 
 branch again just before (TOCTOU), giving GitHub the assessed head (it refuses the merge when the head
 moved), and then dispatches the required workflows on the base branch (a GITHUB_TOKEN merge starts none)."""
 import importlib.machinery
+import calendar
 import json
 import os
 import re
 import subprocess
+import time
 import unicodedata
 from pathlib import PurePosixPath
 
@@ -61,6 +63,9 @@ from .store import Snapshot
 
 GATE = "warrant-review/gate@1"
 GATE_FIELDS = ("gate", "base", "required", "hold_label", "owner_paths")
+WATCHED = "watched"     # optional: {paths, window_hours, solo_window_hours, families, veto_role}: what models merge, the owner watching
+WATCHED_FIELDS = {"paths", "window_hours", "solo_window_hours", "families", "veto_role"}
+ROLE = re.compile(r"[a-z][a-z0-9-]{0,39}/[a-z][a-z0-9-]{0,39}\Z")
 REPOSITORY_DOC = "repository/3"
 RECORDS, BLOBS = ".warrant/records.jsonl", ".warrant/blobs/"
 REGULAR = "100644"
@@ -340,17 +345,40 @@ def is_ancestor(root, a, b):
 
 def gate_config(doc):
     req = doc.get("required") if isinstance(doc, dict) else None
-    ok = (isinstance(doc, dict) and set(doc) == set(GATE_FIELDS) and doc["gate"] == GATE
+    ok = (isinstance(doc, dict) and set(GATE_FIELDS) <= set(doc) <= set(GATE_FIELDS) | {WATCHED} and doc["gate"] == GATE
           and isinstance(doc["base"], str) and BRANCH.match(doc["base"]) and isinstance(req, list) and req
           and all(isinstance(c, dict) and set(c) == {"check", "workflow"} and isinstance(c["check"], str)
                   and CHECK.match(c["check"]) and isinstance(c["workflow"], str) and WORKFLOW.match(c["workflow"]) for c in req)
           and len({c["check"] for c in req}) == len(req)
           and isinstance(doc["hold_label"], str) and CHECK.match(doc["hold_label"])
-          and isinstance(doc["owner_paths"], list) and all(isinstance(x, str) and OWNER_PATH.match(x) for x in doc["owner_paths"]))
+          and isinstance(doc["owner_paths"], list) and all(isinstance(x, str) and OWNER_PATH.match(x) for x in doc["owner_paths"])
+          and (WATCHED not in doc or watched_problem(doc[WATCHED], doc["owner_paths"]) is None))
     if not ok:
-        raise Refused(f".warrant/merge.json members are {list(GATE_FIELDS)}, gate {GATE!r}, a branch name, a non-empty "
-                      "list of distinct {check, workflow}, a label and a list of paths", "BASE_CONFIG")
+        why = watched_problem(doc[WATCHED], doc.get("owner_paths") or []) if isinstance(doc, dict) and WATCHED in doc else None
+        raise Refused(f".warrant/merge.json members are {list(GATE_FIELDS)} and optionally {WATCHED!r}: gate {GATE!r}, a branch "
+                      "name, a non-empty list of distinct {check, workflow}, a label and a list of paths"
+                      + (f"; {why}" if why else ""), "BASE_CONFIG")
     return doc
+
+
+def watched_problem(w, owner):
+    """None when `w` is a watched policy: {paths: a non-empty list of paths none of which is an owner path,
+    window_hours: 1..720, solo_window_hours: window_hours..720, families: 2..5, veto_role: a role}; else why not."""
+    if not (isinstance(w, dict) and set(w) == WATCHED_FIELDS):
+        return f"watched is {{{', '.join(sorted(WATCHED_FIELDS))}}}"
+    if not (isinstance(w["paths"], list) and w["paths"] and all(isinstance(x, str) and OWNER_PATH.match(x) for x in w["paths"])):
+        return "watched.paths is a non-empty list of paths"
+    if set(w["paths"]) & set(owner):
+        return "a watched path is not an owner path"
+    if not (type(w["window_hours"]) is int and 1 <= w["window_hours"] <= 720):
+        return "watched.window_hours is an integer of 1..720"
+    if not (type(w["solo_window_hours"]) is int and w["window_hours"] <= w["solo_window_hours"] <= 720):
+        return "watched.solo_window_hours is an integer of window_hours..720"
+    if not (type(w["families"]) is int and 2 <= w["families"] <= 5):
+        return "watched.families is an integer of 2..5"
+    if not (isinstance(w["veto_role"], str) and ROLE.match(w["veto_role"])):
+        return "watched.veto_role is a role"
+    return None
 
 
 class Base:
@@ -447,6 +475,26 @@ def check_reasons(required, checks, head):
     return out
 
 
+def checks_completed(required, checks, head):
+    """The time (seconds since the epoch, GitHub's clock) the last of the required checks completed at `head`: of each
+    check, its latest run there from its own workflow; None when one has not completed or its time cannot be read."""
+    suites = {w.get("check_suite_id"): w.get("path") for w in checks.get("workflow_runs", [])
+              if isinstance(w, dict) and w.get("head_sha") == head}
+    out = 0
+    for c in required:
+        ours = [r for r in checks.get("check_runs", []) if isinstance(r, dict) and r.get("name") == c["check"]
+                and r.get("head_sha") == head and (r.get("app") or {}).get("slug") == ACTIONS_APP
+                and suites.get((r.get("check_suite") or {}).get("id")) == c["workflow"]]
+        if not ours:
+            return None
+        last = max(ours, key=lambda r: r.get("id", 0))
+        try:
+            out = max(out, calendar.timegm(time.strptime(last.get("completed_at") or "", "%Y-%m-%dT%H:%M:%SZ")))
+        except ValueError:
+            return None
+    return out
+
+
 # ---------------------------------------------------------------- the predicate
 
 class Assessment:
@@ -489,8 +537,9 @@ def pr_reasons(b, pr, hold=False):
     return out
 
 
-def assess(root, base, pr, checks, hold=False):
-    """The Assessment of pull request `pr` against the base commit `base` (a full id, or a Base already read)."""
+def assess(root, base, pr, checks, hold=False, now=None):
+    """The Assessment of pull request `pr` against the base commit `base` (a full id, or a Base already read); `now`
+    (seconds since the epoch, default the clock) is when a watched change's window is read."""
     a = Assessment(pr, base if isinstance(base, str) else base.commit)
     try:
         b = base if isinstance(base, Base) else Base(root, base)
@@ -502,14 +551,14 @@ def assess(root, base, pr, checks, hold=False):
     a.reasons += [r for r in reasons if r[0] in HOLDS]
     a.shared += [r for r in reasons if r[0] not in HOLDS]
     try:
-        _shared(a, root, b, pr, checks)
+        _shared(a, root, b, pr, checks, now)
     except UnicodeDecodeError:              # Git holds paths as bytes: one that is no UTF-8 refuses its pull request, not the run
         a.shared.append(("HEAD_UNREADABLE", f"#{pr['number']}: a path of the head's trees is not UTF-8"))
     a.reasons += a.shared
     return a
 
 
-def _shared(a, root, b, pr, checks):
+def _shared(a, root, b, pr, checks, now=None):
     sh = a.shared
     try:
         head, _ = canonical(root, pr["head"])
@@ -531,7 +580,7 @@ def _shared(a, root, b, pr, checks):
                                + [f"{c} {str(i)[:12]}" for c, i, _ in rep["problems"][:2]])))
     if not rep["canonical"]:
         sh.append(("STORE_NOT_CANONICAL", "the head's records.jsonl is not in canonical order (`warrant fmt`)"))
-    _review(a, root, b, pr, head, rep)
+    _review(a, root, b, pr, head, rep, checks, now)
 
 
 def _lineage(b, rep, n):
@@ -556,7 +605,7 @@ def _uncited(rep, added, blobs):
     return sorted(set(blobs) - cited)
 
 
-def _review(a, root, b, pr, head, rep):
+def _review(a, root, b, pr, head, rep, checks=None, now=None):
     sh, n = a.shared, pr["number"]
     found = _lineage(b, rep, n)
     if not found:
@@ -582,12 +631,56 @@ def _review(a, root, b, pr, head, rep):
     x = _reviewed(sh, root, leaf, head, n)
     if x is None:
         return
-    owned = owner_paths(root, b.commit, x, b.gate["owner_paths"])
+    w = b.gate.get(WATCHED)
+    # Every place the listed files imply (a shadowing package, a module added where the interpreter searches, ...)
+    # is derived from owner and watched paths together, and stays the owner's; only a change to a watched file itself
+    # is the models' to merge, the owner watching.
+    every = owner_paths(root, b.commit, x, b.gate["owner_paths"] + (w["paths"] if w else []))
+    touched = [p for p in every or [] if w and _listed(w["paths"], p)]
+    owned = None if every is None else [p for p in every if p not in touched]
     if owned is None or owned:
         a.reasons.append(("OWNER_PATHS", "the owner merges a change to what decides merging: "
                           + (", ".join(owned[:8]) if owned else f"{x[:12]} has no merge base with the base")))
     _tail(sh, root, b, rep, lin, x, head, n)
     _verdict(a, b, rep, lin, x)
+    if touched:
+        _watched(a, b, rep, lin, w, touched, checks or {}, head, now)
+
+
+def _listed(paths, p):
+    return any(p == e or (e.endswith("/") and p.startswith(e)) for e in paths)
+
+
+def _watched(a, b, rep, lin, w, touched, checks, head, now):
+    """A change to a watched path is merged by the gate, the owner watching, only when the head version is accepted
+    by `families` distinct pr/acceptors, its own actor counted when it holds pr/acceptor (WATCHED_FAMILIES); no
+    challenge by a holder of `veto_role` is filed against it, counted or not (OWNER_VETO); and `window_hours` have
+    passed since the required checks completed at the head, by GitHub's clock (WATCHED_WINDOW). With fewer families
+    (one model family, the others out of budget) the gate merges nothing; `solo_ready` says whether the longer
+    `solo_window_hours` has passed with one pr/acceptor family, no veto and the checks green, which is when an agent
+    may merge it by AGENTS.md's rule."""
+    a.facts["watched"] = touched
+    v = rep["versions"][lin["leaf"]]
+    acceptors = b.holders("pr/acceptor")
+    families = (set(v["accepted_by"]) & acceptors) | ({rep["_recs"][lin["leaf"]]["actor"]} & acceptors)
+    if len(families) < w["families"]:
+        a.reasons.append(("WATCHED_FAMILIES", f"a change to watched paths ({', '.join(touched[:4])}) needs {w['families']} "
+                          f"distinct pr/acceptors, its author counted: {', '.join(sorted(families)) or 'none'}"))
+    vetoers = b.holders(w["veto_role"])
+    veto = sorted(c for c, x in rep["challenges"].items()
+                  if x["target"] == lin["leaf"] and rep["_recs"].get(c, {}).get("actor") in vetoers)
+    if veto:
+        a.reasons.append(("OWNER_VETO", f"a {w['veto_role']} challenged the head version: " + ", ".join(c[:12] for c in veto)))
+    done = checks_completed(b.gate["required"], checks, head)
+    now = time.time() if now is None else now
+    if done is None or now - done < w["window_hours"] * 3600:
+        left = "the required checks have not completed" if done is None else \
+            f"{(w['window_hours'] * 3600 - (now - done)) / 3600:.1f} h of {w['window_hours']} h remain"
+        a.reasons.append(("WATCHED_WINDOW", f"the owner's window on watched paths ({', '.join(touched[:4])}): {left}"))
+    solo_left = None if done is None else w["solo_window_hours"] * 3600 - (now - done)
+    blocking = [c for c, _ in a.reasons + a.shared if c not in ("NO_ACCEPT", "WATCHED_FAMILIES", "WATCHED_WINDOW")]
+    a.facts["solo_ready"] = bool(families and not blocking and solo_left is not None and solo_left <= 0)
+    a.facts["solo_from"] = None if done is None else int(done + w["solo_window_hours"] * 3600)
 
 
 def _reviewed(sh, root, leaf, head, n):
