@@ -6,6 +6,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `/fragile`: the lineages someone objected to, the most attended first, each objection beside the attention it met
+  and its fate (counted, standing, reproduced); «Хто вказав» names whoever filed a reproduced or standing challenge
+  with the attention of what it held against. Recognition read from the records, never a score a guard reads. Tests
+  FR1–FR3, mutants A140–A143.
+
 - Views: «Прочитав» signs `{verdict: "seen", lens, root}` in the reader's own store; it credits nothing. The floor
   counts who saw apart from who spoke and tells the reader which version they saw last. docs/AGENT.md gains
   «Before lenses»: what Solid, the AT Protocol, Verifiable Credentials, PROV-O and the WoT Thing Description already

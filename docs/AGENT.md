@@ -233,3 +233,16 @@ challenge that stands is never smaller than what it stands against, the legend i
 away by the budget (300) are named with their count. `?vs=` sets a second lens's map beside it and names how many
 nodes moved and which bindings differ; the lens comparison names scene bindings too. agent_test SC1–SC7; mutants
 A128–A133.
+
+### Fragile popularity (`/fragile`, `warrant_agent/fragile.py`)
+
+The lineages someone objected to, the most attended first. A lineage's attention is how many actors other than its
+authors signed that they saw it, accepted it or reacted to it (here and in the other stores read; a challenge itself is
+no attention). Beside it, each challenge and its fate: counted or not, standing, reproduced by a replayer on its own
+target. One reproduced counterexample outweighs any number of agreements: the page sets them side by side and never
+adds them into one score.
+
+«Хто вказав»: whoever filed a challenge reproduced on its own target, or counted and standing, is named with each
+lineage it held against and that lineage's attention. It is recognition read from the records, not a rank or a reward:
+no guard reads it, an objection nobody reproduced and no role counts is shown and not credited, and attention counts
+only keys some store's trust binds. agent_test FR1–FR3; mutants A140–A143.

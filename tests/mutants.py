@@ -287,6 +287,10 @@ MUTANTS = [
     ("A137", "warrant_agent/serve.py", '    spoke = sorted({x["sentence"][0] for x in items if not _is_view(rep, x)} - set(authors))', '    spoke = sorted({x["sentence"][0] for x in items} - set(authors))', AGENT, ["SV9"]),
     ("A138", "warrant_agent/serve.py", '            if lens_id != "builtin" and not S.hex64(lens_id):', '            if False:', AGENT, ["SV9"]),
     ("A139", "warrant_agent/serve.py", '    return (max(seen), len(order)) if seen else None', '    return (min(seen), len(order)) if seen else None', AGENT, ["SV9"]),
+    ("A140", "warrant_agent/fragile.py", '    return ch["reproduced"] or (ch["counted"] and ch["stands"])', '    return True', AGENT, ["FR2"]),
+    ("A141", "warrant_agent/fragile.py", 'any(on == c["target"] and verdict == "reproduces" for on, verdict, _ in c["replays"])', 'any(verdict == "reproduces" for on, verdict, _ in c["replays"])', AGENT, ["FR2"]),
+    ("A142", "warrant_agent/fragile.py", '            if a in authors or x["challenge"] is not None:', '            if a in authors:', AGENT, ["FR1"]),
+    ("A143", "warrant_agent/fragile.py", 'out.sort(key=lambda r: (-len(r["attention"]["all"]),', 'out.sort(key=lambda r: (len(r["attention"]["all"]),', AGENT, ["FR1"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

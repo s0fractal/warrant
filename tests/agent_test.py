@@ -1337,6 +1337,41 @@ def scene_cases():
           one[:0])
 
 
+def fragile_cases():
+    """Fragile popularity (warrant_agent/fragile.py): attention beside the objections it met, never one score; whoever
+    filed a reproduced or standing challenge is named, an unreproduced uncounted objection is shown, not credited."""
+    from warrant_agent import fragile as FR
+    from warrant_agent import serve as SV
+    r = Repo()
+    def done(s):
+        return r.entity("alice", "obligation@1", {"state": "done", "statement": s, "serves": []},
+                        lineage=r.entity("alice", "obligation@1", {"state": "open", "statement": s, "serves": []}))
+    popular, quiet = done("popular"), done("quiet")
+    for a in ("bob", "dave"):
+        r.put(a, "attest", {"target": popular, "verdict": "seen", "lens": "builtin", "root": "0" * 64}, refs=[popular])
+    r.attest("bob", popular)
+    c = r.put("eve", "challenge", {"target": popular, "statement": "one counterexample"}, refs=[popular])
+    r.put("carol", "attest", {"target": c, "verdict": "reproduces", "on": popular}, refs=[c, popular])
+    q = r.put("eve", "challenge", {"target": quiet, "statement": "an objection nobody reproduced"}, refs=[quiet])
+    r.put("carol", "attest", {"target": q, "verdict": "reproduces", "on": popular}, refs=[q, popular])   # on another version
+    space = SV.Space({"w": str(r.root)})
+    found = FR.rows(SV, {"w": space.report("w")})
+    top = found[0] if found else {}
+    check("FR1 lineages with an objection, the most attended first: attention is who saw, accepted or reacted, the "
+          "authors aside, and a challenge is no attention", [x["title"] for x in found] == ["popular", "quiet"]
+          and top["attention"]["saw"] == {"bob", "dave"} and top["attention"]["accepted"] == {"bob"}
+          and len(top["attention"]["all"]) == 2 and "eve" not in top["attention"]["all"], found)
+    who = FR.finders(found)
+    check("FR2 the finders: a challenge reproduced on its own target is credited, with the attention of what it held "
+          "against; an objection nobody reproduced and no role counts is shown, not credited",
+          [a for a, _ in who] == ["eve"] and [(rr["title"], n) for rr, n in who[0][1]] == [("popular", 1)]
+          and any(ch["id"] == q and not FR.credited(ch) for x in found for ch in x["challenges"]), who)
+    page_ = SV.App(space).page_fragile()
+    check("FR3 the page sets attention beside each objection and its fate, adds nothing up, and its record text is data",
+          "увага: 2 (бачили 2, прийняли 1, відреагували 0)" in page_ and "відтворене" in page_ and "не зараховане" in page_
+          and "Хто вказав" in page_ and "eve" in page_.split("Хто вказав")[1], page_[:0])
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1353,4 +1388,5 @@ if __name__ == "__main__":
     lens_cases()
     changes_cases()
     scene_cases()
+    fragile_cases()
     sys.exit(finish())

@@ -33,6 +33,7 @@ from warrant import records as R
 from warrant.repo import Failed, Repo, load_key
 from warrant_agent import glossary as GL
 from warrant_agent import changes as CH
+from warrant_agent import fragile as FR
 from warrant_agent import lens as LZ
 from warrant_agent import scene as SC
 
@@ -332,7 +333,7 @@ def item(store, x, show_store=True):
 def page(title_, body, footer=""):
     return (f'<!doctype html><html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,'
             f'initial-scale=1"><title>{E(title_)}</title><style>{CSS}</style></head><body><header><a href="/">warrant</a>'
-            f'<nav><a href="/">Стрічка</a><a href="/changes">Що змінилось</a><a href="/wait">Чекає на мене</a>'
+            f'<nav><a href="/">Стрічка</a><a href="/changes">Що змінилось</a><a href="/fragile">Крихке</a><a href="/wait">Чекає на мене</a>'
             f'<a href="/stores">Сховища</a></nav></header>'
             f'<main>{body}</main><footer>{footer}</footer></body></html>')
 
@@ -775,6 +776,35 @@ class App:
             foots.append(foot(n, rep, {"op": "frontier", "actor": actor}))
         return page("Чекає", h, "<br>".join(foots))
 
+    def page_fragile(self, q=None):
+        """Where attention went and where one objection holds against it (warrant_agent/fragile.py)."""
+        found = FR.rows(sys.modules[__name__], self.reports())
+        def status(c):
+            if c["reproduced"]:
+                return '<b class="CHALLENGED">відтворене</b>'
+            if c["counted"] and c["stands"]:
+                return '<b class="CHALLENGED">зараховане, стоїть</b>'
+            return "зараховане, не стоїть" if c["counted"] else "не зараховане"
+        h = ('<h2>Крихке популярне</h2><p class="rest">Лінії, проти яких хтось заперечив, від найбільш уважених. Один '
+             'відтворений контрприклад важить більше за будь-яку кількість згод; тут вони стоять поруч і ніколи не '
+             'складаються в один бал. Увага рахується лише з ключів, яким довіряє якесь із прочитаних сховищ.</p>')
+        for r in found[:200]:
+            a = r["attention"]
+            h += (f'<div class="card">{link_l(r["store"], r["lineage"], E(r["label"] + ": " + r["title"]))} '
+                  f'<span class="rest">({E(r["store"])}) · увага: {len(a["all"])} (бачили {len(a["saw"])}, прийняли '
+                  f'{len(a["accepted"])}, відреагували {len(a["reacted"])})</span><ul>'
+                  + "".join(f'<li><span class="actor">{E(c["actor"])}</span> заперечив · {status(c)} — {E(c["statement"][:300])}</li>'
+                            for c in r["challenges"]) + "</ul></div>")
+        who = FR.finders(found)
+        if who:
+            h += ('<h3>Хто вказав</h3><p class="rest">Визнання, прочитане з записів, а не рейтинг: заперечення, відтворене '
+                  'на своїй цілі або зараховане й чинне, з увагою, яку мало те, проти чого воно стоїть. Жоден охоронець '
+                  'цього не читає.</p><ul>'
+                  + "".join(f'<li><span class="actor">{E(actor)}</span>: ' + "; ".join(
+                      f'{link_l(r["store"], r["lineage"], E(r["label"]))} ×{n} (увага {len(r["attention"]["all"])})' for r, n in items[:12])
+                      + "</li>" for actor, items in who) + "</ul>")
+        return page("Крихке", h, "<br>".join(foot(n, r, {"op": "fragile"}) for n, r in self.reports().items() if "_error" not in r))
+
     def page_stores(self):
         h = "<h2>Сховища</h2>"
         for n, root in self.space.roots.items():
@@ -884,6 +914,8 @@ def handler(app, port):
                     self.send(200, app.page_feed(q))
                 elif parts == ["changes"]:
                     self.send(200, app.page_changes(q))
+                elif parts == ["fragile"]:
+                    self.send(200, app.page_fragile(q))
                 elif parts == ["wait"]:
                     self.send(200, app.page_wait(q))
                 elif parts == ["stores"]:
