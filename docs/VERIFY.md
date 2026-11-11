@@ -131,3 +131,21 @@ repeats every run of its cases through the file, with the library and without it
   changed since.
 - **Whom to trust.** The trust and the profile are the receiver's own inputs. The same package gives
   another receiver another answer, and both are right.
+
+## A second client: the same records through another resolver
+
+```bash
+node impl-js/read.mjs --base https://raw.githubusercontent.com/s0fractal/warrant/COMMIT/ --summary
+```
+
+`impl-js/read.mjs` fetches a repository's `.warrant/v3.json`, `.warrant/records.jsonl` and every blob a record names
+from any HTTP(S) root (a GitHub raw URL at a commit, a mirror, a local server) and assesses them with the second
+implementation (`impl-js/warrant.mjs`, held byte for byte to the Python engine). The transport is not trusted: a blob
+whose bytes do not hash to its name refuses the read, and a record line altered on the way fails its signature and is
+rejected. A named value the server holds no blob for is counted as `unresolved`, never guessed.
+
+Given the same bytes the report equals `node impl-js/warrant.mjs assess --store DIR --config V3JSON`, byte for byte
+(impl_js_test J9, over a local server; mutants JS1, JS3). Measured once on 2026-11-11: master at 76452093 read through
+raw.githubusercontent.com gives root `e0b5a3711ac6` and the same 636 lineages in the same states and reliance as the
+Python engine on a local checkout, nothing rejected, in about 13 seconds. Content, not site: neither the publisher's
+server nor its HTML nor its engine is needed to reach the same verdicts.
