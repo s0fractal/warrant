@@ -10,6 +10,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   assessed by the JavaScript implementation give the same report, byte for byte, as the store read from disk; an
   altered blob is refused, an altered line rejected. Read through GitHub, master gives the Python engine's root and
   every lineage's state. docs/VERIFY.md; impl_js_test J9, mutants JS1, JS3.
+- Who a voice is (`warrant_agent/voices.py`, R04 of the observer pack in part): the floor joins voices by the keys
+  their store's trust binds to their names, not by the names. Two names on one key are one source (the author's key
+  under another name is never an independent voice); one name on different keys in two stores is two; a record its
+  store admitted unsigned (a migration's word) is no one's key. The floor counts the voices independent of the author
+  and names where names mislead. Tests VO1–VO4, mutants A180–A185.
 - A lens's contract (`warrant_agent/contract.py`, P05 of the observer pack): what a card promises of a lineage page
   (each declared member that has a value, the activity it shows) and what the floor promises (state, reliance, every
   counted challenge that stands, UNATTESTED, the lens) are read back from the marks of the page drawn. A broken promise
