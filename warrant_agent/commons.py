@@ -15,8 +15,9 @@ by that store's rules; a reader's overlay counts one only when the reader's own 
 reader trusts). Nothing here can move a store's verdict, and nothing here can be silenced by the store it objects to.
 
 Limits: the target is one record id (64 hex); the statement is 1..4000 characters; the agent's seed lives in a file of
-its own (0600), outside every store, made on first use."""
+its own (0600), `~/.config/warrant/commons/NAME.seed`, made on first use; the command line names it, never a path."""
 import argparse
+import re
 import json
 import os
 import sys
@@ -30,7 +31,9 @@ from warrant.store import Store
 
 STATEMENT_MAX = 4000
 DEFAULT_STORE = Path.home() / "Projects" / "commons"
-DEFAULT_SEED = Path.home() / ".config" / "warrant" / "commons.seed"
+SEEDS = Path.home() / ".config" / "warrant" / "commons"      # an agent's seeds live here, one file per name
+NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,39}\Z")
+V3 = "v3.json"
 DOC = {"warrant": "repository/3", "repository": "s0fractal/commons",
        "trust": {"warrant": "trust/3", "keys": {}}, "profile": {"warrant": "profile/3", "roles": {}}}
 
@@ -50,16 +53,16 @@ def init(store):
     only when it is a commons: a voice is never written into a store that trusts someone (an agent pointing `--store` at
     a project's store is refused, not appended to)."""
     dot = Path(store).resolve() / ".warrant"   # NOSONAR S8707: the agent names its own commons; any other store is refused below
-    if (dot / "v3.json").exists():
+    if (dot / V3).exists():
         try:
-            doc = json.loads((dot / "v3.json").read_text())
+            doc = json.loads((dot / V3).read_text())
         except ValueError:
             doc = None
         if not is_commons(doc):
             raise Refused(f"{dot.parent} is no commons: its store trusts someone or gives a role; a voice goes to a commons")
         return dot
     dot.mkdir(parents=True, exist_ok=True)
-    (dot / "v3.json").write_text(json.dumps(DOC, indent=1, sort_keys=True) + "\n")
+    (dot / V3).write_text(json.dumps(DOC, indent=1, sort_keys=True) + "\n")
     Store(dot).init()
     return dot
 
@@ -74,10 +77,18 @@ def seed(path, store=None):
         raise Refused(f"{p}: a seed lives outside the store it writes to")
     if not p.exists():
         p.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # NOSONAR S8707: a name-confined path (seed_named) or the caller's own
         with os.fdopen(fd, "w") as f:
             f.write(K.Key.generate().seed_hex() + "\n")
-    return K.Key.from_seed_hex(p.read_text().strip())
+    return K.Key.from_seed_hex(p.read_text().strip())  # NOSONAR S8707: see above
+
+
+def seed_named(name, store=None):
+    """The agent's key by name: its seed is SEEDS/<name>.seed, nowhere else (the command line names a key, never a
+    path, so no argument can point a seed at another file)."""
+    if not (isinstance(name, str) and NAME.match(name)):
+        raise Refused("a key's name is 1..40 of a-z, 0-9 and '-', starting with a letter or digit")
+    return seed(SEEDS / f"{name}.seed", store)
 
 
 def say(store, target, statement, key, at=None):
@@ -115,14 +126,14 @@ def main(argv=None):
     s = sub.add_parser("say")
     s.add_argument("target")
     s.add_argument("statement")
-    s.add_argument("--seed", default=str(DEFAULT_SEED), help="the agent's own seed file (made on first use)")
+    s.add_argument("--as", dest="name", default="commons", help="the agent's key by name (its seed: ~/.config/warrant/commons/NAME.seed, made on first use)")
     sub.add_parser("list")
     a = p.parse_args(argv)
     try:
         if a.cmd == "init":
             print(init(a.store))
         elif a.cmd == "say":
-            key = seed(a.seed, a.store)
+            key = seed_named(a.name, a.store)
             print(json.dumps({"filed": say(a.store, a.target, a.statement, key), "actor": "key:" + key.public}))
         else:
             for i, actor, target, text in voices(a.store):

@@ -316,6 +316,7 @@ MUTANTS = [
     ('A166', 'warrant_agent/serve.py', '    if c.get("outside"):\n        return " · голос ззовні', '    if False:\n        return " · голос ззовні', AGENT, ['CM2']),
     ('A167', 'warrant_agent/commons.py', '        if not is_commons(doc):', '        if False:', AGENT, ['CM6']),
     ('A168', 'warrant_agent/commons.py', '    if store is not None and p.resolve().is_relative_to(Path(store).resolve()):', '    if False:', AGENT, ['CM6']),
+    ('A173', 'warrant_agent/commons.py', '    if not (isinstance(name, str) and NAME.match(name)):', '    if False:', AGENT, ['CM6']),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

@@ -1582,9 +1582,22 @@ def commons_cases():
             outcomes.append(False)
         except Exception as e:
             outcomes.append(isinstance(e, CM.Refused))
+    keep_seeds = CM.SEEDS
+    CM.SEEDS = r.home / "seeds"
+    try:
+        named = CM.seed_named("agent-1")
+        try:
+            CM.seed_named("../escape")
+            escaped = True
+        except CM.Refused:
+            escaped = False
+    finally:
+        CM.SEEDS = keep_seeds
+    outcomes.append(not escaped and (r.home / "seeds" / "agent-1.seed").exists() and named.public)
     check("CM6 a voice is written only into a commons (a store that trusts nobody and gives nobody a role): pointed at "
-          "a project's store it is refused, nothing appended; a seed inside the store it writes to is refused",
-          outcomes == [True, True] and r.store.file.read_bytes() == w_bytes, outcomes)
+          "a project's store it is refused, nothing appended; a seed inside the store it writes to is refused; the "
+          "command line names a key, never a path (a name that would leave the seeds' directory is refused)",
+          outcomes[:2] == [True, True] and bool(outcomes[2]) and r.store.file.read_bytes() == w_bytes, outcomes)
 
 
 if __name__ == "__main__":

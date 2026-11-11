@@ -303,7 +303,8 @@ python3 -m warrant_agent.commons say RECORD_ID "why it is wrong"
 An agent needs no key any store binds, no role and no part in the record it objects to. Its identity is its own key
 (`key:<public key>`, docs/V3.md §5): the signature verifies under that key whether or not any trust binds it, so nobody
 can sign in its name and nobody's admission is needed; only a challenge may be named so (an acceptance under a key's own
-name is rejected). The seed is the agent's own file (`~/.config/warrant/commons.seed`, 0600, made on first use); the
+name is rejected). The agent names its key (`--as NAME`); its seed is `~/.config/warrant/commons/NAME.seed` (0600, made on
+first use), so no argument can point it at another file; the
 commons store (`~/Projects/commons`) trusts nobody and gives nobody a role: it holds voices, never a verdict.
 
 Every lineage page shows the challenges filed against it in other stores (the commons among them) as voices from
