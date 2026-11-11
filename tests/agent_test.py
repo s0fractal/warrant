@@ -1454,6 +1454,71 @@ def audit_cases():
           not any("<script" in h.lower() or _re.search(r"\son[a-z]+=", h) for h in pages), [h[:0] for h in pages])
 
 
+def overlay_cases():
+    """Overlay (warrant_agent/overlay.py, Codex 2026-11-11): three stores (a publisher's claim, a challenge it never
+    took in, a replay that reproduces it), two readers with the same bytes and other rules. Each store's own verdict
+    stands; each reader's is its own, named, with its own identity."""
+    from warrant_agent import overlay as OV
+    pub, crit, lab = Repo(), Repo(), Repo()
+    o = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the claim", "serves": []})
+    d = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the claim", "serves": []}, lineage=o)
+    pub.attest("bob", d)
+    c = crit.put("eve", "challenge", {"target": d, "statement": "a counterexample"}, refs=[d])
+    lab.put("dave", "attest", {"target": c, "verdict": "reproduces", "on": d}, refs=[c, d])      # dave: no replayer of pub
+    pub_bytes = pub.store.file.read_bytes()
+    snaps = {"pub": pub.store.snapshot(), "crit": crit.store.snapshot(), "lab": lab.store.snapshot()}
+    own = OV.assess({"pub": snaps["pub"]}, pub.trust, pub.profile)
+    roles = lambda **extra: dict(pub.profile, roles=dict(pub.profile["roles"], **extra))
+    p1 = roles(**{"roadmap/acceptor": ["bob", "eve"]})            # reader 1: eve's objection may count
+    p2 = roles(replayer=[])                                        # reader 2: neither the challenger nor the replayer counts
+    t1, _, _ = OV.receiver(pub.trust, p1, {n: pub.trust for n in snaps})
+    r1, r2 = OV.assess(snaps, t1, p1), OV.assess(snaps, t1, p2)
+    again = OV.assess(snaps, t1, p1)
+    check("OV1 the publisher's store alone relies on its claim; a reader who composes the challenge's and the replay's "
+          "stores under rules that count the challenger reads it CHALLENGED; the publisher's bytes are untouched",
+          own["lineages"][o]["reliance"] == "ELIGIBLE" and r1["lineages"][o]["reliance"] == "CHALLENGED"
+          and r1["challenges"][c]["counted"] and pub.store.file.read_bytes() == pub_bytes,
+          (own["lineages"][o]["reliance"], r1["lineages"][o]["reliance"], r1["challenges"].get(c)))
+    code = r1["code"]
+    check("OV2 another reader with the same bytes and other rules (no role for the challenger, no trust in the replayer) "
+          "reads it otherwise, and says why (the challenge is not counted); each result has its own identity, and the "
+          "same inputs give the same one",
+          r2["lineages"][o]["reliance"] == "ELIGIBLE" and not r2["challenges"][c]["counted"]
+          and OV.identity(snaps, t1, p1, code) == OV.identity(snaps, t1, p1, again["code"])
+          and OV.identity(snaps, t1, p1, code) != OV.identity(snaps, t1, p2, code)
+          and OV.identity(snaps, t1, p1, code) != OV.identity({"pub": snaps["pub"]}, t1, p1, code), r2["challenges"].get(c))
+    forged = dict(pub.trust, keys=dict(pub.trust["keys"], bob=[KEYS["dave"].public]))   # a store that calls dave's key bob
+    reader_trust = dict(pub.trust, keys={a: k for a, k in pub.trust["keys"].items() if a != "bob"})
+    t3, _, conflicts = OV.receiver(reader_trust, p1, {"pub": pub.trust, "forger": forged})
+    t4, _, none = OV.receiver(pub.trust, p1, {"pub": pub.trust, "forger": forged})
+    check("OV3 a key binding is admitted only as the reader's own or as every source naming that actor agrees: a store "
+          "that binds another key to an actor is named, and that actor is admitted from neither; the reader's own "
+          "binding wins", "bob" not in t3["keys"] and [a for a, _ in conflicts] == ["bob"]
+          and t4["keys"]["bob"] == pub.trust["keys"]["bob"] and none == [], conflicts)
+    from warrant_agent import serve as SV
+    me = Repo()
+    me.profile["roles"] = dict(me.profile["roles"], replayer=["dave"])     # the reader trusts dave's replays; pub does not
+    me.write_config()
+    space = SV.Space({"pub": str(pub.root), "crit": str(crit.root), "lab": str(lab.root), "me": str(me.root)})
+    mine_page = SV.App(space, reader="bob", mine="me").page_overlay({"store": "pub"})
+    no_mine = SV.App(space, reader="bob").page_overlay({"store": "pub"})
+    check("OV4 the page reads a store with the other stores under the reader's own rules (its own store's trust and "
+          "roles): the lineage the publisher relies on reads CHALLENGED for this reader, with the challenge as witness "
+          "and the store's verdict beside it; without a store of its own the reader is told why nothing is composed",
+          mine_page[0] == 200 and "опора: ELIGIBLE → CHALLENGED" in mine_page[1] and "заперечив" in mine_page[1]
+          and "у pub за його правилами → для тебе" in mine_page[1] and no_mine[0] == 400
+          and pub.store.file.read_bytes() == pub_bytes, mine_page[1][:0])
+    crit.entity("eve", "obligation@1", {"state": "open", "statement": "the critic own lineage", "serves": []})
+    bare = Repo()
+    bare.profile["roles"] = {k: v for k, v in bare.profile["roles"].items() if k != "roadmap/acceptor"}
+    bare.write_config()
+    space2 = SV.Space({"pub": str(pub.root), "crit": str(crit.root), "lab": str(lab.root), "bare": str(bare.root)})
+    p5 = SV.App(space2, reader="bob", mine="bare").page_overlay({"store": "pub"})[1]
+    check("OV5 the page lists only the store's own lineages (another store's own lineage is not news about this one), "
+          "and names the roles the store's guards ask that the reader's rules give nobody",
+          "the critic own lineage" not in p5 and "твої правила не називають, хто має ці ролі: roadmap/acceptor" in p5, p5[:0])
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1473,4 +1538,5 @@ if __name__ == "__main__":
     fragile_cases()
     whatif_cases()
     audit_cases()
+    overlay_cases()
     sys.exit(finish())

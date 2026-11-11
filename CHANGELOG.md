@@ -6,6 +6,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `/overlay` («Для мене»): a store read together with the stores the reader chose, under the reader's own trust and
+  roles (`overlay.py`): a challenge the publisher never took in counts for a reader whose rules count it, beside the
+  store's own verdict, never in its place; each result has its own identity; key bindings the sources disagree on are
+  not admitted. Tests OV1–OV5, mutants A155–A161.
+
 - Codex's observer pack, audited: an adoption is filed in the reader's own store (a reader adopts a lens it cannot
   write to); a page's lens names the whole interpreter and every other store's root, trust and profile; the floor
   says what the lens leaves out and which stores were not read; `/changes` says when the reader's lens changed; no

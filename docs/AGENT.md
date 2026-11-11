@@ -278,3 +278,18 @@ adds them into one score.
 lineage it held against and that lineage's attention. It is recognition read from the records, not a rank or a reward:
 no guard reads it, an objection nobody reproduced and no role counts is shown and not credited, and attention counts
 only keys some store's trust binds. agent_test FR1–FR3; mutants A140–A143.
+
+### For me: other stores, my rules (`/overlay`, `warrant_agent/overlay.py`)
+
+A publisher's store holds a claim; another store holds a challenge the publisher never took in; a third, a replay that
+reproduces it. Each store alone is assessed under its own receiver, and that verdict stands. The reader composes the
+stores it chooses (`?store=X&with=A,B`, default every store read) and assesses the union under its own rules, the trust
+and profile of its own store (`--mine`): `assess(X ∪ O_R, T_R, P_R)`, beside `assess(X, T_X, P_X)`, never in its place.
+The page lists each lineage of X that reads otherwise for the reader (X's verdict → the reader's, with the witness) and
+the overlay's identity (each store's records, the trust, the profile, the engine).
+
+The reader's roles are the reader's alone: no source's profile is merged. A key binding is admitted only as the
+reader's own or as every chosen source naming that actor agrees; a binding they disagree on is named and not admitted
+(an impostor store cannot sign as another actor). The page names the roles X's guards ask that the reader's rules give
+nobody. What is in no chosen store is not counted: the overlay is honest, not complete. agent_test OV1–OV5; mutants
+A155–A161.
