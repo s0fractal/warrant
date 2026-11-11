@@ -15,13 +15,21 @@
     ".warrant/v3/",
     "AGENTS.md",
     "tools/gate.py",
-    "warrant/__init__.py",
-    "warrant/engine.py",
-    "warrant/gate.py",
-    "warrant/jcs.py",
-    "warrant/keys.py",
-    "warrant/records.py",
-    "warrant/shapes.py",
-    "warrant/store.py"
-  ]
+    "warrant/gate.py"
+  ],
+  "watched": {
+    "paths": [
+      "warrant/__init__.py",
+      "warrant/engine.py",
+      "warrant/jcs.py",
+      "warrant/keys.py",
+      "warrant/records.py",
+      "warrant/shapes.py",
+      "warrant/store.py"
+    ],
+    "window_hours": 24,
+    "solo_window_hours": 72,
+    "families": 2,
+    "veto_role": "pr/owner"
+  }
 }

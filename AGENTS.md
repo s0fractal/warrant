@@ -11,7 +11,13 @@ repository's records, tools, review loop and merge gate).
 
 1. **Never commit to `master`.** Work on a branch and open a pull request. `master` advances only
    by a merge: the owner's, or the merge gate's (`tools/gate.py`) when the review loop accepted the
-   pull request (docs/V3.md §14). A pull request that changes an owner path is merged by the owner.
+   pull request (docs/V3.md §14). A pull request that changes an owner path is merged by the owner. A pull
+   request that changes a watched path (`.warrant/merge.json` `watched`) and no owner path is merged by the
+   models, the owner watching: by the gate when two model families accepted it and the owner's window has
+   passed with no veto; or, when only one family can review (the others out of budget), by an agent of that
+   family once the gate's assessment of it says `solo_ready` (the longer solo window passed, the checks green,
+   no veto, no hold, nothing else refusing), naming that assessment in the merge. The owner vetoes with the
+   `hold` label or a challenge on the head version; the trust, these rules, the gate and CI stay owner paths.
 
 2. **Never claim review authority you do not hold.** A trailer such as `Reviewed-by: X` or a
    sentence saying "independently reviewed" is false provenance unless X filed that review. A review

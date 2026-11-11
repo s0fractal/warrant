@@ -9,6 +9,7 @@ import importlib
 import importlib.machinery
 import importlib.util
 import json
+import time
 import os
 import py_compile
 import shutil
@@ -28,9 +29,11 @@ MERGE = {"gate": GT.GATE, "base": "master", "required": [{"check": "test", "work
          "hold_label": "hold", "owner_paths": [".github/", ".warrant/merge.json", ".warrant/v3.json", "AGENTS.md", "tools/gate.py"]}
 
 
-def green(head, other=False):
+def green(head, other=False, completed=None):
     runs = [{"name": "test", "head_sha": head, "app": {"slug": "github-actions"}, "check_suite": {"id": 1},
              "status": "completed", "conclusion": "success", "id": 1}]
+    if completed is not None:               # GitHub's clock: when the check run completed
+        runs[0]["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(completed))
     wf = [{"head_sha": head, "check_suite_id": 1, "path": ".github/workflows/ci.yml"}]
     if other:
         runs.append(dict(runs[0], check_suite={"id": 2}, id=2))
@@ -64,11 +67,11 @@ class PR:
             self.r.attest("bob", self.head_v)
         self.head = self.r.commit("verdict")
 
-    def assess(self, labels=(), checks=None, head=None, **pr):
+    def assess(self, labels=(), checks=None, head=None, now=None, **pr):
         head = head or self.r.commit("tail") if pr.pop("recommit", False) else head or git(self.r.root, "rev-parse", "HEAD")
         facts = dict({"number": 7, "state": "open", "draft": False, "base": "master", "head": head, "labels": list(labels),
                       "branch": "feature", "head_repo": REPO}, **pr)
-        return GT.assess(self.r.root, self.base, facts, checks or green(head))
+        return GT.assess(self.r.root, self.base, facts, checks or green(head), now=now)
 
 
 def codes(a):
@@ -356,10 +359,13 @@ def listed_by(policy, f):
 
 
 def closure_cases():
-    policy = json.loads((ROOT / ".warrant" / "merge.json").read_text())["owner_paths"]
+    doc = json.loads((ROOT / ".warrant" / "merge.json").read_text())
+    policy = doc["owner_paths"] + doc.get("watched", {}).get("paths", [])
     closure = imported_modules(ROOT, "tools/gate.py")
-    check("E32 every module the gate imports, directly or through another, is an owner path of this repository",
-          "warrant/gate.py" in closure and not [f for f in closure if not listed_by(policy, f)], sorted(closure))
+    check("E32 every module the gate imports, directly or through another, is an owner path or a watched path of this "
+          "repository, and the gate itself is an owner path", "warrant/gate.py" in closure
+          and listed_by(doc["owner_paths"], "warrant/gate.py") and listed_by(doc["owner_paths"], "tools/gate.py")
+          and not [f for f in closure if not listed_by(policy, f)], sorted(closure))
     with tempfile.TemporaryDirectory() as d:
         w = Path(d) / "warrant"
         w.mkdir()
@@ -466,6 +472,7 @@ BESIDE = [{"warrant/other.py": b""}, {"warrant/shapes_extra.py": b""}, {"warrant
 def shadow_cases():
     """R-GATE-CLOSURE, by the base's own policy: what a change may put beside the modules the gate loads."""
     policy = json.loads((ROOT / ".warrant" / "merge.json").read_text())
+    listed = policy["owner_paths"] + policy.get("watched", {}).get("paths", [])      # the places derive from both
 
     def base(s):
         package_at(s.r.root)
@@ -486,7 +493,7 @@ def shadow_cases():
 
     def owned(entries):
         entries = {f: (v[0], v[1] or p.base) if isinstance(v, tuple) else v for f, v in entries.items()}
-        return GT.owner_paths(p.r.root, p.base, grown(p.r, p.base, entries), policy["owner_paths"])
+        return GT.owner_paths(p.r.root, p.base, grown(p.r, p.base, entries), listed)
     def shadowed(cid):        # (ok, text, detail) of the SHADOWS row whose name begins with `cid`: one literal check per case
         name = next(n for n in SHADOWS if n.split(" ", 1)[0] == cid)
         got = [(sorted(row), owned(row)) for row in SHADOWS[name]]
@@ -507,7 +514,7 @@ def shadow_cases():
           all(found == [] for _, found in got), [g for g in got if g[1]])
     moved = grown(p.r, p.base, {"docs/a.md": None})                 # the base goes on and drops its only file under docs/
     late = grown(p.r, p.base, {"docs/notes.py": b""})                # a head from before that adds a file there
-    got = GT.owner_paths(p.r.root, moved, late, policy["owner_paths"]), GT.owner_paths(p.r.root, p.base, late, policy["owner_paths"])
+    got = GT.owner_paths(p.r.root, moved, late, listed), GT.owner_paths(p.r.root, p.base, late, listed)
     check("E50 a directory the base has dropped since the merge base is a directory added: the merge would bring it back",
           got == (["docs/notes.py"], []), got)
 
@@ -576,6 +583,78 @@ def interpreter_cases():
           r.stdout.strip() == "the cache at warrant/shapes.py", r.stdout + r.stderr[-300:])
 
 
+WATCHED = dict(MERGE, watched={"paths": ["code.py"], "window_hours": 24, "solo_window_hours": 72, "families": 2,
+                               "veto_role": "pr/owner"})
+NOW = 1_900_000_000
+
+
+def watched_cases():
+    """Watched paths (merge.json `watched`): what the models merge with the owner watching. The fixture's change is to
+    code.py, a watched path; bob holds pr/acceptor, dave pr/owner (the veto role)."""
+    def acceptors(*who):
+        def f(s):
+            s.r.profile["roles"]["pr/acceptor"] = sorted(who)
+            s.r.write_config()
+        return f
+    p = PR(merge=WATCHED)
+    head = git(p.r.root, "rev-parse", "HEAD")
+    after = lambda h: green(head, completed=NOW - h * 3600)
+    one = p.assess(checks=after(25), now=NOW)
+    check("E53 a change to a watched path accepted by one pr/acceptor, its author holding none, is not merged by the "
+          "gate (WATCHED_FAMILIES); it stays reviewed, not due", codes(one) == {"WATCHED_FAMILIES"} and not one.due
+          and one.facts.get("watched") == ["code.py"], one.reasons)
+    q = PR(merge=WATCHED, before_base=acceptors("bob", "alice"))
+    qh = git(q.r.root, "rev-parse", "HEAD")
+    two = q.assess(checks=green(qh, completed=NOW - 25 * 3600), now=NOW)
+    early = q.assess(checks=green(qh, completed=NOW - 23 * 3600), now=NOW)
+    untimed = q.assess(checks=green(qh), now=NOW)
+    check("E54 two families, the head version's author counted when it holds pr/acceptor: merged once the owner's "
+          "window has passed since the required checks completed at the head (GitHub's clock), not before, and not "
+          "when that time is unknown (WATCHED_WINDOW)", two.eligible and codes(early) == {"WATCHED_WINDOW"}
+          and codes(untimed) == {"WATCHED_WINDOW"} and "1.0 h of 24 h remain" in dict(early.reasons)["WATCHED_WINDOW"],
+          (two.reasons, early.reasons))
+    q.r.put("dave", "challenge", {"target": q.head_v, "statement": "not yet: I want to read it"}, refs=[q.head_v])
+    vh = q.r.commit("the owner's veto")
+    vetoed = q.assess(checks=green(vh, completed=NOW - 100 * 3600), now=NOW, head=vh)
+    q2 = PR(merge=WATCHED, before_base=acceptors("bob", "alice"))
+    q2.r.put("eve", "challenge", {"target": q2.head_v, "statement": "a reader's objection"}, refs=[q2.head_v])
+    eh = q2.r.commit("a challenge by no role")
+    other = q2.assess(checks=green(eh, completed=NOW - 100 * 3600), now=NOW, head=eh)
+    check("E55 a challenge by the veto role (pr/owner) on the head version stops the merge, counted or not "
+          "(OWNER_VETO); one by an actor of no role does not", codes(vetoed) == {"OWNER_VETO"} and other.eligible,
+          (vetoed.reasons, other.reasons))
+    solo = PR(merge=WATCHED, accept=False, before_base=acceptors("bob", "alice"))
+    sh = git(solo.r.root, "rev-parse", "HEAD")
+    s70 = solo.assess(checks=green(sh, completed=NOW - 70 * 3600), now=NOW)
+    s73 = solo.assess(checks=green(sh, completed=NOW - 73 * 3600), now=NOW)
+    held = solo.assess(checks=green(sh, completed=NOW - 73 * 3600), now=NOW, labels=["hold"])
+    check("E56 one family only (its author, no acceptor: the others out of budget): the gate merges nothing; solo_ready "
+          "says when the longer solo window has passed with nothing else refusing, which a hold label withdraws",
+          not s73.eligible and s73.facts.get("solo_ready") is True and s70.facts.get("solo_ready") is False
+          and held.facts.get("solo_ready") is False and s73.facts.get("solo_from") == NOW - 73 * 3600 + 72 * 3600,
+          (s70.facts, s73.facts, held.reasons))
+    plain = PR(merge=dict(WATCHED, watched=dict(WATCHED["watched"], paths=["elsewhere.py"])))
+    pa = plain.assess()
+    check("E57 a change to no watched and no owner path keeps the rule it had: one acceptance, no window",
+          pa.eligible and "watched" not in pa.facts, pa.reasons)
+    def shadow(s):
+        (s.r.root / "code").mkdir()
+        (s.r.root / "code" / "__init__.py").write_text("x = 3\n")
+    sp = PR(merge=WATCHED, before_x=shadow, before_base=acceptors("bob", "alice"))
+    spa = sp.assess(checks=green(git(sp.r.root, "rev-parse", "HEAD"), completed=NOW - 100 * 3600), now=NOW)
+    check("E59 a place a watched file implies (a package of its module's name) is the owner's, not watched: only a "
+          "change to a watched file itself is the models' to merge", "OWNER_PATHS" in codes(spa)
+          and "code/__init__.py" in dict(spa.reasons)["OWNER_PATHS"] and spa.facts.get("watched") == ["code.py"], spa.reasons)
+    bad = [dict(WATCHED, watched=dict(WATCHED["watched"], paths=["AGENTS.md"])),
+           dict(WATCHED, watched=dict(WATCHED["watched"], families=1)),
+           dict(WATCHED, watched=dict(WATCHED["watched"], solo_window_hours=12)),
+           dict(WATCHED, watched=dict(WATCHED["watched"], window_hours=0)),
+           dict(WATCHED, watched=dict(WATCHED["watched"], extra=1))]
+    refused = [codes(PR(merge=m).assess()) for m in bad]
+    check("E58 a watched policy that names an owner path, one family, a solo window shorter than the window, no window or "
+          "an unknown member is refused as the base's configuration", all(c == {"BASE_CONFIG"} for c in refused), refused)
+
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -590,4 +669,5 @@ if __name__ == "__main__":
     verdict_cases()
     check_cases()
     merge_cases()
+    watched_cases()
     sys.exit(finish())
