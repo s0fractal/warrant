@@ -998,6 +998,25 @@ def chain_join_cases():
           code == 0 and len(filed) == 1 and rec.get("body") == {"verdict": CH.JOINED, "target": loose}
           and st.get("chain_forks") == ["alice"] and st.get("chain_forks_open") == [] and code2 == 0
           and json.loads(out2 or "{}").get("joined") == [], (code, filed, st.get("chain_forks_open"), out2))
+    r = Repo()                  # Codex F1 on #346 at 6662c57d: a branch whose body its schema refuses is still in the chain
+    base = r.store.lines()
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "valid branch", "serves": []})
+    one = r.store.lines()
+    r.store.write_lines(base)
+    bad = r.put("alice", "entity", {"state": "unknown", "statement": "invalid branch", "serves": []}, schema="obligation@1")
+    r.store.add_lines(one)
+    old = os.environ.get("WARRANT_KEY")
+    os.environ["WARRANT_KEY"] = KEYS["alice"].seed_hex()
+    try:
+        code, out = cli(r.root, "join", "--actor", "alice")
+    finally:
+        os.environ.pop("WARRANT_KEY")
+        if old is not None:
+            os.environ["WARRANT_KEY"] = old
+    after = E.View(r.store.snapshot(), r.trust, r.profile)
+    check("CJ4 a branch whose record its schema refuses is still the writer's (§7 reads the signed chain): join takes it in",
+          bad in after.bad and code == 0 and len((json.loads(out or "{}") or {}).get("joined", [])) == 1
+          and not CH.forks(after)["open"], (code, out[-200:], CH.forks(after)))
 
 
 def cli_cases():

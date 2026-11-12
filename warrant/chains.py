@@ -10,18 +10,22 @@ and, for every `joined` attest by that actor among them, the records its target 
 A fork is joined iff every record naming its `prev` is taken in by its actor; otherwise it is open. A joined fork
 stays a fork (§7 lists it): this says only that its writer, on the line it continues, named every branch. Nothing
 here is read by a guard or the gate."""
+from . import engine as E
 from . import records as R
 
 JOINED = "joined"
 
 
 def _mine(view, actor):
-    return {i: r for i, r in view.recs.items() if view.basis[i] == "SIGNED" and r["actor"] == actor}
+    """The actor's signed records as §7 reads them: authenticated, before any schema or body check drops one (the set
+    engine.head and the view's chain forks read; view.recs has lost a record its schema refuses: Codex F1 on #346)."""
+    recs, basis, _, _ = E._authentic(view.snap, view.trust, view.as_of, only=actor)
+    return {i: r for i, r in recs.items() if basis[i] == "SIGNED"}
 
 
-def tips(view, actor):
+def tips(view, actor, mine=None):
     """[(at, id)] of the actor's chained records no other of its records names, oldest first; the last is its head."""
-    mine = _mine(view, actor)
+    mine = _mine(view, actor) if mine is None else mine
     named = {r["prev"] for r in mine.values()}
     chained = {i for i, r in mine.items() if r["prev"] is None or (r["prev"] in mine and mine[r["prev"]]["at"] <= r["at"])}
     return sorted((mine[i]["at"], i) for i in chained if i not in named)
@@ -29,7 +33,8 @@ def tips(view, actor):
 
 def taken_in(view, actor):
     """The ids the actor's head reaches, through `prev` and through the targets of its own `joined` attests."""
-    mine, ts = _mine(view, actor), tips(view, actor)
+    mine = _mine(view, actor)
+    ts = tips(view, actor, mine)
     seen, todo = set(), [ts[-1][1]] if ts else []
     while todo:
         i = todo.pop()
