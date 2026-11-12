@@ -107,6 +107,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 - `/changes`: what changed for the reader since the last mark, under the reader's lenses: only the lineages whose
   floor or drawn members differ, each with its witness; the rest of the new records are counted. Tests CH1–CH3,
   mutants A117–A120.
+- Overlay key bindings (security): an actor the reader's own profile gives a role is admitted only from the reader's
+  own trust. "Every source naming it agrees" could be one store, which bound a role holder to its own key and signed
+  that holder's acceptances: at 78a9d4e0 a forged acceptance settled a version for the reader. Such a binding is now
+  named on `/overlay`, not admitted; an actor with no role is still admitted when its sources agree (Codex review
+  2026-11-12). agent_test OV6, mutants A201, A202; A155 retargeted.
 
 ## 3.0.0a6 — one package, one receiver
 

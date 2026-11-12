@@ -13,7 +13,9 @@ the general difference of views (view.py) with the receiver and the sources vari
 The reader's profile (who holds which role) is the reader's alone; no source's profile is merged in. Keys are where
 an impostor would strike: a store can bind "claude" to its own key and sign "claude's" records. So a binding is
 admitted only as the reader's own, or as one every chosen source that names that actor agrees on; a binding the
-sources disagree on is not admitted and is named. What the reader cannot find is not counted: a challenge in a
+sources disagree on is not admitted and is named. An actor the reader's own profile gives a role is admitted only
+from the reader's own trust: "every source agrees" can be one store, and a store that binds a role holder to its own
+key would sign that holder's acceptances (Codex, 2026-11-12); such a binding is named, not admitted. What the reader cannot find is not counted: a challenge in a
 store the reader did not choose does not exist for this assessment (the overlay is honest, not complete)."""
 from warrant import engine as EN
 from warrant import jcs as C
@@ -30,9 +32,12 @@ def compose(snaps):
 
 
 def receiver(reader_trust, reader_profile, sources):
-    """(trust, profile, conflicts) of the reader composing `sources` ({store: trust}): the reader's own bindings, then
-    each binding all the sources naming that actor agree on; [(actor, {store: keys})] for those they do not."""
+    """(trust, profile, held) of the reader composing `sources` ({store: trust}): the reader's own bindings, then each
+    binding all the sources naming that actor agree on, unless the reader's profile gives that actor a role;
+    [(actor, {store: keys}, why)] of those not admitted, why "role" (a role holder the reader does not bind itself)
+    or "disagree" (the sources bind different keys)."""
     keys = {a: sorted(k) for a, k in reader_trust["keys"].items()}
+    holders = {a for actors in reader_profile["roles"].values() for a in actors}
     named = {}
     for store, t in sorted(sources.items()):
         for actor, k in t["keys"].items():
@@ -42,10 +47,12 @@ def receiver(reader_trust, reader_profile, sources):
         if actor in keys:
             continue
         distinct = {tuple(k) for k in by.values()}
-        if len(distinct) == 1:
+        if actor in holders:
+            conflicts.append((actor, by, "role"))
+        elif len(distinct) == 1:
             keys[actor] = list(distinct.pop())
         else:
-            conflicts.append((actor, by))
+            conflicts.append((actor, by, "disagree"))
     return dict(reader_trust, keys=dict(sorted(keys.items()))), reader_profile, conflicts
 
 
