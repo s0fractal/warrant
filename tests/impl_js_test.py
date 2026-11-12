@@ -783,6 +783,9 @@ def package_cases(tally, worlds, rng):
     # Blobs read by the package's own base64 rule (warrant/verify.py _BASE64), not binascii's: one answer on every interpreter.
     for b in B64_PROBES:
         named.append((f"a package blob {b!r}", dict(named[0][1], package={"warrant": "package/3", "roots": [], "lines": [], "blobs": {"ab" * 32: b}})))
+    big = bytes(9 << 20)            # Codex F1 on #342 at 3efb118a: a valid 12-MiB base64 blob overflowed V8's regexp stack
+    named.append(("a package blob of 9 MiB", dict(named[0][1], package={"warrant": "package/3", "roots": [], "lines": [],
+                                                                    "blobs": {hashlib.sha256(big).hexdigest(): base64.b64encode(big).decode()}})))
     named.append(("blobs refused in the order read", dict(named[0][1], package={"warrant": "package/3", "roots": [], "lines": [],
                                                                                "blobs": {"9": "YQ=", "10": "=", "a": 1}})))
     bad = {"warrant": "package/3", "roots": ["00" * 32], "lines": [], "blobs": {"ab" * 32: "bm90IHRoZXNl"}}

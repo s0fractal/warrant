@@ -1077,10 +1077,20 @@ export async function codeIdentity(source, backend) {
 // ---------------------------------------------------------------- handoff inspect, alone (warrant_agent/api.py)
 
 // A blob in a package: base64 of RFC 4648 §4 in its one padded form (warrant/verify.py _BASE64), a rule of the format and
-// not of any interpreter's decoder (R-INTERPRETER). JS's `$` without the m flag ends the input: no newline is admitted.
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+// not of any interpreter's decoder (R-INTERPRETER): a length that is a multiple of four, the alphabet only, then at most
+// two `=`. Read by a loop, not a regexp: V8 backtracks a repeated group on a stack that grows with the blob, and a
+// valid 12-MiB blob overflowed it (Codex F1 on #342 at 3efb118a).
+function isBase64(s) {
+  if (!isStr(s) || s.length % 4 !== 0) return false;
+  const pad = s.endsWith("==") ? 2 : s.endsWith("=") ? 1 : 0;
+  for (let i = 0; i < s.length - pad; i++) {
+    const c = s.codePointAt(i);
+    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 43 || c === 47)) return false;
+  }
+  return true;
+}
 function b64decode(s) {
-  if (!(isStr(s) && BASE64.test(s))) throw new AgentError("BAD_REQUEST", "a blob is not base64");
+  if (!isBase64(s)) throw new AgentError("BAD_REQUEST", "a blob is not base64");
   const bin = atob(s);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
