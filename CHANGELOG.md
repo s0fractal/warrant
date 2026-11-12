@@ -21,7 +21,8 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   read. The promise is computed from the records, not from the renderer's list. Before, the feed left all of that out
   silently: on the registered stores 1216 records of automatic actors, 139 migration records and 2259 past the limit.
   `python -m warrant_agent.contract STORE LINEAGE --map` and `--feed [STORE] [--actor A] [--machines]` replay them;
-  all 942 maps of the registered stores and the feed keep them. Tests FC1, FC2, MC1, MC2, mutants A186–A197.
+  all 942 maps of the registered stores and the feed keep them. Each map of a comparison is read alone, and the
+  omission counts are compared both ways (Codex findings F1, F2 on #345). Tests FC1–FC3, MC1–MC3, mutants A186–A200.
 - A lens's contract (`warrant_agent/contract.py`, P05 of the observer pack): what a card promises of a lineage page
   (each declared member that has a value, the activity it shows) and what the floor promises (state, reliance, every
   counted challenge that stands, UNATTESTED, the lens) are read back from the marks of the page drawn. A broken promise

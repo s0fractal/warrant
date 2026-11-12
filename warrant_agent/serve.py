@@ -577,6 +577,7 @@ def contract_html(broken, headline="сторінка не тримає конт�
         return ""
     names = {"visible": "не показано", "floor": "немає в підлозі", "standing": "не показано заперечення",
              "node": "немає на карті й не згорнуто", "folded": "згорнуто не стільки, скільки сказано",
+             "map2 node": "немає на другій карті й не згорнуто", "map2 folded": "на другій карті згорнуто не стільки, скільки сказано",
              "record": "не показано запис", "extra": "показано запис поза запитом", "omit": "не сказано, що пропущено",
              "unread": "не названо непрочитане сховище"}
     rows = "".join(f"<li>{E(names[p])}: {E(x if isinstance(x, str) else (x[0][:12] + (' «' + x[1] + '»' if x[1] else '')))}</li>"
@@ -866,19 +867,20 @@ class App:
                         unavailable=self.unavailable()) + CONTRACT)
         drawn, legend = SC.svg(rep, store, d, LZ.card_of(body), describe)
         other = LZ.find(self.reports(), q["vs"]) if q.get("vs") else None
-        if other is not None and LZ.problem(other[1]) is None:
+        two = other is not None and LZ.problem(other[1]) is None
+        if two:
             drawn2, legend2 = SC.svg(rep, store, d, LZ.card_of(other[1]), describe)
             moves, binds = SC.moved(rep, d, LZ.card_of(body), LZ.card_of(other[1]))
             h += (f'<div class="card"><b>Дві карти</b>: «{E(body["name"])}» і «{E(other[1]["name"])}» · переміщено вузлів: '
                   f'{len(moves)} · прив\'язки: ' + (", ".join(f"{E(k)}: {E(a)} → {E(b)}" for k, a, b in binds) or "однакові")
-                  + f'</div><div class="scenes"><div>{drawn}{legend}</div><div>{drawn2}{legend2}</div></div>')
+                  + f'</div><div class="scenes"><div data-map="1">{drawn}{legend}</div><div data-map="2">{drawn2}{legend2}</div></div>')
         else:
-            h += f'<div class="scenes"><div>{drawn}{legend}</div></div>'
+            h += f'<div class="scenes"><div data-map="1">{drawn}{legend}</div></div>'
         alts = [(v, n) for v, n in self.others(d["schema"]) if v != lens_id]
         if alts:
             h += ('<p class="rest">поруч із: ' + " · ".join(
                 f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}&amp;vs={E(v)}">{E(n)}</a>' for v, n in alts) + "</p>")
-        broken = CT.map_check(standing(rep, d), SC.nodes_of(rep, d), h)
+        broken = CT.map_check(standing(rep, d), SC.nodes_of(rep, d), h, 2 if two else 1)
         self.last_contract = {"lens": lens_id, "broken": broken}
         h = h.replace(CONTRACT, contract_html(broken, "карта не тримає контракт"), 1)
         query = {"op": "scene", "target": d["lineage"], "lens": lens_id, "vs": q.get("vs"), "with": self.other_roots(store)}

@@ -23,6 +23,7 @@ _A = re.compile(r'data-a="([^"]*)"')
 _C = re.compile(r'data-c="([^"]*)"')
 _FLOOR = re.compile(r'data-floor="([a-z]+)"')
 _N = re.compile(r'data-n="([^"]*)"')
+_MAP = re.compile(r'data-map="\d"', re.ASCII)
 _FOLDED = re.compile(r'data-folded="(\d{1,9})"', re.ASCII)
 _R = re.compile(r'data-r="([^" ]*) ([^"]*)"')           # the record id, then the store's name
 _OMIT = re.compile(r'data-omit="([a-z]+) (\d{1,9})"', re.ASCII)
@@ -49,17 +50,22 @@ def check(d, card, standing, page):
     return out
 
 
-def map_check(standing_, nodes, page):
+def map_check(standing_, nodes, page, maps=1):
     """[(part, item)] the map does not keep: the floor's and the standing challenges' promises as on the lineage page,
-    and every node of `nodes` neither drawn nor counted in the fold it names."""
+    and, for each of the `maps` maps the page must draw (marked `data-map`), every node of `nodes` that map neither
+    draws nor counts in the fold it names. Each map is read alone: a second map never covers the first."""
     _, floor, held = shown(page)
-    drawn = {i for i in _N.findall(page) if S.hex64(i)}
-    folded = max([int(n) for n in _FOLDED.findall(page)] or [0])
-    missing = sorted({n["id"] for n in nodes} - drawn)
     out = [("floor", x) for x in sorted(set(FLOOR) - floor)]
     out += [("standing", x) for x in sorted({c for c, _ in standing_} - held)]
-    if len(missing) != folded:
-        out += [("node", x) for x in missing] or [("folded", str(folded))]
+    drawn_maps = _MAP.split(page)[1:]
+    for j in range(maps):
+        one = drawn_maps[j] if j < len(drawn_maps) else ""
+        drawn = {i for i in _N.findall(one) if S.hex64(i)}
+        folded = max([int(n) for n in _FOLDED.findall(one)] or [0])
+        missing = sorted({n["id"] for n in nodes} - drawn)
+        tag = "" if j == 0 else f"map{j + 1} "
+        if len(missing) != folded:
+            out += [(tag + "node", x) for x in missing] or [(tag + "folded", str(folded))]
     return out
 
 
@@ -101,7 +107,7 @@ def feed_check(reports, page, store=None, actor=None, machines=False, limit=300)
     said = {k: int(v) for k, v in _OMIT.findall(page)}
     out = [("record", f"{n} {i}") for n, i in sorted(want - got)]
     out += [("extra", f"{n} {i}") for n, i in sorted(got - want)]
-    out += [("omit", f"{k} {v}") for k, v in sorted(omit.items()) if said.get(k) != v]
+    out += [("omit", f"{k} {omit.get(k, 0)}") for k in sorted(set(omit) | set(said)) if said.get(k, 0) != omit.get(k, 0)]
     out += [("unread", n) for n in sorted(unread - {html.unescape(x) for x in _UNREAD.findall(page)})]
     return out
 

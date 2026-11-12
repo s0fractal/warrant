@@ -1338,6 +1338,23 @@ def page_contract_cases():
           isinstance(dropped, tuple) and dropped[1] == [("record", f"w {c}")]
           and "стрічка не тримає свій контракт: 1" in dropped[0]
           and broke_hidden == [("omit", f"limit {total - 1 - 3}"), ("omit", "machines 1"), ("unread", "gone")], (dropped[1:] if isinstance(dropped, tuple) else dropped, broke_hidden))
+    small = Repo()                            # Codex finding F1 on #345: a count the page invents where none is left out
+    small.entity("alice", "obligation@1", {"state": "open", "statement": "task", "serves": []})
+    sapp = SV.App(SV.Space({"w": str(small.root)}))
+    sapp.page_feed({"machines": "1"})
+    control = sapp.last_feed_contract
+    try:
+        SV.feed_scope_html = lambda store, actor, omitted, unread: fsth(store, actor, dict(omitted, limit=999), unread)
+        invented = sapp.page_feed({"machines": "1"})
+        broke_invented = sapp.last_feed_contract
+    except Exception as ex:
+        invented, broke_invented = f"crashed: {type(ex).__name__}: {ex}", None
+    finally:
+        SV.feed_scope_html = fsth
+    check("FC3 a feed that says it left records out where none were breaks its contract: the counts are compared both "
+          "ways, a reason with nothing left out counting as zero (Codex finding F1 on #345)",
+          control == [] and broke_invented == [("omit", "limit 0")] and "стрічка не тримає свій контракт" in invented,
+          (control, broke_invented))
     rep = space.report("w")
     page_d = SV.lineage(rep, o)
     nodes = SC.nodes_of(rep, page_d)
@@ -1361,6 +1378,33 @@ def page_contract_cases():
     finally:
         SC.MAX_NODES = keep_n
         SC._node = realn
+    from warrant_agent import lens as LZ
+    r.put("alice", "schema", LZ.SCHEMA)
+    flens = r.put("alice", "entity", {"state": "active", "name": "time map", "applies": "obligation@1",
+                                      "card": {"layout": "nested", "fields": [], "scene": {"x": "time"}}}, "lens@1")
+    app.page_scene("w", o, {"lens": "builtin", "vs": flens})
+    pair_control = app.last_contract["broken"]
+    realsvg, calls = SC.svg, []
+
+    def drop_first(*args):                    # Codex finding F2 on #345: the first map loses a node, the second has it
+        drawn_, legend_ = realsvg(*args)
+        calls.append(1)
+        return (drawn_.replace(f'data-n="{d}"', 'data-x=""') if len(calls) in (1, 5) else drawn_), legend_
+    try:
+        SC.svg = drop_first
+        _, pair = app.page_scene("w", o, {"lens": "builtin", "vs": flens})
+        pair_broken = app.last_contract["broken"]
+        calls.append(1)                       # now the second map loses it
+        app.page_scene("w", o, {"lens": "builtin", "vs": flens})
+        second_broken = app.last_contract["broken"]
+    except Exception as ex:
+        pair, pair_broken, second_broken = f"crashed: {type(ex).__name__}: {ex}", None, None
+    finally:
+        SC.svg = realsvg
+    check("MC3 beside a second map, a node missing from the first is still a breach: each map is read alone (Codex "
+          "finding F2 on #345)", pair_control == [] and pair_broken == [("node", d)] and len(calls) == 5
+          and "карта не тримає контракт: 1" in pair and pair.count('data-map=') == 2
+          and second_broken == [("map2 node", d)], (pair_control, pair_broken, second_broken))
     check("MC1 the map keeps its contract: every node drawn, or the fold named with its count; the floor and the "
           "standing challenge above it", full_kept == [] and all(f'data-n="{n["id"]}"' in full for n in nodes)
           and folded_kept == [] and f'data-folded="{len(nodes) - 2}"' in folded and 'data-c="' + c + '"' in folded,
