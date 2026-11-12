@@ -1,5 +1,6 @@
 """warrant: one command. The core's verbs init, key, trust, bootstrap, put, attest, blob, assess and fmt
-(docs/V3.md; output is JSON); status, a reader's summary of a store; home, the operator's registry of
+(docs/V3.md; output is JSON); status, a reader's summary of a store; join, a writer taking its own chain forks in
+(warrant.chains); home, the operator's registry of
 repositories (docs/HOME.md); across, one read over every repository registered there; the review loop's commands review, gate, claims and roadmap (`warrant review ...`
 is `python -m warrant.review ...`; docs/REPOSITORY.md); drift, whether the bytes the claims checker accepted are
 still the bytes at HEAD (warrant.drift); and verify, whether this receiver may rely on a package it was handed, with no
@@ -21,6 +22,7 @@ from warrant import keys as K
 
 from . import across as A
 from . import bootstrap as B
+from . import chains as CH
 from . import engine as E
 from . import graph as G
 from . import home as H
@@ -95,6 +97,21 @@ def signer(a, kind=None):
     return key, trust
 
 
+def join(a):
+    """`join`: one `joined` attest by the actor on each of its chain tips its head does not take in (warrant.chains),
+    chained on that head, compare-and-swap on it; the ids filed (none when nothing is loose)."""
+    store = store_dir(a)
+    key, trust = signer(a, "attest")
+    s = Store(store)
+    view = E.View(s.snapshot(), trust, receiver(a, store)[1])
+    recs = CH.join_records(view, a.actor)
+    if not recs:
+        return []
+    at, h = CH.tips(view, a.actor)[-1]
+    at = a.at if a.at is not None else max(int(time.time()), at)
+    return s.extend([dict(r, at=at) for r in recs], key, trust, expect_head=h)
+
+
 def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
     if kind == "schema" and E._schema_problem(body):     # it would lie in the store for good and never count
         raise Refused(f"SCHEMA_NOT_COUNTED: {E._schema_problem(body)}")
@@ -108,7 +125,7 @@ def _parser():
     p = argparse.ArgumentParser(prog="warrant")
     sub = p.add_subparsers(dest="cmd", required=True)
     cmds = {n: sub.add_parser(n) for n in ("init", "key", "trust", "bootstrap", "put", "attest", "blob", "assess", "fmt",
-                                           "status")}
+                                           "status", "join")}
     for n in LOOP:
         sub.add_parser(n, help=f"python -m warrant.{n} (its own arguments)", add_help=False)
     sub.add_parser("verify", help="may this receiver rely on a package it was handed? (python -m warrant.verify, its own arguments)",
@@ -133,13 +150,14 @@ def _parser():
     h.add_argument("--seed")
     h.add_argument("--operation", action="append", dest="operations")
     h.add_argument("--json", action="store_true")
-    for n in ("bootstrap", "put", "attest"):
+    for n in ("bootstrap", "put", "attest", "join"):
         c = cmds[n]
         c.add_argument("--key")
         c.add_argument("--actor", required=True)
         c.add_argument("--trust")
         c.add_argument("--at", type=int)
-        c.add_argument("--expect-head")
+        if n != "join":                 # join swaps on the head it read the tips under
+            c.add_argument("--expect-head")
     cmds["key"].add_argument("--out", required=True)
     cmds["trust"].add_argument("--trust", required=True)
     cmds["trust"].add_argument("--bind", action="append", required=True, metavar="ACTOR=SEED")
@@ -198,7 +216,8 @@ def status(a):
     store = store_dir(a)
     trust, profile, name = receiver(a, store)
     snap = Store(store).snapshot()
-    rep = E.assess(snap, trust, profile, a.as_of)
+    view = E.View(snap, trust, profile, a.as_of)
+    rep, forks = view.report(), CH.forks(view)
     lineages, reliance = {}, {}
     for lin in rep["lineages"].values():
         by, state = lineages.setdefault(lin["schema"], {}), lin["state"] or "none"     # none: no effective version yet
@@ -207,7 +226,8 @@ def status(a):
     return {"repository": name, "store": store, "snapshot": rep["snapshot"], "assessment": rep["assessment"],
             "records": len(snap.lines), "blobs": len(snap.blobs), "canonical": rep["canonical"],
             "completeness": rep["completeness"], "rejected": len(rep["rejected"]),
-            "chain_forks": sorted({f[0] for f in rep["chains"]["forks"]}), "schemas": sorted(rep["schemas"]),
+            "chain_forks": sorted({f[0] for f in rep["chains"]["forks"]}),
+            "chain_forks_open": sorted({f[0] for f in forks["open"]}), "schemas": sorted(rep["schemas"]),
             "schemas_pending": sorted(rep["schemas_pending"]), "problems": rep["problems"],
             "lineages": {k: dict(sorted(v.items())) for k, v in sorted(lineages.items())},
             "reliance": dict(sorted(reliance.items())),
@@ -228,7 +248,8 @@ def render(st):
     w = max([len(k) for k in st["lineages"]] or [0])
     rows += [("lineages" if i == 0 else "", f"{k.ljust(w)}  {_counts(v)}") for i, (k, v) in enumerate(st["lineages"].items())]
     rows += [("reliance", _counts(st["reliance"])),
-             ("chain forks", ", ".join(st["chain_forks"]) or "none"),
+             ("chain forks", (", ".join(st["chain_forks"]) + f" · open: {', '.join(st['chain_forks_open']) or 'none'}")
+                             if st["chain_forks"] else "none"),
              ("problems", f"{len(st['problems'])}" if st["problems"] else "none")]
     f = st["frontier"]
     if f:
@@ -327,6 +348,8 @@ def main(argv=None):
             out = {"schemas": [put(a, "schema", s) for s in B.SCHEMAS]}
         elif a.cmd == "put":
             out = {"record": put(a, a.kind, a.body, a.schema, a.lineage, a.ref, a.guard)}
+        elif a.cmd == "join":
+            out = {"joined": join(a)}
         elif a.cmd == "attest":
             out = {"record": put(a, "attest", dict(a.body, target=a.target), refs=[a.target])}
         elif a.cmd == "blob":
