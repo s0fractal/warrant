@@ -71,7 +71,8 @@ CONSTITUTIONAL = "constitutional"
 TIERS = (WATCHED, CONSTITUTIONAL)
 SOLO = "solo"           # optional: {window_hours, veto_role}: one family merges a change to no listed path after the window
 SOLO_FIELDS = {"window_hours", "veto_role"}
-LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\Z")
+ACCEPTOR = "pr/acceptor"   # the role whose verdicts the gate counts
+LOGIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}\Z")
 NOTICE = "<!-- warrant-gate constitutional window {x} -->"
 ROLE = re.compile(r"[a-z][a-z0-9-]{0,39}/[a-z][a-z0-9-]{0,39}\Z")
 REPOSITORY_DOC = "repository/3"
@@ -355,14 +356,7 @@ def is_ancestor(root, a, b):
 # ---------------------------------------------------------------- the base
 
 def gate_config(doc):
-    req = doc.get("required") if isinstance(doc, dict) else None
-    ok = (isinstance(doc, dict) and set(GATE_FIELDS) <= set(doc) <= set(GATE_FIELDS) | {*TIERS, SOLO} and doc["gate"] == GATE
-          and isinstance(doc["base"], str) and BRANCH.match(doc["base"]) and isinstance(req, list) and req
-          and all(isinstance(c, dict) and set(c) == {"check", "workflow"} and isinstance(c["check"], str)
-                  and CHECK.match(c["check"]) and isinstance(c["workflow"], str) and WORKFLOW.match(c["workflow"]) for c in req)
-          and len({c["check"] for c in req}) == len(req)
-          and isinstance(doc["hold_label"], str) and CHECK.match(doc["hold_label"])
-          and isinstance(doc["owner_paths"], list) and all(isinstance(x, str) and OWNER_PATH.match(x) for x in doc["owner_paths"]))
+    ok = _gate_shape(doc)
     why = policy_problem(doc) if ok else None
     if not ok or why:
         raise Refused(f".warrant/merge.json members are {list(GATE_FIELDS)} and optionally {[*TIERS, SOLO]}: gate {GATE!r}, a "
@@ -371,28 +365,50 @@ def gate_config(doc):
     return doc
 
 
+def _gate_shape(doc):
+    req = doc.get("required") if isinstance(doc, dict) else None
+    return bool(isinstance(doc, dict) and set(GATE_FIELDS) <= set(doc) <= set(GATE_FIELDS) | {*TIERS, SOLO} and doc["gate"] == GATE
+                and isinstance(doc["base"], str) and BRANCH.match(doc["base"]) and isinstance(req, list) and req
+                and all(isinstance(c, dict) and set(c) == {"check", "workflow"} and isinstance(c["check"], str)
+                        and CHECK.match(c["check"]) and isinstance(c["workflow"], str) and WORKFLOW.match(c["workflow"]) for c in req)
+                and len({c["check"] for c in req}) == len(req)
+                and isinstance(doc["hold_label"], str) and CHECK.match(doc["hold_label"])
+                and isinstance(doc["owner_paths"], list) and all(isinstance(x, str) and OWNER_PATH.match(x) for x in doc["owner_paths"]))
+
+
 def policy_problem(doc):
-    """None when the optional tiers and the solo rule are a policy: `watched` (watched_problem); `constitutional` only
-    beside it, a watched policy with `notify` whose paths are neither owner nor watched paths and whose windows are no
-    shorter than watched's (a rule that let the constitution change faster than the core would invert the tiers);
-    `solo` {window_hours: 0..watched's solo window, veto_role}. Else why not."""
-    w, c, solo = doc.get(WATCHED), doc.get(CONSTITUTIONAL), doc.get(SOLO)
+    """None when the optional tiers and the solo rule are a policy: `watched` (watched_problem); `constitutional`
+    (constitutional_problem); `solo` (solo_problem). Else why not."""
+    w = doc.get(WATCHED)
     why = watched_problem(w, doc["owner_paths"]) if WATCHED in doc else None
     if why is None and CONSTITUTIONAL in doc:
-        if w is None:
-            return "constitutional is a tier beside watched"
-        if not (isinstance(c, dict) and isinstance(c.get("notify"), list)
-                and all(isinstance(x, str) and LOGIN.match(x) for x in c["notify"])):
-            return "constitutional.notify is a list of GitHub logins"
-        why = watched_problem({k: v for k, v in c.items() if k != "notify"}, doc["owner_paths"] + w["paths"], CONSTITUTIONAL)
-        if why is None and (c["window_hours"] < w["window_hours"] or c["solo_window_hours"] < w["solo_window_hours"]):
-            why = "a constitutional window is no shorter than the watched one"
+        why = constitutional_problem(doc[CONSTITUTIONAL], w, doc["owner_paths"])
     if why is None and SOLO in doc:
-        top = w["solo_window_hours"] if w else 720
-        if not (isinstance(solo, dict) and set(solo) == SOLO_FIELDS and type(solo["window_hours"]) is int
-                and 0 <= solo["window_hours"] <= top and isinstance(solo["veto_role"], str) and ROLE.match(solo["veto_role"])):
-            why = f"solo is {{window_hours: 0..{top}, veto_role}}"
+        why = solo_problem(doc[SOLO], w)
     return why
+
+
+def constitutional_problem(c, w, owner):
+    """`constitutional` only beside `watched`: a watched policy with `notify` whose paths are neither owner nor watched
+    paths and whose windows are no shorter than watched's (a rule that let the constitution change faster than the
+    core would invert the tiers)."""
+    if w is None:
+        return "constitutional is a tier beside watched"
+    if not (isinstance(c, dict) and isinstance(c.get("notify"), list)
+            and all(isinstance(x, str) and LOGIN.match(x) for x in c["notify"])):
+        return "constitutional.notify is a list of GitHub logins"
+    why = watched_problem({k: v for k, v in c.items() if k != "notify"}, owner + w["paths"], CONSTITUTIONAL)
+    if why is None and (c["window_hours"] < w["window_hours"] or c["solo_window_hours"] < w["solo_window_hours"]):
+        why = "a constitutional window is no shorter than the watched one"
+    return why
+
+
+def solo_problem(solo, w):
+    """`solo` is {window_hours: 0..watched's solo window (720 without one), veto_role: a role}."""
+    top = w["solo_window_hours"] if w else 720
+    ok = (isinstance(solo, dict) and set(solo) == SOLO_FIELDS and type(solo["window_hours"]) is int
+          and 0 <= solo["window_hours"] <= top and isinstance(solo["veto_role"], str) and ROLE.match(solo["veto_role"]))
+    return None if ok else f"solo is {{window_hours: 0..{top}, veto_role}}"
 
 
 def watched_problem(w, owner, name=WATCHED):
@@ -715,7 +731,7 @@ def _solo_window(a, b, rep, lin, solo, checks, head, now):
     done = checks_completed(b.gate["required"], checks, head)
     now = time.time() if now is None else now
     others = [c for c, _ in a.reasons + a.shared if c != "NO_ACCEPT"]
-    ready = bool(author in b.holders("pr/acceptor") and not others and done is not None
+    ready = bool(author in b.holders(ACCEPTOR) and not others and done is not None
                  and now - done >= solo["window_hours"] * 3600)
     return ready, None if done is None else int(done + solo["window_hours"] * 3600)
 
@@ -735,7 +751,7 @@ def _watched(a, b, rep, lin, w, touched, checks, head, now, tier=WATCHED):
     `notice`, what the gate's one comment says when its window opens."""
     a.facts[tier] = touched
     v = rep["versions"][lin["leaf"]]
-    acceptors = b.holders("pr/acceptor")
+    acceptors = b.holders(ACCEPTOR)
     families = (set(v["accepted_by"]) & acceptors) | ({rep["_recs"][lin["leaf"]]["actor"]} & acceptors)
     if len(families) < w["families"]:
         a.reasons.append(("WATCHED_FAMILIES", f"a change to {tier} paths ({', '.join(touched[:4])}) needs {w['families']} "
@@ -806,7 +822,7 @@ def _stray(b, rep, added, versions):
         rec = rep["_recs"].get(r)
         about = rec["body"].get("target") if rec and rec["kind"] in ("attest", "challenge") else None
         ok = rec is not None and (
-            (rec["kind"] in ("attest", "challenge") and rec["actor"] in b.holders("pr/acceptor"))
+            (rec["kind"] in ("attest", "challenge") and rec["actor"] in b.holders(ACCEPTOR))
             or r in versions or about in versions
             or (rec["kind"] == "attest" and rec["actor"] in b.holders("replayer")
                 and (rep["_recs"].get(about) or {}).get("schema") == "finding@1"))
@@ -819,7 +835,7 @@ def _verdict(a, b, rep, lin, x):
     """The verdict on the head version, whose commit is x: accepted by a pr/acceptor with its guard met, or findings
     stand against it."""
     v = rep["versions"][lin["leaf"]]
-    by = sorted(set(v["accepted_by"]) & b.holders("pr/acceptor"))
+    by = sorted(set(v["accepted_by"]) & b.holders(ACCEPTOR))
     findings = v["challenged_by"]
     a.verdict = bool(by and v["guard"] == "MET") or bool(findings)
     if findings:

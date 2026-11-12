@@ -1,4 +1,4 @@
-# The claims checker after each merge (owner, 2026-11-13): on a runner, under the key claims-key.yml made, at master's
+# The claims checker after merges (owner, 2026-11-13): on a runner, under the key claims-key.yml made, at master's
 # tip, `warrant.claims replay` runs again only the claims none of whose acceptances names the files this commit holds
 # for them (the import closure of their witnesses and mutants, docs/V3.md §15), and accepts what held. Its
 # acceptances go to a pull request of verdicts only from claims/verdicts/<commit>, which CI re-executes at the commit
@@ -9,11 +9,13 @@
 # re-executes before they merge.
 name: claims-replay
 
+# It runs on master alone: on a push to master (the owner's merges), every two hours (the gate's merges start no push
+# workflow) and by hand. No workflow_run: nothing of a pull request or a fork is ever checked out here.
 on:
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
+  push:
     branches: [master]
+  schedule:
+    - cron: '41 */2 * * *'
   workflow_dispatch:
 
 permissions: {}
@@ -24,7 +26,7 @@ concurrency:
 
 jobs:
   replay:
-    if: github.ref == 'refs/heads/master' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     environment: claims
     timeout-minutes: 300
@@ -58,6 +60,11 @@ jobs:
             exit 1
           fi
           tip=$(git rev-parse HEAD)
+          if git ls-remote --exit-code --heads origin "claims/verdicts/${tip:0:12}" >/dev/null; then
+            echo "claims/verdicts/${tip:0:12} exists already: nothing to do at this commit" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "changed=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           printf '%s\n' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.claims replay --key - | tee -a "$GITHUB_STEP_SUMMARY"
           rm -rf build
           echo "tip=$tip" >> "$GITHUB_OUTPUT"

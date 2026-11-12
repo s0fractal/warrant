@@ -152,6 +152,10 @@ merge), and stays `roadmap/owner` beside `claude` and `codex` (the profile has n
 his 26 earlier releases `LINEAGE_NOT_AUTHOR`). `tests/tools_test.py` OB1 assesses the store as of that day under
 his former roles and his present ones: no lineage changes state or reliance. A known hole, recorded as an
 obligation, not closed here: the engine does not forbid an actor releasing its own obligation.
+Named too (an obligation under G3): after this profile `roadmap/acceptor` is `codex` alone and the `schema/author`
+quorum is `claude` and `codex`, 2 of 2. Without Codex no roadmap closure becomes effective and no new schema
+(`obligation@2` among them) is admitted; with one family the only way out is a constitutional pull request on
+`.warrant/v3.json`, merged after the 168 h solo window.
 
 `.warrant/merge.json` splits what decides merging in tiers (docs/V3.md §14, AGENTS.md rule 1). Every merge is the
 gate's (the workflow's bot), never an agent's `gh pr merge` under the owner's login:
@@ -177,7 +181,7 @@ python3 tools/gate.py gate --base "$(git rev-parse origin/master)" --pr N --json
 module's name, a module added where the interpreter searches) is still the owner's. The owner reads every merge on
 `warrant serve`'s «Що змінилось» and vetoes with the `hold` label or a challenge.
 
-The claims checker runs on a runner (`.github/workflows/claims-replay.yml`, after each green master CI), under a key
+The claims checker runs on a runner (`.github/workflows/claims-replay.yml`, on each push to master and every two hours), under a key
 made there (`claims-key.yml`, the environment `claims`); its acceptances arrive as a pull request of verdicts only
 from `claims/verdicts/`, which CI re-executes and the gate merges.
 
