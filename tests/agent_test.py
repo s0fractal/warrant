@@ -1283,6 +1283,136 @@ def contract_cases():
           code == 0 and '"kept": true' in out.getvalue() and missing == 2 and "no-such-store" in err.getvalue(), out.getvalue()[:200])
 
 
+
+def page_contract_cases():
+    """The map's and the feed's contracts (warrant_agent/contract.py): the map draws every node of the lineage or
+    names how many it folded; the feed draws the newest records of its scope and names, with how many, what it leaves
+    out (automatic actors, migration records, past the limit) and every store it could not read. The promise is
+    computed from the records, so a renderer that drops one is caught, on the page and by the command."""
+    from warrant_agent import contract as CT
+    from warrant_agent import scene as SC
+    from warrant_agent import serve as SV
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the task", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "the task", "serves": []}, lineage=o)
+    c = r.put("bob", "challenge", {"target": d, "statement": "a counterexample"}, refs=[d])
+    a = r.attest("carol", d)
+    gone = r.home / "not-a-store"
+    gone.mkdir()
+    space = SV.Space({"w": str(r.root), "gone": str(gone)})
+    app = SV.App(space, reader="dave")
+    keep, real, fsth, realn = (SV.MACHINES, SV.App.FEED_LIMIT), SV.item, SV.feed_scope_html, SC._node
+    SV.MACHINES, SV.App.FEED_LIMIT = ("carol",), 3        # carol signs by program; the feed keeps three records
+    try:
+        h = app.page_feed({})
+        kept = app.last_feed_contract
+        want = CT.feed_promise(app.reports(), limit=3)
+        total = len(space.report("w")["_recs"])
+        SV.item = lambda store, x, show_store=True: "" if x["id"] == c else real(store, x, show_store)
+        dropped = (app.page_feed({}), app.last_feed_contract)
+        SV.item = real
+        SV.feed_scope_html = lambda store, actor, omitted, unread: fsth(store, actor, {}, [])   # says nothing is left out
+        app.page_feed({})
+        SV.feed_scope_html = fsth
+        broke_hidden = app.last_feed_contract
+        mine = app.page_feed({"actor": "carol", "machines": "1"})
+        kept_mine = app.last_feed_contract
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = CT.main(["--feed", "--root", str(r.root)])
+    except Exception as ex:                   # a crash is this case's FAIL, never a missing line
+        h = dropped = mine = f"crashed: {type(ex).__name__}: {ex}"
+        kept = broke_hidden = kept_mine = want = code = None
+        out = io.StringIO()
+    finally:
+        SV.item, SV.feed_scope_html = real, fsth
+        SV.MACHINES, SV.App.FEED_LIMIT = keep
+    check("FC1 the feed keeps its contract and names what it leaves out, with how many: the automatic actor's record, "
+          "those past the limit, the store it could not read; one actor's feed names its scope",
+          kept == [] and 'data-omit="machines 1"' in h and f'data-omit="limit {total - 1 - 3}"' in h
+          and 'data-unread="gone"' in h and a not in h and len(want[0]) == 3 and want[2] == {"gone"}
+          and kept_mine == [] and f'data-r="{a} w"' in mine and "лише <b>carol</b>" in mine
+          and code == 0 and '"kept": true' in out.getvalue(), (kept, kept_mine, code))
+    check("FC2 a feed that drops a record, or does not say what it left out and which store it could not read, breaks "
+          "its contract: named on the page",
+          isinstance(dropped, tuple) and dropped[1] == [("record", f"w {c}")]
+          and "стрічка не тримає свій контракт: 1" in dropped[0]
+          and broke_hidden == [("omit", f"limit {total - 1 - 3}"), ("omit", "machines 1"), ("unread", "gone")], (dropped[1:] if isinstance(dropped, tuple) else dropped, broke_hidden))
+    small = Repo()                            # Codex finding F1 on #345: a count the page invents where none is left out
+    small.entity("alice", "obligation@1", {"state": "open", "statement": "task", "serves": []})
+    sapp = SV.App(SV.Space({"w": str(small.root)}))
+    sapp.page_feed({"machines": "1"})
+    control = sapp.last_feed_contract
+    try:
+        SV.feed_scope_html = lambda store, actor, omitted, unread: fsth(store, actor, dict(omitted, limit=999), unread)
+        invented = sapp.page_feed({"machines": "1"})
+        broke_invented = sapp.last_feed_contract
+    except Exception as ex:
+        invented, broke_invented = f"crashed: {type(ex).__name__}: {ex}", None
+    finally:
+        SV.feed_scope_html = fsth
+    check("FC3 a feed that says it left records out where none were breaks its contract: the counts are compared both "
+          "ways, a reason with nothing left out counting as zero (Codex finding F1 on #345)",
+          control == [] and broke_invented == [("omit", "limit 0")] and "стрічка не тримає свій контракт" in invented,
+          (control, broke_invented))
+    rep = space.report("w")
+    page_d = SV.lineage(rep, o)
+    nodes = SC.nodes_of(rep, page_d)
+    full = app.page_scene("w", o)[1]
+    full_kept = app.last_contract["broken"]
+    keep_n = SC.MAX_NODES
+    SC.MAX_NODES = 2
+    try:
+        folded = app.page_scene("w", o)[1]
+        folded_kept = app.last_contract["broken"]
+        SC.MAX_NODES = keep_n
+        SC._node = lambda n, pos, b, store, describe: "" if n["id"] == d else realn(n, pos, b, store, describe)
+        lost = app.page_scene("w", o)[1]
+        lost_broken = app.last_contract["broken"]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            mcode = CT.main([r.root.name, o, "--map", "--root", str(r.root)])
+    except Exception as ex:
+        folded = lost = f"crashed: {type(ex).__name__}: {ex}"
+        folded_kept = lost_broken = mcode = None
+    finally:
+        SC.MAX_NODES = keep_n
+        SC._node = realn
+    from warrant_agent import lens as LZ
+    r.put("alice", "schema", LZ.SCHEMA)
+    flens = r.put("alice", "entity", {"state": "active", "name": "time map", "applies": "obligation@1",
+                                      "card": {"layout": "nested", "fields": [], "scene": {"x": "time"}}}, "lens@1")
+    app.page_scene("w", o, {"lens": "builtin", "vs": flens})
+    pair_control = app.last_contract["broken"]
+    realsvg, calls = SC.svg, []
+
+    def drop_first(*args):                    # Codex finding F2 on #345: the first map loses a node, the second has it
+        drawn_, legend_ = realsvg(*args)
+        calls.append(1)
+        return (drawn_.replace(f'data-n="{d}"', 'data-x=""') if len(calls) in (1, 5) else drawn_), legend_
+    try:
+        SC.svg = drop_first
+        _, pair = app.page_scene("w", o, {"lens": "builtin", "vs": flens})
+        pair_broken = app.last_contract["broken"]
+        calls.append(1)                       # now the second map loses it
+        app.page_scene("w", o, {"lens": "builtin", "vs": flens})
+        second_broken = app.last_contract["broken"]
+    except Exception as ex:
+        pair, pair_broken, second_broken = f"crashed: {type(ex).__name__}: {ex}", None, None
+    finally:
+        SC.svg = realsvg
+    check("MC3 beside a second map, a node missing from the first is still a breach: each map is read alone (Codex "
+          "finding F2 on #345)", pair_control == [] and pair_broken == [("node", d)] and len(calls) == 5
+          and "карта не тримає контракт: 1" in pair and pair.count('data-map=') == 2
+          and second_broken == [("map2 node", d)], (pair_control, pair_broken, second_broken))
+    check("MC1 the map keeps its contract: every node drawn, or the fold named with its count; the floor and the "
+          "standing challenge above it", full_kept == [] and all(f'data-n="{n["id"]}"' in full for n in nodes)
+          and folded_kept == [] and f'data-folded="{len(nodes) - 2}"' in folded and 'data-c="' + c + '"' in folded,
+          (full_kept, folded_kept))
+    check("MC2 a map that drops a node it neither draws nor folds breaks its contract: named on the page and by the "
+          "command (exit 1)", lost_broken == [("node", d)] and "карта не тримає контракт: 1" in lost and mcode == 1,
+          (lost_broken, mcode))
+
 def changes_cases():
     """What changed for a reader (warrant_agent/changes.py): the past is the set of records the reader marked as
     seen, assessed by the same engine; a lineage is listed only when its floor or what the reader's lens draws of it
@@ -1770,5 +1900,6 @@ if __name__ == "__main__":
     commons_cases()
     tails_cases()
     contract_cases()
+    page_contract_cases()
     voices_cases()
     sys.exit(finish())
