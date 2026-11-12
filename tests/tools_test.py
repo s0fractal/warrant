@@ -1492,6 +1492,60 @@ def grounded_cases():
     check("GR3 the version asked about must be its lineage's effective version", G.grounded(r.report(), c0)["failing"][:1] == [[c0, "NOT_EFFECTIVE"]],
           G.grounded(r.report(), c0))
 
+def merged_cases():
+    """The observation of a merge says how it came about: a solo merge says that no second family reviewed it."""
+    import argparse
+    r = Repo()
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("base")
+    rows = {}
+    for n, msg in ((1, "Merge pull request #1 (solo: claude, the window passed)\n\nmerge-on-acceptance: solo: head version v by "
+                       "claude at x, one model family, its window passed since 1 with no veto; head h; base b."),
+                   (2, "Merge pull request #2 (accepted by codex)\n\nmerge-on-acceptance: head version v accepted by codex at x."),
+                   (3, "Merge branch 'feature'")):
+        git(r.root, "checkout", "-q", "-b", f"f{n}")
+        (r.root / f"f{n}.txt").write_text(str(n))
+        r.commit(f"change {n}")
+        git(r.root, "checkout", "-q", "master")
+        git(r.root, "merge", "-q", "--no-ff", f"f{n}", "-m", msg)
+        merge = git(r.root, "rev-parse", "HEAD")
+        rp = RP.Repo(r.root)
+        name = rp.config()[2]
+        r.put("alice", "entity", {"state": "open", "repository": name, "pr": n, "title": "t", "serves": []}, "pr-head@1")
+        rows[n] = RV._pr_record(rp, RP.Repo(r.root).report(), argparse.Namespace(cmd="merged", pr=n, merge=merge, actor="alice"),
+                                name)["body"].get("how")
+    check("MR1 the merge observation names how the merge came about from its commit: the gate's solo merge says solo (no "
+          "second family reviewed it), the gate's merge on an acceptance says accepted, anything else hand",
+          rows == {1: "solo", 2: "accepted", 3: "hand"}, rows)
+
+OBSERVER_AT = 1_794_522_625          # 2026-11-13: the owner leaves every guard (docs/REPOSITORY.md, "The owner as observer")
+OWNER_ROLES = {"before": {"roadmap/acceptor": ["codex", "s0fractal"], "schema/author": ["claude", "codex", "s0fractal"],
+                          "roadmap/owner": ["s0fractal"], "challenger": None},
+               "after": {"roadmap/acceptor": ["codex"], "schema/author": ["claude", "codex"],
+                         "roadmap/owner": ["claude", "codex", "s0fractal"], "challenger": ["s0fractal"]}}
+
+
+def observer_cases():
+    """The owner's transition to observer is a change of the profile only: his word may lower reliance, never raise it.
+    Assessed as of the transition, under the profile with his former roles and under the profile as it is, no lineage
+    of this repository's store changes its state or its reliance, no version its guard, no challenge whether it counts."""
+    rp = RP.Repo(ROOT)
+    trust, profile, _ = rp.config()
+
+    def under(which):
+        roles = {k: v for k, v in profile["roles"].items() if k not in OWNER_ROLES[which]}
+        roles.update({k: v for k, v in OWNER_ROLES[which].items() if v is not None})
+        rep = E.View(rp.store.snapshot(), trust, dict(profile, roles=roles), as_of=OBSERVER_AT).report()
+        return ({L: (x["state"], x["reliance"]) for L, x in rep["lineages"].items()}, {v: x["guard"] for v, x in rep["versions"].items()},
+                {c: x["counted"] for c, x in rep["challenges"].items()})
+    before, after = under("before"), under("after")
+    now = {k: v for k, v in profile["roles"].items() if k in OWNER_ROLES["after"]}
+    check("OB1 the owner leaves roadmap/acceptor and schema/author, holds challenger, and claude and codex join him as "
+          "roadmap/owner: assessed as of the transition, no lineage changes state or reliance, no version its guard",
+          now == OWNER_ROLES["after"] and before == after and len(before[0]) > 600,
+          (now, [L for L in before[0] if before[0][L] != after[0].get(L)][:5]))
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
@@ -1506,4 +1560,6 @@ if __name__ == "__main__":
     differential_cases()
     ledger_cases()
     grounded_cases()
+    observer_cases()
+    merged_cases()
     sys.exit(finish())

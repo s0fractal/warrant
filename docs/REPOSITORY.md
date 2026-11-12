@@ -3,7 +3,7 @@
 This repository builds and checks Warrant with Warrant. Its own records (the specification's claims,
 the roadmap, the pull request reviews) are Warrant 3 records in `.warrant/records.jsonl` and
 `.warrant/blobs/`, assessed under the repository's receiver configuration `.warrant/v3.json` (the
-trust: which keys are whose; the profile: who holds which role; both owner paths). The review loop's
+trust: which keys are whose; the profile: who holds which role; both constitutional paths). The review loop's
 commands ship in the package (`warrant.review`, `warrant.gate`, `warrant.claims`, `warrant.roadmap`),
 so that another repository runs them on its own `.warrant/` ([below](#the-review-loop-in-another-repository));
 this repository's records, its `tools/`, the waker and the tests do not (`tests/boundary_test.py`).
@@ -17,16 +17,16 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `warrant/claims.py` | a specification's claims (`.warrant/claims.json` names the spec, the witness files and the mutant harness): check, view, file, retire, the claims checker |
 | `warrant/roadmap.py` | goals and obligations: view, due, check, oblige, close |
 | `warrant/review.py` | the review loop: open, head, merged, due, gate, the replay checker, verify, view |
-| `warrant/gate.py` | the merge predicate and the gate's GitHub side (owner path) |
+| `warrant/gate.py` | the merge predicate and the gate's GitHub side (constitutional path) |
 | `warrant/cli.py`, `warrant/graph.py` | the one command `warrant` (the core's verbs, `status`, and `review`, `gate`, `claims`, `roadmap`), and the queries over a report's graph that `status`, the agent's `graph` and `tools/graph.py` share |
 | `warrant/across.py` | one read over every registered store, each assessed alone (docs/HOME.md, `warrant across`, the agent's `across`) |
 | `warrant_agent/` | the agent interface: Python API, CLI, stdio MCP (docs/AGENT.md, docs/V3.md §13) |
 | `.warrant/records.jsonl`, `.warrant/blobs/` | the repository's records; `merge=union -text` (`.gitattributes`) |
-| `.warrant/v3.json` | trust and profile (owner path) |
-| `.warrant/merge.json` | the merge gate's configuration and the owner paths (owner path) |
+| `.warrant/v3.json` | trust and profile (constitutional path) |
+| `.warrant/merge.json` | the merge gate's configuration: owner paths, tiers, solo rule (owner path) |
 | `.warrant/claims.json` | where the claims live: the spec `docs/V3.md`, the retired source `SPEC.md`, the witness files, `tests/mutants.py` |
 | `.warrant/v3/schema-accepts.jsonl` | Codex's acceptances of the bootstrap schemas, as committed at #218 |
-| `tools/{claims,roadmap,review,gate}.py` | shims: `python3 -m warrant.<name>` with this checkout's package, for CI and these docs; `tools/gate.py` is what the merge workflow runs (owner path) |
+| `tools/{claims,roadmap,review,gate}.py` | shims: `python3 -m warrant.<name>` with this checkout's package, for CI and these docs; `tools/gate.py` is what the merge workflow runs (constitutional path) |
 | `tools/graph.py` | queries over the record graph (around, path, why, frontier, impact) and the views |
 | `tests/mutants.py` | every mutant, the cases it must fail, shards and their merge |
 | `integrations/warrant-review/` | the Codex plugin: the review skill, the MCP launcher, the review waker |
@@ -144,29 +144,46 @@ made in this order:
    which the roadmap acceptor accepts (the waker wakes Codex for it);
 3. the owner tags `vVERSION` on master after that acceptance merged.
 
-## Watched paths: the models merge, the owner watches
+## The owner as observer: who merges what
 
-`.warrant/merge.json` splits what decides merging in two. `owner_paths` (the trust, these rules, the gate, CI) the
-owner merges. `watched.paths` (the modules the gate imports: engine, store, records, keys, jcs, shapes, the package's
-`__init__`) the models merge, the owner watching (docs/V3.md §14, AGENTS.md rule 1):
+Since 2026-11-13 the owner is an observer with a brake: nothing waits for his signature, and he can stop anything.
+In `.warrant/v3.json` he holds `challenger` and `pr/owner` (his challenge counts against any record; it vetoes a
+merge), and stays `roadmap/owner` beside `claude` and `codex` (the profile has no time: removing him would make
+his 26 earlier releases `LINEAGE_NOT_AUTHOR`). `tests/tools_test.py` OB1 assesses the store as of that day under
+his former roles and his present ones: no lineage changes state or reliance. A known hole, recorded as an
+obligation, not closed here: the engine does not forbid an actor releasing its own obligation.
+Named too (an obligation under G3): after this profile `roadmap/acceptor` is `codex` alone and the `schema/author`
+quorum is `claude` and `codex`, 2 of 2. Without Codex no roadmap closure becomes effective and no new schema
+(`obligation@2` among them) is admitted; with one family the only way out is a constitutional pull request on
+`.warrant/v3.json`, merged after the 168 h solo window.
 
-- **two families**: the gate merges once two distinct `pr/acceptor`s accepted the head version (its author counted)
-  and `window_hours` (24) have passed since the required checks completed, with no `hold` label and no challenge by
-  the `veto_role` (`pr/owner`) on the head version;
-- **one family** (the others out of budget): the gate merges nothing, and an agent of that family merges by hand once
-  the gate's own assessment says `solo_ready`: `solo_window_hours` (72) passed, checks green, no veto, no hold,
-  nothing else refusing. The pull request needs its review lineage (`tools/review.py open --pr N --title T`, then
-  `head --pr N`), and the assessment is read with
+`.warrant/merge.json` splits what decides merging in tiers (docs/V3.md §14, AGENTS.md rule 1). Every merge is the
+gate's (the workflow's bot), never an agent's `gh pr merge` under the owner's login:
+
+| tier | paths | two families | one family (`solo_ready`) |
+|---|---|---|---|
+| owner | `.github/`, `.warrant/merge.json` (the brake itself) | the owner merges | the owner merges |
+| constitutional | `AGENTS.md`, `.warrant/v3.json`, `.warrant/v3/`, `warrant/gate.py`, `tools/gate.py` | after 72 h | after 168 h (7 days) |
+| watched | the modules the gate imports (engine, store, records, keys, jcs, shapes, `__init__`) | after 24 h | after 72 h |
+| everything else | | at once, when accepted | `solo`: once the checks are green (`window_hours` 0), its author a `pr/acceptor` |
+
+A window counts from when the required checks completed at the head; no `hold` label and no challenge by
+`pr/owner` on the head version may stand. When a constitutional window opens the gate comments once on the pull
+request, naming `@s0fractal` (`constitutional.notify`), with the paths, the end of each window and how to stop it.
+The pull request needs its review lineage (`tools/review.py open --pr N --title T`, then `head --pr N`); the gate's
+reading of it:
 
 ```bash
 python3 tools/gate.py gate --base "$(git rev-parse origin/master)" --pr N --json
 ```
 
-  (`facts.solo_ready`, `facts.solo_from`: when the solo window opens). The merge names that assessment.
+(`facts.solo_ready`, `facts.solo_from`: when the solo window opens). A place a listed file implies (a package of its
+module's name, a module added where the interpreter searches) is still the owner's. The owner reads every merge on
+`warrant serve`'s «Що змінилось» and vetoes with the `hold` label or a challenge.
 
-A place a watched file implies (a package of its module's name, a module added where the interpreter searches) is
-still the owner's: only a change to a watched file itself is watched. The owner reads every merge on `warrant serve`'s
-«Що змінилось» and vetoes with the `hold` label or a challenge.
+The claims checker runs on a runner (`.github/workflows/claims-replay.yml`, on each push to master and every two hours), under a key
+made there (`claims-key.yml`, the environment `claims`); its acceptances arrive as a pull request of verdicts only
+from `claims/verdicts/`, which CI re-executes and the gate merges.
 
 ## Reviews as records
 

@@ -4,6 +4,9 @@
    "schema/author": 2
   },
   "roles": {
+   "challenger": [
+    "s0fractal"
+   ],
    "claim/verifier": [
     "checker sha256:eed989f372ca13d5638f7b16cc936f22f11f2fde602662c21385400c4d41a619",
     "claims-checker",
@@ -24,16 +27,16 @@
     "review-replayer"
    ],
    "roadmap/acceptor": [
-    "codex",
-    "s0fractal"
+    "codex"
    ],
    "roadmap/owner": [
+    "claude",
+    "codex",
     "s0fractal"
    ],
    "schema/author": [
     "claude",
-    "codex",
-    "s0fractal"
+    "codex"
    ]
   },
   "warrant": "profile/3"
