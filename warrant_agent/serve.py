@@ -157,6 +157,13 @@ def sentence(rep, i):
     return a, f"подав {k}", title(rep, i), ""
 
 
+def _left_out(r, machines):
+    """Why the feed leaves a record out: a migration record never drawn, an automatic actor's unless asked; else ""."""
+    if r.get("schema") == "v2-transition@1":
+        return "transition"
+    return "machines" if not machines and is_machine(r["actor"]) else ""
+
+
 def feed(rep, limit=200, actor=None, machines=False, omitted=None):
     """The newest records first (by `at`, then id): a list of {id, at, kind, actor, sentence, lineage}; `limit=None`
     keeps them all. `omitted` (a dict) counts what it left out of the actor's records and why: migration records
@@ -165,8 +172,7 @@ def feed(rep, limit=200, actor=None, machines=False, omitted=None):
     for i, r in rep["_recs"].items():
         if actor and r["actor"] != actor:
             continue
-        why = ("transition" if r.get("schema") == "v2-transition@1"
-               else "machines" if not machines and is_machine(r["actor"]) else None)
+        why = _left_out(r, machines)
         if why:
             omitted[why] = omitted.get(why, 0) + 1
             continue
@@ -872,7 +878,7 @@ class App:
         if alts:
             h += ('<p class="rest">поруч із: ' + " · ".join(
                 f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}&amp;vs={E(v)}">{E(n)}</a>' for v, n in alts) + "</p>")
-        broken = CT.map_check(d, standing(rep, d), SC.nodes_of(rep, d), h)
+        broken = CT.map_check(standing(rep, d), SC.nodes_of(rep, d), h)
         self.last_contract = {"lens": lens_id, "broken": broken}
         h = h.replace(CONTRACT, contract_html(broken, "карта не тримає контракт"), 1)
         query = {"op": "scene", "target": d["lineage"], "lens": lens_id, "vs": q.get("vs"), "with": self.other_roots(store)}

@@ -333,7 +333,7 @@ MUTANTS = [
     ('A189', 'warrant_agent/contract.py', '    out += [("omit", f"{k} {v}") for k, v in sorted(omit.items()) if said.get(k) != v]', '    out += []', AGENT, ['FC2']),
     ('A190', 'warrant_agent/contract.py', '            unread.add(n)\n', '', AGENT, ['FC1']),
     ('A191', 'warrant_agent/contract.py', '    out += [("unread", n) for n in sorted(unread - {html.unescape(x) for x in _UNREAD.findall(page)})]', '    out += []', AGENT, ['FC2']),
-    ('A192', 'warrant_agent/contract.py', '            elif not machines and SV.is_machine(r["actor"]):', '            elif False:', AGENT, ['FC1']),
+    ('A192', 'warrant_agent/contract.py', '    if not machines and is_machine(r["actor"]):\n        return "machines"', '    if False:\n        return "machines"', AGENT, ['FC1']),
     ('A193', 'warrant_agent/serve.py', '            omitted["limit"] = len(rows) - self.FEED_LIMIT', '            omitted["limit"] = len(rows)', AGENT, ['FC1']),
     ('A194', 'warrant_agent/serve.py', '                unread.append((n, rep["_error"]))\n', '', AGENT, ['FC1']),
     ('A195', 'warrant_agent/serve.py', '            omitted[why] = omitted.get(why, 0) + 1', '            pass', AGENT, ['FC1']),

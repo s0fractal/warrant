@@ -23,9 +23,9 @@ _A = re.compile(r'data-a="([^"]*)"')
 _C = re.compile(r'data-c="([^"]*)"')
 _FLOOR = re.compile(r'data-floor="([a-z]+)"')
 _N = re.compile(r'data-n="([^"]*)"')
-_FOLDED = re.compile(r'data-folded="([0-9]{1,9})"')
+_FOLDED = re.compile(r'data-folded="(\d{1,9})"', re.ASCII)
 _R = re.compile(r'data-r="([^" ]*) ([^"]*)"')           # the record id, then the store's name
-_OMIT = re.compile(r'data-omit="([a-z]+) ([0-9]{1,9})"')
+_OMIT = re.compile(r'data-omit="([a-z]+) (\d{1,9})"', re.ASCII)
 _UNREAD = re.compile(r'data-unread="([^"]*)"')
 
 
@@ -49,7 +49,7 @@ def check(d, card, standing, page):
     return out
 
 
-def map_check(d, standing_, nodes, page):
+def map_check(standing_, nodes, page):
     """[(part, item)] the map does not keep: the floor's and the standing challenges' promises as on the lineage page,
     and every node of `nodes` neither drawn nor counted in the fold it names."""
     _, floor, held = shown(page)
@@ -61,6 +61,15 @@ def map_check(d, standing_, nodes, page):
     if len(missing) != folded:
         out += [("node", x) for x in missing] or [("folded", str(folded))]
     return out
+
+
+def _left_out(r, machines, is_machine):
+    """Why the feed must leave record `r` of its scope out ("transition", "machines"), or "" when it must draw it."""
+    if r.get("schema") == "v2-transition@1":
+        return "transition"
+    if not machines and is_machine(r["actor"]):
+        return "machines"
+    return ""
 
 
 def feed_promise(reports, store=None, actor=None, machines=False, limit=300):
@@ -75,13 +84,10 @@ def feed_promise(reports, store=None, actor=None, machines=False, limit=300):
             unread.add(n)
             continue
         for i, r in rep["_recs"].items():
-            if actor and r["actor"] != actor:
-                continue
-            if r.get("schema") == "v2-transition@1":
-                omit["transition"] += 1
-            elif not machines and SV.is_machine(r["actor"]):
-                omit["machines"] += 1
-            else:
+            why = None if actor and r["actor"] != actor else _left_out(r, machines, SV.is_machine)
+            if why:
+                omit[why] += 1
+            elif why is not None:
                 rows.append((-r["at"], n, i))
     rows.sort()
     omit["limit"] = max(0, len(rows) - limit)
@@ -98,6 +104,20 @@ def feed_check(reports, page, store=None, actor=None, machines=False, limit=300)
     out += [("omit", f"{k} {v}") for k, v in sorted(omit.items()) if said.get(k) != v]
     out += [("unread", n) for n in sorted(unread - {html.unescape(x) for x in _UNREAD.findall(page)})]
     return out
+
+
+def _draw(app, a):
+    """(the broken promises, the lens) of the page the arguments name, drawn by `app`; (None, why) when it cannot be."""
+    if a.feed:
+        app.page_feed({"store": a.store, "actor": a.actor, "machines": "1" if a.machines else "0"})
+        return app.last_feed_contract, None
+    if not a.lineage:
+        return None, "a lineage is needed (or --feed)"
+    draw = app.page_scene if a.map else app.page_lineage
+    code, _ = draw(a.store, a.lineage, {"lens": a.lens} if a.lens else {})
+    if code != 200:
+        return None, code
+    return app.last_contract["broken"], app.last_contract["lens"]
 
 
 def main(argv=None):
@@ -121,20 +141,10 @@ def main(argv=None):
     if (a.store or not a.feed) and a.store not in space.roots:
         print(json.dumps({"error": f"no store {a.store!r} is read", "stores": sorted(space.roots)}, ensure_ascii=False))
         return 2
-    app = SV.App(space, reader=a.reader)
-    if a.feed:
-        app.page_feed({"store": a.store, "actor": a.actor, "machines": "1" if a.machines else "0"})
-        broken, lens = app.last_feed_contract, None
-    else:
-        if not a.lineage:
-            print(json.dumps({"error": "a lineage is needed (or --feed)"}))
-            return 2
-        draw = app.page_scene if a.map else app.page_lineage
-        code, _ = draw(a.store, a.lineage, {"lens": a.lens} if a.lens else {})
-        if code != 200:
-            print(json.dumps({"error": code}))
-            return 2
-        broken, lens = app.last_contract["broken"], app.last_contract["lens"]
+    broken, lens = _draw(SV.App(space, reader=a.reader), a)
+    if broken is None:
+        print(json.dumps({"error": lens}))
+        return 2
     print(json.dumps({"lens": lens, "kept": not broken, "broken": broken}, ensure_ascii=False, indent=1))
     return 0 if not broken else 1
 
