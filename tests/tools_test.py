@@ -522,7 +522,8 @@ def drift_cases():
         L = claim(r)
         base = r.commit("a claim")
         put_as(r, CL.CHECKER, {"target": L, "verdict": "accept", "commit": base, "tree": git(r.root, "rev-parse", f"{base}^{{tree}}"),
-                               **RP.identity(r.root), "witnesses": ["q_test:Q1"], "mutants": ["Z1"], **named}, [L])
+                               **RP.identity(r.root), "witnesses": ["q_test:Q1"], "mutants": ["Z1"],
+                               "closure": CL.CLOSURE, **named}, [L])          # named by the rule: the read reaches pins
         (r.root / "lib" / "code.py").write_text("X = 2\\n")
         r.commit("an acceptance, and the file changes")
         return (r, L, *gated(r, L))
@@ -544,7 +545,7 @@ def drift_cases():
     (r.root / "lib" / "code.py").write_text("X = 3\\n")
     r.commit("the file changes")
     put_as(r, CL.CHECKER, {"target": L, "verdict": "accept", "commit": f"--output={out}", "witnesses": ["q_test:Q1"], "mutants": ["Z1"],
-                           "files": {"lib/code.py": "0" * 40}}, [L])
+                           "files": {"lib/code.py": "0" * 40}, "closure": CL.CLOSURE}, [L])
     r.commit("an acceptance whose commit is an option")
     d, rel = gated(r, L)
     check("DR10 a commit named by a record reaches Git only as a commit id: one shaped as an option writes nothing",
