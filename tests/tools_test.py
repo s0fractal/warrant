@@ -18,6 +18,7 @@ from pathlib import Path
 from world import KEYS, ROOT, Repo, check, finish, git
 
 from warrant import across as A
+from warrant import chains as CH
 from warrant import claims as CL
 from warrant import cli as CLI
 from warrant import differential as DF
@@ -959,6 +960,65 @@ def cli(cwd, *argv):
     return code, out.getvalue()
 
 
+def chain_join_cases():
+    """A writer's chain forks taken in by its own `joined` attests (warrant.chains, `warrant join`)."""
+    r = Repo()
+    base = r.store.lines()
+    a = r.entity("alice", "obligation@1", {"state": "open", "statement": "a", "serves": []})   # branch one
+    one = r.store.lines()
+    r.store.write_lines(base)
+    b = r.entity("alice", "obligation@1", {"state": "open", "statement": "b", "serves": []})   # branch two, same prev
+    r.store.add_lines(one)                                                                      # the merge holds both
+    view = lambda: E.View(r.store.snapshot(), r.trust, r.profile)                              # noqa: E731
+    _, out = cli(r.root, "status", "--json")
+    st = json.loads(out or "{}")
+    check("CJ1 a writer that filed on two branches forks its chain, and the fork is open until the writer takes it in",
+          st.get("chain_forks") == ["alice"] and st.get("chain_forks_open") == ["alice"]
+          and len(CH.loose(view(), "alice")) == 1 and CH.loose(view(), "alice")[0] in (a, b), (st.get("chain_forks"), st.get("chain_forks_open")))
+    loose = CH.loose(view(), "alice")[0]
+    r.attest("alice", loose)                                             # her own acceptance is not a join
+    r.put("carol", "attest", {"verdict": CH.JOINED, "target": loose}, refs=[loose])      # nor is another's `joined`
+    check("CJ3 only the writer's own `joined` attest, on the line its head continues, takes a branch in",
+          [f[0] for f in CH.forks(view())["open"]] == ["alice"] and CH.loose(view(), "alice") == [loose], CH.forks(view()))
+    old = os.environ.get("WARRANT_KEY")
+    os.environ["WARRANT_KEY"] = KEYS["alice"].seed_hex()     # a seed named by --key lies in the operator's home
+    try:
+        code, out = cli(r.root, "join", "--actor", "alice")
+        filed = (json.loads(out or "{}") or {}).get("joined", [])
+        _, out = cli(r.root, "status", "--json")
+        st = json.loads(out or "{}")
+        code2, out2 = cli(r.root, "join", "--actor", "alice")
+    finally:
+        os.environ.pop("WARRANT_KEY")
+        if old is not None:
+            os.environ["WARRANT_KEY"] = old
+    rec = r.store.snapshot().lines.get(filed[0] if filed else "", [{"record": {}}])[0]["record"]
+    check("CJ2 `warrant join` files one `joined` attest per loose tip, chained on the head; the fork stays listed, no "
+          "longer open, and a second join files nothing",
+          code == 0 and len(filed) == 1 and rec.get("body") == {"verdict": CH.JOINED, "target": loose}
+          and st.get("chain_forks") == ["alice"] and st.get("chain_forks_open") == [] and code2 == 0
+          and json.loads(out2 or "{}").get("joined") == [], (code, filed, st.get("chain_forks_open"), out2))
+    r = Repo()                  # Codex F1 on #346 at 6662c57d: a branch whose body its schema refuses is still in the chain
+    base = r.store.lines()
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "valid branch", "serves": []})
+    one = r.store.lines()
+    r.store.write_lines(base)
+    bad = r.put("alice", "entity", {"state": "unknown", "statement": "invalid branch", "serves": []}, schema="obligation@1")
+    r.store.add_lines(one)
+    old = os.environ.get("WARRANT_KEY")
+    os.environ["WARRANT_KEY"] = KEYS["alice"].seed_hex()
+    try:
+        code, out = cli(r.root, "join", "--actor", "alice")
+    finally:
+        os.environ.pop("WARRANT_KEY")
+        if old is not None:
+            os.environ["WARRANT_KEY"] = old
+    after = E.View(r.store.snapshot(), r.trust, r.profile)
+    check("CJ4 a branch whose record its schema refuses is still the writer's (§7 reads the signed chain): join takes it in",
+          bad in after.bad and code == 0 and len((json.loads(out or "{}") or {}).get("joined", [])) == 1
+          and not CH.forks(after)["open"], (code, out[-200:], CH.forks(after)))
+
+
 def cli_cases():
     r = Repo()
     o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
@@ -1440,6 +1500,7 @@ if __name__ == "__main__":
     review_cases()
     roadmap_cases()
     cli_cases()
+    chain_join_cases()
     home_cases()
     impact_cases()
     differential_cases()

@@ -42,6 +42,15 @@ finds the nearest `.warrant/` upward from the current directory and reads that
 store's own trust and profile (`.warrant/v3.json`); `--store`, `--trust` and
 `--profile` name others.
 
+A writer that files records on two Git branches forks its own chain (docs/V3.md
+§7 lists every fork and excludes none), so a writer showing two histories to two
+readers would read like any merge. `warrant status` lists the writers whose
+chains fork and, apart, those with a fork still open: one the writer has not
+taken in. `warrant join --actor A` takes them in: one attest by A per loose tip,
+`{"verdict": "joined"}`, chained on A's head. A joined fork stays listed; only A
+can join A's. Run it in the change's own commits, before its head is filed: the
+gate refuses records added after the reviewed commit that are not verdicts.
+
 [Warrant Home](https://github.com/s0fractal/warrant/blob/master/docs/HOME.md)
 registers the repositories of this machine once (`warrant home add DIR
 --signer A`): `warrant status --repo NAME` works from anywhere, and
