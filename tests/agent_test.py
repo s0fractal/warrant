@@ -1312,7 +1312,7 @@ def page_contract_cases():
         dropped = (app.page_feed({}), app.last_feed_contract)
         SV.item = real
         SV.feed_scope_html = lambda store, actor, omitted, unread: fsth(store, actor, {}, [])   # says nothing is left out
-        hidden = app.page_feed({})
+        app.page_feed({})
         SV.feed_scope_html = fsth
         broke_hidden = app.last_feed_contract
         mine = app.page_feed({"actor": "carol", "machines": "1"})
@@ -1321,7 +1321,7 @@ def page_contract_cases():
         with contextlib.redirect_stdout(out):
             code = CT.main(["--feed", "--root", str(r.root)])
     except Exception as ex:                   # a crash is this case's FAIL, never a missing line
-        h = dropped = hidden = mine = f"crashed: {type(ex).__name__}: {ex}"
+        h = dropped = mine = f"crashed: {type(ex).__name__}: {ex}"
         kept = broke_hidden = kept_mine = want = code = None
         out = io.StringIO()
     finally:
