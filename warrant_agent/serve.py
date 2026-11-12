@@ -157,19 +157,24 @@ def sentence(rep, i):
     return a, f"подав {k}", title(rep, i), ""
 
 
-def feed(rep, limit=200, actor=None, machines=False):
-    """The newest records first (by `at`, then id): a list of {id, at, kind, actor, sentence, lineage}."""
-    out = []
+def feed(rep, limit=200, actor=None, machines=False, omitted=None):
+    """The newest records first (by `at`, then id): a list of {id, at, kind, actor, sentence, lineage}; `limit=None`
+    keeps them all. `omitted` (a dict) counts what it left out of the actor's records and why: migration records
+    (`transition`, never drawn) and, unless `machines`, those of automatic actors (`machines`)."""
+    out, omitted = [], {} if omitted is None else omitted
     for i, r in rep["_recs"].items():
-        if (actor and r["actor"] != actor) or (not machines and is_machine(r["actor"])):
+        if actor and r["actor"] != actor:
             continue
-        if r.get("schema") == "v2-transition@1":
+        why = ("transition" if r.get("schema") == "v2-transition@1"
+               else "machines" if not machines and is_machine(r["actor"]) else None)
+        if why:
+            omitted[why] = omitted.get(why, 0) + 1
             continue
         t = r["body"].get("target") if r["kind"] in ("attest", "challenge") else i
         out.append({"id": i, "at": r["at"], "kind": r["kind"], "actor": r["actor"], "sentence": sentence(rep, i),
                     "lineage": _root_of(rep, t) if t else None, "target": t})
     out.sort(key=lambda x: (-x["at"], x["id"]))
-    return out[:limit]
+    return out if limit is None else out[:limit]
 
 
 reactions_elsewhere = OB.elsewhere          # every observation filed in other stores (observe.py)
@@ -296,7 +301,7 @@ def link_l(store, i, text):
 def item(store, x, show_store=True):
     a, verb, what, rest = x["sentence"]
     target = link_l(store, x["lineage"], E(what)) if x["lineage"] and what else E(what)
-    return (f'<div class="item"><span class="when">{when(x["at"])}</span> '
+    return (f'<div class="item" data-r="{E(x["id"])} {E(store)}"><span class="when">{when(x["at"])}</span> '
             + (f'<span class="store">{E(store)}</span>' if show_store else "")
             + f'<span class="actor">{E(a)}</span> {E(verb)} {target}'
             + (f' <span class="rest">— {E(rest)}</span>' if rest else "") + END)
@@ -560,15 +565,32 @@ def floor_html(rep, store, d, used, note="", objections=(), reader=None, hidden=
 CONTRACT = "<!--contract-->"
 
 
-def contract_html(broken):
+def contract_html(broken, headline="сторінка не тримає контракт лінзи"):
     """The promises of the lens and the floor this page does not keep (contract.py): a replayable fact, shown on it."""
     if not broken:
         return ""
-    names = {"visible": "не показано", "floor": "немає в підлозі", "standing": "не показано заперечення"}
+    names = {"visible": "не показано", "floor": "немає в підлозі", "standing": "не показано заперечення",
+             "node": "немає на карті й не згорнуто", "folded": "згорнуто не стільки, скільки сказано",
+             "record": "не показано запис", "extra": "показано запис поза запитом", "omit": "не сказано, що пропущено",
+             "unread": "не названо непрочитане сховище"}
     rows = "".join(f"<li>{E(names[p])}: {E(x if isinstance(x, str) else (x[0][:12] + (' «' + x[1] + '»' if x[1] else '')))}</li>"
                    for p, x in broken[:30])
-    return (f'<div class="card"><b class="CHALLENGED">сторінка не тримає контракт лінзи: {len(broken)}</b> '
+    return (f'<div class="card"><b class="CHALLENGED">{E(headline)}: {len(broken)}</b> '
             f'<span class="rest">(python -m warrant_agent.contract відтворює)</span><ul>{rows}</ul>{END}')
+
+
+OMITTED = {"machines": "автоматичних учасників", "transition": "записів міграції", "limit": "старіших за межу"}
+
+
+def feed_scope_html(store, actor, omitted, unread):
+    """What the feed was asked for and what it leaves out, each with how many: a feed is never silently partial."""
+    scope = ([f"сховище <b>{E(store)}</b>"] if store else []) + ([f"лише <b>{E(actor)}</b>"] if actor else [])
+    left = [f'<span data-omit="{k} {omitted[k]}">{omitted[k]} {E(OMITTED[k])}</span>' for k in OMITTED if omitted.get(k)]
+    return ((f'<p class="rest">запит: {" · ".join(scope)}</p>' if scope else "")
+            + (f'<p class="rest">не показано: {" · ".join(left)}</p>' if left else "")
+            + (f'<p class="rest"><b class="PENDING">не прочитано сховищ: {len(unread)}</b> ('
+               + "; ".join(f'<span data-unread="{E(n)}">{E(n)}</span>: {E(why[:80])}' for n, why in unread)
+               + '): чого в них є, стрічка не знає</p>' if unread else ""))
 
 
 def diff_html(rep, d, names, only_a, only_b, drawn=()):
@@ -684,20 +706,36 @@ class App:
     def reports(self):
         return {n: self.space.report(n) for n in self.space.roots}
 
+    FEED_LIMIT = 300
+
     def page_feed(self, q):
+        """The newest records of the stores asked, and what the page leaves out, named with how many: the records of
+        automatic actors (unless asked), migration records, those past the limit, the stores it could not read. The
+        feed's contract (contract.feed_check) is checked on the page drawn and a broken promise is named on it."""
         store, actor, machines = q.get("store"), q.get("actor") or None, q.get("machines") == "1"
-        rows, foots = [], []
-        for n, rep in self.reports().items():
-            if (store and n != store) or "_error" in rep:
+        rows, foots, omitted, unread = [], [], {}, []
+        reports = self.reports()
+        for n, rep in reports.items():
+            if store and n != store:
                 continue
-            rows += [(n, x) for x in feed(rep, 300, actor, machines)]
+            if "_error" in rep:
+                unread.append((n, rep["_error"]))
+                continue
+            rows += [(n, x) for x in feed(rep, None, actor, machines, omitted)]
             foots.append(foot(n, rep, {"op": "feed", "actor": actor, "machines": machines}))
         rows.sort(key=lambda nx: (-nx[1]["at"], nx[0], nx[1]["id"]))
+        if len(rows) > self.FEED_LIMIT:
+            omitted["limit"] = len(rows) - self.FEED_LIMIT
         opts = " · ".join(f'<a href="/?store={quote(n)}">{E(n)}</a>' for n in self.space.roots)
         flt = (f'<div class="filters">сховище: <a href="/">усі</a> · {opts} · '
                + ('<a href="/?machines=0">сховати автоматичні</a>' if machines else '<a href="/?machines=1">показати автоматичні</a>')
                + "</div>")
-        return page("Стрічка", "<h2>Стрічка</h2>" + flt + "".join(item(n, x) for n, x in rows[:300]), "<br>".join(foots))
+        h = "<h2>Стрічка</h2>" + flt + feed_scope_html(store, actor, omitted, unread) + CONTRACT
+        h += "".join(item(n, x) for n, x in rows[:self.FEED_LIMIT])
+        broken = CT.feed_check(reports, h, store, actor, machines, self.FEED_LIMIT)
+        self.last_feed_contract = broken
+        h = h.replace(CONTRACT, contract_html(broken, "стрічка не тримає свій контракт"), 1)
+        return page("Стрічка", h, "<br>".join(foots))
 
     def pick(self, schema, asked):
         """(lens id, body, note): the lens named by the page (`?lens=ID` or `builtin`), else the one the reader
@@ -818,7 +856,8 @@ class App:
         lens_id, body, note, lens_store = self.pick(d["schema"], q.get("lens"))
         self.with_elsewhere(store, d)
         describe = lambda x: " ".join(str(t) for t in (sentence(rep, x) if x in rep["_recs"] else (x[:12],)) if t)
-        h = floor_html(rep, store, d, (lens_id, body["name"]), note, lens_objections(self.reports(), lens_store, lens_id))
+        h = (floor_html(rep, store, d, (lens_id, body["name"]), note, lens_objections(self.reports(), lens_store, lens_id),
+                        unavailable=self.unavailable()) + CONTRACT)
         drawn, legend = SC.svg(rep, store, d, LZ.card_of(body), describe)
         other = LZ.find(self.reports(), q["vs"]) if q.get("vs") else None
         if other is not None and LZ.problem(other[1]) is None:
@@ -833,6 +872,9 @@ class App:
         if alts:
             h += ('<p class="rest">поруч із: ' + " · ".join(
                 f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}&amp;vs={E(v)}">{E(n)}</a>' for v, n in alts) + "</p>")
+        broken = CT.map_check(d, standing(rep, d), SC.nodes_of(rep, d), h)
+        self.last_contract = {"lens": lens_id, "broken": broken}
+        h = h.replace(CONTRACT, contract_html(broken, "карта не тримає контракт"), 1)
         query = {"op": "scene", "target": d["lineage"], "lens": lens_id, "vs": q.get("vs"), "with": self.other_roots(store)}
         return 200, page(d["label"], h, foot(store, rep, query))
 

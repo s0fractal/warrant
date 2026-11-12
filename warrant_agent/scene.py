@@ -135,7 +135,7 @@ def _shape(n, x, y, r, b):
 def _node(n, pos, b, store, describe):
     x, y, r = pos[n["id"]]
     glyph = GLYPH.get(n["kind"], "·")                           # the floor: the kind is never colour alone
-    return (f'<a href="/l/{E(store)}/{E(n["id"])}"><g><title>{E(describe(n["id"]))}</title>{_shape(n, x, y, r, b)}'
+    return (f'<a href="/l/{E(store)}/{E(n["id"])}" data-n="{E(n["id"])}"><g><title>{E(describe(n["id"]))}</title>{_shape(n, x, y, r, b)}'
             f'<text x="{x}" y="{y + 5}" text-anchor="middle" font-size="14" fill="var(--bg)">{glyph}</text></g></a>')
 
 
@@ -152,7 +152,7 @@ def svg(rep, store, d, card, describe):
     parts += _edges(shown, pos) + [_node(n, pos, b, store, describe) for n in shown] + ["</svg>"]
     legend = ("<p class='rest legend'>карта: " + " · ".join(f"{k} = {E(LEGEND[v])}" for k, v in b.items())
               + " · ◆ версія ✓ атестація ✗ заперечення"
-              + (f" · <b>згорнуто {folded} вузлів</b> (бюджет {MAX_NODES})" if folded else "") + "</p>")
+              + (f' · <b data-folded="{folded}">згорнуто {folded} вузлів</b> (бюджет {MAX_NODES})' if folded else "") + "</p>")
     return "".join(parts), legend
 
 
