@@ -44,7 +44,7 @@
     ]
   },
   "solo": {
-    "window_hours": 4,
+    "window_hours": 0,
     "veto_role": "pr/owner"
   }
 }

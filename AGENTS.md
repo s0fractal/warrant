@@ -15,8 +15,8 @@ repository's records, tools, review loop and merge gate).
    `gh pr merge`: under this machine's GitHub login that merge is recorded as the owner's act. They file the review
    lineage and the gate merges (docs/V3.md §14, `.warrant/merge.json`):
    - an accepted change to no listed path: at once;
-   - an unaccepted one whose author holds `pr/acceptor` (`solo`): once its window (4 h) has passed since the checks
-     completed, with no finding and no veto;
+   - an unaccepted one whose author holds `pr/acceptor` (`solo`): once its window (`solo.window_hours`, 0 h: as soon as
+     the checks are green) has passed, with no finding and no veto;
    - a change to a watched path (the core modules): two families after 24 h, or one family after 72 h (`solo_ready`);
    - a change to a constitutional path (these rules, `.warrant/v3.json`, `.warrant/v3/`, the gate): two families after
      72 h, or one family after 7 days; when such a window opens the gate comments once, naming the owner.

@@ -119,10 +119,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   `.github/` and `.warrant/merge.json`; AGENTS.md, `.warrant/v3.json`, `.warrant/v3/` and the gate become a
   `constitutional` tier (72 h with two families, 7 days with one; a configuration where it is shorter than the
   watched tier is refused); the gate itself merges a change once its solo window passes (no agent merges under the
-  owner's login), and `solo` merges an unaccepted change to no listed path after 4 h; one comment names the owner when
+  owner's login), and `solo` merges an unaccepted change to no listed path once its checks are green (window 0 h); one comment names the owner when
   a constitutional window opens. The claims checker moves to a runner (`claims-key.yml`, `claims-replay.yml`, the
   environment `claims`); its acceptances arrive from `claims/verdicts/` and the gate merges them after CI re-executes
-  them (E56, E61–E66; V3-14-6, -9, -33, -38, -42, -43 new versions; V3-14-44..46). The engine still lets an actor
+  them (the merge observation says `how`: solo, accepted, verdicts or hand; E56, E61–E66, MR1; V3-14-6, -9, -33, -38, -42, -43 new versions; V3-14-44..46). The engine still lets an actor
   release its own obligation: an obligation (G10) asks for `obligation@2`.
 
 ## 3.0.0a6 — one package, one receiver

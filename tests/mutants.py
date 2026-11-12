@@ -248,6 +248,8 @@ MUTANTS = [
     ("T160", "warrant/cli.py", '"chain_forks_open": sorted({f[0] for f in forks["open"]})', '"chain_forks_open": sorted({f[0] for f in rep["chains"]["forks"]})', TOOLS, ["CJ2"]),
     ("T161", "warrant/chains.py", 'view.snap, view.trust, view.as_of, only=actor)', 'view.snap, view.trust, view.as_of, only=None)', TOOLS, ["CJ3"]),
     ("T162", "warrant/chains.py", '    recs, basis, _, _ = E._authentic(view.snap, view.trust, view.as_of, only=actor)', '    recs, basis = {i: r for i, r in view.recs.items() if r["actor"] == actor}, view.basis', TOOLS, ["CJ4"]),
+    ("T169", "warrant/review.py", 'MERGE_HOW = (("merge-on-acceptance: solo:", "solo"), ', 'MERGE_HOW = (', TOOLS, ["MR1"]),
+    ("T170", "warrant/review.py", '    return next((w for p, w in MERGE_HOW if p in message), "hand")', '    return "hand"', TOOLS, ["MR1"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
     ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),

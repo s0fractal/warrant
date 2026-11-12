@@ -161,7 +161,7 @@ gate's (the workflow's bot), never an agent's `gh pr merge` under the owner's lo
 | owner | `.github/`, `.warrant/merge.json` (the brake itself) | the owner merges | the owner merges |
 | constitutional | `AGENTS.md`, `.warrant/v3.json`, `.warrant/v3/`, `warrant/gate.py`, `tools/gate.py` | after 72 h | after 168 h (7 days) |
 | watched | the modules the gate imports (engine, store, records, keys, jcs, shapes, `__init__`) | after 24 h | after 72 h |
-| everything else | | at once, when accepted | `solo`: after 4 h, its author a `pr/acceptor` |
+| everything else | | at once, when accepted | `solo`: once the checks are green (`window_hours` 0), its author a `pr/acceptor` |
 
 A window counts from when the required checks completed at the head; no `hold` label and no challenge by
 `pr/owner` on the head version may stand. When a constitutional window opens the gate comments once on the pull

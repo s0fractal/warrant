@@ -1492,6 +1492,32 @@ def grounded_cases():
     check("GR3 the version asked about must be its lineage's effective version", G.grounded(r.report(), c0)["failing"][:1] == [[c0, "NOT_EFFECTIVE"]],
           G.grounded(r.report(), c0))
 
+def merged_cases():
+    """The observation of a merge says how it came about: a solo merge says that no second family reviewed it."""
+    import argparse
+    r = Repo()
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("base")
+    rows = {}
+    for n, msg in ((1, "Merge pull request #1 (solo: claude, the window passed)\n\nmerge-on-acceptance: solo: head version v by "
+                       "claude at x, one model family, its window passed since 1 with no veto; head h; base b."),
+                   (2, "Merge pull request #2 (accepted by codex)\n\nmerge-on-acceptance: head version v accepted by codex at x."),
+                   (3, "Merge branch 'feature'")):
+        git(r.root, "checkout", "-q", "-b", f"f{n}")
+        (r.root / f"f{n}.txt").write_text(str(n))
+        r.commit(f"change {n}")
+        git(r.root, "checkout", "-q", "master")
+        git(r.root, "merge", "-q", "--no-ff", f"f{n}", "-m", msg)
+        merge = git(r.root, "rev-parse", "HEAD")
+        rp = RP.Repo(r.root)
+        name = rp.config()[2]
+        r.put("alice", "entity", {"state": "open", "repository": name, "pr": n, "title": "t", "serves": []}, "pr-head@1")
+        rows[n] = RV._pr_record(rp, RP.Repo(r.root).report(), argparse.Namespace(cmd="merged", pr=n, merge=merge, actor="alice"),
+                                name)["body"].get("how")
+    check("MR1 the merge observation names how the merge came about from its commit: the gate's solo merge says solo (no "
+          "second family reviewed it), the gate's merge on an acceptance says accepted, anything else hand",
+          rows == {1: "solo", 2: "accepted", 3: "hand"}, rows)
+
 OBSERVER_AT = 1_794_522_625          # 2026-11-13: the owner leaves every guard (docs/REPOSITORY.md, "The owner as observer")
 OWNER_ROLES = {"before": {"roadmap/acceptor": ["codex", "s0fractal"], "schema/author": ["claude", "codex", "s0fractal"],
                           "roadmap/owner": ["s0fractal"], "challenger": None},
@@ -1535,4 +1561,5 @@ if __name__ == "__main__":
     ledger_cases()
     grounded_cases()
     observer_cases()
+    merged_cases()
     sys.exit(finish())
