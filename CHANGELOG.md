@@ -13,6 +13,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   binascii's words of the running Python. `impl-js/` gives the same bytes; its vectors no longer depend on CPython
   3.13. Reports with no problem whose reason quotes a value are unchanged. Tests U29 (three blobs), U44; mutants UM43 (the agent's refusal
   sentence), UM54, UM55.
+- A writer's chain forks taken in (`warrant/chains.py`, `warrant join --actor A`): §7 lists every fork, and a writer
+  that files on two Git branches forks its own chain at every merge (warrant's store: 16 forks, 11 of claude and 5 of
+  codex), so a writer showing two histories to two readers read like any merge. A `joined` attest by the writer, on
+  the line its head continues, takes a branch in; `warrant status` names apart the writers with a fork still open
+  (`chain_forks_open`). A joined fork stays listed; only the writer can join its own; nothing here is read by a guard
+  or the gate. tools_test CJ1–CJ4 (CJ4: Codex F1, a branch its schema refuses), mutants T156–T162.
 - A second client (`node impl-js/read.mjs --base URL`): a repository's records fetched over HTTP(S) from any root and
   assessed by the JavaScript implementation give the same report, byte for byte, as the store read from disk; an
   altered blob is refused, an altered line rejected. Read through GitHub, master gives the Python engine's root and
@@ -22,6 +28,14 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   under another name is never an independent voice); one name on different keys in two stores is two; a record its
   store admitted unsigned (a migration's word) is no one's key. The floor counts the voices independent of the author
   and names where names mislead. Tests VO1–VO4, mutants A180–A185.
+- The map's and the feed's contracts (P05 of the observer pack, completed): the map draws every node of a lineage
+  (`data-n`) or names how many it folded; the feed draws the newest records of its scope and names, with how many,
+  what it leaves out (automatic actors, migration records, those past the limit of 300) and every store it could not
+  read. The promise is computed from the records, not from the renderer's list. Before, the feed left all of that out
+  silently: on the registered stores 1216 records of automatic actors, 139 migration records and 2259 past the limit.
+  `python -m warrant_agent.contract STORE LINEAGE --map` and `--feed [STORE] [--actor A] [--machines]` replay them;
+  all 942 maps of the registered stores and the feed keep them. Each map of a comparison is read alone, and the
+  omission counts are compared both ways (Codex findings F1, F2 on #345). Tests FC1–FC3, MC1–MC3, mutants A186–A200.
 - A lens's contract (`warrant_agent/contract.py`, P05 of the observer pack): what a card promises of a lineage page
   (each declared member that has a value, the activity it shows) and what the floor promises (state, reliance, every
   counted challenge that stands, UNATTESTED, the lens) are read back from the marks of the page drawn. A broken promise

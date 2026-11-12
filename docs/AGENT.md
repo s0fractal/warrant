@@ -272,6 +272,18 @@ away by the budget (300) are named with their count. `?vs=` sets a second lens's
 nodes moved and which bindings differ; the lens comparison names scene bindings too. agent_test SC1–SC7; mutants
 A128–A133.
 
+### A page's contract (`warrant_agent/contract.py`)
+
+Each page names what it promises and is checked against it as it is drawn; a broken promise is named on the page
+and replayed by `python -m warrant_agent.contract` (exit 1). The promise is computed from the records, not from the
+renderer's own list. The lineage page keeps what its lens promises (each declared member that has a value, the
+activity it shows) and the floor (KC1–KC3). The map (`--map`) draws every node of the lineage or names how many it
+folded, over the same floor; beside a second lens's map each is read alone (MC1–MC3). The feed (`--feed [STORE] [--actor A] [--machines]`) draws the newest 300
+records of its scope and names, with how many, what it leaves out: records of automatic actors (unless asked),
+migration records, those past the limit, and every store it could not read; a count it names where nothing
+was left out is a breach too (FC1–FC3). What a kept contract does not
+establish: that the marks are where a reader looks, or that the page reads well.
+
 ### Fragile popularity (`/fragile`, `warrant_agent/fragile.py`)
 
 The lineages someone objected to, the most attended first. A lineage's attention is how many actors other than its
