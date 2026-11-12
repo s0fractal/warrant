@@ -77,17 +77,17 @@ def feed_promise(reports, store=None, actor=None, machines=False, limit=300):
     unread), computed from the records: the newest `limit` of every record in scope, newest first by `at`."""
     from warrant_agent import serve as SV
     rows, omit, unread = [], {"machines": 0, "transition": 0, "limit": 0}, set()
-    for n, rep in reports.items():
-        if store and n != store:
-            continue
+    for n, rep in ((n, rep) for n, rep in reports.items() if not store or n == store):
         if "_error" in rep:
             unread.add(n)
             continue
         for i, r in rep["_recs"].items():
-            why = None if actor and r["actor"] != actor else _left_out(r, machines, SV.is_machine)
+            if actor and r["actor"] != actor:
+                continue
+            why = _left_out(r, machines, SV.is_machine)
             if why:
                 omit[why] += 1
-            elif why is not None:
+            else:
                 rows.append((-r["at"], n, i))
     rows.sort()
     omit["limit"] = max(0, len(rows) - limit)
