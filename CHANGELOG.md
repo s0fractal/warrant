@@ -119,7 +119,8 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   of each of those files, resolved by the import system as the file runs (`warrant/imports.py`, the walk the gate's
   closure test already used, now with `-m`/`-c` programs); a closure that cannot be established is not accepted.
   Acceptances say `"closure": "imports/1"`; one without it reads `UNKNOWN` (STALE). `claims replay` runs again only the
-  claims none of whose acceptances names the files this commit holds for them (CF1–CF4, E60; V3-15-3).
+  claims none of whose acceptances names the files this commit holds for them (CF1–CF4, E60; V3-15-3). `warrant status`
+  in a checkout counts STALE as G14 reads it (on master it said ELIGIBLE 612 while 96 claims read STALE; CF5, V3-15-1).
 
 ## 3.0.0a6 — one package, one receiver
 

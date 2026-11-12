@@ -218,6 +218,11 @@ def status(a):
     snap = Store(store).snapshot()
     view = E.View(snap, trust, profile, a.as_of)
     rep, forks = view.report(), CH.forks(view)
+    root = Path(store).resolve().parent
+    if a.as_of is None and Path(store).name == ".warrant" and (root / ".warrant" / "claims.json").is_file():
+        from . import drift as D
+        rep["_recs"], rep["_basis"] = view.recs, view.basis
+        D.gate(rep, root)            # G14: a claim whose acceptances name other bytes than HEAD's counts STALE here too
     lineages, reliance = {}, {}
     for lin in rep["lineages"].values():
         by, state = lineages.setdefault(lin["schema"], {}), lin["state"] or "none"     # none: no effective version yet

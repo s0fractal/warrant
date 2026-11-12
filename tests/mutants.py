@@ -260,6 +260,7 @@ MUTANTS = [
     ("G56", "warrant/imports.py", "                    if main:", "                    if False:", GATE, ["E60"]),
     ("G57", "warrant/imports.py", "                imports(code, ())", "                pass", GATE, ["E60"]),
     ("G58", "warrant/imports.py", "            raise Unreadable(f\"{f}: {type(e).__name__}\") from None", "            continue", GATE, ["E60"]),
+    ("T168", "warrant/cli.py", "        D.gate(rep, root)            # G14", "        pass            # G14", TOOLS, ["CF5"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
     ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),

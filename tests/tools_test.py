@@ -719,6 +719,9 @@ def freshness_cases():
     (r.root / "tests" / "helper.py").write_text("ONE = 1  # the shared helper changes\n")
     r.commit("the helper both witnesses import changes")
     after = {k: gated(r, L) for k, L in Ls.items()}
+    _, out = cli(r.root, "status", "--json")
+    counted = json.loads(out or "{}").get("reliance", {})
+
     def changed(k):
         return [f["path"] for f in after[k][0].get("files", []) if f["verdict"] == "CHANGED"]
     check("CF1 a claim's acceptance names every file its witnesses load, not only its test and mutated files: a change "
@@ -726,6 +729,8 @@ def freshness_cases():
           "ELIGIBLE (Codex's counterexample on G14, 2026-11-13)",
           [before[k][1] for k in "qps"] == ["ELIGIBLE"] * 3 and [after[k][1] for k in "qps"] == [D.STALE, D.STALE, "ELIGIBLE"]
           and changed("q") == changed("p") == ["tests/helper.py"], (before, after))
+    check("CF5 `warrant status` in a checkout counts those claims STALE as G14 reads them, not ELIGIBLE (observed on master "
+          "9e183284: status said ELIGIBLE 612 while 96 claims read STALE)", counted.get(D.STALE) == 2, counted)
     leaves = {k: RP.Repo(r.root).report()["lineages"][L]["leaf"] for k, L in Ls.items()}
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
