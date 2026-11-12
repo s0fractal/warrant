@@ -1098,16 +1098,22 @@ def lens_cases():
     look = SV.App(space, reader="dave")                      # dave reads; the app that signs for him draws forms too
     view = lambda app, q=None: app.page_lineage("w", o, q or {})[1]
     first = view(look)
-    a1 = dave.adopt({"token": dave.token, "store": "w", "target": nested})
-    with_nested = view(look)
-    r.t += 10
-    a2 = dave.adopt({"token": dave.token, "store": "w", "target": flat})
-    with_flat = view(look)
+    clock = RP.time                 # both adoptions in one second, always: the chain, not the clock, must order them
+    RP.time = type("Clock", (), {"time": staticmethod(lambda: 1_700_000_000)})
+    try:
+        a1 = dave.adopt({"token": dave.token, "store": "w", "target": nested})
+        with_nested = view(look)
+        r.t += 10
+        a2 = dave.adopt({"token": dave.token, "store": "w", "target": flat})
+        with_flat = view(look)
+    finally:
+        RP.time = clock
+    ats = {x["at"] for x in RP.Repo(r.root).report()["_recs"].values() if x["actor"] == "dave" and x["body"].get("verdict") == "adopt"}
     check("LN1 the reader's adopted lens draws the page, the latest adoption winning: built-in, then the nested card, "
-          "then the flat stream, with no change of code",
+          "then the flat stream, with no change of code; the two adoptions share one second, so the chain orders them",
           "лінза «вбудована»" in first and "лінза «nested card»" in with_nested and "лінза «flat stream»" in with_flat
-          and with_nested.count('class="card"') == 2 and with_flat.count('class="card"') == 0 and a1[0] == a2[0] == 303,
-          (a1, a2))
+          and with_nested.count('class="card"') == 2 and with_flat.count('class="card"') == 0 and a1[0] == a2[0] == 303
+          and len(ats) == 1, (a1, a2, ats))
     eve = SV.App(space, "eve", KEYS["eve"])
     r.t += 10
     e1 = eve.adopt({"token": eve.token, "store": "w", "target": bare})
