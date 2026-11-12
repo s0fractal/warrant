@@ -44,6 +44,7 @@ import sys
 from pathlib import Path, PurePosixPath
 
 from . import gate as GT
+from . import imports as IM
 from . import records as R
 from .pins import blobs
 from .repo import Failed, Repo, checker_problem, code_tree, dump, emit, env_root, git, identity, inside, load_key, main, tree_id
@@ -51,6 +52,7 @@ from .repo import Failed, Repo, checker_problem, code_tree, dump, emit, env_root
 CONFIG = "claims/1"
 CLAIM = "claim@1"
 CHECKER = "claims-checker"            # the claims checker's actor: one key, bound once; its code is in each attest
+CLOSURE = "imports/1"                # an acceptance's `files` are the import closure of each file that ran (files_of)
 CASE_LINE = re.compile(r"""check\(\s*f?["']([A-Za-z0-9-]+)[ "']""")
 KEYWORD = re.compile(r"[A-Z]+(?: [A-Z]+)*\Z")
 
@@ -233,30 +235,48 @@ def checked(rep):
 
 
 def acceptances(rep):
-    """{version: [(commit, files)]} of the claims checker's signed acceptances, `files` as each names them (None in
-    one signed before they were named)."""
+    """{version: [(commit, files, closure)]} of the claims checker's signed acceptances, `files` as each names them
+    (None in one signed before they were named), `closure` the rule they were named by: CLOSURE when they are the
+    import closure of what ran (warrant.imports), None in one signed before (its files are the test and mutated
+    files only, so a shared module it ran is not among them)."""
     out = {}
     for i, r in sorted(rep["_recs"].items()):
         if r["kind"] == "attest" and r["actor"] == CHECKER and rep["_basis"].get(i) == "SIGNED" and r["body"].get("verdict") == "accept":
-            out.setdefault(r["body"]["target"], []).append((r["body"].get("commit"), r["body"].get("files")))
+            out.setdefault(r["body"]["target"], []).append((r["body"].get("commit"), r["body"].get("files"),
+                                                            r["body"].get("closure")))
     return out
 
 
-def files_of(b, root, known, tree):
+def files_of(b, root, known, tree, memo=None):
     """What an acceptance of claim body `b` runs on, {path: blob} of `tree`: each witness's test file, each mutant's
     mutated file and test file, as `known` (this checkout's harness) and this checkout's witness patterns place them,
-    with every link of a symlink chain and the file it ends at (Codex finding f4729a41b788): a link's blob is only its
-    target's name. None when any of them cannot be named: a path reaching its file some other way (a linked directory,
-    a link leaving the tree) or not in `tree`. A partial list is never signed (Codex finding f328c7477354): the checker
-    accepts nothing on what it cannot name."""
-    tests, paths = witness_files(root), set()
+    and every file each of those loads (warrant.imports: the import closure, searched as the file runs: its own
+    directory, then the checkout), with every link of a symlink chain and the file it ends at (Codex finding
+    f4729a41b788): a link's blob is only its target's name. A shared module or test helper a witness imports is named
+    (Codex counterexample on G14, 2026-11-13: a claim of engine.py named engine.py and its test, not the records.py,
+    jcs.py, store.py and tests/world.py its witness runs). None when any of them cannot be named: a file of the closure
+    that does not parse, a path reaching its file some other way (a linked directory, a link leaving the tree) or not
+    in `tree`. A partial list is never signed (Codex finding f328c7477354): the checker accepts nothing on what it
+    cannot name. `memo` keeps one closure per file across the claims of one run."""
+    memo = {} if memo is None else memo
+    tests, starts = witness_files(root), set()
     for w in b["witnesses"]:
         name = w.split(":")[0]
         if name in tests:
-            paths.add(tests[name].relative_to(root).as_posix())
+            starts.add(tests[name].relative_to(root).as_posix())
     for m in b["mutants"]:
-        paths.update(known.get(m, [])[:2])
-    chains = [_link_chain(root, p) for p in sorted({os.path.normpath(p) for p in paths})]
+        starts.update(known.get(m, [])[:2])
+    paths = set()
+    for f in sorted({os.path.normpath(p) for p in starts}):
+        if f not in memo:
+            try:
+                memo[f] = IM.closure(root, f, ("", os.path.dirname(f))) if f.endswith(".py") else {f}
+            except IM.Unreadable:
+                memo[f] = None
+        if memo[f] is None:
+            return None
+        paths |= {f} | {p for p in memo[f] if not p.endswith("/")}      # a directory without __init__ has no bytes
+    chains = [_link_chain(root, p) for p in sorted(paths)]
     if None in chains or any(p not in tree for chain in chains for p in chain):
         return None
     return {p: tree[p] for chain in chains for p in chain}
@@ -378,10 +398,11 @@ def held(b, ran, killed):
 
 
 def replay(repo, key):
-    """The claims checker at a clean commit: each live `backed` claim whose leaf waits, or whose acceptances by the
-    checker are all at another tree, is accepted when every witness case passes and every mutant it cites is
-    killed on one of its cases, in this tree. Each acceptance names the commit, its tree, the checker's code and
-    its environment."""
+    """The claims checker at a clean commit: each live `backed` claim whose leaf waits, or none of whose acceptances
+    by the checker names the bytes this commit holds for it (files_of: its tests, its mutated files and their import
+    closure), is accepted when every witness case passes and every mutant it cites is killed on one of its cases, in
+    this tree. A claim whose files did not change is not run again: its acceptance at another commit speaks of these
+    bytes too. Each acceptance names the commit, its tree, the checker's code, its environment and its files."""
     root = repo.root
     me = identity(root)
     trust, _, _ = repo.config()
@@ -391,21 +412,27 @@ def replay(repo, key):
     rep, problems = check(repo)
     if problems:
         raise Failed("CHECK", f"{len(problems)} problem(s): the checker accepts nothing over a failing check")
-    done = {v: [x for x, files in rows if files] for v, rows in acceptances(rep).items()}   # one naming no files is accepted again
-    here = code_tree(root, commit)
-    todo = {L: b for L, b in live(rep).items() if b["state"] == "backed" and (
-        rep["versions"][rep["lineages"][L]["leaf"]]["guard"] == "PENDING" or not at_tree(root, done.get(rep["lineages"][L]["leaf"], []), here))}
+    known, listed, memo = harness(root), blobs(root, commit), {}
+    done = acceptances(rep)
+    now = {L: files_of(b, root, known, listed, memo) for L, b in live(rep).items() if b["state"] == "backed"}
+
+    def fresh(L):
+        leaf = rep["lineages"][L]["leaf"]
+        return (rep["versions"][leaf]["guard"] != "PENDING" and now[L] is not None
+                and any(c == CLOSURE and files == now[L] for _, files, c in done.get(leaf, [])))
+    todo = {L: b for L, b in live(rep).items() if L in now and not fresh(L)}
     ran, killed = run_checks(root, [w for b in todo.values() for w in b["witnesses"]], {m for b in todo.values() for m in b["mutants"]})
-    recs, known, listed = [], harness(root), blobs(root, commit)
+    recs = []
     for L, b in sorted(todo.items()):
-        files = files_of(b, root, known, listed)
+        files = now[L]
         ok = held(b, ran, killed) and files is not None
         if ok:
             leaf = rep["lineages"][L]["leaf"]
             recs.append(R.record("attest", CHECKER, 0, {"target": leaf, "verdict": "accept", "commit": commit, "tree": tree, **me,
                                                         "witnesses": b["witnesses"], "mutants": b["mutants"],
-                                                        "files": files}, refs=[leaf]))
+                                                        "files": files, "closure": CLOSURE}, refs=[leaf]))
         print(f"{'ACCEPT' if ok else 'HELD  '} {b['id']} {L[:12]}")
+    print(f"claims checker: {len(todo)} of {len(now)} backed claims run, {len(now) - len(todo)} fresh at this commit")
     return repo.file(CHECKER, key, recs)
 
 

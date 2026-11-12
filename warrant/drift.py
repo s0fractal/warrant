@@ -76,7 +76,9 @@ def drift(rep, root, at="HEAD"):
         eff = rep["lineages"][L]["effective"]
         if not done.get(eff):
             continue
-        seen = [(x, compare(root, x, files, head, where, at, memo)) for x, files in done[eff]]
+        seen = [(x, compare(root, x, files, head, where, at, memo) if rule == C.CLOSURE else
+                 [("UNKNOWN", "", "the acceptance names its test and mutated files, not the import closure they ran")])
+                for x, files, rule in done[eff]]
         x, rows = min(seen, key=lambda s: RANK[_verdict(s[1])])
         out[L] = {"id": rep["_recs"][eff]["body"].get("id"), "version": eff, "verdict": _verdict(rows), "commit": x,
                   "files": [{"verdict": v, "path": p, "detail": d} for v, p, d in rows]}
@@ -126,7 +128,7 @@ def lines(d):
 def _accepted_files(rep, L):
     """Every path any signed acceptance of claim lineage L's effective version names."""
     eff = rep["lineages"][L]["effective"]
-    return {p for _, files in C.acceptances(rep).get(eff, []) if isinstance(files, dict) for p in files}
+    return {p for _, files, _ in C.acceptances(rep).get(eff, []) if isinstance(files, dict) for p in files}
 
 
 def rests_on(rep, L):

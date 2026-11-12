@@ -113,6 +113,14 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   named on `/overlay`, not admitted; an actor with no role is still admitted when its sources agree (Codex review
   2026-11-12). agent_test OV6, mutants A201, A202; A155 retargeted.
 
+- Claims freshness reads the import closure (G14; Codex's counterexample, 2026-11-13). A claims checker acceptance named
+  only each witness's test file and each mutant's mutated file and test, so a change to a module the witness ran
+  (`records.py`, `jcs.py`, `store.py`, `tests/world.py`) left the claim fresh. `files_of` now names the import closure
+  of each of those files, resolved by the import system as the file runs (`warrant/imports.py`, the walk the gate's
+  closure test already used, now with `-m`/`-c` programs); a closure that cannot be established is not accepted.
+  Acceptances say `"closure": "imports/1"`; one without it reads `UNKNOWN` (STALE). `claims replay` runs again only the
+  claims none of whose acceptances names the files this commit holds for them (CF1–CF4, E60; V3-15-3).
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by
