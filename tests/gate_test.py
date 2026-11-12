@@ -237,6 +237,31 @@ def verdict_cases():
     check("E23 verdicts only from a branch outside codex/verdicts/ are refused", codes(setup(branch="feature")) == {"VERDICTS_BRANCH"})
     check("E18 a verdict the base holds already is refused", "VERDICT_NOT_NEW" in codes(setup(again=True)))
     check("E19 a verdict on a version the base does not hold due for its actor is refused", codes(setup(due=False)) == {"VERDICT_NOT_DUE"})
+    def claims_pr(branch="claims/verdicts/x", state="backed", verifier=True):
+        r = Repo()
+        r.trust["keys"]["claims-checker"] = [KEYS["dave"].public]
+        r.profile["roles"]["claim/verifier"] = ["claims-checker"] if verifier else []
+        r.write_config()
+        (r.dot / "merge.json").write_text(json.dumps(MERGE))
+        c = r.entity("alice", "claim@1", {"state": state, "id": "V3-3-1", "source": "docs/V3.md", "section": "3", "text": "t",
+                                          "witnesses": ["q_test:Q1"], "mutants": ["Z1"],
+                                          **({"reason": "states no rule"} if state == "informative" else {})})
+        git(r.root, "init", "-q", "-b", "master")
+        base = r.commit("base")
+        git(r.root, "checkout", "-q", "-b", "verdicts")
+        r.t += 1
+        r.store.append(R.record("attest", "claims-checker", r.t, {"target": c, "verdict": "accept", "commit": base}, refs=[c]),
+                       KEYS["dave"], r.trust)
+        head = r.commit("the checker's acceptance")
+        facts = {"number": 9, "state": "open", "draft": False, "base": "master", "head": head, "labels": [], "branch": branch,
+                 "head_repo": REPO}
+        return GT.assess(r.root, base, facts, green(head))
+    ok, wrong, idle, nobody = claims_pr(), claims_pr(branch="codex/verdicts/x"), claims_pr(state="informative"), claims_pr(verifier=False)
+    check("E66 a pull request of the claims checker's acceptances only, on backed claims' leaves at the base, from a branch "
+          "under claims/verdicts/, is the gate's to merge (CI re-executes each first); from another branch, on a claim "
+          "that is not backed, or by a checker that is no claim/verifier at the base, it is not",
+          ok.eligible and ok.facts.get("verdicts") and codes(wrong) == {"VERDICTS_BRANCH"} and codes(idle) == {"VERDICT_NOT_DUE"}
+          and "NO_REVIEW" in codes(nobody), (ok.reasons, wrong.reasons, idle.reasons, nobody.reasons))
     r = Repo()
     o1 = r.entity("alice", "obligation@1", {"state": "open", "statement": "first", "serves": []})
     o2 = r.entity("alice", "obligation@1", {"state": "open", "statement": "second", "serves": []})
@@ -304,11 +329,12 @@ def listed_by(policy, f):
 
 def closure_cases():
     doc = json.loads((ROOT / ".warrant" / "merge.json").read_text())
-    policy = doc["owner_paths"] + doc.get("watched", {}).get("paths", [])
+    tight = doc["owner_paths"] + doc.get("constitutional", {}).get("paths", [])      # the owner's, or the longest windows
+    policy = tight + doc.get("watched", {}).get("paths", [])
     closure = imported_modules(ROOT, "tools/gate.py")
-    check("E32 every module the gate imports, directly or through another, is an owner path or a watched path of this "
-          "repository, and the gate itself is an owner path", "warrant/gate.py" in closure
-          and listed_by(doc["owner_paths"], "warrant/gate.py") and listed_by(doc["owner_paths"], "tools/gate.py")
+    check("E32 every module the gate imports, directly or through another, is an owner, a constitutional or a watched "
+          "path of this repository, and the gate itself is an owner or a constitutional path", "warrant/gate.py" in closure
+          and listed_by(tight, "warrant/gate.py") and listed_by(tight, "tools/gate.py")
           and not [f for f in closure if not listed_by(policy, f)], sorted(closure))
     with tempfile.TemporaryDirectory() as d:
         w = Path(d) / "warrant"
@@ -355,7 +381,7 @@ def closure_cases():
         ran = set(json.loads(r.stdout))
     except ValueError:
         ran = {f"unreadable: {r.stderr[-300:]}"}
-    check("E47 a fresh interpreter started as the workflow starts the gate loads, from the checkout, only files the walk found, each an owner path",
+    check("E47 a fresh interpreter started as the workflow starts the gate loads, from the checkout, only files the walk found, each a listed path",
           "warrant/gate.py" in ran and ran <= closure and not [f for f in ran if not listed_by(policy, f)], sorted(ran))
 
 
@@ -434,7 +460,8 @@ BESIDE = [{"warrant/other.py": b""}, {"warrant/shapes_extra.py": b""}, {"warrant
 def shadow_cases():
     """R-GATE-CLOSURE, by the base's own policy: what a change may put beside the modules the gate loads."""
     policy = json.loads((ROOT / ".warrant" / "merge.json").read_text())
-    listed = policy["owner_paths"] + policy.get("watched", {}).get("paths", [])      # the places derive from both
+    listed = (policy["owner_paths"] + policy.get("watched", {}).get("paths", [])     # the places derive from them all
+              + policy.get("constitutional", {}).get("paths", []))
 
     def base(s):
         package_at(s.r.root)
@@ -590,9 +617,12 @@ def watched_cases():
     s70 = solo.assess(checks=green(sh, completed=NOW - 70 * 3600), now=NOW)
     s73 = solo.assess(checks=green(sh, completed=NOW - 73 * 3600), now=NOW)
     held = solo.assess(checks=green(sh, completed=NOW - 73 * 3600), now=NOW, labels=["hold"])
-    check("E56 one family only (its author, no acceptor: the others out of budget): the gate merges nothing; solo_ready "
-          "says when the longer solo window has passed with nothing else refusing, which a hold label withdraws",
-          not s73.eligible and s73.facts.get("solo_ready") is True and s70.facts.get("solo_ready") is False
+    check("E56 one family only (its author, no acceptor: the others out of budget): the gate itself merges it once the "
+          "longer solo window has passed with nothing else refusing (solo_ready), not before, and a hold label withdraws it "
+          "(owner, 2026-11-13: agents stop merging under the owner's name)",
+          s73.eligible and s73.facts.get("solo") is True and "solo" in GT.line(s73) and not s70.eligible
+          and codes(s70) == {"NO_ACCEPT", "WATCHED_FAMILIES"} and not held.eligible
+          and s73.facts.get("solo_ready") is True and s70.facts.get("solo_ready") is False
           and held.facts.get("solo_ready") is False and s73.facts.get("solo_from") == NOW - 73 * 3600 + 72 * 3600,
           (s70.facts, s73.facts, held.reasons))
     plain = PR(merge=dict(WATCHED, watched=dict(WATCHED["watched"], paths=["elsewhere.py"])))
@@ -617,6 +647,104 @@ def watched_cases():
           "an unknown member is refused as the base's configuration", all(c == {"BASE_CONFIG"} for c in refused), refused)
 
 
+CONST = dict(WATCHED, owner_paths=[".github/", ".warrant/merge.json"], watched=dict(WATCHED["watched"], paths=["core.py"]),
+             constitutional={"paths": ["AGENTS.md", ".warrant/v3.json", "tools/gate.py"], "window_hours": 72,
+                             "solo_window_hours": 168, "families": 2, "veto_role": "pr/owner", "notify": ["owner-login"]})
+
+
+def constitution_cases():
+    """The constitutional tier (merge.json `constitutional`, owner 2026-11-13): the rules, the receiver and the gate
+    are merged by the models with the owner watching, over windows longer than the core's; one comment names the owner
+    when the window opens. And `solo`: one family's change to no listed path, merged by the gate after its window."""
+    def acceptors(*who):
+        def f(s):
+            s.r.profile["roles"]["pr/acceptor"] = sorted(who)
+            s.r.write_config()
+        return f
+
+    def rules(s):
+        (s.r.root / "AGENTS.md").write_text("rules, amended\n")
+    two = PR(merge=CONST, before_x=rules, before_base=acceptors("bob", "alice"))
+    th = git(two.r.root, "rev-parse", "HEAD")
+    at = {h: two.assess(checks=green(th, completed=NOW - h * 3600), now=NOW) for h in (71, 73)}
+    check("E61 a change to a constitutional path accepted by two families is merged by the gate after the constitutional "
+          "window (72 h here), not after the watched one, and leaves the notice its comment carries",
+          codes(at[71]) == {"WATCHED_WINDOW"} and at[73].eligible and at[73].facts.get("constitutional") == ["AGENTS.md"]
+          and "watched" not in at[73].facts and (at[73].facts.get("notice") or {}).get("notify") == ["owner-login"]
+          and at[73].facts["notice"]["window_until"] == NOW - 73 * 3600 + 72 * 3600, (at[71].reasons, at[73].facts))
+    one = PR(merge=CONST, before_x=rules, accept=False, before_base=acceptors("bob", "alice"))
+    oh = git(one.r.root, "rev-parse", "HEAD")
+    s = {h: one.assess(checks=green(oh, completed=NOW - h * 3600), now=NOW) for h in (100, 169)}
+    both = PR(merge=CONST, before_x=lambda q: (rules(q), (q.r.root / "core.py").write_text("y = 1\n")), accept=False,
+              before_base=acceptors("bob", "alice"))
+    bh = git(both.r.root, "rev-parse", "HEAD")
+    mixed = {h: both.assess(checks=green(bh, completed=NOW - h * 3600), now=NOW) for h in (100, 169)}
+    check("E62 ... one family: merged by the gate after the constitutional solo window (168 h), not after the watched one "
+          "(72 h); a change to both tiers waits for the longer",
+          not s[100].eligible and s[169].eligible and s[169].facts.get("solo") and not mixed[100].eligible
+          and mixed[169].eligible and mixed[169].facts.get("solo_from") == NOW - 169 * 3600 + 168 * 3600,
+          (s[100].reasons, s[169].reasons, mixed[100].reasons, mixed[169].facts.get("solo_from")))
+    c = CONST["constitutional"]
+    bad = [dict(CONST, watched=None) and {k: v for k, v in CONST.items() if k != "watched"},
+           dict(CONST, constitutional=dict(c, window_hours=12, solo_window_hours=48)),
+           dict(CONST, constitutional=dict(c, solo_window_hours=71)),
+           dict(CONST, constitutional=dict(c, paths=["core.py"])),
+           dict(CONST, constitutional=dict(c, paths=[".github/"])),
+           dict(CONST, constitutional=dict(c, notify=["@owner"])),
+           dict(CONST, constitutional={k: v for k, v in c.items() if k != "notify"}),
+           dict(CONST, solo={"window_hours": 73, "veto_role": "pr/owner"}),
+           dict(CONST, solo={"window_hours": 4}),
+           dict(MERGE, solo={"window_hours": 721, "veto_role": "pr/owner"})]
+    refused = [codes(PR(merge=m).assess()) for m in bad]
+    check("E63 a constitutional tier without a watched one, with a window or a solo window shorter than the watched one, "
+          "naming a watched or an owner path, a login that is not one, or no notify; a solo rule longer than the watched "
+          "solo window or without its veto role: each is refused as the base's configuration",
+          all(x == {"BASE_CONFIG"} for x in refused), refused)
+    SOLO = dict(MERGE, solo={"window_hours": 4, "veto_role": "pr/owner"})
+    q = PR(merge=SOLO, accept=False, before_base=acceptors("bob", "alice"))
+    qh = git(q.r.root, "rev-parse", "HEAD")
+    early, late = (q.assess(checks=green(qh, completed=NOW - h * 3600), now=NOW) for h in (3, 5))
+    stranger = PR(merge=SOLO, accept=False)
+    sh = git(stranger.r.root, "rev-parse", "HEAD")
+    nobody = stranger.assess(checks=green(sh, completed=NOW - 5 * 3600), now=NOW)
+    q.r.put("dave", "challenge", {"target": q.head_v, "statement": "wait"}, refs=[q.head_v])
+    vh = q.r.commit("the owner's veto")
+    vetoed = q.assess(checks=green(vh, completed=NOW - 50 * 3600), now=NOW, head=vh)
+    unset = PR(accept=False, before_base=acceptors("bob", "alice"))
+    uh = git(unset.r.root, "rev-parse", "HEAD")
+    plain = unset.assess(checks=green(uh, completed=NOW - 500 * 3600), now=NOW)
+    check("E64 `solo`: a change to no listed path by a pr/acceptor, with no acceptance, is merged by the gate once its "
+          "window has passed since the checks completed; not before, not by an author who holds no pr/acceptor, not "
+          "against a pr/owner's challenge, and not at all where merge.json has no solo rule",
+          codes(early) == {"NO_ACCEPT"} and late.eligible and late.facts.get("solo") and late.accept[0] == "alice"
+          and not nobody.eligible and "OWNER_VETO" in codes(vetoed) and not vetoed.eligible and codes(plain) == {"NO_ACCEPT"},
+          (early.reasons, late.reasons, nobody.reasons, vetoed.reasons, plain.reasons))
+
+    class GH:
+        def __init__(self, old=()):
+            self.old, self.posted = list(old), []
+
+        def comments(self, n):
+            return self.old
+
+        def comment(self, n, body):
+            self.posted.append(body)
+            self.old.append({"body": body, "user": {"login": "github-actions[bot]"}})
+    b = GT.Base(two.r.root, two.base)
+    gh = GH()
+    first = GT.notify(b, [at[73], at[71]], gh)
+    again = GT.notify(b, [at[73]], gh)
+    forged = GH(old=[{"body": GT.NOTICE.format(x=at[73].facts["notice"]["x"]), "user": {"login": "someone"}}])
+    GT.notify(b, [at[73]], forged)
+    quiet = GT.notify(b, [late], GH())
+    text = gh.posted[0] if gh.posted else ""
+    check("E65 when a constitutional window opens the gate comments once per head commit, naming the owner's login, the "
+          "paths, when each window ends and how to veto; a comment with its mark by another user does not count, and a "
+          "change to no tier gets none",
+          len(gh.posted) == 1 and first == [(7, "noticed")] and again == [] and "@owner-login" in text
+          and "`AGENTS.md`" in text and "`hold`" in text and at[73].facts["notice"]["version"] in text
+          and len(forged.posted) == 1 and quiet == [], (first, again, gh.posted, forged.posted, quiet))
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -632,4 +760,5 @@ if __name__ == "__main__":
     check_cases()
     merge_cases()
     watched_cases()
+    constitution_cases()
     sys.exit(finish())

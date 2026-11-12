@@ -6,7 +6,8 @@ pr/acceptor). The reviewer accepts a head version (an attest) or files findings 
 challenges; a finding may carry a test: {file, case, patch}, a new file under tests/). The review replay
 checker runs each finding's test at each later head and attests the result on the finding
 ({verdict: reproduces | does_not_reproduce | no_result | does_not_apply, on: head version, commit, tree}).
-A merge is a Git act, observed by an attest {verdict: merged, merge, tip} on the head version merged.
+A merge is a Git act, observed by an attest {verdict: merged, merge, tip, how} on the head version merged; `how` is
+solo, verdicts, accepted (the gate's, by its commit message) or hand.
 
     python3 -m warrant.review [--root DIR] due --base M [--json]           # the waker's: due for review
     python3 -m warrant.review [--root DIR] gate --base M [--merge] [--gate-var V] [--summary FILE] [--pr N ...]
@@ -319,7 +320,20 @@ def _pr_record(repo, rep, a, name):
         return R.record("entity", a.actor, 0, body, PR_HEAD, lineage=leaf, refs=a.answers, guard=schema["states"]["head"])
     merge = git(repo.root, "rev-parse", "--verify", f"{a.merge}^{{commit}}")
     tip = git(repo.root, "rev-parse", f"{merge}^2")
-    return R.record("attest", a.actor, 0, {"target": leaf, "verdict": "merged", "merge": merge, "tip": tip}, refs=[leaf])
+    return R.record("attest", a.actor, 0, {"target": leaf, "verdict": "merged", "merge": merge, "tip": tip,
+                                           "how": merged_how(git(repo.root, "cat-file", "commit", merge))}, refs=[leaf])
+
+
+MERGE_HOW = (("merge-on-acceptance: solo:", "solo"), ("merge-on-acceptance: verdicts only", "verdicts"),
+             ("merge-on-acceptance: head version", "accepted"))
+
+
+def merged_how(message):
+    """How a merge came about, read from its commit object's message (the gate writes it, docs/V3.md §14): `solo` (the
+    gate, one model family, its window passed: no second family reviewed it), `verdicts` (the gate, verdicts only),
+    `accepted` (the gate, on a pr/acceptor's acceptance), else `hand` (not the gate's merge). The observation says it
+    plainly; a reader checks it against the merge commit it names."""
+    return next((w for p, w in MERGE_HOW if p in message), "hand")
 
 
 def entry():

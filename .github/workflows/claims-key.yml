@@ -1,0 +1,56 @@
+# The claims checker's key on a runner (owner, 2026-11-13: the owner stops being a signer). Made once on a GitHub
+# runner and kept as the secret WARRANT_CLAIMS_SEED of the environment `claims`, which only master may deploy to. The
+# seed never leaves GitHub; this run prints only its public key, which a pull request then ADDS to the trust's
+# `claims-checker` keys in .warrant/v3.json (the key the owner held stays bound: the acceptances it signed keep their
+# authenticity). Making the secret takes WARRANT_SECRETS_TOKEN (a token of the owner's, of this repository only,
+# allowed to write environment secrets), needed once and deleted after.
+name: claims-key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  key:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: claims
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Signature library (exact version and hashes)
+        run: python -m pip install --quiet --only-binary ':all:' --require-hashes -r .github/merge-gate-requirements.txt
+      - name: Make the key once; print its public key
+        env:
+          SEED: ${{ secrets.WARRANT_CLAIMS_SEED }}
+          GH_TOKEN: ${{ secrets.WARRANT_SECRETS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SEED" ]; then
+            if [ -z "$GH_TOKEN" ]; then
+              echo "the environment claims holds neither WARRANT_CLAIMS_SEED nor WARRANT_SECRETS_TOKEN" >&2
+              exit 1
+            fi
+            # no key for an environment other branches could deploy to: their workflows would read it
+            custom=$(gh api "repos/$GITHUB_REPOSITORY/environments/claims" --jq '.deployment_branch_policy.custom_branch_policies')
+            branches=$(gh api "repos/$GITHUB_REPOSITORY/environments/claims/deployment-branch-policies" \
+              --jq '[.branch_policies[] | [.name, .type]]' | tr -d ' \n')
+            if [ "$custom" != "true" ] || [ "$branches" != '[["master","branch"]]' ]; then
+              echo "refused: the environment claims must be deployable from master alone (custom $custom, $branches)" >&2
+              exit 1
+            fi
+            SEED=$(python -c "import os; print(os.urandom(32).hex())")
+            echo "::add-mask::$SEED"
+            printf %s "$SEED" | gh secret set WARRANT_CLAIMS_SEED --env claims --repo "$GITHUB_REPOSITORY"
+            echo "made WARRANT_CLAIMS_SEED in the environment claims; WARRANT_SECRETS_TOKEN may be deleted now"
+          fi
+          printf %s "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -c \
+            "import sys; from warrant.keys import Key; print('claims-checker public key', Key.from_seed_hex(sys.stdin.read()).public)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
