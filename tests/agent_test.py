@@ -1729,14 +1729,32 @@ def overlay_cases():
           and OV.identity(snaps, t1, p1, code) == OV.identity(snaps, t1, p1, again["code"])
           and OV.identity(snaps, t1, p1, code) != OV.identity(snaps, t1, p2, code)
           and OV.identity(snaps, t1, p1, code) != OV.identity({"pub": snaps["pub"]}, t1, p1, code), r2["challenges"].get(c))
-    forged = dict(pub.trust, keys=dict(pub.trust["keys"], bob=[KEYS["dave"].public]))   # a store that calls dave's key bob
-    reader_trust = dict(pub.trust, keys={a: k for a, k in pub.trust["keys"].items() if a != "bob"})
-    t3, _, conflicts = OV.receiver(reader_trust, p1, {"pub": pub.trust, "forger": forged})
-    t4, _, none = OV.receiver(pub.trust, p1, {"pub": pub.trust, "forger": forged})
+    forged = dict(pub.trust, keys=dict(pub.trust["keys"], eve=[KEYS["dave"].public]))   # a store that calls dave's key eve
+    reader_trust = dict(pub.trust, keys={a: k for a, k in pub.trust["keys"].items() if a != "eve"})
+    t3, _, conflicts = OV.receiver(reader_trust, p2, {"pub": pub.trust, "forger": forged})     # eve holds no role in p2
+    t4, _, none = OV.receiver(pub.trust, p2, {"pub": pub.trust, "forger": forged})
     check("OV3 a key binding is admitted only as the reader's own or as every source naming that actor agrees: a store "
           "that binds another key to an actor is named, and that actor is admitted from neither; the reader's own "
-          "binding wins", "bob" not in t3["keys"] and [a for a, _ in conflicts] == ["bob"]
-          and t4["keys"]["bob"] == pub.trust["keys"]["bob"] and none == [], conflicts)
+          "binding wins", "eve" not in t3["keys"] and [(a, w) for a, _, w in conflicts] == [("eve", "disagree")]
+          and t4["keys"]["eve"] == pub.trust["keys"]["eve"] and none == [], conflicts)
+    # Codex 2026-11-12 on overlay.receiver: one source "agreeing" with itself bound a role holder the reader never pinned
+    pub6 = Repo()
+    e = pub6.entity("alice", "obligation@1", {"state": "open", "statement": "another claim", "serves": []})
+    e2 = pub6.entity("alice", "obligation@1", {"state": "done", "statement": "another claim", "serves": []}, lineage=e)
+    unpinned = dict(pub.trust, keys={a: k for a, k in pub.trust["keys"].items() if a not in ("bob", "eve")})
+    forger = Repo()
+    forger.trust = dict(forger.trust, keys=dict(unpinned["keys"], bob=[KEYS["dave"].public], eve=[KEYS["eve"].public]))
+    forger.write_config()
+    forger.store.append(R.record("attest", "bob", forger.t + 1, {"target": e2, "verdict": "accept"}, refs=[e2]),
+                        KEYS["dave"], forger.trust)                                   # dave's key, signing as bob
+    fsnaps = {"pub": pub6.store.snapshot(), "forger": forger.store.snapshot()}
+    t6, _, held = OV.receiver(unpinned, p2, {"pub": unpinned, "forger": forger.trust})
+    r6 = OV.assess(fsnaps, t6, p2)
+    check("OV6 a key binding for an actor the reader's own profile gives a role is admitted only from the reader's own "
+          "trust: a single store binding bob (roadmap/acceptor) to another key is named, not admitted, and its forged "
+          "acceptance does not settle the version; an actor with no role is still admitted when its sources agree",
+          "bob" not in t6["keys"] and [(a, w) for a, _, w in held] == [("bob", "role")] and t6["keys"].get("eve") == [KEYS["eve"].public]
+          and r6["lineages"][e]["state"] != "done", (held, r6["lineages"][e]["state"]))
     from warrant_agent import serve as SV
     me = Repo()
     me.profile["roles"] = dict(me.profile["roles"], replayer=["dave"])     # the reader trusts dave's replays; pub does not

@@ -988,9 +988,12 @@ class App:
               + (f'<p><b class="PENDING">твої правила не називають, хто має ці ролі: {E(", ".join(unnamed))}</b>: '
                  f'версії, яких вони чекають, для тебе не прийняті (впиши ролі в .warrant/v3.json сховища {E(self.mine)})</p>'
                  if unnamed else "")
-              + (f'<p><b class="PENDING">не прийнято прив\'язок ключів: {len(conflicts)}</b> ('
-                 + E("; ".join(f"{a}: {', '.join(sorted(by))}" for a, by in conflicts)) + '): сховища не згодні, чий це ключ</p>'
-                 if conflicts else "")
+              + "".join(f'<p><b class="PENDING">не прийнято прив\'язок ключів: {len(xs)}</b> ('
+                        + E("; ".join(f"{a}: {', '.join(sorted(by))}" for a, by, _ in xs)) + f'): {why}</p>'
+                        for xs, why in (([c for c in conflicts if c[2] == "disagree"], "сховища не згодні, чий це ключ"),
+                                        ([c for c in conflicts if c[2] == "role"], "твої правила дають їм роль, а ключ "
+                                         f"кожного ти маєш вписати сам (у .warrant/v3.json сховища {E(self.mine)})"))
+                        if xs)
               + "".join(change_html(over, store, x, self.reports()) for x in rows[:200]) + END)
         return 200, page("Для мене", h, foot(store, base, {"op": "overlay", "with": self.other_roots(store), "overlay": ident}))
 
