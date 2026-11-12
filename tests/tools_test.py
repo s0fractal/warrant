@@ -1492,6 +1492,34 @@ def grounded_cases():
     check("GR3 the version asked about must be its lineage's effective version", G.grounded(r.report(), c0)["failing"][:1] == [[c0, "NOT_EFFECTIVE"]],
           G.grounded(r.report(), c0))
 
+OBSERVER_AT = 1_794_522_625          # 2026-11-13: the owner leaves every guard (docs/REPOSITORY.md, "The owner as observer")
+OWNER_ROLES = {"before": {"roadmap/acceptor": ["codex", "s0fractal"], "schema/author": ["claude", "codex", "s0fractal"],
+                          "roadmap/owner": ["s0fractal"], "challenger": None},
+               "after": {"roadmap/acceptor": ["codex"], "schema/author": ["claude", "codex"],
+                         "roadmap/owner": ["claude", "codex", "s0fractal"], "challenger": ["s0fractal"]}}
+
+
+def observer_cases():
+    """The owner's transition to observer is a change of the profile only: his word may lower reliance, never raise it.
+    Assessed as of the transition, under the profile with his former roles and under the profile as it is, no lineage
+    of this repository's store changes its state or its reliance, no version its guard, no challenge whether it counts."""
+    rp = RP.Repo(ROOT)
+    trust, profile, _ = rp.config()
+
+    def under(which):
+        roles = {k: v for k, v in profile["roles"].items() if k not in OWNER_ROLES[which]}
+        roles.update({k: v for k, v in OWNER_ROLES[which].items() if v is not None})
+        rep = E.View(rp.store.snapshot(), trust, dict(profile, roles=roles), as_of=OBSERVER_AT).report()
+        return ({L: (x["state"], x["reliance"]) for L, x in rep["lineages"].items()}, {v: x["guard"] for v, x in rep["versions"].items()},
+                {c: x["counted"] for c, x in rep["challenges"].items()})
+    before, after = under("before"), under("after")
+    now = {k: v for k, v in profile["roles"].items() if k in OWNER_ROLES["after"]}
+    check("OB1 the owner leaves roadmap/acceptor and schema/author, holds challenger, and claude and codex join him as "
+          "roadmap/owner: assessed as of the transition, no lineage changes state or reliance, no version its guard",
+          now == OWNER_ROLES["after"] and before == after and len(before[0]) > 600,
+          (now, [L for L in before[0] if before[0][L] != after[0].get(L)][:5]))
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
@@ -1506,4 +1534,5 @@ if __name__ == "__main__":
     differential_cases()
     ledger_cases()
     grounded_cases()
+    observer_cases()
     sys.exit(finish())

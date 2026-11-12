@@ -65,6 +65,14 @@ GATE = "warrant-review/gate@1"
 GATE_FIELDS = ("gate", "base", "required", "hold_label", "owner_paths")
 WATCHED = "watched"     # optional: {paths, window_hours, solo_window_hours, families, veto_role}: what models merge, the owner watching
 WATCHED_FIELDS = {"paths", "window_hours", "solo_window_hours", "families", "veto_role"}
+# optional, beside `watched`: the same policy, plus `notify` (GitHub logins), for what decides merging and trust (the
+# rules, the receiver, the gate itself), with windows no shorter than watched's; the gate comments once when one opens
+CONSTITUTIONAL = "constitutional"
+TIERS = (WATCHED, CONSTITUTIONAL)
+SOLO = "solo"           # optional: {window_hours, veto_role}: one family merges a change to no listed path after the window
+SOLO_FIELDS = {"window_hours", "veto_role"}
+LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\Z")
+NOTICE = "<!-- warrant-gate constitutional window {x} -->"
 ROLE = re.compile(r"[a-z][a-z0-9-]{0,39}/[a-z][a-z0-9-]{0,39}\Z")
 REPOSITORY_DOC = "repository/3"
 RECORDS, BLOBS = ".warrant/records.jsonl", ".warrant/blobs/"
@@ -81,6 +89,9 @@ OWNER_PATH = re.compile(r"(?!.*\.\.)[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}\Z")
 REPO_NAME = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}\Z")
 ACTIONS_APP = "github-actions"
 VERDICT_BRANCH = "codex/verdicts/"
+# the claims checker's acceptances, made on a runner after a merge (.github/workflows/claims-replay.yml): CI re-executes
+# each at the commit it names (claims verify) before the gate merges them
+CLAIMS_CHECKER, CLAIMS_BRANCH = "claims-checker", "claims/verdicts/"
 HOLDS = ("GATE_HOLD", "PR_HOLD")          # refusals of a merge only; the rest of pr_reasons refuse both verdicts
 REF = "refs/warrant-gate/pull/{n}"
 
@@ -345,39 +356,62 @@ def is_ancestor(root, a, b):
 
 def gate_config(doc):
     req = doc.get("required") if isinstance(doc, dict) else None
-    ok = (isinstance(doc, dict) and set(GATE_FIELDS) <= set(doc) <= set(GATE_FIELDS) | {WATCHED} and doc["gate"] == GATE
+    ok = (isinstance(doc, dict) and set(GATE_FIELDS) <= set(doc) <= set(GATE_FIELDS) | {*TIERS, SOLO} and doc["gate"] == GATE
           and isinstance(doc["base"], str) and BRANCH.match(doc["base"]) and isinstance(req, list) and req
           and all(isinstance(c, dict) and set(c) == {"check", "workflow"} and isinstance(c["check"], str)
                   and CHECK.match(c["check"]) and isinstance(c["workflow"], str) and WORKFLOW.match(c["workflow"]) for c in req)
           and len({c["check"] for c in req}) == len(req)
           and isinstance(doc["hold_label"], str) and CHECK.match(doc["hold_label"])
-          and isinstance(doc["owner_paths"], list) and all(isinstance(x, str) and OWNER_PATH.match(x) for x in doc["owner_paths"])
-          and (WATCHED not in doc or watched_problem(doc[WATCHED], doc["owner_paths"]) is None))
-    if not ok:
-        why = watched_problem(doc[WATCHED], doc.get("owner_paths") or []) if isinstance(doc, dict) and WATCHED in doc else None
-        raise Refused(f".warrant/merge.json members are {list(GATE_FIELDS)} and optionally {WATCHED!r}: gate {GATE!r}, a branch "
-                      "name, a non-empty list of distinct {check, workflow}, a label and a list of paths"
+          and isinstance(doc["owner_paths"], list) and all(isinstance(x, str) and OWNER_PATH.match(x) for x in doc["owner_paths"]))
+    why = policy_problem(doc) if ok else None
+    if not ok or why:
+        raise Refused(f".warrant/merge.json members are {list(GATE_FIELDS)} and optionally {[*TIERS, SOLO]}: gate {GATE!r}, a "
+                      "branch name, a non-empty list of distinct {check, workflow}, a label and a list of paths"
                       + (f"; {why}" if why else ""), "BASE_CONFIG")
     return doc
 
 
-def watched_problem(w, owner):
+def policy_problem(doc):
+    """None when the optional tiers and the solo rule are a policy: `watched` (watched_problem); `constitutional` only
+    beside it, a watched policy with `notify` whose paths are neither owner nor watched paths and whose windows are no
+    shorter than watched's (a rule that let the constitution change faster than the core would invert the tiers);
+    `solo` {window_hours: 0..watched's solo window, veto_role}. Else why not."""
+    w, c, solo = doc.get(WATCHED), doc.get(CONSTITUTIONAL), doc.get(SOLO)
+    why = watched_problem(w, doc["owner_paths"]) if WATCHED in doc else None
+    if why is None and CONSTITUTIONAL in doc:
+        if w is None:
+            return "constitutional is a tier beside watched"
+        if not (isinstance(c, dict) and isinstance(c.get("notify"), list)
+                and all(isinstance(x, str) and LOGIN.match(x) for x in c["notify"])):
+            return "constitutional.notify is a list of GitHub logins"
+        why = watched_problem({k: v for k, v in c.items() if k != "notify"}, doc["owner_paths"] + w["paths"], CONSTITUTIONAL)
+        if why is None and (c["window_hours"] < w["window_hours"] or c["solo_window_hours"] < w["solo_window_hours"]):
+            why = "a constitutional window is no shorter than the watched one"
+    if why is None and SOLO in doc:
+        top = w["solo_window_hours"] if w else 720
+        if not (isinstance(solo, dict) and set(solo) == SOLO_FIELDS and type(solo["window_hours"]) is int
+                and 0 <= solo["window_hours"] <= top and isinstance(solo["veto_role"], str) and ROLE.match(solo["veto_role"])):
+            why = f"solo is {{window_hours: 0..{top}, veto_role}}"
+    return why
+
+
+def watched_problem(w, owner, name=WATCHED):
     """None when `w` is a watched policy: {paths: a non-empty list of paths none of which is an owner path,
     window_hours: 1..720, solo_window_hours: window_hours..720, families: 2..5, veto_role: a role}; else why not."""
     if not (isinstance(w, dict) and set(w) == WATCHED_FIELDS):
-        return f"watched is {{{', '.join(sorted(WATCHED_FIELDS))}}}"
+        return f"{name} is {{{', '.join(sorted(WATCHED_FIELDS | ({'notify'} if name == CONSTITUTIONAL else set())))}}}"
     if not (isinstance(w["paths"], list) and w["paths"] and all(isinstance(x, str) and OWNER_PATH.match(x) for x in w["paths"])):
-        return "watched.paths is a non-empty list of paths"
+        return f"{name}.paths is a non-empty list of paths"
     if set(w["paths"]) & set(owner):
-        return "a watched path is not an owner path"
+        return f"a {name} path is not an owner path" + (" or a watched path" if name == CONSTITUTIONAL else "")
     if not (type(w["window_hours"]) is int and 1 <= w["window_hours"] <= 720):
-        return "watched.window_hours is an integer of 1..720"
+        return f"{name}.window_hours is an integer of 1..720"
     if not (type(w["solo_window_hours"]) is int and w["window_hours"] <= w["solo_window_hours"] <= 720):
-        return "watched.solo_window_hours is an integer of window_hours..720"
+        return f"{name}.solo_window_hours is an integer of window_hours..720"
     if not (type(w["families"]) is int and 2 <= w["families"] <= 5):
-        return "watched.families is an integer of 2..5"
+        return f"{name}.families is an integer of 2..5"
     if not (isinstance(w["veto_role"], str) and ROLE.match(w["veto_role"])):
-        return "watched.veto_role is a role"
+        return f"{name}.veto_role is a role"
     return None
 
 
@@ -409,6 +443,13 @@ class Base:
 
     def holders(self, role):
         return set(self.profile["roles"].get(role, []))
+
+    def claims_due(self, snap):
+        """{version ids} the claims checker may accept: the leaf of each claim@1 lineage at the base whose leaf is
+        `backed`. Whether it holds is CI's re-execution (claims verify), a required check of the pull request."""
+        rep = assess_snapshot(self, snap)
+        return {lin["leaf"] for lin in rep["lineages"].values() if lin["schema"] == "claim@1" and lin["leaf"]
+                and rep["_recs"][lin["leaf"]]["body"].get("state") == "backed"}
 
     def roadmap_due(self, actor):
         """{version ids} the base's own records hold due for `actor`'s verdict: the leaf of a goal@1 or obligation@1
@@ -631,56 +672,96 @@ def _review(a, root, b, pr, head, rep, checks=None, now=None):
     x = _reviewed(sh, root, leaf, head, n)
     if x is None:
         return
-    w = b.gate.get(WATCHED)
+    tiers = [(t, b.gate[t]) for t in TIERS if t in b.gate]
     # Every place the listed files imply (a shadowing package, a module added where the interpreter searches, ...)
-    # is derived from owner and watched paths together, and stays the owner's; only a change to a watched file itself
-    # is the models' to merge, the owner watching.
-    every = owner_paths(root, b.commit, x, b.gate["owner_paths"] + (w["paths"] if w else []))
-    touched = [p for p in every or [] if w and _listed(w["paths"], p)]
-    owned = None if every is None else [p for p in every if p not in touched]
+    # is derived from owner and tier paths together, and stays the owner's; only a change to a file a tier lists
+    # itself is the models' to merge, the owner watching.
+    every = owner_paths(root, b.commit, x, b.gate["owner_paths"] + [p for _, w in tiers for p in w["paths"]])
+    touched = {t: [p for p in every or [] if _listed(w["paths"], p)] for t, w in tiers}
+    owned = None if every is None else [p for p in every if not any(p in ps for ps in touched.values())]
     if owned is None or owned:
         a.reasons.append(("OWNER_PATHS", "the owner merges a change to what decides merging: "
                           + (", ".join(owned[:8]) if owned else f"{x[:12]} has no merge base with the base")))
     _tail(sh, root, b, rep, lin, x, head, n)
     _verdict(a, b, rep, lin, x)
-    if touched:
-        _watched(a, b, rep, lin, w, touched, checks or {}, head, now)
+    ready = [_watched(a, b, rep, lin, w, touched[t], checks or {}, head, now, t) for t, w in tiers if touched[t]]
+    if ready:
+        a.facts["solo_ready"] = all(r for r, _ in ready)
+        a.facts["solo_from"] = None if any(f is None for _, f in ready) else max(f for _, f in ready)
+    elif owned == [] and SOLO in b.gate:
+        a.facts["solo_ready"], a.facts["solo_from"] = _solo_window(a, b, rep, lin, b.gate[SOLO], checks or {}, head, now)
+    if a.facts.get("solo_ready"):
+        _solo(a, rep, lin, x)
+
+
+def _solo(a, rep, lin, x):
+    """The gate merges a change one model family stands behind once its solo window has passed with nothing else
+    refusing (no veto, no hold, no finding, the checks green): the waiting for an acceptance or a second family ends."""
+    a.reasons = [r for r in a.reasons if r[0] not in ("NO_ACCEPT", "WATCHED_FAMILIES", "WATCHED_WINDOW")]
+    a.facts["solo"] = True
+    if a.accept is None:
+        a.accept = (rep["_recs"][lin["leaf"]]["actor"], lin["leaf"], x)
+
+
+def _solo_window(a, b, rep, lin, solo, checks, head, now):
+    """(solo_ready, solo_from) of a change to no listed path: its author holds pr/acceptor, no challenge by a holder of
+    the veto role stands against the head version, nothing but the missing acceptance refuses it, and `window_hours`
+    have passed since the required checks completed at the head."""
+    author = rep["_recs"][lin["leaf"]]["actor"]
+    vetoers = b.holders(solo["veto_role"])
+    veto = [c for c, x in rep["challenges"].items() if x["target"] == lin["leaf"] and rep["_recs"].get(c, {}).get("actor") in vetoers]
+    if veto:
+        a.reasons.append(("OWNER_VETO", f"a {solo['veto_role']} challenged the head version: " + ", ".join(c[:12] for c in sorted(veto))))
+    done = checks_completed(b.gate["required"], checks, head)
+    now = time.time() if now is None else now
+    others = [c for c, _ in a.reasons + a.shared if c != "NO_ACCEPT"]
+    ready = bool(author in b.holders("pr/acceptor") and not others and done is not None
+                 and now - done >= solo["window_hours"] * 3600)
+    return ready, None if done is None else int(done + solo["window_hours"] * 3600)
 
 
 def _listed(paths, p):
     return any(p == e or (e.endswith("/") and p.startswith(e)) for e in paths)
 
 
-def _watched(a, b, rep, lin, w, touched, checks, head, now):
-    """A change to a watched path is merged by the gate, the owner watching, only when the head version is accepted
-    by `families` distinct pr/acceptors, its own actor counted when it holds pr/acceptor (WATCHED_FAMILIES); no
-    challenge by a holder of `veto_role` is filed against it, counted or not (OWNER_VETO); and `window_hours` have
-    passed since the required checks completed at the head, by GitHub's clock (WATCHED_WINDOW). With fewer families
-    (one model family, the others out of budget) the gate merges nothing; `solo_ready` says whether the longer
-    `solo_window_hours` has passed with one pr/acceptor family, no veto and the checks green, which is when an agent
-    may merge it by AGENTS.md's rule."""
-    a.facts["watched"] = touched
+def _watched(a, b, rep, lin, w, touched, checks, head, now, tier=WATCHED):
+    """A change to a path of a tier (`watched`, `constitutional`) is merged by the gate, the owner watching, only when
+    the head version is accepted by `families` distinct pr/acceptors, its own actor counted when it holds pr/acceptor
+    (WATCHED_FAMILIES); no challenge by a holder of `veto_role` is filed against it, counted or not (OWNER_VETO); and
+    `window_hours` have passed since the required checks completed at the head, by GitHub's clock (WATCHED_WINDOW).
+    With fewer families (one model family, the others out of budget) the gate merges it once the longer
+    `solo_window_hours` has passed with one pr/acceptor family, no veto, no hold and nothing else refusing
+    (`solo_ready`, then `_solo`). Returns (solo_ready, solo_from) of this tier; a constitutional change also leaves
+    `notice`, what the gate's one comment says when its window opens."""
+    a.facts[tier] = touched
     v = rep["versions"][lin["leaf"]]
     acceptors = b.holders("pr/acceptor")
     families = (set(v["accepted_by"]) & acceptors) | ({rep["_recs"][lin["leaf"]]["actor"]} & acceptors)
     if len(families) < w["families"]:
-        a.reasons.append(("WATCHED_FAMILIES", f"a change to watched paths ({', '.join(touched[:4])}) needs {w['families']} "
+        a.reasons.append(("WATCHED_FAMILIES", f"a change to {tier} paths ({', '.join(touched[:4])}) needs {w['families']} "
                           f"distinct pr/acceptors, its author counted: {', '.join(sorted(families)) or 'none'}"))
     vetoers = b.holders(w["veto_role"])
     veto = sorted(c for c, x in rep["challenges"].items()
                   if x["target"] == lin["leaf"] and rep["_recs"].get(c, {}).get("actor") in vetoers)
-    if veto:
+    if veto and not any(r[0] == "OWNER_VETO" for r in a.reasons):
         a.reasons.append(("OWNER_VETO", f"a {w['veto_role']} challenged the head version: " + ", ".join(c[:12] for c in veto)))
     done = checks_completed(b.gate["required"], checks, head)
     now = time.time() if now is None else now
     if done is None or now - done < w["window_hours"] * 3600:
         left = "the required checks have not completed" if done is None else \
             f"{(w['window_hours'] * 3600 - (now - done)) / 3600:.1f} h of {w['window_hours']} h remain"
-        a.reasons.append(("WATCHED_WINDOW", f"the owner's window on watched paths ({', '.join(touched[:4])}): {left}"))
+        a.reasons.append(("WATCHED_WINDOW", f"the owner's window on {tier} paths ({', '.join(touched[:4])}): {left}"))
     solo_left = None if done is None else w["solo_window_hours"] * 3600 - (now - done)
     blocking = [c for c, _ in a.reasons + a.shared if c not in ("NO_ACCEPT", "WATCHED_FAMILIES", "WATCHED_WINDOW")]
-    a.facts["solo_ready"] = bool(families and not blocking and solo_left is not None and solo_left <= 0)
-    a.facts["solo_from"] = None if done is None else int(done + w["solo_window_hours"] * 3600)
+    solo_from = None if done is None else int(done + w["solo_window_hours"] * 3600)
+    if tier == CONSTITUTIONAL and done is not None:
+        a.facts["notice"] = {"x": lin_commit(rep, lin), "version": lin["leaf"], "paths": touched, "notify": w.get("notify", []),
+                             "window_until": int(done + w["window_hours"] * 3600), "solo_until": solo_from, "families": w["families"]}
+    return bool(families and not blocking and solo_left is not None and solo_left <= 0), solo_from
+
+
+def lin_commit(rep, lin):
+    return rep["_recs"][lin["leaf"]]["body"].get("commit")
 
 
 def _reviewed(sh, root, leaf, head, n):
@@ -761,18 +842,23 @@ def _verdicts_only(a, root, b, pr, head, rep):
     added = _ids(lines)
     acceptors = b.holders("roadmap/acceptor")
     recs = [rep["_recs"].get(r) for r in added]
-    if not all(x is not None and x["kind"] in ("attest", "challenge") and x["actor"] in acceptors for x in recs):
+    roadmap = all(x is not None and x["kind"] in ("attest", "challenge") and x["actor"] in acceptors for x in recs)
+    claims = all(x is not None and x["kind"] == "attest" and x["actor"] == CLAIMS_CHECKER
+                 and CLAIMS_CHECKER in b.holders("claim/verifier") and x["body"].get("verdict") == "accept" for x in recs)
+    if not (roadmap or claims):
         return None
+    branch = VERDICT_BRANCH if roadmap else CLAIMS_BRANCH
     out = []
     if pr.get("head_repo") != b.repository:
         out.append(("VERDICTS_FORK", f"#{pr['number']}'s head is a branch of {str(pr.get('head_repo'))[:60]!r}, not {b.repository}"))
-    if not str(pr.get("branch") or "").startswith(VERDICT_BRANCH):
-        out.append(("VERDICTS_BRANCH", f"#{pr['number']}'s branch {str(pr.get('branch'))[:60]!r} is not under {VERDICT_BRANCH}"))
+    if not str(pr.get("branch") or "").startswith(branch):
+        out.append(("VERDICTS_BRANCH", f"#{pr['number']}'s branch {str(pr.get('branch'))[:60]!r} is not under {branch}"))
     base_snap, _ = store_at(root, b.commit)
     old = [r for r in added if r in base_snap.lines]
     if old:
         out.append(("VERDICT_NOT_NEW", f"{len(old)} verdict(s) the base holds already: " + ", ".join(r[:12] for r in old[:8])))
-    due = {actor: b.roadmap_due(actor) for actor in {x["actor"] for x in recs}}
+    due = {actor: b.roadmap_due(actor) for actor in {x["actor"] for x in recs}} if roadmap else \
+        {CLAIMS_CHECKER: b.claims_due(base_snap)}
     late = [r for r, x in zip(added, recs) if x["body"]["target"] not in due[x["actor"]]]
     if late:
         out.append(("VERDICT_NOT_DUE", f"{len(late)} verdict(s) on a version the base's roadmap does not hold due for its "
@@ -792,6 +878,8 @@ def line(a):
     n = a.pr["number"]
     if a.eligible and a.facts.get("verdicts"):
         return f"#{n} {a.pr['head'][:12]}: ELIGIBLE (verdicts only, by {a.accept[0]}, from {a.accept[2][:12]})"
+    if a.eligible and a.facts.get("solo"):
+        return f"#{n} {a.pr['head'][:12]}: ELIGIBLE (solo: {a.accept[0]}'s head at {a.accept[2][:12]}, its window passed)"
     if a.eligible:
         return f"#{n} {a.pr['head'][:12]}: ELIGIBLE (accepted by {a.accept[0]} at {a.accept[2][:12]})"
     return f"#{n} {a.pr['head'][:12]}: " + ("DUE FOR REVIEW; " if a.due else "") + "refused " + ", ".join(a.codes())
@@ -860,6 +948,12 @@ class GitHub:
     def merge(self, n, sha, title, message):
         return self.api(f"pulls/{_number(n)}/merge", "PUT", {"sha": _sha(sha), "merge_method": "merge",
                                                               "commit_title": title, "commit_message": message})
+
+    def comments(self, n):
+        return [c for page in self.api(f"issues/{_number(n)}/comments?per_page=100", pages=True) for c in page]
+
+    def comment(self, n, body):
+        return self.api(f"issues/{_number(n)}/comments", "POST", {"body": body})
 
     def parents(self, sha):
         return [p["sha"] for p in self.api(f"commits/{_sha(sha)}")["parents"]]
@@ -941,7 +1035,11 @@ def merge_one(b, a, gh):
     if tip != base:
         return {"pr": n, "merged": False, "why": f"BASE_MOVED: {b.gate['base']} is at {tip[:12]}"}
     actor, rid, x = a.accept
-    if a.facts.get("verdicts"):
+    if a.facts.get("solo"):
+        title = f"Merge pull request #{n} (solo: {actor}, the window passed)"
+        message = (f"merge-on-acceptance: solo: head version {rid} by {actor} at {x}, one model family, its window passed "
+                   f"since {a.facts.get('solo_from')} with no veto; head {head}; base {base}.")
+    elif a.facts.get("verdicts"):
         title = f"Merge pull request #{n} (verdicts by {actor})"
         message = f"merge-on-acceptance: verdicts only, {', '.join(a.facts['verdicts'])}, from {x}; head {head}; base {base}."
     else:
@@ -962,6 +1060,42 @@ def merge_one(b, a, gh):
             out["dispatched"].append(w)
         except Refused as e:
             out["dispatch_failed"].append(f"{w}: {e}")
+    return out
+
+
+def notice_text(a, base):
+    """The gate's one comment on a pull request whose constitutional window has opened: what changes, until when a
+    veto stops it, how to file one. It names the logins `notify` lists: the one notification the owner receives."""
+    k = a.facts["notice"]
+    when = lambda t: time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(t)) if t is not None else "unknown"
+    who = " ".join(f"@{x}" for x in k["notify"])
+    return "\n".join([NOTICE.format(x=k["x"]), f"{who} a constitutional window opened on #{a.pr['number']} (head version "
+                      f"`{k['version'][:12]}` at `{str(k['x'])[:12]}`).", "",
+                      f"It changes: {', '.join(f'`{p}`' for p in k['paths'][:12])}.",
+                      f"With {k['families']} model families accepting, the gate may merge it from {when(k['window_until'])}; "
+                      f"with one family, from {when(k['solo_until'])}.",
+                      f"To stop it: the label `{base.gate['hold_label']}` on this pull request, or a challenge on the head "
+                      f"version `{k['version']}` by a holder of `pr/owner` (`warrant challenge`). Either stops the merge "
+                      "until it is removed or answered."]) + "\n"
+
+
+def notify(b, found, gh):
+    """Post the notice of each assessment whose constitutional window opened and whose head commit has none yet;
+    [(pr, outcome)]. A failure is reported, never the end of the run."""
+    out = []
+    for a in found:
+        k = a.facts.get("notice")
+        if not k:
+            continue
+        mark = NOTICE.format(x=k["x"])
+        try:
+            if any(mark in (c.get("body") or "") and (c.get("user") or {}).get("login", "").startswith(ACTIONS_APP)
+                   for c in gh.comments(a.pr["number"])):
+                continue
+            gh.comment(a.pr["number"], notice_text(a, b))
+            out.append((a.pr["number"], "noticed"))
+        except Refused as e:
+            out.append((a.pr["number"], f"notice FAILED: {e}"))
     return out
 
 
@@ -986,11 +1120,13 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
             print(f"REFUSED {e.code} {e}")
             return 0
         raise
-    merged = None
+    merged, noticed = None, []
     if merge:
+        noticed = notify(b, found, gh)
         first = next((x for x in found if x.eligible), None)
         merged = merge_one(b, first, gh) if first is not None else None
-    _append(summary, summary_markdown(found, describe(merged) if merged else None, base))
+    _append(summary, summary_markdown(found, describe(merged) if merged else None, base)
+            + "".join(f"- notice #{n}: {o}\n" for n, o in noticed))
     for x in found:
         print(line(x))
     if merged:

@@ -1,6 +1,7 @@
 name: merge-on-acceptance
 
-# Merges a pull request the review loop has accepted, with no owner act (tools/gate.py states the
+# Merges a pull request the review loop has accepted, or one whose solo window passed (.warrant/merge.json),
+# with no owner act; and comments once, naming the owner, when a constitutional window opens (tools/gate.py states the
 # predicate and the GitHub side, docs/V3.md §14). Only trusted code runs here: this
 # file and tools/gate.py are the base branch's (workflow_run and schedule always run the default branch's
 # workflow; a dispatch from another ref is refused below), the working tree is the base branch at the
@@ -41,6 +42,7 @@ jobs:
     permissions:
       contents: write          # the merge
       pull-requests: write     # the merge
+      issues: write            # the one comment when a constitutional window opens (warrant/gate.py notify)
       checks: read             # the required checks at a pull request's head
       actions: write           # the runs behind those checks; dispatching master CI after a merge
     steps:

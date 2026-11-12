@@ -10,12 +10,7 @@
   "hold_label": "hold",
   "owner_paths": [
     ".github/",
-    ".warrant/merge.json",
-    ".warrant/v3.json",
-    ".warrant/v3/",
-    "AGENTS.md",
-    "tools/gate.py",
-    "warrant/gate.py"
+    ".warrant/merge.json"
   ],
   "watched": {
     "paths": [
@@ -30,6 +25,26 @@
     "window_hours": 24,
     "solo_window_hours": 72,
     "families": 2,
+    "veto_role": "pr/owner"
+  },
+  "constitutional": {
+    "paths": [
+      "AGENTS.md",
+      ".warrant/v3.json",
+      ".warrant/v3/",
+      "tools/gate.py",
+      "warrant/gate.py"
+    ],
+    "window_hours": 72,
+    "solo_window_hours": 168,
+    "families": 2,
+    "veto_role": "pr/owner",
+    "notify": [
+      "s0fractal"
+    ]
+  },
+  "solo": {
+    "window_hours": 4,
     "veto_role": "pr/owner"
   }
 }

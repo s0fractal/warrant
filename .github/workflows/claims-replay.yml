@@ -1,0 +1,80 @@
+# The claims checker after each merge (owner, 2026-11-13): on a runner, under the key claims-key.yml made, at master's
+# tip, `warrant.claims replay` runs again only the claims none of whose acceptances names the files this commit holds
+# for them (the import closure of their witnesses and mutants, docs/V3.md §15), and accepts what held. Its
+# acceptances go to a pull request of verdicts only from claims/verdicts/<commit>, which CI re-executes at the commit
+# each names (`claims verify`) and the merge gate merges (its verdicts-only rule). Nothing is pushed to master.
+#
+# The seed is in the environment of a job that runs master's tests: whoever can change master's code can read it.
+# That is the gate's guard, the same as for every check; the key signs only `claims-checker` acceptances, which CI
+# re-executes before they merge.
+name: claims-replay
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: claims-replay
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: claims
+    timeout-minutes: 300
+    permissions:
+      contents: write          # the branch of verdicts
+      pull-requests: write     # its pull request
+      actions: write           # dispatching ci.yml on it: a pull request opened with GITHUB_TOKEN starts no workflow
+    env:
+      GIT_AUTHOR_NAME: claims-checker
+      GIT_AUTHOR_EMAIL: claims-checker@invalid
+      GIT_COMMITTER_NAME: claims-checker
+      GIT_COMMITTER_EMAIL: claims-checker@invalid
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Signature library (exact version and hashes)
+        run: python -m pip install --quiet --only-binary ':all:' --require-hashes -r .github/merge-gate-requirements.txt
+      - name: Replay the claims whose files changed; accept what held
+        id: replay
+        env:
+          SEED: ${{ secrets.WARRANT_CLAIMS_SEED }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SEED" ]; then
+            echo "the environment claims holds no WARRANT_CLAIMS_SEED: run claims-key first" >&2
+            exit 1
+          fi
+          tip=$(git rev-parse HEAD)
+          printf '%s\n' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.claims replay --key - | tee -a "$GITHUB_STEP_SUMMARY"
+          rm -rf build
+          echo "tip=$tip" >> "$GITHUB_OUTPUT"
+          if git diff --quiet -- .warrant; then echo "changed=" >> "$GITHUB_OUTPUT"; else echo "changed=1" >> "$GITHUB_OUTPUT"; fi
+      - name: A pull request of the acceptances only
+        if: steps.replay.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TIP: ${{ steps.replay.outputs.tip }}
+        run: |
+          set -euo pipefail
+          branch="claims/verdicts/${TIP:0:12}"
+          [ -z "$(git status --porcelain --untracked-files=all -- . ':!.warrant')" ]
+          git switch -q -c "$branch"
+          git add .warrant
+          git commit -q -m "claims-checker: acceptances at ${TIP:0:12}"
+          git push -q origin "$branch"
+          gh pr create --base master --head "$branch" --title "claims-checker: acceptances at ${TIP:0:12}" \
+            --body "The claims checker's acceptances at $TIP, made by claims-replay.yml on a runner. CI re-executes each at that commit (claims verify); the merge gate merges verdicts only."
+          gh workflow run ci.yml --ref "$branch"
