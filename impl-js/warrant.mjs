@@ -1082,8 +1082,10 @@ export async function codeIdentity(source, backend) {
 // valid 12-MiB blob overflowed it (Codex F1 on #342 at 3efb118a).
 function isBase64(s) {
   if (!isStr(s) || s.length % 4 !== 0) return false;
-  const pad = s.endsWith("==") ? 2 : s.endsWith("=") ? 1 : 0;
-  for (let i = 0; i < s.length - pad; i++) {
+  let end = s.length;
+  if (s.endsWith("==")) end -= 2;
+  else if (s.endsWith("=")) end -= 1;
+  for (let i = 0; i < end; i++) {
     const c = s.codePointAt(i);
     if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 43 || c === 47)) return false;
   }
