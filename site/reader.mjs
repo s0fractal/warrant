@@ -10,6 +10,9 @@
 //   node site/reader.mjs --base URL [--full] [--pins] [--with URL]... [--config RULES.json] [--lineage ID]   # canonical JSON
 //        [--mark FILE] [--write-mark FILE]     what changed since the mark in FILE; write the mark of now to FILE
 //        [--actor NAME]                        what waits for NAME (frontier(): warrant.graph.frontier)
+//        [--watch ID[,ID…]]...                 the answer for the lineages watched (watched()): exit 0 silent, 3 touched,
+//                                              4 not established; with --write-mark, the mark records their floors
+//        [--frame ID[,ID…]]                    the frame of those lineages (frame())
 //
 // Two ways to read a store's blobs:
 //   quick (the default)   only the blobs the assessment itself reads: the map of each migration (docs/V3.md §9).
@@ -35,6 +38,8 @@
 //
 // What changed for me (`--mark FILE`, changes()): the lineages whose view differs since the reader marked the store as
 // seen (makeMark: the page keeps the mark in localStorage, the CLI in a file), the rest of the new records counted.
+// With a watch list (`--watch`, watched()), the same is said of the watched lineages alone: touched with its witness,
+// silent with its numbers, or not established with its reasons.
 import { assessPrepared, canon, canonStr, cmp, codeIdentity, hex64, loadsLenient, prepare, Refused, utf16 } from "./warrant.mjs";
 
 
@@ -686,10 +691,15 @@ export function rulesId(r, backend) { return docId({ trust: r.rules.trust, profi
 
 // The mark of `r` now (read from `base`): the ids of every record of the main store and of each other store read,
 // under the identity of the rules of the main store's read. The page keeps this JSON; `--write-mark` writes it.
-export async function makeMark(r, base, backend, at = Math.floor(Date.now() / 1000)) {
+// With a watch list (`watch`, as parseWatch takes it), the mark also records the floor this reader sees now of each
+// watched lineage (`floors`, floorOf): what the records alone cannot reproduce (a pinned file compared with the tree
+// served now) is then compared with what was seen. Without one the mark is as it was.
+export async function makeMark(r, base, backend, at = Math.floor(Date.now() / 1000), { watch } = {}) {
   const stores = { [norm(base)]: await markOf(r.recs.keys(), backend) };
   for (const o of r.others ?? []) if (o.r && !(norm(o.address) in stores)) stores[norm(o.address)] = await markOf(o.r.recs.keys(), backend);
-  return { warrant: MARK, base: norm(base), rules: await rulesId(r, backend), at, stores };
+  const floors = {};
+  for (const L of parseWatch(watch ?? []).ids) if (r.rep.lineages[L]) floors[L] = floorOf(r, L);
+  return { warrant: MARK, base: norm(base), rules: await rulesId(r, backend), at, stores, ...(Object.keys(floors).length ? { floors } : {}) };
 }
 
 // warrant_agent/changes.py subset: `store` with only the lines whose record id is in `keep` (all its blobs kept).
@@ -776,16 +786,27 @@ export function difference(a, b) {
 // The past is the marked subset of each store read, assessed as now (the main store under `r`'s rules, each other
 // store under its own); with pins compared now (r.compared), the past's are compared with the same tree (`fetcher`:
 // memoFetch, to fetch nothing twice). An other store the mark does not hold is read as empty then: all of it is new.
-export async function changes(r, mark, backend, source, { base, fetcher = globalThis.fetch } = {}) {
+export async function changes(r, mark, backend, source, opts = {}) {
+  return changesOf(r, await since(r, mark, backend, source, opts));
+}
+
+// The comparison changes() and watched() share, made once: {why} when there is no mark this read can use, else {why:
+// null, mark, root, past, stores, before, after} (the past read, each store's count, every lineage's view then and now).
+export async function since(r, mark, backend, source, { base, fetcher = globalThis.fetch } = {}) {
   const root = norm(base);
   const why = await markRefusal(r, mark, root, backend);
-  if (why) return { mark: null, why };
+  if (why) return { why, root, mark: null };
   const { past, stores } = await pastOf(r, mark, root, backend, source);
   if (r.compared) await comparePins(past, root, { fetcher });
-  const before = viewsOf(past), after = viewsOf(r);
-  const { fresh, touched } = newRecords(r, past);
-  const { listed, accounted } = changedLineages(r, before, after, fresh, touched);
-  return { mark: { at: mark.at, base: root, rules: mark.rules, stores }, new: fresh.size, listed,
+  return { why: null, root, mark, past, stores, before: viewsOf(past), after: viewsOf(r) };
+}
+
+// changes() of a comparison since() made.
+export function changesOf(r, s) {
+  if (s.why) return { mark: null, why: s.why };
+  const { fresh, touched } = newRecords(r, s.past);
+  const { listed, accounted } = changedLineages(r, s.before, s.after, fresh, touched);
+  return { mark: { at: s.mark.at, base: s.root, rules: s.mark.rules, stores: s.stores }, new: fresh.size, listed,
            quiet: [...fresh].filter((i) => !accounted.has(i)).length };
 }
 
@@ -878,6 +899,239 @@ export function changesLine(c) {
   return `${c.listed.length} lineage(s) changed for you · ${c.quiet} other new record(s) changed nothing you see` + tail;
 }
 
+// ---------------------------------------------------------------- a watch list: frames, and silence with its evidence
+//
+// The reader names the lineages it relies on (a watch list: their roots). What changed is then said of them alone, in
+// one of three outcomes, never more than the records these addresses serve now establish:
+//   touched          a watched lineage has a new record in its frame (the witness: each such record, its store, and a
+//                    shortest chain of relations from it to the lineage), or its own floor moved (state, reliance as
+//                    shown, standing challenges, leaf), or its view differs: with no new record in its frame that is
+//                    said as "moved with no new record";
+//   silent           none is touched: how many records are new, that none of them is in a watched frame, the frames'
+//                    size and the stores' size, at the addresses read (completeness stays UNATTESTED);
+//   not established  silence could not be said, and why: no mark this read can use, a watched value that is no lineage
+//                    root here, a store beside this one not read now, a marked record no longer served, a mark entry
+//                    that could not be verified, pins compared with no floor of a watched lineage recorded in the mark.
+//
+// THE FRAME of the lineages `roots` (frame()): the set of record ids a reader's reliance on them can be moved through.
+// The closure, starting from every version of each root lineage, under
+//   (a) the out-edges of the report's graph whose relation is in warrant/graph.py WALK (lineage, requires, ref, attest,
+//       challenge): what a member rests on;
+//   (b) the in-edges of relation attest or challenge: what was said on a member;
+//   (c) every version of the lineage of any member;
+// the frame is the ids of that closure that are records of the view (the graph's nodes); an id the closure reaches that
+// is no record here (a blob, a record not served) is in the closure, not in the frame.
+//   (d) when other stores were read (r.others): a record of another store that is an attest or a challenge whose target
+//       is in the closure (an edge of that store's own graph: a record its own assessment admits), unless the main
+//       store holds it too, is in the frame, named with its store's address; the closure does not go on from it.
+// Every sentence watchLine() says of a frame says no more than this.
+
+export const WALK = ["lineage", "requires", "ref", "attest", "challenge"];     // warrant/graph.py WALK
+export const SAME = "same lineage";                     // the step of (c) in a chain: two versions of one lineage
+export const WATCH_EXIT = { silent: 0, touched: 3, "not established": 4 };      // the CLI's exit status with --watch
+const SAID = new Set(["attest", "challenge"]);
+
+// {out: {id: [[rel, to]]} of the WALK relations, into: {id: [[rel, from]]} of attest and challenge, rootOf: {version:
+// root}, nodes: the view's record ids} of `r`'s graph, built once per read.
+function graphIndex(r) {
+  if (r._graph) return r._graph;
+  const out = new Map(), into = new Map(), rootOf = new Map();
+  const push = (m, k, v) => { if (!m.has(k)) m.set(k, []); m.get(k).push(v); };
+  for (const [a, rel, b] of r.rep.graph.edges) {
+    if (!WALK.includes(rel)) continue;
+    push(out, a, [rel, b]);
+    if (SAID.has(rel)) push(into, b, [rel, a]);
+  }
+  for (const [L, lin] of Object.entries(r.rep.lineages)) for (const v of lin.versions) rootOf.set(v, L);
+  r._graph = { out, into, rootOf, nodes: new Set(r.rep.graph.nodes.map((n) => n[0])) };
+  return r._graph;
+}
+
+// The closure of (a)-(c) from the versions of `roots`, breadth first: {id: the step it was reached by, [from, rel, to]
+// as the graph's edge reads (SAME for (c)), or null for a version of a root}. Following the steps back from an id gives
+// a shortest chain from it to a version of a root.
+function closure(r, roots) {
+  const { out, into, rootOf } = graphIndex(r), via = new Map(), todo = [];
+  const reach = (id, step) => { if (!via.has(id)) { via.set(id, step); todo.push(id); } };
+  for (const L of roots) for (const v of r.rep.lineages[L]?.versions ?? []) reach(v, null);
+  for (let k = 0; k < todo.length; k++) {
+    const cur = todo[k];
+    for (const [rel, b] of out.get(cur) ?? []) reach(b, [cur, rel, b]);
+    for (const [rel, a] of into.get(cur) ?? []) reach(a, [a, rel, cur]);
+    const L = rootOf.get(cur);
+    if (L !== undefined) for (const v of r.rep.lineages[L].versions) reach(v, [v, SAME, cur]);
+  }
+  return via;
+}
+
+// The steps from `id` back to a version of a root: [[from, rel, to]], the first touching `id`.
+function chainOf(via, id) {
+  const steps = [];
+  let x = id;
+  while (via.get(x)) {
+    const s = via.get(x);
+    steps.push(s);
+    x = s[0] === x ? s[2] : s[0];
+  }
+  return steps;
+}
+
+// (d): [{address, id, rel, target}] of the other stores' attests and challenges on an id of the closure `via`.
+function outsideFrame(r, via) {
+  const out = [], seen = new Set();
+  for (const o of r.others ?? []) {
+    if (!o.r) continue;
+    for (const [x, rel, t] of o.r.rep.graph.edges) {
+      const key = `${o.address} ${x}`;
+      if (!SAID.has(rel) || !via.has(t) || r.recs.has(x) || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ address: o.address, id: x, rel, target: t });
+    }
+  }
+  return out.sort((a, b) => utf16(a.address, b.address) || utf16(a.id, b.id));
+}
+
+// The frame of `roots` (lineage roots of `r`): {roots, ids: the records of this store in it, sorted; outside: (d)}.
+export function frame(r, roots) {
+  const via = closure(r, roots), { nodes } = graphIndex(r);
+  return { roots: [...roots], ids: [...via.keys()].filter((i) => nodes.has(i)).sort(utf16), outside: outsideFrame(r, via) };
+}
+
+// {ids, refused: [{value, why}]} of watch values (each "ID" or "ID,ID,…"): an id is 64 lowercase hexadecimal
+// characters and nothing else; every other piece is refused by name, never dropped.
+export function parseWatch(values) {
+  const ids = new Set(), refused = [];
+  for (const v of values ?? []) {
+    for (const piece of String(v).split(",")) {
+      if (piece.length === 64 && /^[0-9a-f]{64}$/.test(piece)) ids.add(piece);
+      else refused.push({ value: piece, why: `${JSON.stringify(piece)} is no record id (64 lowercase hexadecimal characters, nothing else)` });
+    }
+  }
+  return { ids: [...ids].sort(utf16), refused };
+}
+
+// The floor of lineage `L` as this reader shows it, or null when `r` has no such lineage: state, reliance (shown()),
+// the sorted counted challenges that stand against a version, leaf.
+export function floorOf(r, L) {
+  const lin = r.rep.lineages[L];
+  if (!lin) return null;
+  const standing = Object.entries(r.rep.challenges).filter(([, c]) => c.counted && c.stands && lin.versions.includes(c.target)).map(([i]) => i);
+  return { state: lin.state, reliance: shown(r, L), standing: standing.sort(utf16), leaf: lin.leaf };
+}
+
+const isFloor = (f) => Boolean(f) && typeof f === "object" && !Array.isArray(f) && (f.state === null || typeof f.state === "string")
+  && typeof f.reliance === "string" && Array.isArray(f.standing) && f.standing.every((x) => hex64(x)) && (f.leaf === null || hex64(f.leaf));
+
+// Why the watched values cannot all be read as lineage roots of `r`, one reason each (none for a root).
+function rootReasons(r, ids, refused) {
+  const { rootOf } = graphIndex(r);
+  const out = refused.map((x) => `the watched value ${x.why}`);
+  for (const id of ids) {
+    if (r.rep.lineages[id]) continue;
+    const L = rootOf.get(id);
+    out.push(L ? `${id} is a version of lineage ${L}, not its root: watch ${L}` : `${id} is not the root of a lineage at this address`);
+  }
+  if (!ids.length && !refused.length) out.push("no lineage is watched");
+  return out;
+}
+
+// Why the comparison `s` cannot establish silence about `roots`, one reason each.
+function comparisonReasons(r, s, roots) {
+  if (s.why) return [`no comparison with a mark: ${s.why}`];
+  const out = (r.others ?? []).filter((o) => !o.r).map((o) => `the store at ${o.address} could not be read now (${o.why})`);
+  for (const x of s.stores) {
+    if (x.gone) out.push(`${x.gone} marked record(s) at ${x.address} are no longer served`);
+    if (x.unverified) out.push(`${x.unverified} record(s) at ${x.address} whose mark could not be verified`);
+  }
+  const floors = s.mark.floors;
+  if (floors !== undefined && (!floors || typeof floors !== "object" || Array.isArray(floors) || !Object.values(floors).every(isFloor))) {
+    out.push("the floors the mark recorded cannot be read");
+  } else if (r.compared) {
+    for (const L of roots) if (!floors?.[L]) out.push(`pins are compared and the mark recorded no floor of ${L}: a file changed since then would not be seen (mark again while watching it)`);
+  }
+  return out;
+}
+
+// [{store, id, rec}] of the records new since the mark: this store's, then each other store read.
+function newSince(r, s) {
+  const out = [];
+  for (const [id, rec] of r.recs) if (!s.past.recs.has(id)) out.push({ store: s.root, id, rec });
+  (r.others ?? []).forEach((o, k) => {
+    if (!o.r) return;
+    const then = s.past.others?.[k]?.r;
+    for (const [id, rec] of o.r.recs) if (!then?.recs.has(id)) out.push({ store: o.address, id, rec });
+  });
+  return out;
+}
+
+// The chain from a new record to a version of the watched lineage, or null when the record is not in its frame: one of
+// this store's records of the closure `via`; or another store's record of (d) (`far`), its own edge first.
+function witnessChain(here, id, via, nodes, far) {
+  if (here) return nodes.has(id) && via.has(id) ? chainOf(via, id) : null;
+  return far ? [[far.id, far.rel, far.target], ...chainOf(via, far.target)] : null;
+}
+
+// One watched lineage: {lineage, schema, title, witness, floor, moved, view, said}, or null when nothing touched it.
+function touchedOne(r, s, L, fresh) {
+  const via = closure(r, [L]), { nodes } = graphIndex(r);
+  const outside = new Map(outsideFrame(r, via).map((x) => [`${x.address} ${x.id}`, x]));
+  const witness = [];
+  for (const { store, id, rec } of fresh) {
+    const chain = witnessChain(store === s.root, id, via, nodes, outside.get(`${store} ${id}`));
+    if (chain === null) continue;
+    witness.push({ id, store, kind: rec.kind, actor: rec.actor, at: rec.at, distance: chain.length, chain });
+  }
+  witness.sort((a, b) => a.distance - b.distance || utf16(a.store, b.store) || utf16(a.id, b.id));
+  const kept = s.mark.floors?.[L], before = isFloor(kept) ? kept : floorOf(s.past, L), after = floorOf(r, L);
+  const moved = before ? Object.fromEntries(["state", "reliance", "standing", "leaf"].filter((k) => canonStr(before[k]) !== canonStr(after[k])).map((k) => [k, [before[k], after[k]]]))
+    : { new: [null, true] };
+  const d = difference(s.before.get(L) ?? null, s.after.get(L));
+  const view = d.appeared.length + d.vanished.length + Object.keys(d.moved).length > 0;
+  if (!witness.length && !Object.keys(moved).length && !view) return null;
+  const lin = r.rep.lineages[L];
+  return { lineage: L, schema: lin.schema, title: title(r.recs.get(lin.effective || lin.leaf || L)) || title(r.recs.get(L)),
+           witness, floor: { before, after }, moved, view,
+           said: witness.length ? `${witness.length} new record(s) in its frame` : "moved with no new record" };
+}
+
+// The answer for the watch list `values` (parseWatch) from the comparison `s` (since()): {outcome, watch, refused,
+// reasons, addresses, new, in_frames, outside, frame, records, touched, quiet, line}. The counts are null when there
+// is no comparison. Silence is said only when no reason stands; with one, the outcome is "not established".
+export function watched(r, s, values) {
+  const { ids, refused } = parseWatch(values);
+  const roots = ids.filter((id) => r.rep.lineages[id]);
+  const reasons = [...rootReasons(r, ids, refused), ...comparisonReasons(r, s, roots)];
+  const addresses = [s.root, ...(r.others ?? []).filter((o) => o.r).map((o) => o.address)];
+  const out = { watch: ids, refused, reasons, addresses, new: null, in_frames: null, outside: null, frame: null, records: null, touched: [], quiet: [] };
+  if (!s.why) {
+    const fresh = newSince(r, s), all = frame(r, roots);
+    out.touched = roots.map((L) => touchedOne(r, s, L, fresh)).filter(Boolean);
+    const hit = new Set(out.touched.flatMap((t) => t.witness.map((w) => `${w.store} ${w.id}`)));
+    out.quiet = roots.filter((L) => !out.touched.some((t) => t.lineage === L));
+    Object.assign(out, { new: fresh.length, in_frames: hit.size, outside: fresh.length - hit.size, frame: all.ids.length + all.outside.length,
+                         records: r.recs.size + (r.others ?? []).reduce((n, o) => n + (o.r ? o.r.recs.size : 0), 0) });
+  }
+  out.outcome = reasons.length ? "not established" : out.touched.length ? "touched" : "silent";
+  out.line = watchLine(out);
+  return out;
+}
+
+const whereRead = (xs) => (xs.length === 1 ? `this address (${xs[0]})` : `these addresses (${xs.join(", ")})`);
+
+// The one sentence a page says of `w` (watched()): silence only when it was established, never everything presented
+// as quiet; a reason, when one stands, in place of either.
+export function watchLine(w) {
+  const k = w.watch.length;
+  if (w.outcome === "not established") return `whether what you watch changed is not established: ${w.reasons.join("; ")}`;
+  if (w.outcome === "touched") {
+    const bare = w.touched.filter((t) => !t.witness.length).length;
+    return `${w.touched.length} of the ${k} lineage(s) you watch touched at ${whereRead(w.addresses)}: ${w.in_frames} new record(s) in their frames`
+      + (bare ? ` · ${bare} moved with no new record` : "") + ` · ${w.outside} other new record(s) outside them`;
+  }
+  return `${w.new} new record(s) at ${whereRead(w.addresses)}; none is in the frame of the ${k} lineage(s) you watch (${w.frame} of ${w.records} records)`
+    + " · completeness UNATTESTED: only the records served there now are read";
+}
+
 // ---------------------------------------------------------------- what waits for whom: the frontier of an actor
 //
 // warrant/graph.py frontier, for an actor the reader names (the observer mostly asks it of the agents: "what waits
@@ -929,7 +1183,10 @@ export function waitsFor(r, actor) {
 // shared by the reader and the desk, so that a store marked on one is marked on the other.
 export const markKey = (base, rules) => `warrant-${MARK} ${norm(base)} ${rules}`;
 
-const USAGE = "usage: reader.mjs --base URL [--full] [--pins] [--with URL]... [--config RULES.json] [--lineage ID] [--mark FILE] [--write-mark FILE] [--actor NAME]\n";
+const USAGE = "usage: reader.mjs --base URL [--full] [--pins] [--with URL]... [--config RULES.json] [--lineage ID] [--mark FILE] [--write-mark FILE] [--actor NAME]\n"
+  + "                  [--watch ID[,ID...]]... [--frame ID[,ID...]]\n"
+  + "  --watch: the answer for the lineages watched (`watch`); with it the exit status is a gate: 0 silent (established),\n"
+  + "  3 touched, 4 not established (2: a refused read or no --base). --write-mark with --watch records their floors.\n";
 
 // The CLI's options: the value after `name`, every value after a repeated `name`, whether a flag is given.
 function options(argv) {
@@ -967,17 +1224,22 @@ async function main(argv) {
   if (!base) { process.stderr.write(USAGE); return 2; }
   try {
     const { r, source, tree } = await cliRead(o, base, backend, fs);
-    const changed = o.opt("--mark") === undefined ? null : await changes(r, markFile(fs, o.opt("--mark")), backend, source, { base, fetcher: tree });
-    if (o.opt("--write-mark") !== undefined) fs.writeFileSync(o.opt("--write-mark"), JSON.stringify(await makeMark(r, base, backend)) + "\n");
+    const watch = o.has("--watch") ? o.all("--watch") : null, marked = o.opt("--mark") !== undefined;
+    const s = marked || watch ? await since(r, marked ? markFile(fs, o.opt("--mark")) : null, backend, source, { base, fetcher: tree }) : null;
+    const changed = marked ? changesOf(r, s) : null;
+    if (o.opt("--write-mark") !== undefined) fs.writeFileSync(o.opt("--write-mark"), JSON.stringify(await makeMark(r, base, backend, undefined, { watch: watch ?? [] })) + "\n");
     const out = o.opt("--lineage") ? { lineage: lineage(r, o.opt("--lineage")) }
       : { summary: summary(r), rows: rows(r), ...(changed ? { changes: { ...changed, line: changesLine(changed) } } : {}) };
     if (o.opt("--actor") !== undefined) out.frontier = frontier(r, o.opt("--actor"));     // only when asked: else as it was
+    if (o.has("--frame")) { const f = parseWatch(o.all("--frame")); out.frame = { ...frame(r, f.ids.filter((L) => r.rep.lineages[L])), refused: f.refused }; }
+    const w = watch ? watched(r, s, watch) : null;
+    if (w) out.watch = w;
     process.stdout.write(canonStr(out) + "\n");
+    return w ? WATCH_EXIT[w.outcome] : 0;
   } catch (e) {
     if (e instanceof Refused) { process.stdout.write(canonStr({ refused: e.message }) + "\n"); return 2; }
     throw e;
   }
-  return 0;
 }
 
 if (typeof process !== "undefined" && process.argv && import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1] || "").href) {

@@ -5,6 +5,7 @@ import * as reader from "./reader.mjs";
 import { changes, changesLine, comparePins, fetchStore, lineage, makeMark, memoFetch, overlay, PINS_NOT_CHECKED, read, readOthers,
          receiver, rows, rulesId, STALE, summary } from "./reader.mjs";
 import { $, counts, el, fill, keepActor, keptActor, loadMark, markKey, pill, saveMark, section, short, when } from "./page.mjs";
+import * as page from "./page.mjs";
 import * as voice from "./voice.mjs";
 
 const DEFAULT_BASE = "https://raw.githubusercontent.com/s0fractal/warrant/master/";
@@ -15,7 +16,7 @@ let shownRows = PAGE;
 
 function params() {
   const p = new URLSearchParams(location.search);
-  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: p.getAll("with").filter(Boolean), l: p.get("l"), changes: p.get("changes") === "1", schema: p.get("schema") || "", reliance: p.get("reliance") || "", actor: (p.get("actor") || "").trim() };
+  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: p.getAll("with").filter(Boolean), l: p.get("l"), changes: p.get("changes") === "1", watch: p.has("watch") ? p.getAll("watch") : null, schema: p.get("schema") || "", reliance: p.get("reliance") || "", actor: (p.get("actor") || "").trim() };
 }
 
 function href(over) {
@@ -27,6 +28,7 @@ function href(over) {
   for (const w of v.with ?? []) q.append("with", w);
   if (v.l) q.set("l", v.l);
   if (v.changes) q.set("changes", "1");
+  if (v.watch) q.set("watch", v.watch.join(","));
   if (v.schema) q.set("schema", v.schema);
   if (v.reliance) q.set("reliance", v.reliance);
   if (v.actor) q.set("actor", v.actor);
@@ -183,6 +185,7 @@ function drawLineage() {
   fill(box,
     el("p", { class: "small" }, link("← all lineages", { l: null })),
     el("h2", { class: "statement-title", text: d.versions.at(-1).title || d.versions[0].title || "(no statement)" }),
+    watchControl(f.id),
     el("dl", { class: "facts floor" },
       fact("state", f.state || "none: no version is effective yet"),
       fact("reliance", pill(f.reliance), Object.hasOwn(pinsWhy, f.reliance) ? pinsWhy[f.reliance] : null),
@@ -268,32 +271,120 @@ function objectBlock(t) {
 
 async function markSeen() {
   const c = current;
-  const mark = await makeMark(c.r, c.base, c.backend);
+  const mark = await makeMark(c.r, c.base, c.backend, undefined, { watch: watchValues().values ?? [] });   // the watched floors too
   const why = saveMark(c.key, mark);
   if (why) { say(why, true); return; }
-  c.changes = await changes(c.r, mark, c.backend, c.source, { base: c.base, fetcher: c.tree });
+  await compare(c, mark);
   say("Marked: what this store holds now is what you have seen.");
   draw();
+}
+
+// The comparison with `mark`, made once (reader.mjs since) and kept, so the watched answer is drawn again without a
+// second assessment when the watch list changes; with a reader.mjs of an earlier release, changes() alone.
+async function compare(c, mark) {
+  const opts = { base: c.base, fetcher: c.tree };
+  c.since = typeof reader.since === "function" ? await reader.since(c.r, mark, c.backend, c.source, opts) : null;
+  c.changes = c.since ? reader.changesOf(c.r, c.since) : await changes(c.r, mark, c.backend, c.source, opts);
+}
+
+// ---------------------------------------------------------------- a watch list
+//
+// The lineages the reader relies on: named by the address (`watch=ID,ID`, kept as given: reader.mjs parseWatch refuses
+// by name what is no root id) or kept in this browser per store (page.mjs keptWatch, the key the desk reads too); the
+// address wins. {values, from, why}: values null when there is none.
+function watchValues() {
+  const p = params();
+  if (p.watch) return { values: p.watch, from: "address", why: null };
+  if (!current || typeof page.keptWatch !== "function") return { values: null, from: null, why: null };
+  const kept = page.keptWatch(current.base);
+  return { values: kept.ids.length ? kept.ids : null, from: kept.ids.length ? "kept" : null, why: kept.why };
+}
+
+// The watched answer now (reader.mjs watched over the kept comparison), or null without a watch list.
+function watchNow() {
+  const w = watchValues();
+  if (!w.values || !current.since || typeof reader.watched !== "function") return null;
+  return { ...reader.watched(current.r, current.since, w.values), from: w.from, storeWhy: w.why };
+}
+
+const pieces = (values) => (values ?? []).flatMap((v) => String(v).split(","));
+
+// Watch or stop watching lineage `root`: kept in this browser; carried by the address when it already names the list,
+// or when this browser keeps nothing.
+function toggleWatch(root, on) {
+  const w = watchValues(), list = pieces(w.values).filter((x) => x !== root);
+  if (on) list.push(root);
+  const why = typeof page.keepWatch === "function" ? page.keepWatch(current.base, list) : "this page's scripts are of two releases: reload it";
+  if (why) say(`The watch list is not kept in this browser (${why}); it is in this page's address instead.`, true);
+  else say(on ? "Watching this lineage: what changed is said of it first." : "Not watching this lineage any more.");
+  if (why || w.from === "address") go({ watch: list.length ? list : null }); else draw();
+}
+
+function watchControl(root) {
+  if (typeof reader.watched !== "function") return null;
+  const on = pieces(watchValues().values).includes(root);
+  const b = el("button", { type: "button", class: "watch", text: on ? "Stop watching" : "Watch this lineage" });
+  b.addEventListener("click", () => toggleWatch(root, !on));
+  return el("p", { class: "small" }, b, on ? " · watched: what changed for you is said of it first" : null);
+}
+
+const STEPS_SHOWN = 6;                                    // witness records drawn a lineage; the rest are counted
+
+// One step of a chain, as text: the short ids and the relation.
+const stepText = ([a, rel, b]) => `${a.slice(0, 8)} ${rel} ${b.slice(0, 8)}`;
+
+function witnessItem(x, base) {
+  return el("li", { class: "small" }, short(x.id), ` · ${x.kind} by ${x.actor} · ${when(x.at)}`,
+    x.store === base ? null : el("strong", { text: ` · held at ${x.store}` }),
+    ` · ${x.distance} step(s) away: `, el("span", { text: x.chain.map(stepText).join(" · ") }));
+}
+
+function drawWatched(w) {
+  const k = w.watch.length, touched = w.outcome === "touched";
+  return [
+    el("h2", { text: `What you watch (${k} lineage${k === 1 ? "" : "s"})` }),
+    w.storeWhy ? el("p", { class: "small", text: w.storeWhy }) : null,
+    el("p", {}, touched || w.outcome === "not established" ? el("strong", { text: w.line }) : w.line),
+    w.refused.length ? el("p", { class: "small", text: `not watched (refused): ${w.refused.map((x) => x.why).join("; ")}` }) : null,
+    w.touched.length ? el("ul", { class: "rows" }, w.touched.map((t) => el("li", {},
+      link(t.title || "(no statement)", { l: t.lineage }, { class: "row-title" }),
+      el("div", { class: "row-meta" }, t.floor.after ? pill(t.floor.after.reliance) : null, ` ${t.schema} · ${t.said}`,
+        Object.keys(t.moved).length ? ` · ${movedText(t.moved)}` : null),
+      t.witness.length ? el("ul", {}, t.witness.slice(0, STEPS_SHOWN).map((x) => witnessItem(x, current.since?.root)),
+        t.witness.length > STEPS_SHOWN ? el("li", { class: "small", text: `and ${t.witness.length - STEPS_SHOWN} more` }) : null) : null))) : null,
+    el("p", { class: "small", text: "The frame of a lineage: its versions, what they rest on (lineage, requires, ref, attest, challenge), what was said on any of these, the other versions of their lineages, and what the other stores read say on them. Completeness UNATTESTED." }),
+  ];
 }
 
 const was = (v) => (v === null ? "none" : Array.isArray(v) ? `${v.length}` : String(v));
 function movedText(moved) {
   return Object.entries(moved).map(([k, [a, b]]) =>
     k === "standing" ? `standing challenges ${a.length} → ${b.length}` : k === "effective" ? "another version is effective"
-      : `${k} ${was(a)} → ${was(b)}`).join(" · ");
+      : k === "leaf" ? "another version is the leaf" : k === "new" ? "new lineage" : `${k} ${was(a)} → ${was(b)}`).join(" · ");
 }
 
 function drawChanges() {
   const box = $("changes"), c = current.changes, button = el("button", { type: "button", text: "Mark all as seen" });
   button.addEventListener("click", () => { button.disabled = true; markSeen().catch((e) => say(`Failed: ${e?.message ?? e}`, true)).finally(() => { button.disabled = false; }); });
-  const p = params();
+  const p = params(), w = current.watch;
   if (!c.mark) {
-    fill(box, el("h2", { text: "What changed for you" }), el("p", { class: "small", text: current.storeWhy || changesLine(c) }),
+    fill(box, w ? drawWatched(w) : null, el("h2", { text: "What changed for you" }), el("p", { class: "small", text: current.storeWhy || changesLine(c) }),
       current.storeWhy ? null : button);
     box.hidden = false;
     return;
   }
+  const all = storeWide(c, p);
   fill(box,
+    w ? drawWatched(w) : null,
+    w ? el("details", { class: "store-wide" }, el("summary", { text: `Everything that changed at this address: ${c.listed.length} lineage(s)` }), all) : all,
+    button,
+  );
+  box.hidden = false;
+}
+
+// The store-wide listing: every lineage whose view differs since the mark.
+function storeWide(c, p) {
+  return [
     el("h2", { text: "What changed for you" }),
     el("p", {}, `Since your mark of ${when(c.mark.at)}: ${changesLine(c)}.`),
     c.listed.length ? el("ul", { class: "rows" }, c.listed.map((x) => el("li", {},
@@ -304,9 +395,7 @@ function drawChanges() {
         x.vanished.length ? ` · vanished: ${x.vanished.map(([i, m]) => `${i.slice(0, 8)} ${m}`).join("; ")}` : null)))) : null,
     el("p", { class: "small" }, p.changes ? link("show everything", { changes: false }) : link("show only what changed", { changes: true, l: null }),
       " · the past is the records you marked, assessed again here under the same rules; completeness UNATTESTED"),
-    button,
-  );
-  box.hidden = false;
+  ];
 }
 
 // ---------------------------------------------------------------- what waits for whom
@@ -378,6 +467,7 @@ function showForm(yes) {
 
 function draw() {
   if (!current) return;
+  current.watch = watchNow();
   drawChanges();
   drawWaits();
   const onlyChanges = Boolean(params().changes && current.changes?.mark);
@@ -424,8 +514,9 @@ async function run() {
     }
     const key = markKey(base, await rulesId(r, backend)), kept = loadMark(key);
     say("Comparing with your mark …");
-    const changed = await changes(r, kept.mark, backend, source, { base, fetcher: tree });
-    current = { r, base, full: p.full, pins: p.pins, with: p.with, backend, source, tree, key, changes: changed, storeWhy: kept.why };
+    const c = { r, base, full: p.full, pins: p.pins, with: p.with, backend, source, tree, key, storeWhy: kept.why };
+    await compare(c, kept.mark);
+    current = c;
     shownRows = PAGE;
     say(`Read and assessed in ${((performance.now() - started) / 1000).toFixed(1)} s.`);
     draw();
