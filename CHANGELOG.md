@@ -19,6 +19,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   a symlink whose bytes hash to the accepted blob reads ELIGIBLE where the gate reads STALE), and that the stores named
   hold all that was said. docs/VERIFY.md; impl_js_test J11 (against `warrant.drift.gate`), J12 (against
   `warrant_agent.overlay`); no mutant (R-JS-MUTANTS): thirty-five mutations run by hand, not held by CI.
+- The board (`python -m warrant.board manifest|plan|sync`): goals and obligations as rows of a GitHub Project, one way.
+  The manifest is a pure function of the stores and names their snapshots; statuses are the records' own (`Claimed,
+  not accepted` apart from `Accepted`, never one "Done"); a hand edit on the board is undone and named by the next
+  sync; record text lies in a code fence, so the board mentions nobody. docs/REPOSITORY.md; tools_test BD1–BD5 (a
+  board in memory: GitHub's own answers are not tested), mutants BM1–BM10.
 - The reader in a browser (`site/reader.html`, with the project page): a store fetched from any HTTP(S) root and
   assessed in the page by `warrant.mjs`, under the publisher's rules or the reader's own; the summary `warrant status`
   gives, the lineages, and one lineage's versions with their guards, acceptances and challenges. A quick read (the
@@ -159,6 +164,23 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   them (the merge observation says `how`: solo, accepted, verdicts or hand; E56, E61–E66, MR1; V3-14-6, -9, -33, -38, -42, -43 new versions; V3-14-44..46). The engine still lets an actor
   release its own obligation: an obligation (G10) asks for `obligation@2`.
 
+- The brake after the merge (owner, 2026-11-13: «ми багато не зробимо, якщо по 72 години будемо чекати»). While the
+  owner is present (`presence`: a merge of his on GitHub within 14 days), a watched or constitutional change merges with
+  no window once its checks are green; its merge commit carries a brake as long as the window would have been, the
+  gate comments once naming him, and his `hold` label or challenge within it makes the gate open and merge the exact
+  revert (records kept; `gate/revert/`, merged as `how: revert`). Away, the windows come before the merge as before.
+  No release is published while a brake in its history is open (release.yml, `warrant.gate brakes`). E67–E73;
+  mutants G71–G84; V3-14-41, -42 new versions, V3-14-47..50.
+- Codex's review of #350 (challenge 338a305e15a4, reproduced at 8278d4a3): a merge a second family accepted was
+  recorded as solo (F1), and a commenter whose login only began with `github-actions` could suppress the
+  constitutional notice (F2). Solo now applies only when an acceptance or a family is missing; the notice's mark counts
+  only from `github-actions[bot]`. E74, E75; mutants G85, G86.
+- Presence by a touch (the analysis session): a reaction of the owner's login to a comment of the gate is a sign of
+  presence as his merge is; the gate's comments say until when he counts as present, and when that ends the gate opens
+  one issue naming him (the mode never changes silently). The constitutional notice is no longer posted on a change that
+  also touches an owner path (observed on #356: it promised a merge the gate would not make). Brake and revert lines are
+  whole lines checked by shapes (S6 on #356: the patterns copied a hex shape and ended in `$`). E76–E79; mutants
+  G87–G92.
 - A stranger's path, from W4's walk (.drafts/W4-STRANGER-PATH-2026-11-13.md): `warrant init --voices` makes a store of
   voices (trusting nobody, no roles) and `warrant say RECORD "text"` files a challenge into it under the agent's own
   key, with the package alone (the commons moved into the core, `warrant/commons.py`; `warrant_agent.commons` wraps

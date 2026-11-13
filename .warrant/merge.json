@@ -46,5 +46,10 @@
   "solo": {
     "window_hours": 0,
     "veto_role": "pr/owner"
+  },
+  "presence": {
+    "login": "s0fractal",
+    "days": 14,
+    "since": 1794527025
   }
 }

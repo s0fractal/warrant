@@ -16,6 +16,7 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `warrant/repo.py` | what the commands share: the repository they run on (`--root`, else the Git checkout around the current directory), its store and configuration, filing as an actor, the code and environment a checker's attest names |
 | `warrant/claims.py` | a specification's claims (`.warrant/claims.json` names the spec, the witness files and the mutant harness): check, view, file, retire, the claims checker |
 | `warrant/roadmap.py` | goals and obligations: view, due, check, oblige, close |
+| `warrant/board.py` | the roadmap as rows of a public project board (GitHub Projects), one way: manifest, plan, sync |
 | `warrant/review.py` | the review loop: open, head, merged, due, gate, the replay checker, verify, view |
 | `warrant/gate.py` | the merge predicate and the gate's GitHub side (constitutional path) |
 | `warrant/cli.py`, `warrant/graph.py` | the one command `warrant` (the core's verbs, `status`, and `review`, `gate`, `claims`, `roadmap`), and the queries over a report's graph that `status`, the agent's `graph` and `tools/graph.py` share |
@@ -113,6 +114,49 @@ version, which a `roadmap/acceptor` (codex) accepts. `revise` files a new `open`
 `roadmap/owner`: forgiveness is the creditor's). `due --actor codex` is what the review waker
 reads: the leaves waiting only for that actor's attest.
 
+## The board: the roadmap where people already look
+
+`python3 -m warrant.board` shows goals and obligations on a GitHub Project, one way. The records stay the source and
+the board decides nothing: a row is one lineage as its store's own assessment reads it, and the board's description
+names the snapshot and assessment of every store it was drawn from. A row carries only its own lineage and version,
+so it changes when its lineage does, not with every record filed elsewhere.
+
+```bash
+python3 -m warrant.board manifest --root . --root ../minds --reader https://s0fractal.github.io/warrant/reader.html
+```
+
+```bash
+python3 -m warrant.board plan --owner s0fractal --project N --root . --root ../minds
+```
+
+```bash
+python3 -m warrant.board sync --owner s0fractal --project N --root . --root ../minds
+```
+
+- **`manifest`** is a pure function of the stores, with no clock and no network: the same stores give the same bytes.
+- **`plan`** reads the board and says what a sync would change; **`sync`** does it. Both go through the `gh` of whoever
+  runs them; a workflow's own token cannot reach a project, and this module handles no token. A project of an
+  organization and one of a user are read alike (`--owner` names either). The narrowest token is a fine-grained one
+  bound to the one organization that owns the board, with the organization permission Projects and nothing else; a
+  user-owned project needs the classic `project` scope, which reaches every organization the user belongs to.
+- **Statuses** are the records' own, never one green "Done": `Open`, `Claimed, not accepted` (the author filed the
+  closing version; no acceptor has accepted it), `Accepted` (its guard is met), `Released`, `Withdrawn`,
+  `Challenged` (a counted challenge stands against its effective version or its leaf), `Forked`. None says verified:
+  a roadmap item has no checker, and claims are not on the board.
+- **GitHub's own `Status` is not ours.** A new project fills it with "Todo" for every item added; a sync clears it on
+  our rows, whose status is `Warrant status`.
+- **A hand edit is no record.** A sync puts every cell back and its plan names the cells that differed. An item with
+  no `Warrant ID` is a person's own: counted, never touched. A row the manifest no longer holds is archived.
+- **Record text is data.** In a row's body it lies inside a code fence longer than any run of backticks in it, so the
+  board mentions nobody and links nothing from it; only a reference of the exact shape `owner/name#N` becomes a link.
+  Each row links to the reader (docs/VERIFY.md), where the same lineage is assessed in the visitor's own browser.
+
+Not established: tools_test BD1–BD5 run against a board in memory, so what GitHub's API answers to these calls is held
+by no test; the board's views (which columns, grouped how) are made by hand on GitHub and can hide a column; a board's field named as one of ours and of another type refuses the sync (GitHub's own
+`Repository` is why ours is `Store`); and the
+board shows no `Grounded` column, because `warrant.graph.grounded` reads an obligation's `answers` as a ground (a met
+goal citing its obligations is a cycle with each of them).
+
 ## A release against the published one
 
 Roadmap G12: release n+1 is admitted by the published release n. `python -m warrant.differential --python N_PYTHON`
@@ -166,6 +210,15 @@ gate's (the workflow's bot), never an agent's `gh pr merge` under the owner's lo
 | constitutional | `AGENTS.md`, `.warrant/v3.json`, `.warrant/v3/`, `warrant/gate.py`, `tools/gate.py` | after 72 h | after 168 h (7 days) |
 | watched | the modules the gate imports (engine, store, records, keys, jcs, shapes, `__init__`) | after 24 h | after 72 h |
 | everything else | | at once, when accepted | `solo`: once the checks are green (`window_hours` 0), its author a `pr/acceptor` |
+
+The table's windows apply while the owner is away. While he is present (`presence`: a merge of his made on GitHub,
+author his login and committer GitHub's web-flow, within 14 days and since #350's merge, when agents stopped merging
+under his login), a watched or constitutional change merges as soon as its checks are green, and its merge commit
+carries its brake (`warrant-gate brake until T: #N head version V`) for the window it would have waited. Within it, his
+`hold` label on the merged pull request or his challenge on its head version makes the gate open the merge's exact
+revert from `gate/revert/` (the store's records kept), which it merges once its checks are green. A path changed again
+since makes no automatic revert: the gate says so in its summary. No release is published while a brake in the tagged
+commit's history is open (release.yml, `python -m warrant.gate brakes --at C`).
 
 A window counts from when the required checks completed at the head; no `hold` label and no challenge by
 `pr/owner` on the head version may stand. When a constitutional window opens the gate comments once on the pull

@@ -72,6 +72,15 @@ jobs:
           [ "$ok" -ge 1 ] || { echo "::error::no successful ci.yml run on master at $GITHUB_SHA"; exit 1; }
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
+      # A merge made while the owner was present has no window before it; its brake acts after it (warrant/gate.py).
+      # Nothing leaves the repository, to PyPI or to the gates of other repositories, before every brake in its
+      # history has closed: what is published has always passed the whole window.
+      - name: Every brake in the tagged commit's history has closed
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --only-binary ':all:' --require-hashes -r .github/merge-gate-requirements.txt
+          PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.gate brakes --at "$GITHUB_SHA"
+
       - name: Build the sdist and the wheel (pinned frontend and backend, no isolation)
         run: |
           set -euo pipefail
