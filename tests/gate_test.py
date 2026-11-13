@@ -4,6 +4,8 @@ the exact set of refusal codes (a mutant that removes one rule is seen even wher
 
     python3 tests/gate_test.py
 """
+import contextlib
+import io
 import importlib
 import importlib.machinery
 import importlib.util
@@ -1009,6 +1011,84 @@ def notice_owner_cases():
           "owner does", "OWNER_PATHS" in codes(a) and a.facts.get("constitutional") == ["AGENTS.md"] and "notice" not in a.facts,
           (a.reasons, a.facts.get("notice")))
 
+def codex_356_cases():
+    """Codex's findings on #356's last head (e8508e7f), reproduced at master 58e3cc74: dccff737, a brake beyond 300
+    first-parent commits disappeared; 7a84e332, the exact-revert check ignored tree modes; cd8d1a0b, an expired presence
+    announced nothing."""
+    r = Repo(git_init=True)
+    tree = git(r.root, "rev-parse", "HEAD^{tree}")
+    base0 = git(r.root, "rev-parse", "HEAD")
+    other = git(r.root, "commit-tree", tree, "-p", base0, "-m", "feature")
+    until = int(time.time()) + 7 * 86400
+    merge = git(r.root, "commit-tree", tree, "-p", base0, "-p", other, "-m", f"Merge #7\n\nwarrant-gate brake until {until}: #7 head version {'a' * 64}")
+    tip = merge
+    for i in range(301):
+        tip = git(r.root, "commit-tree", tree, "-p", tip, "-m", f"unrelated {i}")
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = GT.main(["--root", str(r.root), "brakes", "--at", tip])
+    check("E80 an open brake is found however many first-parent commits follow it: `brakes` reads the whole first-parent "
+          "history, so a release and the revert still see it after 301 later commits (Codex dccff737 on #356)",
+          rc == 1 and any(k["merge"] == merge for k in GT.brakes(r.root, tip)), (rc, GT.brakes(r.root, tip)))
+
+    q = Repo(git_init=False)
+    (q.dot / "merge.json").write_text(json.dumps(PRES))
+    (q.root / "AGENTS.md").write_text("rules\n")
+    git(q.root, "init", "-q", "-b", "master")
+    q.commit("base")
+    git(q.root, "checkout", "-q", "-b", "feature")
+    (q.root / "AGENTS.md").write_text("weakened\n")
+    q.commit("change")
+    git(q.root, "checkout", "-q", "master")
+    git(q.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge #7\n\nwarrant-gate brake until {until}: #7 head version {'a' * 64}")
+    qm = git(q.root, "rev-parse", "HEAD")
+    git(q.root, "checkout", "-q", "-b", f"gate/revert/7-{qm[:12]}")
+    (q.root / "AGENTS.md").write_text("rules\n")
+    head = q.commit(f"Revert #7\n\nwarrant-gate revert of {qm}")
+    pr = {"number": 8, "state": "open", "draft": False, "base": "master", "head": head, "labels": [],
+          "branch": f"gate/revert/7-{qm[:12]}", "head_repo": REPO, "author": "github-actions[bot]"}
+    control = GT.assess(q.root, qm, pr, green(head))
+    blob = git(q.root, "rev-parse", f"{head}:.warrant/merge.json")
+    git(q.root, "update-index", "--cacheinfo", f"120000,{blob},.warrant/merge.json")
+    linked = git(q.root, "commit-tree", git(q.root, "write-tree"), "-p", qm, "-m", f"Revert #7\n\nwarrant-gate revert of {qm}")
+    bad = GT.assess(q.root, qm, dict(pr, head=linked), green(linked))
+    check("E81 the gate's exact revert compares each path's mode as well as its object: the same blobs with an owner path "
+          "turned into a link are no revert (Codex 7a84e332 on #356)",
+          control.eligible and not bad.eligible and "REVERT_NOT_EXACT" in codes(bad), (control.reasons, bad.reasons))
+
+    p = PR(merge=PRES)
+    b = GT.Base(p.r.root, p.base)
+    sign = 1_800_000_000
+    b.gate["presence"] = dict(b.gate["presence"], since=sign - 1)
+    stamp = time.strftime(GT.STAMP, time.gmtime(sign))
+
+    class GH:
+        def __init__(self):
+            self.posted = []
+
+        def commit(self, sha):
+            return {"author": {"login": "github-actions[bot]"}, "committer": {"login": "web-flow"}}
+
+        def api(self, path, method="GET", body=None, pages=False):
+            if path.startswith("issues/comments?"):
+                return [[{"id": 1, "user": {"login": "github-actions[bot]"}, "body": GT.BRAKE_MARK}]]
+            if path.startswith("issues/comments/1/reactions?"):
+                return [[{"user": {"login": "owner-login"}, "created_at": stamp}]]
+            if path.startswith("issues?"):
+                return [[]]
+            if path == "issues" and method == "POST":
+                self.posted.append(body)
+                return {}
+            raise AssertionError(path)
+    gh = GH()
+    expires = sign + b.gate["presence"]["days"] * 86400
+    before = GT.presence_until(p.r.root, b, gh, now=expires - 1)
+    after = GT.presence_until(p.r.root, b, gh, now=expires + 1)
+    notice = GT.announce_away(b, gh, after, now=expires + 1)
+    check("E82 when a sign of presence expires, the deadline is still read, so the change to away is announced (Codex "
+          "cd8d1a0b on #356: presence_until dropped the expired sign and the notice never came)",
+          before == expires and after == expires and notice == "away noticed" and len(gh.posted) == 1,
+          (before, after, notice, gh.posted))
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -1029,4 +1109,5 @@ if __name__ == "__main__":
     solo_record_cases()
     presence_cases()
     notice_owner_cases()
+    codex_356_cases()
     sys.exit(finish())
