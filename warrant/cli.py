@@ -131,6 +131,8 @@ def _parser():
         sub.add_parser(n, help=f"python -m warrant.{n} (its own arguments)", add_help=False)
     sub.add_parser("verify", help="may this receiver rely on a package it was handed? (python -m warrant.verify, its own arguments)",
                    add_help=False)
+    sub.add_parser("resolve", help="where the bytes each cited hash names are, over Home (python -m warrant.resolve)",
+                   add_help=False)
     for n, c in cmds.items():
         if n not in ("key", "trust", "init"):
             g = c.add_mutually_exclusive_group()
@@ -356,6 +358,9 @@ def main(argv=None):
     if argv[:1] == ["verify"]:
         from . import verify
         return verify.main(argv[1:])
+    if argv[:1] == ["resolve"]:
+        from . import resolve
+        return resolve.run(argv[1:])
     if argv[:1] == ["say"]:
         return say(argv[1:])
     a = _parser().parse_args(argv)
