@@ -1194,6 +1194,59 @@ def revert_pending_cases():
           [n for n, _ in out] == [7] and out[0][1].startswith("revert of #7 opened") and held == [] and not quiet.calls,
           (out, held, quiet.calls))
 
+AFTER_ = dict(MERGE, after_merge=[{"workflow": ".github/workflows/pages.yml", "paths": ["site/"]},
+                                  {"workflow": ".github/workflows/claims-replay.yml"}])
+
+
+def after_merge_cases():
+    """The analysis session, 2026-11-13: a merge by the gate starts no push workflow, and GitHub ran 5 of 52 scheduled
+    runs of the gate in 26 hours, so the site and the claims checker never ran after the gate's merges. The gate starts
+    them itself after its merge, as it starts the required workflows."""
+    class GH:
+        def __init__(self, a, p):
+            self.a, self.p, self.dispatched = a, p, []
+
+        def pull(self, n):
+            return dict(self.a.pr)
+
+        def tip(self, br):
+            return self.p.base
+
+        def merge(self, n, sha, title, msg):
+            return {"merged": True, "sha": "c" * 40}
+
+        def parents(self, sha):
+            return [self.p.base, self.a.pr["head"]]
+
+        def dispatch(self, w, br):
+            self.dispatched.append(w)
+
+    def merged(before_x=None, verdicts=False):
+        p = PR(merge=AFTER_, before_x=before_x)
+        a = p.assess()
+        if verdicts:
+            a.facts["verdicts"] = ["x"]
+        gh = GH(a, p)
+        GT.merge_one(GT.Base(p.r.root, p.base), a, gh)
+        return sorted(gh.dispatched)
+
+    def site(s):
+        (s.r.root / "site").mkdir()
+        (s.r.root / "site" / "page.html").write_text("<p>new</p>\n")
+    plain, with_site, verdicts = merged(), merged(site), merged(verdicts=True)
+    ci, pages, replay = ".github/workflows/ci.yml", ".github/workflows/pages.yml", ".github/workflows/claims-replay.yml"
+    check("E85 after its merge the gate starts the after_merge workflows on the base: one with paths only when the merge "
+          "changed one of them (pages after site/), one without after every merge, none after a merge of verdicts only "
+          "(the checker's own acceptances must not start it again)",
+          plain == [ci, replay] and with_site == [ci, replay, pages] and verdicts == [ci], (plain, with_site, verdicts))
+    bad = [dict(MERGE, after_merge=[{"workflow": "pages.yml"}]),
+           dict(MERGE, after_merge=[{"workflow": ".github/workflows/pages.yml", "paths": []}]),
+           dict(MERGE, after_merge=[{"workflow": ".github/workflows/a.yml"}, {"workflow": ".github/workflows/a.yml"}]),
+           dict(MERGE, after_merge=[{"workflow": ".github/workflows/a.yml", "when": "always"}])]
+    refused = [codes(PR(merge=m).assess()) for m in bad]
+    check("E86 an after_merge list naming no workflow file, empty paths, a workflow twice or an unknown member refuses the "
+          "base's configuration", all(x == {"BASE_CONFIG"} for x in refused), refused)
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -1216,5 +1269,6 @@ if __name__ == "__main__":
     notice_owner_cases()
     codex_356_cases()
     refresh_cases()
+    after_merge_cases()
     revert_pending_cases()
     sys.exit(finish())

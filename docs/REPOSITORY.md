@@ -234,7 +234,7 @@ python3 tools/gate.py gate --base "$(git rev-parse origin/master)" --pr N --json
 module's name, a module added where the interpreter searches) is still the owner's. The owner reads every merge on
 `warrant serve`'s «Що змінилось» and vetoes with the `hold` label or a challenge.
 
-The claims checker runs on a runner (`.github/workflows/claims-replay.yml`, on each push to master and every two hours), under a key
+The claims checker runs on a runner (`.github/workflows/claims-replay.yml`, started by the gate after each of its merges but one of verdicts only (`after_merge` in `.warrant/merge.json`; a merge with the workflow's token starts no push workflow), on each push to master, and on a schedule GitHub mostly skips), under a key
 made there (`claims-key.yml`, the environment `claims`); its acceptances arrive as a pull request of verdicts only
 from `claims/verdicts/`, which CI re-executes and the gate merges.
 

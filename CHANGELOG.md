@@ -240,6 +240,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   core_test's closure is 9 files, not 24. `warrant.claims closures` prints each witness file's closure size and the
   claims on it. CF6, K12; mutant T175; V3-8-7.
 
+- `after_merge` (`.warrant/merge.json`): after its own merge the gate starts the listed workflows on the base, as it
+  starts the required ones: `pages.yml` when the merge changed `site/`, `claims-replay.yml` after every merge but one
+  of verdicts only. A merge with GITHUB_TOKEN starts no push workflow, and GitHub ran 5 of 52 scheduled gate runs in
+  26 hours, so the site and the checker had not run after the gate's merges. E85, E86; mutants G101–G103.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by
