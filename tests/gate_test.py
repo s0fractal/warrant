@@ -1281,9 +1281,15 @@ def prerelease_cases():
         def api(self, path, method="GET", body=None, pages=False):
             return [[{"name": "v3.0.0a7", "commit": {"sha": later}}, {"name": "v3.0.0a6", "commit": {"sha": base0}}]]
     held = GT.published_with(r.root, GH(), merge)
+
+    class Far:
+        def api(self, path, method="GET", body=None, pages=False):
+            return [[{"name": "v3.0.0a7", "commit": {"sha": "f" * 40}}, {"name": "v3.0.0a6", "commit": {"sha": base0}}]]
+    far = GT.published_with(r.root, Far(), merge)
     check("E88 a revert of a merge names the published versions whose tagged commit holds it (here v3.0.0a7, not v3.0.0a6, "
-          "tagged before it): an obligation for an agent, and a yank the owner's act if he wants one",
-          held == ["v3.0.0a7"], held)
+          "tagged before it), and a tag whose commit this clone does not hold is unknown, never 'not published' (Codex "
+          "on #376: merge-base exits 128 there, and False was read as no)",
+          held == (["v3.0.0a7"], []) and far == ([], ["v3.0.0a7"]), (held, far))
 
 if __name__ == "__main__":
     closure_cases()

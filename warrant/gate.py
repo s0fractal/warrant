@@ -368,11 +368,19 @@ def loadable(path, written, status, mode, modules, held):
 
 
 def is_ancestor(root, a, b):
+    """Whether `a` is an ancestor of `b`; False also when Git cannot say (an object missing here): every caller that
+    reads False as a refusal is on the safe side. One that would read it as "it does not hold" uses ancestry()."""
+    return ancestry(root, a, b) is True
+
+
+def ancestry(root, a, b):
+    """True or False when Git establishes whether `a` is an ancestor of `b`; None when it cannot (an object not in
+    this clone: merge-base exits 128, not 1) (Codex on #376: a tag's commit not fetched read as "not published")."""
     try:
         git(root, "merge-base", "--is-ancestor", a, b)
         return True
-    except subprocess.CalledProcessError:
-        return False
+    except subprocess.CalledProcessError as e:
+        return False if e.returncode == 1 else None
 
 
 # ---------------------------------------------------------------- the base
@@ -1126,15 +1134,21 @@ def revert_plan(root, base, merge):
 
 
 def published_with(root, gh, merge):
-    """The tags of this repository (v...) whose commit holds `merge`: the published versions a revert of it does not
-    reach. An agent records an obligation for each; a yank is the owner's act, if he wants one."""
-    out = []
+    """(held, unknown): the tags of this repository (v...) whose commit holds `merge` (the published versions a revert
+    of it does not reach), and those whose relation to it this clone cannot establish (their commit is not here). An
+    agent records an obligation for each held one; a yank is the owner's act, if he wants one."""
+    held, unknown = [], []
     for page in gh.api("tags?per_page=100", pages=True):
         for t in page:
             sha = (t.get("commit") or {}).get("sha")
-            if str(t.get("name", "")).startswith("v") and S.hex_of(sha, 40) and is_ancestor(root, merge, sha):
-                out.append(t["name"])
-    return sorted(out)
+            if not str(t.get("name", "")).startswith("v"):
+                continue
+            rel = ancestry(root, merge, sha) if S.hex_of(sha, 40) else None
+            if rel is True:
+                held.append(t["name"])
+            elif rel is None:
+                unknown.append(t["name"])
+    return sorted(held), sorted(unknown)
 
 
 def open_revert(root, b, gh, k, why):
@@ -1150,12 +1164,19 @@ def open_revert(root, b, gh, k, why):
         branch = f"{REVERT_BRANCH}{k['pr']}-{k['merge'][:12]}"
         gh.api("git/refs", "POST", {"ref": f"refs/heads/{branch}", "sha": commit})
         try:
-            held = published_with(root, gh, k["merge"])
-        except (Refused, AttributeError, TypeError, KeyError):      # an answer that is no list of tags: not read
-            held = None
-        reached = ("Published versions hold the reverted change: " + ", ".join(held) + ". An agent records an obligation "
-                   "for each (the next pre-release closes it); a yank is the owner's act, if he wants one." if held else
-                   "No published version holds it." if held == [] else "Whether a published version holds it could not be read.")
+            held, unknown = published_with(root, gh, k["merge"])
+        except (Refused, AttributeError, TypeError, KeyError, ValueError):     # an answer that is no list of tags: not read
+            held, unknown = None, None
+        reached = ""
+        if held:
+            reached += ("Published versions hold the reverted change: " + ", ".join(held) + ". An agent records an "
+                        "obligation for each (the next pre-release closes it); a yank is the owner's act, if he wants one. ")
+        if unknown:
+            reached += "Whether these published versions hold it could not be established here: " + ", ".join(unknown) + ". "
+        if held is None:
+            reached = "Whether a published version holds it could not be read."
+        elif not held and not unknown:
+            reached = "No published version holds it (every tag was checked)."
         gh.api("pulls", "POST", {"title": f"Revert #{k['pr']} (vetoed in its brake window)", "head": branch, "base": b.gate["base"],
                                  "body": f"The gate reverts {k['merge']}: {why}. The store's records are kept. {reached}"})
         for w in sorted({c["workflow"] for c in b.gate["required"]}):
