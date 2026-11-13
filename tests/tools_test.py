@@ -334,9 +334,11 @@ def checker_cases():
     held = []
     once = CL.verify(rp, base, frozenset(), held)
     skipped = CL.verify(rp, base, frozenset(held))
+    outside = refused_code(CL.run, ["--root", str(r.root), "verify", "--base", base, "--done", str(r.home / "done-ids")])
     check("C20 an acceptance a run of the same branch re-executed and found holding is not run again (its result at its "
           "commit cannot change), and a run names what held, so a pull request whose base moved re-executes only what is new "
-          "(#364: 136 acceptances, 40 minutes each time)", once == 1 and held == first and skipped == 0, (once, held, skipped))
+          "(#364: 136 acceptances, 40 minutes each time); the file it keeps is one of the checkout, as every path a tool "
+          "writes", once == 1 and held == first and skipped == 0 and (outside or "").startswith("PATH"), (once, held, skipped, outside))
     put_as(r, CL.CHECKER, dict(a, code="0" * 64), [L])
     r.commit("an acceptance naming other code")
     why = refused_code(CL.verify, rp, x1)

@@ -497,8 +497,7 @@ def _reexecuted(repo, x, rows, pins):
     return bad + [f"{i[:12]}: CLAIM_REPLAY_DIFFERS {b['id']} does not hold at {x[:12]}" for i, _, b in rows if not held(b, ran, killed)]
 
 
-def run(argv=None):
-    root, argv = env_root(list(sys.argv[1:] if argv is None else argv))
+def _parser():
     ap = argparse.ArgumentParser(prog="warrant.claims")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check")
@@ -515,29 +514,45 @@ def run(argv=None):
     r.add_argument("--key", required=True)
     vf = sub.add_parser("verify")
     vf.add_argument("--base", required=True)
-    vf.add_argument("--done", help="a file of acceptance ids already re-executed and held on this branch; updated on success")
-    a = ap.parse_args(argv)
+    vf.add_argument("--done", help="a file of the checkout (build/...) of acceptance ids already re-executed and held on "
+                                   "this branch; updated on success")
+    return ap
+
+
+def _verify_cmd(repo, a, root):
+    """`verify --base M [--done FILE]`: FILE is a file of the checkout (inside), as every path a tool reads or writes."""
+    path = inside(a.done, root) if a.done else None
+    done = frozenset(path.read_text().split()) if path and path.is_file() else frozenset()
+    held = []
+    n = verify(repo, a.base, done, held)
+    if path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(f"{i}\n" for i in sorted(set(held) | done)))
+    print(f"claims checker acceptances new since {a.base[:12]}: {n} re-executed, {len(set(held) & done)} held before, all held")
+    return 0
+
+
+def _check_cmd(repo, root):
+    rep, out = check(repo)
+    for c, d in out:
+        print(f"{c} {d}")
+    srcs = sources(config(root))
+    n = len([1 for b in live(rep).values() if b["source"] in srcs])
+    print(f"claims: {n} live of {', '.join(srcs)}; {len(out)} problem(s)")
+    return 1 if out else 0
+
+
+def run(argv=None):
+    root, argv = env_root(list(sys.argv[1:] if argv is None else argv))
+    a = _parser().parse_args(argv)
     repo = Repo(root)
     if a.cmd == "identity":
         dump({"actor": CHECKER, **identity(root)})
         return 0
     if a.cmd == "verify":
-        path = Path(a.done) if a.done else None
-        done = frozenset(path.read_text().split()) if path and path.is_file() else frozenset()
-        held = []
-        n = verify(repo, a.base, done, held)
-        if path:
-            path.write_text("".join(f"{i}\n" for i in sorted(set(held) | done)))
-        print(f"claims checker acceptances new since {a.base[:12]}: {n} re-executed, {len(set(held) & done)} held before, all held")
-        return 0
+        return _verify_cmd(repo, a, root)
     if a.cmd == "check":
-        rep, out = check(repo)
-        for c, d in out:
-            print(f"{c} {d}")
-        srcs = sources(config(root))
-        n = len([1 for b in live(rep).values() if b["source"] in srcs])
-        print(f"claims: {n} live of {', '.join(srcs)}; {len(out)} problem(s)")
-        return 1 if out else 0
+        return _check_cmd(repo, root)
     if a.cmd == "view":
         emit(view(repo.report(), repo.root), a.out, root)
         return 0

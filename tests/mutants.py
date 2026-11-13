@@ -268,6 +268,7 @@ MUTANTS = [
     ("T171", "warrant/cli.py", '        if a.cmd == "init" and a.voices:', '        if False:', TOOLS, ["VS1"]),
     ("T172", "warrant/cli.py", '    name = re.sub(r"[^A-Za-z0-9_.-]", "-", Path(root).name)[:100].strip(".-") or "local"', '    name = Path(root).name', TOOLS, ["VS1"]),
     ("T173", "warrant/claims.py", '    by_commit = {x: kept for x, rows in by_commit.items() if (kept := [row for row in rows if row[0] not in done])}', '    by_commit = {x: rows for x, rows in by_commit.items()}', TOOLS, ["C20"]),
+    ("T174", "warrant/claims.py", '    path = inside(a.done, root) if a.done else None', '    path = Path(a.done) if a.done else None', TOOLS, ["C20"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
     ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),

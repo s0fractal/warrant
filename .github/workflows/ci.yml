@@ -150,7 +150,7 @@ jobs:
       # next run re-executes only what is new (#364: 136 acceptances, 40 minutes, the base always moved first).
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/claims-done
+          path: build/claims-done
           key: claims-done-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: claims-done-${{ github.head_ref || github.ref_name }}-
 
@@ -164,13 +164,12 @@ jobs:
           # the base into it) the merge base with master, never the branch's own previous head
           if [ -z "$BASE_SHA" ] && [ "$GITHUB_REF" = refs/heads/master ]; then BASE_SHA=$(git rev-parse "$GITHUB_SHA^1"); fi
           BASE_SHA=${BASE_SHA:-$(git merge-base origin/master "$GITHUB_SHA")}
-          mkdir -p "$RUNNER_TEMP/claims-done"
           python tools/review.py verify --base "$BASE_SHA"
-          python tools/claims.py verify --base "$BASE_SHA" --done "$RUNNER_TEMP/claims-done/ids"
+          python tools/claims.py verify --base "$BASE_SHA" --done build/claims-done/ids
 
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/claims-done
+          path: build/claims-done
           key: claims-done-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
   mutants:
