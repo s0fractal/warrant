@@ -317,9 +317,10 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
   established: the page itself in a browser (layout at 375 px, buttons, storage), and the stores' completeness.
 - **The door: objecting to a version (`site/voice.mjs`; `site/object.html`).** On an opened lineage, beside the effective
   version and the leaf (one block when they are one version), a collapsed block «Object to this version» gives the
-  commands that file a voice against exactly that version, with its full id filled in, from an empty directory and a
-  checkout of master (`git clone`, `python3 -m warrant say --store ../voices ID "…"`, the directory `voices` committed
-  as a git repository): the package on PyPI, 3.0.0a6, has no `warrant say`. The block is built from the version's id
+  commands that file a voice against exactly that version, with its full id filled in, from an empty directory and the
+  released package (`python3 -m venv .venv`, `.venv/bin/pip install "warrant-graph>=3.0.0a7"`, `.venv/bin/warrant say
+  --store voices ID "…"`, the directory `voices` committed as a git repository): 3.0.0a7 is the first release with
+  `warrant say`, and nothing is installed into the system's interpreter. The block is built from the version's id
   alone (`targets`: an id that is not 64 lowercase hex gives no command), says what a voice is and is not (a challenge
   under the objector's own key's name, `key:<hex>`; nobody admits or removes it; not counted by the publisher's rules,
   the lineage's verdict in its store does not move; counted for a reader only when a replayer that reader trusts
