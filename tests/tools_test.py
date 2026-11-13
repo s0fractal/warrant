@@ -18,6 +18,7 @@ from pathlib import Path
 from world import KEYS, ROOT, Repo, check, finish, git
 
 from warrant import across as A
+from warrant import board as BD
 from warrant import chains as CH
 from warrant import claims as CL
 from warrant import cli as CLI
@@ -1644,6 +1645,150 @@ def observer_cases():
           (now, [L for L in before[0] if before[0][L] != after[0].get(L)][:5]))
 
 
+class FakeBoard:
+    """A project board in memory, answering the calls warrant.board makes (two items a page, to walk the pages)."""
+
+    def __init__(self):
+        self.fields, self.items, self.mutations, self.readme, self.n = {}, [], [], None, 0
+
+    def _id(self, prefix):
+        self.n += 1
+        return f"{prefix}{self.n}"
+
+    def call(self, query, v):
+        if query is BD.PROJECT:
+            start = int(v["after"] or 0)
+            page = self.items[start:start + 2]
+            def values(it):
+                kind = {"TEXT": "text", "NUMBER": "number", "DATE": "date", "SINGLE_SELECT": "name"}
+                return [{kind[self.fields[n]["dataType"]]: x, "field": {"name": n}} for n, x in it["values"].items()]
+            return {"user": {"projectV2": {"id": "P", "title": "t", "public": False,
+                    "fields": {"nodes": list(self.fields.values())},
+                    "items": {"pageInfo": {"hasNextPage": start + 2 < len(self.items), "endCursor": str(start + 2)},
+                              "nodes": [{"id": it["id"], "isArchived": it["archived"],
+                                         "content": {"id": it["draft"], "title": it["title"], "body": it["body"]},
+                                         "fieldValues": {"nodes": values(it)}} for it in page]}}}}
+        self.mutations.append(query)
+        if query is BD.ADD_FIELD:
+            f = {"id": self._id("F"), "name": v["name"], "dataType": v["type"]}
+            if v["options"]:
+                f["options"] = [{"id": self._id("O"), "name": o["name"]} for o in v["options"]]
+            self.fields[v["name"]] = f
+            return {"createProjectV2Field": {"projectV2Field": f}}
+        if query is BD.ADD_ITEM:
+            it = {"id": self._id("I"), "draft": self._id("D"), "title": v["title"], "body": v["body"], "archived": False, "values": {}}
+            self.items.append(it)
+            return {"addProjectV2DraftIssue": {"projectItem": {"id": it["id"], "content": {"id": it["draft"]}}}}
+        if query is BD.SET_TEXT:
+            it = next(i for i in self.items if i["draft"] == v["draft"])
+            it["title"], it["body"] = v["title"], v["body"]
+        elif query in (BD.SET_FIELD, BD.CLEAR):
+            it = next(i for i in self.items if i["id"] == v["item"])
+            f = next(f for f in self.fields.values() if f["id"] == v["field"])
+            if query is BD.CLEAR:
+                it["values"].pop(f["name"], None)
+            elif "singleSelectOptionId" in v["value"]:
+                it["values"][f["name"]] = next(o["name"] for o in f["options"] if o["id"] == v["value"]["singleSelectOptionId"])
+            else:
+                it["values"][f["name"]] = next(iter(v["value"].values()))
+        elif query is BD.ARCHIVE:
+            next(i for i in self.items if i["id"] == v["item"])["archived"] = True
+        elif query is BD.DESCRIBE:
+            self.readme = v["readme"]
+        return {}
+
+
+def board_cases():
+    """warrant.board: the roadmap as rows of a project board, one way. The board's side is FakeBoard here: no case
+    reaches GitHub, so what GitHub's API answers to these calls is not held by any of them."""
+    hostile = "@octocat see #1 and ```` four ticks ```` <script>alert(1)</script> [x](javascript:alert(2))"
+    r = Repo()
+    g = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a goal"})
+    ob = lambda text, **kw: r.entity("alice", "obligation@1", dict({"state": "open", "statement": text, "answers": g, "serves": []}, **kw))  # noqa: E731
+    done = lambda text, o, **kw: r.entity("alice", "obligation@1", dict({"state": "done", "statement": text, "answers": g, "serves": []}, **kw), lineage=o)  # noqa: E731
+    o_open = ob(hostile)
+    o_claimed = ob("claimed")
+    done("claimed", o_claimed, refs=["s0fractal/warrant#7", "merged as abc after s0fractal/warrant#8"])
+    o_accepted = ob("accepted")
+    r.attest("bob", done("accepted", o_accepted))
+    o_released = ob("released")
+    r.entity("dave", "obligation@1", {"state": "released", "statement": "released", "answers": g, "serves": [], "residual": ["no longer wanted"]}, lineage=o_released)
+    o_challenged = ob("challenged")
+    closing = done("challenged", o_challenged)
+    r.put("bob", "challenge", {"target": closing, "statement": "it does not hold"}, refs=[closing])
+    o_fork = ob("forked")
+    done("forked", o_fork)
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "forked, otherwise", "answers": g, "serves": []}, lineage=o_fork)
+    man = BD.manifest([r.root], reader="https://example.test/reader.html")
+    by = {x["id"]: x for x in man["rows"]}
+    want = {g: BD.OPEN, o_open: BD.OPEN, o_claimed: BD.CLAIMED, o_accepted: BD.ACCEPTED, o_released: BD.RELEASED,
+            o_challenged: BD.CHALLENGED, o_fork: BD.FORKED}
+    check("BD1 one row per goal and obligation lineage, its status from the records: open; claimed, not accepted (a "
+          "closing version waits for its acceptor); accepted; released; challenged (a counted challenge stands against "
+          "its leaf); forked", {i: x["status"] for i, x in by.items()} == want and by[o_claimed]["waits_for"] != ""
+          and by[o_accepted]["accepted_by"] == "bob" and by[o_claimed]["goal"] == "G1", {i[:8]: x["status"] for i, x in by.items()})
+    again = BD.manifest([r.root], reader="https://example.test/reader.html")
+    rep = RP.Repo(r.root).report()
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "one more", "answers": g, "serves": []})
+    later = BD.manifest([r.root], reader="https://example.test/reader.html")
+    check("BD2 the manifest is a function of the store: the same store gives the same bytes; it names the store's snapshot "
+          "and assessment; its digest is the digest of its stores and rows; one more record gives another digest",
+          JCS.canon(man) == JCS.canon(again) and man["stores"][0]["snapshot"] == rep["snapshot"]
+          and man["stores"][0]["assessment"] == rep["assessment"]
+          and man["digest"] == JCS.doc_id({k: v for k, v in man.items() if k != "digest"}) and later["digest"] != man["digest"],
+          (man["digest"][:12], later["digest"][:12]))
+    body, title = by[o_open]["body"], by[o_open]["title"]
+    inside, fence, outside = False, None, []
+    for line in body.splitlines():
+        ticks = len(line) - len(line.lstrip("`"))
+        if not inside and ticks >= 3 and line[ticks:] == "text":
+            inside, fence = True, ticks
+        elif inside and line == "`" * fence:
+            inside = False
+        elif not inside:
+            outside.append(line)
+    links = [x for x in by[o_claimed]["body"].splitlines() if x.startswith("- https://")]
+    check("BD3 what a record says is data on the board: its statement lies inside a fence longer than its longest run of "
+          "backticks, no word of it outside one; its title holds no `@` followed by a name; and only a reference of the "
+          "exact shape owner/name#N becomes a link",
+          "@octocat" in body and "octocat" not in "\n".join(outside) and "<script>" not in "\n".join(outside)
+          and "`````text" in body and "@octocat" not in title and "@\u200boctocat" in title
+          and links == ["- https://github.com/s0fractal/warrant/pull/7"], (title, outside[:6], links))
+
+    fb = FakeBoard()
+    board = BD.read_board(fb.call, "o", 1)
+    first_plan = BD.plan(man, board, "2026-11-13")
+    reads_only = fb.mutations == []
+    did = BD.sync(man, board, fb.call, "2026-11-13")
+    names = {n for n, _, _ in BD.FIELDS} | {BD.SYNCED}
+    made = {it["values"].get(BD.ID): it for it in fb.items}
+    fb.mutations.clear()
+    second = BD.plan(man, BD.read_board(fb.call, "o", 1), "2026-11-13")
+    BD.sync(man, BD.read_board(fb.call, "o", 1), fb.call, "2026-11-14")
+    check("BD4 a first sync makes the fields and one item a row, each cell the row's; reading and planning change nothing; "
+          "a second sync of the same manifest finds nothing to do and makes no call that changes the board",
+          reads_only and sorted(first_plan["create"]) == sorted(by) and set(fb.fields) == names and set(made) == set(by)
+          and all(made[i]["values"]["Warrant status"] == by[i]["status"] and made[i]["title"] == by[i]["title"]
+                  and made[i]["values"][BD.SYNCED] == "2026-11-13" and made[i]["values"].get("Standing challenges", 0) == by[i]["challenges"]
+                  for i in by)
+          and second["create"] == [] and second["update"] == {} and second["archive"] == [] and fb.mutations == []
+          and man["digest"][:12] in (fb.readme or ""), (sorted(did["create"])[:2], second, len(fb.mutations)))
+    made[o_accepted]["values"]["Warrant status"] = BD.OPEN            # a hand edit on the board: no record says so
+    made[o_claimed]["title"] = "done, trust me"
+    fb.items.append({"id": "X", "draft": "DX", "title": "a person's own note", "body": "", "archived": False, "values": {}})
+    smaller = dict(man, rows=[x for x in man["rows"] if x["id"] != o_fork])
+    edited = BD.plan(smaller, BD.read_board(fb.call, "o", 1), "2026-11-15")
+    BD.sync(smaller, BD.read_board(fb.call, "o", 1), fb.call, "2026-11-15")
+    note = next(i for i in fb.items if i["id"] == "X")
+    check("BD5 a hand edit is no record: the plan names exactly the cells that differ and the sync puts them back; a row "
+          "the manifest no longer holds is archived; an item with no Warrant ID is not ours, is counted and is left as it was",
+          edited["update"] == {o_accepted: ["Warrant status"], o_claimed: ["title"]} and edited["archive"] == [o_fork]
+          and edited["foreign"] == 1 and made[o_accepted]["values"]["Warrant status"] == BD.ACCEPTED
+          and made[o_claimed]["title"] == by[o_claimed]["title"] and made[o_fork]["archived"] is True
+          and note["title"] == "a person's own note" and note["archived"] is False and note["values"] == {},
+          (edited["update"], edited["archive"], edited["foreign"]))
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
@@ -1661,4 +1806,5 @@ if __name__ == "__main__":
     grounded_cases()
     observer_cases()
     merged_cases()
+    board_cases()
     sys.exit(finish())

@@ -774,6 +774,18 @@ MUTANTS = [
      '        return set(maps)\n', VERIFY, ['U46']),
     ("UM53", "warrant_agent/api.py", '                todo += [v for v in rep["lineages"].get(L, {}).get("versions", []) if v not in got]\n',
      '                pass\n', VERIFY, ['U47']),
+    # the board (warrant/board.py): the roadmap as rows of a project board, one way
+    ("BM1", "warrant/board.py", "        return CLAIMED                                  # a later version waits",
+     '        return BY_STATE.get(lin["state"], OTHER)        # a later version waits', TOOLS, ["BD1"]),
+    ("BM2", "warrant/board.py", '    if any(rep["versions"][v]["challenged_by"] for v in at):', "    if False:", TOOLS, ["BD1"]),
+    ("BM3", "warrant/board.py", '    if lin["verdict"] == "FORK":\n        return FORKED', '    if False:\n        return FORKED', TOOLS, ["BD1"]),
+    ("BM4", "warrant/board.py", 'fence = "`" * max(3, 1 + max((len(r) for r in runs), default=0))', 'fence = "```"', TOOLS, ["BD3"]),
+    ("BM5", "warrant/board.py", '.replace("@", "@" + ZWSP)', "", TOOLS, ["BD3"]),
+    ("BM6", "warrant/board.py", "m = PR_REF.match(r) if isinstance(r, str) else None", "m = PR_REF.search(r) if isinstance(r, str) else None", TOOLS, ["BD3"]),
+    ("BM7", "warrant/board.py", 'diff = [m for m in ("title", "body") if item[m] != row[m]]', "diff = []", TOOLS, ["BD5"]),
+    ("BM8", "warrant/board.py", '    for rid in todo["archive"]:\n        call(ARCHIVE', '    for rid in []:\n        call(ARCHIVE', TOOLS, ["BD5"]),
+    ("BM9", "warrant/board.py", "return dict(doc, digest=C.doc_id(doc))", 'return dict(doc, digest=C.doc_id(doc["stores"]))', TOOLS, ["BD2"]),
+    ("BM10", "warrant/board.py", 'if todo["create"] or todo["update"] or todo["archive"] or todo["fields"]:', "if True:", TOOLS, ["BD4"]),
 ]
 
 

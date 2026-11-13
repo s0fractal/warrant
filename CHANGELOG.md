@@ -6,6 +6,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The board (`python -m warrant.board manifest|plan|sync`): goals and obligations as rows of a GitHub Project, one way.
+  The manifest is a pure function of the stores and names their snapshots; statuses are the records' own (`Claimed,
+  not accepted` apart from `Accepted`, never one "Done"); a hand edit on the board is undone and named by the next
+  sync; record text lies in a code fence, so the board mentions nobody. docs/REPOSITORY.md; tools_test BD1–BD5 (a
+  board in memory: GitHub's own answers are not tested), mutants BM1–BM10.
 - **[protocol]** Reasons no longer depend on the interpreter (R-INTERPRETER narrowed): a value a reason quotes (a
   schema, an actor, a state, body member names, a duplicate member, blob names) is written as JSON with every UTF-16 unit
   outside space..~ escaped and keys in code point order, not as Python's `repr`; a package's blobs are read by the
