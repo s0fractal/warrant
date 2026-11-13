@@ -1059,6 +1059,16 @@ def roadmap_cases():
           [(x["closure"], x["duty"], x["goal"]) for x in due] == [(d, o, "G1")] and after == [], due)
     r.entity("alice", "obligation@1", {"state": "open", "statement": "stray", "answers": o, "serves": []})
     check("P02 an obligation answering no goal is a roadmap problem", len(RM.check(rp.report())) == 1)
+    v = Repo()
+    for key in ("G10", "EXP-ADOPT-1", "G2", "G", "9 lives"):
+        v.entity("alice", "goal@1", {"state": "open", "key": key, "text": f"goal {key}"})
+    try:
+        heads = [ln.split(" (")[0][3:] for ln in RM.view(RP.Repo(v.root).report()).splitlines() if ln.startswith("## ")]
+    except ValueError as e:
+        heads = f"view raised {e}"
+    check("P02b the roadmap view names every goal whatever its key: G<number> ones in the order of their numbers, then "
+          "the others by their key (a goal keyed EXP-ADOPT-1 ended the view: int() of what was left of the key)",
+          heads == ["G2", "G10", "9 lives", "EXP-ADOPT-1", "G"], heads)
     r = Repo()
     rp = RP.Repo(r.root)
     g = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "goal"})

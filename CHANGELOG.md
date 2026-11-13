@@ -6,6 +6,9 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The roadmap view names every goal whatever its key (`warrant/roadmap.py`): `G<number>` keys in the order of their
+  numbers, then the others by their text. A goal keyed otherwise (EXP-ADOPT-1, the adoption experiment's registration)
+  ended `tools/graph.py views` in `int()`.
 - The door's commands use the released package instead of a checkout (`site/voice.mjs`, `site/object.html`, the
   reader's block): a venv in the objector's empty directory, `pip install "warrant-graph>=3.0.0a7"` (the first release
   with `warrant say`), the venv's `warrant say --store voices ID "…"`. No clone is needed to object; the clone remains
