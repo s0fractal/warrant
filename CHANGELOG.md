@@ -205,6 +205,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   first-parent history is read in one batch; modes and types are compared; signs are read back to twice `days`.
   E80–E82 (Codex's cases); mutants G93–G95.
 
+- Codex 8caa1ce8 (P1, reproduced at 58e3cc74 and 3a0e18f8): `enforce_brakes` held back a vetoed merge's revert when
+  any open pull request sat on a branch named `gate/revert/<pr>-*`, a fork's refused one by anyone included. A revert
+  now counts as pending only when the gate assessed an open pull request as that merge's exact revert, and an exact
+  revert must come from a branch of this repository. E83, E70; mutants G96, G97.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by
