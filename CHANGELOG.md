@@ -6,6 +6,20 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The browser reader gains a door for a reader who disagrees. On an opened lineage, beside the effective version and
+  the leaf, «Object to this version» gives the commands that file a voice against that version (its full id filled in;
+  the checkout form, `python3 -m warrant say --store ../voices ID "…"`, since 3.0.0a6 has no `warrant say`), what the
+  voice is and is not (a challenge under `key:<hex>`, admitted and removable by nobody, not counted by the publisher's
+  rules, counted for a reader only when a replayer it trusts reproduces it), and a field that adds a store of voices to
+  `with=`. `site/object.html` (no script) gives the steps with placeholders; `site/voice.mjs STEPS` is their one source.
+  The desk shows minds' latest published release from a second kind of entry in `site/stores.json` (`{name, base,
+  release}`): statement, chain tip, when published, endorsers and witnesses by roster name, «as published; not verified
+  here», a link to the minds page that verifies it; an index that cannot be read is named. Not established: that anyone
+  reads a store of voices (completeness UNATTESTED), the push to a public host, the release itself (the desk verifies
+  nothing of it), and either page in a browser (no case drives one). docs/VERIFY.md; impl_js_test J16 (the commands
+  run as shown, against a clone of the checkout under test; the release block on a served fixture); J14's default-list
+  case now leaves the release entry out; no mutant (R-JS-MUTANTS): thirty-five mutations run by hand, each failing a
+  J16 case or the page-source case of J10 on its assertion, not held by CI.
 - The browser reader gains a desk and a frontier. `site/desk.html` (`node site/desk.mjs`) reads a list of stores
   (`store=URL`, else the list kept on the page, else `site/stores.json`: this repository's store and minds') three at
   a time and shows one block each: counts as the reader shows them, lineages with a standing counted challenge, what

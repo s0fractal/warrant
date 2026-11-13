@@ -259,6 +259,36 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
   others still answer; a block is whole or a refusal. The CLI keeps a mark file per store in `--marks DIR`, named by
   the SHA-256 of the store's address (`--write-mark URL`, `--write-marks`); `--plan` prints the selection alone. Not
   established: the page itself in a browser (layout at 375 px, buttons, storage), and the stores' completeness.
+- **The door: objecting to a version (`site/voice.mjs`; `site/object.html`).** On an opened lineage, beside the effective
+  version and the leaf (one block when they are one version), a collapsed block «Object to this version» gives the
+  commands that file a voice against exactly that version, with its full id filled in, from an empty directory and a
+  checkout of master (`git clone`, `python3 -m warrant say --store ../voices ID "…"`, the directory `voices` committed
+  as a git repository): the package on PyPI, 3.0.0a6, has no `warrant say`. The block is built from the version's id
+  alone (`targets`: an id that is not 64 lowercase hex gives no command), says what a voice is and is not (a challenge
+  under the objector's own key's name, `key:<hex>`; nobody admits or removes it; not counted by the publisher's rules,
+  the lineage's verdict in its store does not move; counted for a reader only when a replayer that reader trusts
+  reproduces it), and offers a field that adds the address of a published store of voices to the page's `with=` list
+  (`withAdded`: http(s), no credentials, once). A copy button exists where the browser offers the Clipboard API.
+  `site/object.html` (no script, a policy allowing none) shows the same steps with placeholders, in
+  `<pre class="command" data-step>`, and the read step (`node site/reader.mjs --base STORE_URL --with VOICES_URL
+  --lineage LINEAGE_ID`). `voice.mjs STEPS` is the one source; impl_js_test J16 holds object.html to it word for word
+  and runs the commands as shown in an empty directory (a clone of the checkout under test in place of GitHub, its
+  own `HOME` for the key's seed, no global git configuration): the voice appears on its lineage's effective version,
+  uncounted, under its `key:` actor, the store's state and reliance unchanged. Not established: that anyone reads the
+  store of voices (completeness is never attested: a voice nobody reads is seen by nobody), who holds the key, the
+  push to a public host (stood in for by a local HTTP server), and the block, its copy button and its field in a
+  browser.
+- **The desk: a published release, as data.** A second kind of entry in `site/stores.json`, `{name, base, release}`:
+  `release` names the format published at `base` (one is known, `minds.published-bundles@1`; its index is
+  `<base>index.json`). The desk fetches the index and shows, as published, the attestation's statement (as text), the
+  chain and its tip, when it was published, the endorsers and the projection's witnesses by the roster's names (the
+  publisher's word; a key the roster does not name is said so), the sentence «as published; not verified here» and a
+  link to the minds page that verifies it (`?index=<the index address>`). It verifies nothing and draws no verdict: no
+  pill, no word of one. An index that is not fetched, answers other than 200, is not JSON, is of another format or
+  lacks a member is named with its reason and prints no release; the stores still answer. Releases are read from the
+  list unless the address names the stores (`store=`). The entry keeps a `base` so that a `desk.mjs` of an earlier
+  release reads it as a store it cannot read rather than refusing the list. Not established: the release itself (the
+  bundles' hashes, signatures and the chain are minds' verifier's to check), and the block in a browser.
 - **A transport that fails is a refusal.** Only HTTP 404 reads as absent; any other failure refuses the read whole, and
   a blob whose bytes do not hash to its name refuses it too. Nothing partial is drawn.
 - **Record text is text.** The page builds no markup from a string, runs one script of its own origin and allows no
@@ -272,8 +302,12 @@ moved to the Python assessments of the marked subset and of the whole store; J14
 unreachable and one answering HTTP 500, marks per store and equal to the reader's, a change listed in its own block
 only, mark all, the default list and the selection rule) to the Python engine and to the reader's CLI; J15 holds the
 frontier to `warrant.graph.frontier` for every actor of a fixture that reaches each branch of its rule, and for codex
-and claude on this repository's own store. No case drives a browser (neither `localStorage` nor the pages' buttons are
+and claude on this repository's own store; J16 holds the door (object.html equal to `voice.mjs STEPS`, the block's id
+for the effective version and the leaf, hostile lineage text kept out of every command, the `with=` field, the
+commands run as shown) and the desk's release block (a served fixture: well-formed, another format, not JSON, a member
+missing, HTTP 500; no word of a verdict in any of them). No case drives a browser (neither `localStorage` nor the pages' buttons are
 exercised), and the layout is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS), so CI does
 not hold the tests to their mutants: eleven mutations of the reader were run by hand for J10, thirty-five more for J11
-and J12, twenty-four for J13, and thirty-three for J14, J15 and the page-source case of J10, each failing a case of its own
-on its assertion; the list is in the pull request that added them.
+and J12, twenty-four for J13, and thirty-three for J14, J15 and the page-source case of J10, thirty-five for J16 and the page-source case of J10
+extended to the door's files, each failing a case of its own on its assertion; the list is in the pull request that
+added them.
