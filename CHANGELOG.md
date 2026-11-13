@@ -4,13 +4,6 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
-## Unreleased
-
-- A pre-release (PEP 440 `aN`, `bN`, `rcN`, `.devN`, by the whole version the package declares) is released with brakes
-  open; a stable release still waits for every brake (owner, 2026-11-13). `brakes --version V`; release.yml passes the
-  version. A revert of a merge that a published version holds names that version in its pull request (an obligation for
-  an agent, a yank the owner's act). E87, E88; mutants G104–G107.
-
 ## 3.0.0a7 — the owner as observer; claims on a runner; a stranger's path
 
 Read first:
@@ -19,8 +12,14 @@ Read first:
   purpose: an actor id's verdict can differ between them (R-INTERPRETER).
 - **`warrant say` and `warrant resolve` are in the package.** `warrant init --voices` and `warrant say` file a voice
   under one's own key with the package alone; `warrant resolve` says where the bytes of each cited hash are.
-- **Merges are the gate's.** With the owner present the brake acts after a merge, and no release leaves while a brake
-  in its history is open. The claims checker runs on a runner, and its acceptances name each witness's import closure.
+- **Merges are the gate's.** With the owner present the brake acts after a merge. A pre-release leaves with brakes open
+  in its history (this one did: #361, #365, #374, #375); a stable release waits for every brake. The claims checker runs
+  on a runner, and its acceptances name each witness's import closure.
+
+- A pre-release (PEP 440 `aN`, `bN`, `rcN`, `.devN`, by the whole version the package declares) is released with brakes
+  open; a stable release still waits for every brake (owner, 2026-11-13). `brakes --version V`; release.yml passes the
+  version. A revert of a merge that a published version holds names that version in its pull request (an obligation for
+  an agent, a yank the owner's act). s0fractal/warrant#376; E87, E88; mutants G104–G107.
 
 - The reader's pages show a record's invisible direction and width controls (U+200B to U+200F, U+202A to U+202E,
   U+2066 to U+2069) as their code points in angle brackets instead of obeying them (`plain` in `site/page.mjs`,
