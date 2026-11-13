@@ -244,6 +244,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   core_test's closure is 9 files, not 24. `warrant.claims closures` prints each witness file's closure size and the
   claims on it. CF6, K12; mutant T175; V3-8-7.
 
+- `warrant resolve` (docs/HOME.md, W7): each hash a registered store cites gets one state, PRESENT, RESOLVED (its bytes
+  found in another store of Home or a clone's minds chain, `refs/vars/heads/*` cells and atoms, hashed to the name),
+  LOCATED or MISSING; bytes that do not hash to their name are refused. Over this Home: 4198 present, 3 resolved (minds
+  cells), 2 missing. RV1, RV2; mutants T179–T182.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by

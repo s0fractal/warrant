@@ -5,6 +5,7 @@ replay checker (warrant/review.py), the roadmap (warrant/roadmap.py) and what a 
     python3 tests/tools_test.py
 """
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -1619,6 +1620,51 @@ def narrow_cases():
           and rows.get("tests/core_test.py", (0, 0))[0] and rows["tests/core_test.py"][0] < 12,
           (len(core), [len(n) for n in named], rows.get("tests/core_test.py")))
 
+def resolve_cases():
+    """W7 (docs/HOME.md): each cited hash gets one state over Home's stores and their clones' Git, the minds chain's
+    cells among them; bytes that do not hash to their name are refused, never MISSING."""
+    from warrant import home as H
+    from warrant import resolve as RS
+    a, b, chain = Repo(name="s0fractal/a"), Repo(name="s0fractal/b"), Repo(name="s0fractal/chain")
+    held = b.entity("alice", "obligation@1", {"state": "open", "statement": "in b", "serves": []})
+    cell = b"VAR1 a cell of a minds chain"
+    cid = hashlib.sha256(cell).hexdigest()
+    git(chain.root, "init", "-q", "-b", "main")
+    (chain.root / "cas" / "cells" / cid[:2]).mkdir(parents=True)
+    (chain.root / "cas" / "cells" / cid[:2] / cid[2:]).write_bytes(cell)
+    chain.commit("a chain")
+    git(chain.root, "update-ref", "refs/vars/heads/minds", "HEAD")
+    nowhere = "ab" * 32
+    own = a.entity("alice", "obligation@1", {"state": "open", "statement": "own", "serves": []})
+    a.entity("alice", "goal@1", {"state": "open", "key": "Q1", "text": "cites"}, refs=[own, held, cid, nowhere])
+    doc = H.empty()
+    for name, r in (("a", a), ("b", b), ("chain", chain)):
+        doc = H.add_repository(doc, str(r.root), name)
+    out = RS.answer(doc)
+    by = {r["id"]: r for r in out["rows"]}
+    asked = RS.answer(doc, [cid, nowhere])
+    check("RV1 a cited hash is PRESENT in its own store, RESOLVED in another store of Home or a clone's minds chain (its "
+          "cell's bytes hash to its name), MISSING otherwise; the answer binds what it read (root, lens) and says it is "
+          "not complete",
+          own not in by and by.get(held, {}).get("where") == "store:b" and by.get(cid, {}).get("state") == "RESOLVED"
+          and str(by.get(cid, {}).get("where", "")).startswith("git:chain:refs/vars/heads/minds:cas/cells/")
+          and by.get(nowhere, {}).get("state") == "MISSING" and out["completeness"] == "UNATTESTED"
+          and len(out["root"]) == 64 and len(out["lens"]) == 64
+          and {r["id"]: r["state"] for r in asked["rows"]} == {cid: "RESOLVED", nowhere: "MISSING"},
+          (by, asked["rows"]))
+    bad = "cd" * 32
+    (chain.root / "cas" / "cells" / bad[:2]).mkdir(parents=True, exist_ok=True)
+    (chain.root / "cas" / "cells" / bad[:2] / bad[2:]).write_bytes(b"bytes that are not cd...")
+    chain.commit("a cell under a name its bytes do not hash to")
+    git(chain.root, "update-ref", "refs/vars/heads/minds", "HEAD")
+    try:
+        RS.answer(doc, [bad])
+        refused = None
+    except RS.Mismatch as e:
+        refused = str(e)
+    check("RV2 bytes found under a name they do not hash to are refused (BYTES_MISMATCH), never MISSING: a transport is not "
+          "trusted", refused is not None and "does not hash" in refused, refused)
+
 def voices_cases():
     """W4's stranger path in the core command: `warrant init --voices` and `warrant say`, with nothing but the package."""
     from warrant import commons as CM
@@ -1895,4 +1941,5 @@ if __name__ == "__main__":
     voices_cases()
     board_cases()
     narrow_cases()
+    resolve_cases()
     sys.exit(finish())
