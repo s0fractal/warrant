@@ -6,6 +6,26 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The reader's pages show a record's invisible direction and width controls (U+200B to U+200F, U+202A to U+202E,
+  U+2066 to U+2069) as their code points in angle brackets instead of obeying them (`plain` in `site/page.mjs`,
+  through `el()` and `fill()`): a right-to-left override in a statement redrew the rest of its title backwards.
+  Attributes and the CLI's JSON keep the bytes.
+- The browser reader says what moves toward what you watch, and where the bytes of a cited id are. Beside the watched
+  answer, when the comparison was made, `watch.toward` lists the lineages of each watched lineage's cone (`cone` in
+  `site/reader.mjs`: the closure, from every version, under the graph's in-edges in `warrant.graph.WALK` and every
+  version of a member's lineage; with other stores read, their records with an edge to a member) that are new or
+  whose floor moved since the mark, outside every watched frame, each with its distance, a shortest chain, its state
+  and reliance before and after and its new records; a second sentence, «toward what you watch: N lineage(s) that
+  reach it moved at this address (URL) (…) through M new record(s)». The outcome, its sentence and its exit status do
+  not change; `--toward-exit` makes «silent with something toward» exit 5. The page draws «Toward what you watch»
+  under the watched answer; the desk's watched line carries the count. On a lineage's page each version lists what it
+  cites with a word of `resolved`: PRESENT, RESOLVED (a store read beside, named), MISSING, or NOT_FETCHED (a quick
+  read: no blob asked for, never PRESENT on bytes not hashed); no LOCATED in a browser. `--resolve ID[,ID]`;
+  `summary.cited` counts every cited id by its word. Not established: completeness (UNATTESTED), the other stores'
+  records of a cone as lineages, and the pages in a browser (no case drives one). docs/VERIFY.md; impl_js_test J18
+  (the cone against a closure computed from the Python reports; the `watch` members and `summary` equal to digests
+  taken from master); no mutant (R-JS-MUTANTS): forty-two mutations run by hand, each failing a J18 case or the
+  page-source case of J10 on its assertion, not held by CI.
 - The browser reader gains a watch list. A reader names the lineages it relies on (`watch=ID,ID`; «Watch this
   lineage» on a lineage's page, kept per store under `reader-watch/1` and read by the desk too; `--watch`), and what
   changed is said of those first, by their frames (`frame` in `site/reader.mjs`: the closure from every version of the

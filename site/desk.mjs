@@ -219,8 +219,11 @@ export async function block(s, r, mark, { backend, source, actor, watch = null }
   };
 }
 
+// A watched answer as a block says it; `toward` (its counts and its sentence) only when the reader's answer has one: a
+// comparison made, and a reader.mjs that computes it.
 const watchOf = (w) => ({ outcome: w.outcome, line: w.line, watch: w.watch, refused: w.refused.map((x) => x.value), reasons: w.reasons,
-                          touched: w.touched.map((t) => ({ lineage: t.lineage, schema: t.schema, title: t.title, said: t.said, witness: t.witness.length })) });
+                          touched: w.touched.map((t) => ({ lineage: t.lineage, schema: t.schema, title: t.title, said: t.said, witness: t.witness.length })),
+                          ...(w.toward ? { toward: { lineages: w.toward.counts.lineages, records: w.toward.counts.records, line: w.toward.line } } : {}) });
 
 const waitsCount = (w) => ({ actor: w.actor, roles: w.roles, count: w.count, attest: w.attest.length, pending: w.pending.length, challenged: w.challenged.length });
 

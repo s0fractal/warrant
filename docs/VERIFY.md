@@ -263,6 +263,35 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
   for byte as before). Not established by silence: that nothing was said elsewhere (completeness `UNATTESTED`: only the
   records the addresses read serve now), that a lineage outside the frame cannot matter to the reader for reasons the
   graph does not hold (text, a commit, a blob's contents), or anything about a store not read.
+- **Toward what you watch (`watch.toward`, `--toward-exit`).** The frame answers whether a reliance was touched; a
+  goal's frame is a few records, so a reader watching goals hears silence while the work citing them moves. Beside the
+  watched answer, and only when the comparison was made (never under not established), the reader lists the lineages
+  of each watched lineage's **cone** (`cone` in `site/reader.mjs` is the definition: the record ids from which it is
+  reachable; the closure, from every version of the lineage, under (a) the graph's in-edges whose relation is in
+  `WALK` and (b) every version of the lineage of any member, graph nodes only; with other stores read, each record of
+  another store with an out-edge of its own graph to a member, named with its address, the closure not going on from
+  it) that are new since the mark or whose floor moved (state, reliance as shown, standing challenges, leaf), except
+  the watched lineages and every lineage with a version in a watched frame (reported once, as the frame's). Each with
+  its distance and a shortest chain from its nearest version, its state and reliance before and after, and the new
+  records of this store touching it; newest first; with counts and a second sentence, «toward what you watch: N
+  lineage(s) that reach it moved at this address (URL) (by schema) through M new record(s)». It never changes the
+  outcome or the first sentence: silence is about reliance, toward about attention. Measured on the live store, a
+  goal's cone is a median 22 records, at most 162 of 3070 (5.3 %); on minds at most 32 of 141. The exit status with
+  `--watch` is unchanged; `--toward-exit` makes «silent with a lineage toward it» exit 5, for an agent that wants to be
+  woken by work and not only by risk. The desk's watched line carries toward's count and sentence. Not established:
+  the other stores' records of a cone are not listed as lineages (they are not this store's), and completeness stays
+  `UNATTESTED`.
+- **Where the bytes of a cited id are (`--resolve ID[,ID…]`, a lineage's page, `summary.cited`).** Each id a record
+  points to (the graph's edges: lineage, prev, an attest's or challenge's target, requires, refs) gets one word from
+  `resolved` in `site/reader.mjs`, over what was read: `PRESENT`, a record of this store or a blob of it fetched and
+  hashed to its name (a link to its lineage when it is a version of one); `RESOLVED`, a record (its id recomputed from
+  its bytes) or a hashed blob of a store read beside (`with=`), naming that address (a link to the reader there);
+  `MISSING`, neither, on a full read; and `NOT_FETCHED`, the reader's own word, neither on a quick read, where no blob
+  of this store was asked for (never `PRESENT` on bytes not hashed, never `MISSING` on a question not asked). There is
+  no `LOCATED`: the reader fetches whole stores and has no place that names an id without holding it. A store beside
+  that could not be read is named (`unread`) on an answer that did not find the bytes, never guessed `RESOLVED`. The
+  CLI prints `{resolve: {ids, refused, completeness: "UNATTESTED"}}`; a value that is not 64 lowercase hex is refused
+  by name. The floor summary counts every cited id by its word (`cited`); the rest of the summary is as before.
 - **What waits for whom (`actor=NAME`, `--actor NAME`).** For an actor the reader names (an input on the page,
   remembered in `localStorage` for both pages; the address wins), under the rules the store was read with, the reader
   shows `warrant.graph.frontier` as Python computes it (`frontier` in `site/reader.mjs`): the roles the profile gives
@@ -337,9 +366,15 @@ fixture, with another store's voice, to a closure computed from the Python repor
 frames silent and one record three steps inside touching exactly its lineage, its witness and chain; a voice in
 another store read and not read; moved with no new record under pins; each reason for not established, with its exit
 status and no silence said; malformed values refused; the desk's watched line; and `changes` without a watch list
-equal to a digest taken before the watch list existed). No case drives a browser (neither `localStorage` nor the pages' buttons are
+equal to a digest taken before the watch list existed); J18 holds the cone of every lineage of a fixture, with another
+store and a record both stores hold, to a closure computed from the Python reports, toward on a goal (silent, two
+lineages toward it with distances and chains checked by a Python breadth-first search, exit 0 and 5 with
+`--toward-exit`; a lineage in both frame and cone reported once, as the frame's; no toward for any reason of not
+established), the desk's toward count, `resolve` (each word, a store beside unread, malformed values) and `cited`
+against a classification computed here, and the existing `watch` members and `summary` equal to digests taken from
+master. No case drives a browser (neither `localStorage` nor the pages' buttons are
 exercised), and the layout is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS), so CI does
 not hold the tests to their mutants: eleven mutations of the reader were run by hand for J10, thirty-five more for J11
 and J12, twenty-four for J13, and thirty-three for J14, J15 and the page-source case of J10, thirty-five for J16 and the page-source case of J10
-extended to the door's files, forty-two for J17 and the page-source case of J10, each failing a case of its own on its assertion; the list is in the pull request that
+extended to the door's files, forty-two for J17 and the page-source case of J10, forty-two for J18, each failing a case of its own on its assertion; the list is in the pull request that
 added them.

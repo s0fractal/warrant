@@ -977,6 +977,7 @@ def main():
     browser_frontier_cases()
     browser_door_cases()
     browser_watch_cases()
+    browser_toward_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -2647,6 +2648,418 @@ def browser_watch_cases():
     check("J17 without a watch list nothing changes: --mark answers the `changes` member byte for byte as before the watch "
           "list existed (the digest of J13's kinds of change, taken from site/reader.mjs at f02c7e7a)",
           digest == CHANGES_GOLDEN and len(outs) == 5 and all(o and o.get("listed") for o in outs), (digest, [o and o.get("line") for o in outs]))
+
+
+# ---------------------------------------------------------------- J18: toward what you watch (the cone), and resolve
+
+TOWARD_EXIT = 5
+TOWARD_LINE = "toward what you watch"
+# what --watch answers (the `watch` member without `toward`) and `summary` (without `cited`) over _watch_golden's
+# fixture, taken from site/reader.mjs at f7e3637b (master before the cone): the sha256 of their canonical text with
+# the addresses made constant
+WATCH_GOLDEN = "60d95f1ae5fffa29d492f3dc75d89c23104dd4b0904cdd785db421b1b5b563c2"
+SUMMARY_GOLDEN = "60896816c792cb5062918eed076db9ddef858edb64bab986f21dcb380af29281"       # without code and assessment: they name the runtime
+RESOLVE_WORDS = {"PRESENT", "RESOLVED", "MISSING", "NOT_FETCHED"}
+
+
+def _watch_golden(reader):
+    """(sha256 of the `watch` members, sha256 of the `summary` members, the answers) of `reader` over J17's kinds of
+    answer: silent with records outside the frame (quick and full), touched by a record three steps inside, touched by
+    a voice in another store read beside and silent with that store not read, and three reasons for not established
+    (no mark, a version watched, an empty list). `toward` and `cited` are left out: they are what J18 adds.
+    Deterministic: the test keys and times, the addresses made constant."""
+    pub, other = Repo(), Repo()
+    goal = pub.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a goal"})
+    m1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the dependency", "serves": []})
+    m2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the dependency", "serves": []}, lineage=m1)
+    pub.attest("bob", m2)
+    ev = pub.blob(b"evidence held as a blob")
+    w1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "watched", "serves": [goal], "evidence": [ev]})
+    w2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "watched", "serves": [goal]}, lineage=w1, requires=[m1])
+    pub.attest("bob", w2)
+    o1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "rests on the watched one", "serves": [w1]})
+    y1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "not watched", "serves": []})
+    srvs, (bp, bo) = _serve_many(pub.root, other.root)
+    n = iter(range(100))
+    outs = []
+    def mark(*args):
+        path = pub.home / f"golden-watch-{next(n)}.json"
+        _watch_run(bp, "--write-mark", str(path), *args, reader=reader)
+        doc = json.loads(path.read_text())
+        doc["at"] = 1
+        path.write_text(json.dumps(doc))
+        return str(path)
+    def ask(*args):
+        rc, out, _ = _watch_run(bp, *args, reader=reader)
+        w = {k: v for k, v in (out.get("watch") or {}).items() if k != "toward"}
+        # `code` and `assessment` name the runtime (impl-js codeIdentity: the node and OpenSSL versions), not what was
+        # read: a digest over them holds on one machine only (CI's node is not a developer's)
+        s = {k: v for k, v in (out.get("summary") or {}).items() if k not in ("cited", "code", "assessment")}
+        outs.append([rc, w, s])
+    try:
+        m_a = mark("--with", bo, "--watch", w1)
+        o2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "rests on the watched one", "serves": [w1]}, lineage=o1)
+        pub.attest("bob", o2)
+        pub.entity("alice", "obligation@1", {"state": "done", "statement": "not watched", "serves": []}, lineage=y1)
+        ask("--with", bo, "--mark", m_a, "--watch", w1)
+        ask("--full", "--with", bo, "--mark", m_a, "--watch", w1)
+        m_b = mark("--with", bo, "--watch", w1)
+        pub.put("carol", "challenge", {"target": m2, "statement": "a counterexample"}, refs=[m2])
+        ask("--with", bo, "--mark", m_b, "--watch", w1)
+        m_c = mark("--with", bo, "--watch", w1)
+        other.put("carol", "challenge", {"target": m2, "statement": "from elsewhere"}, refs=[m2])
+        ask("--with", bo, "--mark", m_c, "--watch", w1)
+        ask("--mark", m_c, "--watch", w1)
+        ask("--watch", w1)
+        ask("--mark", m_c, "--watch", w2)
+        ask("--mark", m_c, "--watch")
+    finally:
+        for s in srvs:
+            s.shutdown()
+    text = lambda k: json.dumps([[o[0], o[k]] for o in outs], sort_keys=True, ensure_ascii=False).replace(bp, "PUB/").replace(bo, "OTHER/")
+    return hashlib.sha256(text(1).encode()).hexdigest(), hashlib.sha256(text(2).encode()).hexdigest(), outs
+
+
+def _cone_py(rep, roots, held, others=()):
+    """({id: steps from the nearest version of a root}, the cone's record ids sorted, [(address, id)] of the other
+    stores' clause sorted) of `roots`, computed here from Python reports alone (site/reader.mjs cone): from every version
+    of each root, the in-edges whose relation is in warrant.graph.WALK and every version of the lineage of any member,
+    breadth first, graph nodes only; and each other store's record with an edge of its own graph (any WALK relation) to
+    a member, unless the main store (`held`: the ids of its lines) holds it. Not warrant.graph.why: that walks in-edges
+    alone, without the other versions of a member's lineage."""
+    import collections
+    from warrant import graph as G
+    into = {}
+    for a, rel, b in rep["graph"]["edges"]:
+        if rel in G.WALK:
+            into.setdefault(b, []).append(a)
+    nodes = {n[0] for n in rep["graph"]["nodes"]}
+    root_of = {v: L for L, x in rep["lineages"].items() for v in x["versions"]}
+    dist, todo = {}, collections.deque()
+    for L in roots:
+        for v in rep["lineages"][L]["versions"]:
+            if v not in dist and v in nodes:
+                dist[v] = 0
+                todo.append(v)
+    while todo:
+        cur = todo.popleft()
+        near = into.get(cur, []) + (rep["lineages"][root_of[cur]]["versions"] if cur in root_of else [])
+        for x in near:
+            if x not in dist and x in nodes:
+                dist[x] = dist[cur] + 1
+                todo.append(x)
+    outside = sorted({(addr, a) for addr, orep in others for a, rel, t in orep["graph"]["edges"]
+                      if rel in G.WALK and t in dist and a not in held})
+    return dist, sorted(dist), outside
+
+
+def _js_eval(base, body, others=(), full=False):
+    """The JSON `body` (JavaScript over `R`, the reader module, and `r`, the read of the store at `base` with `others`
+    read beside) writes, or {"crash": ...}. A function the reader lacks is a value the case compares, not a crash."""
+    wm = ROOT / "site" / "warrant.mjs"
+    js = ("import * as R from %s; import { nodeBackend } from %s; import fs from 'node:fs';"
+          " const b = await nodeBackend(); const src = new Uint8Array(fs.readFileSync(%s));"
+          " const store = await R.fetchStore(%s, b, { full: %s }); const r = await R.read(store, R.receiver(store.doc, null), b, src);"
+          " const others = %s; if (others.length) r.others = await R.readOthers(others, b, src);"
+          " process.stdout.write(JSON.stringify(await (async () => { %s })()));") % (
+        json.dumps(READER.as_uri()), json.dumps(wm.as_uri()), json.dumps(str(wm)), json.dumps(base), "true" if full else "false",
+        json.dumps(list(others)), body)
+    p = subprocess.run([NODE, "--input-type=module", "-e", js], capture_output=True, text=True, check=False, timeout=600)
+    return json.loads(p.stdout) if p.returncode == 0 and p.stdout else {"crash": p.stderr[-300:]}
+
+
+def _toward_of(out):
+    """{lineage: item} of the `toward` member of a --watch answer ({} when there is none)."""
+    t = (out.get("watch") or {}).get("toward") or {}
+    return {x.get("lineage"): x for x in t.get("lineages", []) if isinstance(x, dict)}
+
+
+def _resolve_py(rep, ids, held, blobs, others, mode):
+    """{id: (state, where)} of `ids` as site/reader.mjs resolved() must say, computed here: PRESENT a line of this store
+    (`held`) or a blob it fetched and hashed (`blobs`); else RESOLVED at the first other store read whose lines hold it
+    (`others`: [(address, held ids)]); else NOT_FETCHED on a quick read (no blob of this store was asked for) and
+    MISSING on a full one."""
+    out = {}
+    for i in ids:
+        if i in held or i in blobs:
+            out[i] = ("PRESENT", "here")
+        elif any(i in h for _, h in others):
+            out[i] = ("RESOLVED", next(a for a, h in others if i in h))
+        else:
+            out[i] = ("NOT_FETCHED", "here") if mode == "quick" else ("MISSING", None)
+    return out
+
+
+def browser_toward_cases():
+    """Toward what you watch (site/reader.mjs cone, watched().toward) and where the bytes of a cited id are (resolved).
+    The cone of a lineage is held to a closure computed here from the Python reports; toward lists the lineages of the
+    cone, outside every watched frame, that are new or whose floor moved since the mark, and never changes the outcome
+    (silence is about reliance, toward about attention); --toward-exit makes "silent with something toward" exit 5. The
+    existing members of `watch` and of `summary` are held to digests taken from master. No case drives a browser."""
+    import re
+    import contextlib as CTX
+    import tools_test as TT
+    hostile = "<img src=x onerror=alert(1)> \u202e\u200b \"; touch pwned; $(touch pwned2) `x`"
+    bad = ["<img", "onerror", "\u202e", "\u200b", "touch pwned", "$("]
+
+    w_digest, s_digest, _ = _watch_golden(READER)
+    check("J18 the cone changes nothing that was: what --watch answered (outcome, line, witnesses, counts, reasons) and "
+          "the summary, over J17's kinds of answer (silent quick and full, touched inside, a voice read and not read, not "
+          "established), are byte for byte master's (digests taken from site/reader.mjs at f7e3637b), `toward` and "
+          "`cited` apart, and the summary's `code` and `assessment`, which name the runtime (the node version) and so "
+          "hold on one machine only", (w_digest, s_digest) == (WATCH_GOLDEN, SUMMARY_GOLDEN), (w_digest, s_digest))
+
+    pub, other = Repo(), Repo()
+    goal = pub.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": hostile})
+    o1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "serves the goal", "serves": [goal]})
+    o3a = pub.entity("alice", "obligation@1", {"state": "open", "statement": "two steps away", "serves": [o1]})
+    o3b = pub.entity("alice", "obligation@1", {"state": "done", "statement": "two steps away", "serves": [o1]}, lineage=o3a)
+    p1 = pub.entity("alice", "pr-head@1", {"state": "open", "title": hostile, "serves": [o1]})
+    # a lineage both in the goal's frame (the goal's second version refs m1a) and in its cone (m1b serves the goal)
+    m1a = pub.entity("alice", "obligation@1", {"state": "open", "statement": "both rested on and resting", "serves": []})
+    g2 = pub.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": hostile}, lineage=goal, refs=[m1a])
+    m1b = pub.entity("alice", "obligation@1", {"state": "done", "statement": "both rested on and resting", "serves": [goal]}, lineage=m1a)
+    y1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "unrelated", "serves": []})
+    acc_o1 = pub.attest("dave", o1)
+    # the other store: a record both stores hold (dave's attest on o1, the same line), a challenge on o1 of its own,
+    # and an entity of its own citing the goal
+    shared = next(l for l in pub.store.lines() if ST._line_id(l)[0] == acc_o1)
+    olines = other.dot / "records.jsonl"
+    olines.write_bytes(b"".join(sorted(set(olines.read_bytes().splitlines(keepends=True)) | {shared}, key=ST._line_id)))
+    voice = other.put("carol", "challenge", {"target": o1, "statement": "from elsewhere"}, refs=[o1])
+    far = other.entity("alice", "obligation@1", {"state": "open", "statement": "cites the goal from elsewhere", "serves": [goal]})
+    (pub.home / "other-rules.json").write_text(json.dumps(dict(json.loads((pub.dot / "v3.json").read_text()),
+                                                               profile=dict(pub.profile, roles=dict(pub.profile["roles"], **{"roadmap/acceptor": ["carol"]})))))
+    srvs, (b_pub, b_oth, b_twin) = _serve_many(pub.root, other.root, pub.root)
+    n = iter(range(100))
+    def mark(*args):
+        path = pub.home / f"toward-mark-{next(n)}.json"
+        _watch_run(b_pub, "--write-mark", str(path), *args)
+        return str(path)
+    try:
+        rep, orep = _report_of(pub.root), _report_of(other.root)
+        held = set(pub.store.snapshot().lines)
+        cones = _js_eval(b_pub, "const out = {}; for (const L of Object.keys(r.rep.lineages)) out[L] = typeof R.cone === 'function' ? R.cone(r, [L]) : null; return out;", [b_oth])
+        py = {L: _cone_py(rep, [L], held, [(b_oth, orep)]) for L in rep["lineages"]}
+        got = {L: (c.get("ids"), sorted((x.get("address"), x.get("id")) for x in c.get("outside", []))) if isinstance(c, dict) else c
+               for L, c in cones.items()}
+        check("J18 the cone of every lineage of the fixture (" + str(len(py)) + " of them) is the closure computed here from "
+              "the Python reports: from every version, (a) in-edges in warrant.graph.WALK, (b) every version of a member's "
+              "lineage, graph nodes only; and the other store's records with an edge to a member, named with its address, "
+              "a record both stores hold being this store's alone",
+              got == {L: (ids, out) for L, (_, ids, out) in py.items()} and len(py) == 6
+              and o3a in py[goal][1] and o3b in py[goal][1] and p1 in py[goal][1] and m1b in py[goal][1] and y1 not in py[goal][1]
+              and acc_o1 in py[goal][1] and (b_oth, acc_o1) not in py[goal][2]
+              and (b_oth, voice) in py[goal][2] and (b_oth, far) in py[goal][2] and py[y1][2] == []
+              and acc_o1 in {a for a, rel, _ in orep["graph"]["edges"]},
+              (sorted(cones)[:3] if "crash" in cones else [(L[:12], got.get(L), py[L][1:]) for L in py if got.get(L) != py[L][1:]][:3]))
+
+        # silent with something toward: an obligation two steps away accepted, a new one citing the goal, and an
+        # unrelated lineage moving
+        m_a = mark("--with", b_oth, "--watch", goal)
+        dk_dir, watches = pub.home / "toward-desk-marks", pub.home / "toward-watches.json"
+        dk_dir.mkdir()
+        watches.write_text(json.dumps({b_pub: [goal]}))
+        _desk("--store", b_pub, "--marks", str(dk_dir), "--watches", str(watches), "--write-mark", b_pub)
+        acc_o3 = pub.attest("bob", o3b)
+        o4 = pub.entity("alice", "obligation@1", {"state": "open", "statement": hostile, "serves": [g2]})   # the goal's second version: one step
+        seen_o4 = pub.attest("dave", o4, verdict="seen")       # a record touching o4 that moves no floor
+        y2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "unrelated", "serves": []}, lineage=y1)
+        pub.attest("bob", y2)
+        rc, out, text = _watch_run(b_pub, "--with", b_oth, "--mark", m_a, "--watch", goal)
+        rc5, out5, _ = _watch_run(b_pub, "--with", b_oth, "--mark", m_a, "--watch", goal, "--toward-exit")
+        rep = _report_of(pub.root)
+        dist = _cone_py(rep, [goal], set(pub.store.snapshot().lines))[0]
+        w, tw = out.get("watch") or {}, _toward_of(out)
+        near = lambda L: min(dist[v] for v in rep["lineages"][L]["versions"])
+        chains = {L: any(_chain_ok(rep, x.get("chain", []), v, goal) for v in rep["lineages"][L]["versions"]) for L, x in tw.items()}
+        floor = lambda L: {"state": rep["lineages"][L]["state"], "reliance": rep["lineages"][L]["reliance"]}
+        t = w.get("toward") or {}
+        check("J18 silent with work toward it: after the mark an obligation two steps from the watched goal is accepted, a "
+              "new obligation citing the goal is filed and an unrelated lineage moves: the outcome stays silent, exit 0 "
+              "(5 with --toward-exit), and toward lists exactly the two, each with its distance and a shortest chain of "
+              "the graph's relations to the goal (a Python breadth-first search), new or not, its floor before and after "
+              "and the new records touching it, newest first, the counts each lineage and record once; the unrelated "
+              "one and the unchanged ones are absent",
+              rc == 0 and rc5 == TOWARD_EXIT and w.get("outcome") == "silent" and sorted(tw) == sorted([o3a, o4])
+              and tw[o3a].get("distance") == near(o3a) == 2 and tw[o4].get("distance") == near(o4) == 1
+              and all(chains.values()) and all(len(x.get("chain", [])) == x.get("distance") for x in tw.values())
+              and tw[o3a].get("new") is False and tw[o4].get("new") is True and tw[o4].get("before") is None
+              and tw[o3a].get("before") == {"state": "open", "reliance": "ELIGIBLE"} and tw[o3a].get("after") == floor(o3a) == {"state": "done", "reliance": "ELIGIBLE"}
+              and tw[o4].get("after") == floor(o4) and tw[o3a].get("records") == [acc_o3] and tw[o4].get("records") == sorted([o4, seen_o4])
+              and all(x.get("watched") == goal for x in tw.values()) and tw[o3a].get("schema") == "obligation@1"
+              and [x.get("lineage") for x in t.get("lineages", [])] == [o4, o3a] and t.get("counts") == {"lineages": 2, "records": 3},
+              (rc, rc5, w.get("outcome"), {k[:8]: (x.get("distance"), x.get("records"), x.get("before"), x.get("after")) for k, x in tw.items()}, t.get("counts")))
+        check("J18 toward is a second sentence: the silence sentence is said as before, and toward's own line names the "
+              "lineages moved, their schemas, the new records and the address, and never the word silent",
+              SILENCE in w.get("line", "") and t.get("line") == f"{TOWARD_LINE}: 2 lineage(s) that reach it moved at this address ({b_pub}) "
+              "(2 obligation@1) through 3 new record(s)" and "silent" not in t.get("line", "silent"), (w.get("line"), t.get("line")))
+        check("J18 hostile text in a title (markup, U+202E, U+200B, shell metacharacters) reaches toward only as data: the "
+              "new obligation's title is its statement unchanged, and no sentence holds any of it",
+              tw.get(o4, {}).get("title") == hostile and not any(x in t.get("line", "") + w.get("line", "") for x in bad), tw.get(o4, {}).get("title"))
+        rc_d, dk = _desk("--store", b_pub, "--marks", str(dk_dir), "--watches", str(watches))
+        _, dk_plain = _desk("--store", b_pub, "--marks", str(dk_dir))
+        blk = ((dk.get("desk") or {}).get("stores") or [{}])[0].get("watch") or {}
+        check("J18 the desk's watched line gains toward's count and sentence, the reader's own (the same function over the "
+              "same store); a desk with no watch list has no watch member",
+              rc_d == 0 and blk.get("outcome") == "silent" and blk.get("toward") == {"lineages": 2, "records": 3, "line": t.get("line")}
+              and "watch" not in ((dk_plain.get("desk") or {}).get("stores") or [{}])[0], (rc_d, blk))
+        rc_u, out_u, _ = _watch_run(b_pub, "--with", b_oth, "--mark", mark("--with", b_oth, "--watch", goal), "--watch", goal, "--toward-exit")
+        check("J18 silent with nothing toward: exit 0 even with --toward-exit, an empty list, and toward's line says nothing moved",
+              rc_u == 0 and (out_u.get("watch") or {}).get("outcome") == "silent" and ((out_u.get("watch") or {}).get("toward") or {}).get("lineages") == []
+              and ((out_u.get("watch") or {}).get("toward") or {}).get("counts") == {"lineages": 0, "records": 0}
+              and ((out_u.get("watch") or {}).get("toward") or {}).get("line") == f"{TOWARD_LINE}: no lineage that reaches it moved at this address ({b_pub})",
+              (rc_u, (out_u.get("watch") or {}).get("toward")))
+
+        # touched: an acceptance of the lineage that is in both the frame and the cone; a new lineage in the cone alone
+        m_b = mark("--with", b_oth, "--watch", goal)
+        acc_m = pub.attest("bob", m1b)
+        o5 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "another citing the goal", "serves": [goal]})
+        rc, out, _ = _watch_run(b_pub, "--with", b_oth, "--mark", m_b, "--watch", goal)
+        rc_t, _, _ = _watch_run(b_pub, "--with", b_oth, "--mark", m_b, "--watch", goal, "--toward-exit")
+        w, tw = out.get("watch") or {}, _toward_of(out)
+        wit = {x.get("id") for t in w.get("touched", []) for x in t.get("witness", [])}
+        check("J18 a frame witness is not repeated under toward: the acceptance of a lineage both in the goal's frame and in "
+              "its cone touches the goal (exit 3, with --toward-exit too) and that lineage is reported once, as the frame's; "
+              "toward lists the new lineage of the cone alone, and no witness among its records",
+              rc == rc_t == WATCH_EXIT["touched"] and w.get("outcome") == "touched" and wit == {acc_m} and sorted(tw) == [o5]
+              and m1a not in tw and not any(i in wit for x in tw.values() for i in x.get("records", [])), (rc, rc_t, w.get("outcome"), wit, sorted(tw)))
+
+        # not established: no toward member and no toward sentence, whatever the reason
+        m_e = mark("--with", b_oth)
+        cases = {
+            "no mark": (_watch_run(b_pub, "--watch", goal), "no mark yet"),
+            "other rules": (_watch_run(b_pub, "--mark", m_e, "--config", str(pub.home / "other-rules.json"), "--watch", goal), "other rules"),
+            "another store": (_watch_run(b_twin, "--mark", m_e, "--watch", goal), "another store"),
+            "a version, not a root": (_watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch", g2), "not its root"),
+            "no lineage here": (_watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch", "e" * 64), "is not the root of a lineage"),
+            "a store beside not read": (_watch_run(b_pub, "--mark", m_e, "--with", "http://127.0.0.1:9/", "--watch", goal), "could not be read now"),
+            "an empty watch list": (_watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch"), "no lineage is watched"),
+            "a malformed value": (_watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch", goal.upper()), "the watched value"),
+        }
+        pub.entity("alice", "obligation@1", {"state": "open", "statement": "new since the last mark", "serves": [goal]})
+        lines_path = pub.dot / "records.jsonl"
+        whole = lines_path.read_bytes()
+        try:
+            lines_path.write_bytes(b"".join(l for l in whole.splitlines(keepends=True) if b"another citing the goal" not in l))
+            cases["a marked record gone"] = (_watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch", goal), "no longer served")
+        finally:
+            lines_path.write_bytes(whole)
+        tampered = json.loads(Path(m_e).read_text())
+        gd = bytearray(base64.b64decode(tampered["stores"][b_pub]["groups"]))
+        gd[0] ^= 1
+        tampered["stores"][b_pub]["groups"] = base64.b64encode(bytes(gd)).decode()
+        (pub.home / "toward-tampered.json").write_text(json.dumps(tampered))
+        cases["a mark entry unverified"] = (_watch_run(b_pub, "--mark", str(pub.home / "toward-tampered.json"), "--with", b_oth, "--watch", goal), "could not be verified")
+        rc_ok, ok_out, _ = _watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch", goal, "--toward-exit")
+    finally:
+        for s in srvs:
+            s.shutdown()
+    with CTX.redirect_stdout(io.StringIO()):
+        r, L = TT.drift_repo()
+    srv, base, _ = _serve_counting(r.root)
+    try:
+        bare = str(r.home / "toward-bare.json")
+        _watch_run(base, "--pins", "--write-mark", bare)
+        cases["pins with no floor"] = (_watch_run(base, "--pins", "--mark", bare, "--watch", L, "--toward-exit"), "recorded no floor")
+    finally:
+        srv.shutdown()
+    quiet = lambda v: _not_established(*v[0], v[1]) and "toward" not in (v[0][1].get("watch") or {}) and TOWARD_LINE not in v[0][2]
+    check("J18 not established, for every reason (no mark, other rules, another store, a version, no lineage here, a store "
+          "beside not read, an empty list, a malformed value, a marked record gone, a mark entry unverified, pins with no "
+          "floor recorded): exit 4, no toward member and no toward sentence anywhere (no partial news when the comparison "
+          "could not be made); with nothing wrong the same mark gives toward, the new lineage in it, exit 5 with --toward-exit",
+          all(quiet(v) for v in cases.values()) and rc_ok == TOWARD_EXIT and (ok_out.get("watch") or {}).get("outcome") == "silent"
+          and len(_toward_of(ok_out)) == 1,
+          {k: (v[0][0], (v[0][1].get("watch") or {}).get("outcome"), "toward" in (v[0][1].get("watch") or {})) for k, v in cases.items() if not quiet(v)})
+
+    # resolve: where the bytes of a cited id are
+    pub, other = Repo(), Repo()
+    ev = pub.blob(b"evidence held as a blob of this store")
+    elsewhere = other.entity("alice", "obligation@1", {"state": "open", "statement": "held elsewhere", "serves": []})
+    nowhere = "ab" * 32
+    cit = pub.entity("alice", "obligation@1", {"state": "open", "statement": hostile, "serves": [], "evidence": [ev]}, refs=[elsewhere, nowhere])
+    cit2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": hostile, "serves": []}, lineage=cit)
+    srvs, (b_pub, b_oth) = _serve_many(pub.root, other.root)
+    asked = f"{cit},{cit2},{ev},{elsewhere},{nowhere}"
+    try:
+        runs = {
+            "quick": _watch_run(b_pub, "--resolve", asked),
+            "full": _watch_run(b_pub, "--full", "--resolve", asked),
+            "quick with": _watch_run(b_pub, "--with", b_oth, "--resolve", asked),
+            "full with": _watch_run(b_pub, "--full", "--with", b_oth, "--resolve", asked),
+            "full unread": _watch_run(b_pub, "--full", "--with", "http://127.0.0.1:9/", "--resolve", asked),
+        }
+        malformed = [cit.upper(), cit[:63], cit + "\n"]
+        refused = [_watch_run(b_pub, "--resolve", x) for x in malformed]
+        cites = _js_eval(b_pub, "return typeof R.citations === 'function' ? R.citations(r, %s) : null;" % json.dumps(cit), [b_oth], full=True)
+    finally:
+        for s in srvs:
+            s.shutdown()
+    held, oheld = set(pub.store.snapshot().lines), set(other.store.snapshot().lines)
+    blobs = {p.name for p in (pub.dot / "blobs").iterdir()}
+    def answers(k):
+        res = (runs[k][1].get("resolve") or {})
+        return {x.get("id"): (x.get("state"), x.get("where"), x.get("lineage")) for x in res.get("ids", []) if isinstance(x, dict)}
+    def want(k):
+        mode = "full" if k.startswith("full") else "quick"
+        others = [(b_oth, oheld)] if k.endswith(" with") else []
+        exp = _resolve_py(None, asked.split(","), held, blobs if mode == "full" else set(), others, mode)
+        root = {cit: cit, cit2: cit, elsewhere: elsewhere}
+        return {i: (s, b_pub if wh == "here" else wh, root.get(i) if s in ("PRESENT", "RESOLVED") else None) for i, (s, wh) in exp.items()}
+    got = {k: answers(k) for k in runs}
+    unread = (runs["full unread"][1].get("resolve") or {}).get("ids", [])
+    check("J18 resolve: a record of this store is PRESENT (here, with its lineage); a record only in a store read beside "
+          "(with=) is RESOLVED at that address with its lineage there; neither is MISSING on a full read; a blob of this "
+          "store is NOT_FETCHED on a quick read (its bytes were not hashed) and PRESENT on a full one; without the other "
+          "store the record held there is not found (NOT_FETCHED quick, MISSING full); completeness UNATTESTED",
+          all(got[k] == want(k) for k in ["quick", "full", "quick with", "full with"])
+          and got["quick"][ev][0] == "NOT_FETCHED" and got["full"][ev][0] == "PRESENT" and got["full with"][elsewhere] == ("RESOLVED", b_oth, elsewhere)
+          and got["full with"][nowhere][0] == "MISSING" and got["full"][elsewhere][0] == "MISSING"
+          and all((runs[k][1].get("resolve") or {}).get("completeness") == "UNATTESTED" for k in runs) and runs["quick"][0] == 0,
+          {k: [(i[:8], got[k].get(i), want(k)[i]) for i in want(k) if got[k].get(i) != want(k)[i]] for k in ["quick", "full", "quick with", "full with"]})
+    check("J18 resolve with a store beside that could not be read: the id held there is MISSING, never RESOLVED on a "
+          "guess, and the answer names the unread address",
+          [(x.get("state"), x.get("unread")) for x in unread if x.get("id") == elsewhere] == [("MISSING", ["http://127.0.0.1:9/"])]
+          and all(x.get("state") != "RESOLVED" for x in unread), unread)
+    hexid = re.compile(r"[0-9a-f]{64}\Z")
+    check("J18 a malformed --resolve value (upper case hex, 63 characters, a trailing newline) is refused by name, never "
+          "resolved or dropped: the value itself in `refused` with its reason, no id answered",
+          all([y.get("value") for y in (x[1].get("resolve") or {}).get("refused", [])] == [v] and (x[1].get("resolve") or {}).get("ids") == []
+              for x, v in zip(refused, malformed))
+          and all(hexid.fullmatch(x.get("id", "")) for k in runs for x in (runs[k][1].get("resolve") or {}).get("ids", [])),
+          [(x[1].get("resolve") or {}).get("refused") for x in refused])
+    edges = [(rel, b) for a, rel, b in _report_of(pub.root)["graph"]["edges"] if a == cit]
+    cited_py = lambda k: {w: sum(1 for b in {b for _, _, b in _report_of(pub.root)["graph"]["edges"]} if _resolve_py(None, [b], held, blobs if k.startswith("full") else set(), [(b_oth, oheld)] if k.endswith(" with") else [], "full" if k.startswith("full") else "quick")[b][0] == w)
+                          for w in sorted(RESOLVE_WORDS)}
+    check("J18 the floor summary counts every cited id (each target of the graph's edges) by its word, as computed here; "
+          "the lineage page's citations of a version are its edges, each with its word",
+          all((runs[k][1].get("summary") or {}).get("cited") == cited_py(k) for k in runs if k != "full unread")
+          and isinstance(cites, list) and len(cites) == 2
+          and sorted((x.get("rel"), x.get("id"), x.get("state")) for x in (next((v for v in cites if isinstance(v, dict) and v.get("version") == cit), {}).get("cites") or []))
+          == sorted((rel, b, "PRESENT" if b in held or b in blobs else "RESOLVED" if b in oheld else "MISSING") for rel, b in edges),
+          ({k: (runs[k][1].get("summary") or {}).get("cited") for k in runs}, {k: cited_py(k) for k in runs if k != "full unread"}, cites))
+    check("J18 hostile text in a cited version's statement reaches no resolve answer: ids, words and addresses only",
+          len((runs["full with"][1].get("resolve") or {}).get("ids", [])) == 5
+          and not any(x in json.dumps(runs["full with"][1].get("resolve"), ensure_ascii=False) for x in bad), runs["full with"][1].get("resolve"))
+    # What the page draws of a record: its invisible direction and width controls shown, not obeyed. Driven through
+    # page.mjs's own el() over a document that only records what it is given (no browser).
+    js = ("globalThis.document = {createElement: () => ({kids: [], set textContent(v) { this.t = v; }, append(k) { this.kids.push(k); },"
+          " setAttribute(k, v) { (this.a ??= {})[k] = v; }})};"
+          " const p = await import(%s); const h = process.argv[1];"
+          " const n = p.el('p', {text: h, title: h}, h, ' tail');"
+          " console.log(JSON.stringify({t: n.t, kids: n.kids, title: n.a.title, plain: typeof p.plain === 'function' ? p.plain('ok \\u2067x') : null}))"
+          ) % json.dumps((ROOT / "site" / "page.mjs").as_uri())
+    p = subprocess.run([NODE, "--input-type=module", "-e", js, hostile], capture_output=True, text=True, check=False, timeout=60)
+    drawn = json.loads(p.stdout) if p.returncode == 0 else {"error": p.stderr[-300:]}
+    controls = re.compile("[\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+    check("J18 the page shows a record's direction and width controls instead of obeying them: text and string children "
+          "drawn through el() carry \u27e8U+202E\u27e9 and \u27e8U+200B\u27e9 for the characters (a right-to-left override would "
+          "redraw the rest of a statement backwards), every other character as it was; an attribute keeps the bytes",
+          "error" not in drawn and not controls.search(drawn["t"]) and not controls.search("".join(drawn["kids"]))
+          and "\u27e8U+202E\u27e9\u27e8U+200B\u27e9" in drawn["t"] and drawn["kids"][0] == drawn["t"] and drawn["kids"][1] == " tail"
+          and drawn["t"].replace("\u27e8U+202E\u27e9", "\u202e").replace("\u27e8U+200B\u27e9", "\u200b") == hostile
+          and drawn["title"] == hostile and drawn["plain"] == "ok \u27e8U+2067\u27e9x", drawn)
 
 
 if __name__ == "__main__":
