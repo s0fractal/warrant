@@ -1199,10 +1199,15 @@ def union_plan(root, base, head):
 
 def refresh_verdicts(root, b, gh, found):
     """[(pr, outcome)]: each open pull request of verdicts only, from a branch of this repository under its prefix,
-    that GitHub cannot merge (its records conflict with the base's: two branches append to one file) gets the base
-    merged into its branch through GitHub's API, the stores' union as its records, and CI started on it. A pull request
-    of the claims checker's acceptances runs CI for long enough that the base moves on meanwhile; without this it
-    would conflict again and never merge (#364, 2026-11-13)."""
+    that GitHub cannot merge (its records conflict with the base's: two branches append to one file) is carried by a
+    new one: the base merged into its head through GitHub's API, the stores' union as its records, on a new branch
+    under the same prefix named by the base and the old number, opened as a pull request with CI started on it; the
+    old one is closed with a comment naming the new one, and its branch deleted. A pull request of the claims
+    checker's acceptances runs CI for long enough that the base moves on meanwhile; without this it would conflict
+    again and never merge (#364, 2026-11-13). Not the old branch moved: GitHub answers the workflow token's update of
+    a pull request's branch with a pull_request run held for approval (action_required, under the repository's
+    approval policy), which keeps the required check expected until the owner approves it (#379 run 43427696972,
+    #382 run 43468860556); a pull request the token opens starts none."""
     out = []
     for a in found:
         if not a.facts.get("verdicts") or {c for c, _ in a.shared} & {"VERDICTS_FORK", "VERDICTS_BRANCH", "HEAD_MOVED"}:
@@ -1211,21 +1216,67 @@ def refresh_verdicts(root, b, gh, found):
         try:
             if gh.api(f"pulls/{_number(n)}").get("mergeable_state") != "dirty":
                 continue
+            prefix = CLAIMS_BRANCH if branch.startswith(CLAIMS_BRANCH) else VERDICT_BRANCH
+            fresh = _branch(f"{prefix}{b.commit[:12]}-from-{_number(n)}")
+            # The tree a carry holds: the base's, with the stores' union as its records and the head's new blobs. GitHub
+            # names blobs and trees by their content, so making it again names the same tree.
             records, blobs = union_plan(root, b.commit, head)
             blob = gh.api("git/blobs", "POST", {"content": base64.b64encode(records).decode(), "encoding": "base64"})["sha"]
             base_tree = git(root, "rev-parse", f"{b.commit}^{{tree}}").decode().strip()
             tree = gh.api("git/trees", "POST", {"base_tree": base_tree, "tree": [
                 {"path": RECORDS, "mode": REGULAR, "type": "blob", "sha": blob}, *blobs]})["sha"]
-            commit = gh.api("git/commits", "POST", {"message": f"Merge {b.gate['base']} into {branch}: records only (warrant-gate)\n\n"
-                                                    f"The union of the stores, in canonical order; base {b.commit}.\n",
-                                                    "tree": tree, "parents": [head, b.commit]})["sha"]
-            gh.api(f"git/refs/heads/{_branch(branch)}", "PATCH", {"sha": commit, "force": False})
-            for w in sorted({c["workflow"] for c in b.gate["required"]}):
-                gh.dispatch(w, branch)
-            out.append((n, f"base merged into {branch} as {commit[:12]}"))
+            # A run that failed part way leaves its steps done: the new pull request open, or the branch made with no
+            # pull request. Each step is made once (the analysis session on #383), and nothing is retired on a name:
+            # what is on the branch must be this carry, its parents the head and the base and its tree the one above,
+            # and CI must have started on it, before the old pull request is closed and its branch deleted (Codex on
+            # #383 head version 5be30830: an open pull request or a branch of that name was read as the carry done,
+            # and one whose dispatch had failed was never run).
+            open_ = next((x.pr for x in found if x.pr.get("branch") == fresh and x.pr.get("head_repo") == b.repository
+                          and x.pr["number"] != n), None)
+            tip = open_["head"] if open_ else _branch_tip(gh, fresh)
+            commit = None
+            if tip is None:
+                commit = gh.api("git/commits", "POST", {"message": f"Merge {b.gate['base']} into {branch}: records only (warrant-gate)\n\n"
+                                                        f"The union of the stores, in canonical order; base {b.commit}.\n",
+                                                        "tree": tree, "parents": [head, b.commit]})["sha"]
+                gh.api("git/refs", "POST", {"ref": f"refs/heads/{fresh}", "sha": commit})
+                tip = commit
+            else:
+                c = gh.api(f"git/commits/{_sha(tip)}")
+                parents = [p.get("sha") for p in c.get("parents") or []]
+                if parents != [head, b.commit] or (c.get("tree") or {}).get("sha") != tree:
+                    raise Refused(f"{fresh} at {str(tip)[:12]} is not #{n}'s carry onto {b.commit[:12]} (parents "
+                                  f"{[str(x)[:12] for x in parents]}, tree {str((c.get('tree') or {}).get('sha'))[:12]}, "
+                                  f"wanted {tree[:12]}): #{n} is left open", "GITHUB")
+            carried = open_["number"] if open_ else gh.api("pulls", "POST", {
+                "title": a.pr.get("title") or f"verdicts (from #{n})", "head": fresh, "base": b.gate["base"],
+                "body": f"#{n}'s verdicts, the base {b.commit} merged in by the gate (records only: the union of the "
+                        f"stores). #{n} conflicted with the base and is closed; its records are all here."})["number"]
+            ran = {w.get("path") for w in gh.api(f"actions/runs?head_sha={_sha(tip)}&per_page=100").get("workflow_runs", [])}
+            for w in sorted({c["workflow"] for c in b.gate["required"]} - ran):
+                gh.dispatch(w, fresh)
+            gh.comment(n, f"Carried by #{carried} (the base merged in, records only, on {fresh}); closed by the gate.")
+            gh.api(f"pulls/{n}", "PATCH", {"state": "closed"})
+            done = f"carried by #{carried} from {fresh}" + (f" ({commit[:12]}, the base merged in)" if commit else " (resumed)")
         except Refused as e:
             out.append((n, f"refresh FAILED: {e}"))
+            continue
+        try:
+            gh.api(f"git/refs/heads/{_branch(branch)}", "DELETE")
+        except Refused as e:
+            done += f"; its branch {branch} NOT deleted: {e}"
+        out.append((n, done))
     return out
+
+
+def _branch_tip(gh, name):
+    """The commit the branch `name` is at on GitHub, or None when there is no such branch; another refusal is raised."""
+    try:
+        return gh.api(f"git/ref/heads/{_branch(name)}")["object"]["sha"]
+    except Refused as e:
+        if "404" in str(e) or "Not Found" in str(e):
+            return None
+        raise
 
 
 def enforce_brakes(root, b, gh, found, now=None):
