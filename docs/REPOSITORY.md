@@ -217,8 +217,11 @@ under his login), a watched or constitutional change merges as soon as its check
 carries its brake (`warrant-gate brake until T: #N head version V`) for the window it would have waited. Within it, his
 `hold` label on the merged pull request or his challenge on its head version makes the gate open the merge's exact
 revert from `gate/revert/` (the store's records kept), which it merges once its checks are green. A path changed again
-since makes no automatic revert: the gate says so in its summary. No release is published while a brake in the tagged
-commit's history is open (release.yml, `python -m warrant.gate brakes --at C`).
+since makes no automatic revert: the gate says so in its summary. A stable release is published only after every brake in the tagged commit's history has closed (release.yml, `python
+-m warrant.gate brakes --at C --version V`). A pre-release (PEP 440 `aN`, `bN`, `rcN`, `.devN`, by the whole version
+the package declares) goes with brakes open (owner, 2026-11-13: «в нас нема клієнтів — ми обслуговуємо своє
+майбутнє»); a revert of a merge a published version holds names that version in its pull request, an agent records an
+obligation for it (closed by the next pre-release), and a yank is the owner's act if he wants one.
 
 A window counts from when the required checks completed at the head; no `hold` label and no challenge by
 `pr/owner` on the head version may stand. When a constitutional window opens the gate comments once on the pull
