@@ -52,5 +52,7 @@ Each run gets a fresh temporary directory (fixture repository, an empty HOME for
 configuration), deleted afterwards. The claude process runs with an environment built from nothing and the operator's
 HOME only because its login is in the macOS keychain; PLAN.md says what that does and does not isolate.
 
-CI (`tests/tools_test.py` AD1) runs the scorer's self-test with this checkout's CLI in place of the released one: no
-network, no `claude`.
+CI does not run the self-test. A case in `tests/tools_test.py` did for one push (AD1): it added eight seconds to a
+suite the mutant runner repeats for every tools mutant, and one mutant shard ran past its 30 minutes. The harness is
+frozen evidence of round 1; rerun `python3 scorer.py --selftest --kit .work/kit-bin` and `python3 mutants.py` by hand
+before reusing it.
