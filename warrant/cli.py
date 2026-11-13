@@ -141,8 +141,8 @@ def _parser():
     cmds["init"].add_argument("--store")
     cmds["init"].add_argument("--no-entry", action="store_true",
                               help="a repository's store without the AGENTS.md block and CLAUDE.md import (warrant.entry)")
-    cmds["init"].add_argument("--mcp", action="store_true",
-                              help="also .warrant/agent.json and the MCP server `warrant` in .mcp.json (warrant.entry)")
+    cmds["init"].add_argument("--no-mcp", action="store_true",
+                              help="a repository's store without .warrant/agent.json and the MCP server `warrant` in .mcp.json")
     cmds["init"].add_argument("--voices", action="store_true",
                               help="a store of voices: it trusts nobody and gives nobody a role (warrant say files into it)")
     x = sub.add_parser("across", help="one read over every repository registered in Home (docs/HOME.md); output is JSON")
@@ -238,6 +238,7 @@ def status(a):
         by[state] = by.get(state, 0) + 1
         reliance[lin["reliance"]] = reliance.get(lin["reliance"], 0) + 1
     return {"repository": name, "store": store, "snapshot": rep["snapshot"], "assessment": rep["assessment"],
+            "trusted": sorted(trust.get("keys", {})), "roles": {r: sorted(a) for r, a in sorted(profile.get("roles", {}).items())},
             "records": len(snap.lines), "blobs": len(snap.blobs), "canonical": rep["canonical"],
             "completeness": rep["completeness"], "rejected": len(rep["rejected"]),
             "chain_forks": sorted({f[0] for f in rep["chains"]["forks"]}),
@@ -258,7 +259,12 @@ def render(st):
             ("store", f"{st['store']} · snapshot {st['snapshot'][:12]}"),
             ("records", f"{st['records']} · blobs {st['blobs']} · {'canonical' if st['canonical'] else 'NOT canonical'}"
                         f" · rejected {st['rejected']} · completeness {st['completeness']}"),
-            ("schemas", ", ".join(st["schemas"]) + (f" (pending: {', '.join(st['schemas_pending'])})" if st["schemas_pending"] else ""))]
+            ("receiver", (f"{len(st['trusted'])} trusted actor(s) · roles: " + "; ".join(f"{r} {', '.join(a)}" for r, a in st["roles"].items()))
+                         if any(st["roles"].values()) else
+                         f"{len(st['trusted'])} trusted actor(s) · no actor holds a role: no acceptance counts here yet "
+                         "(.warrant/v3.json: trust binds keys, the profile gives roles)"),
+            ("schemas", (", ".join(st["schemas"]) or "none: `warrant bootstrap` files them")
+                        + (f" (pending: {', '.join(st['schemas_pending'])})" if st["schemas_pending"] else ""))]
     w = max([len(k) for k in st["lineages"]] or [0])
     rows += [("lineages" if i == 0 else "", f"{k.ljust(w)}  {_counts(v)}") for i, (k, v) in enumerate(st["lineages"].items())]
     rows += [("reliance", _counts(st["reliance"])),
@@ -402,7 +408,7 @@ def main(argv=None):
             if Path(store).name == ".warrant":                             # a repository's store: what the next agent reads
                 from . import entry as EN
                 root = Path(store).parent
-                wrote = EN.receiver(root) + ([] if a.no_entry else EN.agents(root)) + (EN.mcp(root) if a.mcp else [])
+                wrote = EN.receiver(root) + ([] if a.no_entry else EN.agents(root)) + ([] if a.no_mcp else EN.mcp(root))
                 out["wrote"] = wrote
         elif a.cmd == "key":
             k = K.Key.generate()

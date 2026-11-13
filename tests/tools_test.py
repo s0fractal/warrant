@@ -2029,7 +2029,8 @@ def entry_cases():
           rc == 0 and blk is not None and hashlib.sha256(blk.encode()).hexdigest() == ENTRY_BLOCK_SHA
           and (not exp.exists() or exp.read_text() == blk) and claude == "@AGENTS.md\n"
           and v3.get("repository") == "acme/widget" and v3.get("trust", {}).get("keys") == {} and st.get("repository") == "acme/widget"
-          and first.get("wrote") == [".warrant/v3.json", "AGENTS.md", "CLAUDE.md"] and second.get("wrote") == [] and before == after,
+          and first.get("wrote") == [".warrant/v3.json", "AGENTS.md", "CLAUDE.md", ".warrant/agent.json", ".mcp.json"]
+          and bool(st) and "no actor holds a role" in CLI.render(st) and second.get("wrote") == [] and before == after,
           (rc, first, second, blk and hashlib.sha256(blk.encode()).hexdigest(), claude, v3))
     r = fresh()
     mine = "# Ours\n\nKeep this.\n"
@@ -2049,21 +2050,24 @@ def entry_cases():
           (a1[:60], c1, again))
     r = fresh()
     (r / ".mcp.json").write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}}))
-    _, m1 = _init(r, "--mcp", "--no-entry")
+    _, m1 = _init(r, "--no-entry")
     servers = json.loads((r / ".mcp.json").read_text())["mcpServers"]
     cfg = json.loads(_text(r / ".warrant" / "agent.json") or '{"workspaces": {"repo": null}}')
     (r / ".mcp.json").write_text(json.dumps({"mcpServers": {"warrant": {"command": "mine"}}}))
-    _, m2 = _init(r, "--mcp", "--no-entry")
+    _, m2 = _init(r, "--no-entry")
+    r5 = fresh()
+    _, m5 = _init(r5, "--no-mcp")
     kept = json.loads((r / ".mcp.json").read_text())["mcpServers"]
     plain = Path(tempfile.mkdtemp())
     _, q = _init(plain, "--store", "store")
-    check("IN3 `--mcp` adds the server `warrant` (warrant-agent-mcp on .warrant/agent.json: this repository, read only) "
+    check("IN3 init adds the server `warrant` (unless --no-mcp: the experiment measured the block and the server together) (warrant-agent-mcp on .warrant/agent.json: this repository, read only) "
           "beside the servers .mcp.json names and never replaces one named warrant; `--no-entry` writes no AGENTS.md; a "
           "store not named .warrant is made alone, as before",
           servers.get("other") == {"command": "x"} and servers.get("warrant") == {"command": "warrant-agent-mcp", "args": ["--config", ".warrant/agent.json"]}
           and cfg["workspaces"]["repo"] == {"repo": ".", "operations": ["context", "read", "graph"]} and "signer" not in cfg["workspaces"]["repo"]
           and not (r / "AGENTS.md").exists() and m1.get("wrote") == [".warrant/v3.json", ".warrant/agent.json", ".mcp.json"]
           and kept == {"warrant": {"command": "mine"}} and m2.get("wrote") == [] and q == {"store": "store"}
+          and m5.get("wrote") == [".warrant/v3.json", "AGENTS.md", "CLAUDE.md"] and not (r5 / ".mcp.json").exists()
           and sorted(p.name for p in plain.iterdir()) == ["store"],
           (m1, m2, servers, kept, q))
 

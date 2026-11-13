@@ -10,7 +10,7 @@ measuring again.
     agents(root)   the block in AGENTS.md between MARKS, and `@AGENTS.md` in CLAUDE.md: written once, never over
                    another's text (a file that exists keeps every byte outside the marks; the block is added at its end,
                    or replaced between the marks when it differs)
-    mcp(root)      `.warrant/agent.json` (a read-only workspace of this repository: context, read, graph) and the server
+    mcp(root)      (unless --no-mcp: the experiment measured the block and the server together) `.warrant/agent.json` (a read-only workspace of this repository: context, read, graph) and the server
                    `warrant` in `.mcp.json` (`warrant-agent-mcp --config .warrant/agent.json`), added beside servers
                    already there and never replacing one named `warrant`
     receiver(root) `.warrant/v3.json` with an empty trust and profile, when there is none: `warrant status` then reads

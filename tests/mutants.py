@@ -283,6 +283,8 @@ MUTANTS = [
     ("T191", "warrant/entry.py", '    if f.exists() or f.is_symlink():\n        return []\n', '', TOOLS, ["IN1"]),
     ("T192", "warrant/entry.py", '        if not any(line.strip() == IMPORT for line in text.splitlines()):', '        if True:', TOOLS, ["IN1"]),
     ("T193", "warrant/cli.py", '            if Path(store).name == ".warrant":                             # a repository', '            if True:                             # a repository', TOOLS, ["IN3"]),
+    ("T196", "warrant/cli.py", '([] if a.no_mcp else EN.mcp(root))', '(EN.mcp(root) if a.no_mcp else [])', TOOLS, ["IN1", "IN3"]),
+    ("T197", "warrant/cli.py", '                         if any(st["roles"].values()) else', '                         if True else', TOOLS, ["IN1"]),
     ("V106", E, ', "unicode": unicodedata.unidata_version}))', '}))', CORE, ["UC1"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
