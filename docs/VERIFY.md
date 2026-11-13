@@ -145,7 +145,7 @@ whose bytes do not hash to its name refuses the read, and a record line altered 
 rejected. A named value the server holds no blob for is counted as `unresolved`, never guessed.
 
 Given the same bytes the report equals `node impl-js/warrant.mjs assess --store DIR --config V3JSON`, byte for byte
-(impl_js_test J9, over a local server; mutants JS1, JS3). Measured once on 2026-11-11: master at 76452093 read through
+(impl_js_test J9, over a local server; two mutations of `impl-js/read.mjs`, run by hand and killed by J9: they are not in `tests/mutants.py`, whose CI job has no node, docs/V3.md §12 R-JS-MUTANTS). Measured once on 2026-11-11: master at 76452093 read through
 raw.githubusercontent.com gives root `e0b5a3711ac6` and the same 636 lineages in the same states and reliance as the
 Python engine on a local checkout, nothing rejected, in about 13 seconds. Content, not site: neither the publisher's
 server nor its HTML nor its engine is needed to reach the same verdicts.

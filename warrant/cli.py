@@ -14,6 +14,7 @@ path that leaves both) or from WARRANT_KEY; every other file named is inside the
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -136,6 +137,8 @@ def _parser():
             g.add_argument("--store")
             g.add_argument("--repo", help="a repository registered in Home (warrant home)")
     cmds["init"].add_argument("--store")
+    cmds["init"].add_argument("--voices", action="store_true",
+                              help="a store of voices: it trusts nobody and gives nobody a role (warrant say files into it)")
     x = sub.add_parser("across", help="one read over every repository registered in Home (docs/HOME.md); output is JSON")
     x.add_argument("query", nargs="?", default="stores", choices=A.QUERIES)
     x.add_argument("subject", nargs="?", help="actor: whose records; rests: a record or blob id, a prefix, or <store>:<id>")
@@ -304,6 +307,40 @@ def render_home(out):
     return "\n".join(rows) + "\n"
 
 
+VOICE_NAME = re.compile(r"[A-Za-z0-9_.-]{1,100}\Z")
+
+
+def voices_name(root):
+    """The repository name a store of voices gives itself: voices/<its directory's name>, as Git names allow. A name
+    it gives itself, not an identity (an obligation of stage 2: a store named by its root record)."""
+    name = re.sub(r"[^A-Za-z0-9_.-]", "-", Path(root).name)[:100].strip(".-") or "local"
+    return f"voices/{name if VOICE_NAME.match(name) else 'local'}"
+
+
+def say(argv):
+    """`warrant say TARGET "TEXT" [--as NAME] [--store DIR]`: a voice with no rights against any record (the commons,
+    warrant/commons.py), filed under the agent's own key `key:<public>` in the store of voices around the current
+    directory (or DIR), made with `warrant init --voices` or on first use. A store that trusts anyone is refused."""
+    from . import commons as CM
+    ap = argparse.ArgumentParser(prog="warrant say")
+    ap.add_argument("target")
+    ap.add_argument("statement")
+    ap.add_argument("--as", dest="name", default="commons")
+    ap.add_argument("--store", help="the directory holding the store of voices (.warrant/); default the current one")
+    a = ap.parse_args(argv)
+    root = Path(a.store) if a.store else Path.cwd()
+    try:
+        key = CM.seed_named(a.name, root)
+        if not (root / ".warrant" / CM.V3).exists():
+            CM.init(root, voices_name(root))
+        filed = CM.say(root, a.target, a.statement, key)
+    except CM.Refused as e:
+        print(f"REFUSED {e}", file=sys.stderr)
+        return 1
+    print(json.dumps({"filed": filed, "actor": "key:" + key.public, "store": str(root / ".warrant")}, sort_keys=True))
+    return 0
+
+
 def loop(argv):
     """`warrant review|gate|claims|roadmap|drift ARGS`: that module's own command, unchanged."""
     from . import claims, drift, gate, review, roadmap
@@ -319,6 +356,8 @@ def main(argv=None):
     if argv[:1] == ["verify"]:
         from . import verify
         return verify.main(argv[1:])
+    if argv[:1] == ["say"]:
+        return say(argv[1:])
     a = _parser().parse_args(argv)
     if a.cmd == "across":
         try:
@@ -337,7 +376,17 @@ def main(argv=None):
         sys.stdout.write(json.dumps(st, indent=1, sort_keys=True) + "\n" if a.json else human)
         return 0
     try:
-        if a.cmd == "init":
+        if a.cmd == "init" and a.voices:
+            from . import commons as CM
+            store = store_dir(a)
+            if Path(store).name != ".warrant":
+                raise Refused(f"{store}: a store of voices is a .warrant directory")
+            try:
+                CM.init(Path(store).parent, voices_name(Path(store).parent))
+            except CM.Refused as e:
+                raise Refused(str(e)) from None
+            out = {"store": a.store if a.store is not None else store, "voices": True}
+        elif a.cmd == "init":
             store = store_dir(a)
             Store(store).init()
             out = {"store": a.store if a.store is not None else store}     # as named, else where it went
