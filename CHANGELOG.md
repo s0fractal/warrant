@@ -27,6 +27,22 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   only in the optional last step, reading from a terminal with the reader's own file. Run as shown against PyPI on
   2026-11-13.
 
+## Unreleased
+
+- `warrant init` in a repository (`.warrant`) leaves what the next agent reads (`warrant/entry.py`): `.warrant/v3.json`
+  naming the repository (GitHub's `origin`, else the directory) with an empty trust and profile, so `warrant status`
+  reads the store it just made (it refused it, W4); the block the adoption experiment measured in `AGENTS.md`, byte for
+  byte between `<!-- warrant:begin -->` and `<!-- warrant:end -->`, and `@AGENTS.md` in `CLAUDE.md`, never over a file's
+  own text and written once; a read-only `.warrant/agent.json` and the server `warrant` in `.mcp.json` beside the
+  others (Claude Code asks the user to approve it the first time: its behaviour, not a defect). `--no-entry` skips the
+  markdown files, `--no-mcp` the server; a store not named `.warrant` is made alone, as before. The experiment (#385,
+  plan 4dd5fdc4, result 4f239352): with the repository as `init` left it 0 of 18 agents used the records, with the
+  block and the server 18 of 18, on both models and every task; its rule R1 said ship it, so the default is the pair it
+  measured. Not measured: the block without the server, the comment marks around it, agents that read no `.mcp.json`.
+  `warrant status` names the receiver: how many actors are trusted and who holds which role, or that no actor holds
+  one, so no acceptance counts yet; and with no schemas, that `warrant bootstrap` files them. IN1–IN3; mutants
+  T189–T193, T196, T197.
+
 ## 3.0.0a7 — the owner as observer; claims on a runner; a stranger's path
 
 Read first:

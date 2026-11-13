@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -1970,10 +1971,112 @@ def board_cases():
           (edited["update"], edited["archive"], edited["foreign"]))
 
 
+# The block the adoption experiment measured (experiments/adoption/entry/AGENTS.block.md at 9bcf1f3386ec, branch
+# exp/adoption, s0fractal/warrant#385): its sha256. `warrant init` writes it byte for byte.
+ENTRY_BLOCK_SHA = "9114d7c650b0fb1a85d41cc39d43d798e37ec0a6fc3f66a18c14eb11138d4fea"
+BEGIN, END = "<!-- warrant:begin -->", "<!-- warrant:end -->"
+
+
+def _init(root, *args):
+    """`warrant init ARGS` run in `root` (a repository's store: .warrant), its JSON answer, or the refusal's code."""
+    out = io.StringIO()
+    with contextlib.chdir(root), contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+        try:
+            rc = CLI.main(["init", *args])
+        except SystemExit as e:                  # a flag this version does not know
+            rc = e.code
+    try:
+        return rc, json.loads(out.getvalue()) if out.getvalue().strip() else {}
+    except ValueError:
+        return rc, {}
+
+
+def _text(p):
+    return p.read_text() if p.exists() else ""
+
+
+def _block(text):
+    """The text between the marks, or None."""
+    if BEGIN not in text or END not in text:
+        return None
+    return text.split(BEGIN + "\n", 1)[1].split(END, 1)[0]
+
+
+def entry_cases():
+    def fresh():
+        d = Path(tempfile.mkdtemp())
+        git(d, "init", "-q", "-b", "master")
+        git(d, "remote", "add", "origin", "https://github.com/acme/widget.git")
+        return d
+    r = fresh()
+    rc, first = _init(r)
+    agents, claude = _text(r / "AGENTS.md"), _text(r / "CLAUDE.md")
+    v3 = json.loads((r / ".warrant" / "v3.json").read_text()) if (r / ".warrant" / "v3.json").exists() else {}
+    try:
+        with contextlib.chdir(r):
+            st = CLI.status(CLI._parser().parse_args(["status"]))
+    except CLI.Refused:
+        st = {}
+    before = {p: _text(r / p) for p in ("AGENTS.md", "CLAUDE.md", ".warrant/v3.json")}
+    rc2, second = _init(r)
+    after = {p: _text(r / p) for p in before}
+    blk = _block(agents)
+    exp = ROOT / "experiments" / "adoption" / "entry" / "AGENTS.block.md"
+    check("IN1 `warrant init` in a repository leaves the next agent what the adoption experiment measured (R1 fired: 0 of "
+          "18 used the records without it, 18 of 18 with it): AGENTS.md holding the block byte for byte between marks, "
+          "CLAUDE.md importing it, and a .warrant/v3.json naming the repository with an empty trust and profile, so "
+          "`warrant status` reads the store; a second init writes nothing and changes no byte",
+          rc == 0 and blk is not None and hashlib.sha256(blk.encode()).hexdigest() == ENTRY_BLOCK_SHA
+          and (not exp.exists() or exp.read_text() == blk) and claude == "@AGENTS.md\n"
+          and v3.get("repository") == "acme/widget" and v3.get("trust", {}).get("keys") == {} and st.get("repository") == "acme/widget"
+          and first.get("wrote") == [".warrant/v3.json", "AGENTS.md", "CLAUDE.md", ".warrant/agent.json", ".mcp.json"]
+          and bool(st) and "no actor holds a role" in CLI.render(st) and second.get("wrote") == [] and before == after,
+          (rc, first, second, blk and hashlib.sha256(blk.encode()).hexdigest(), claude, v3))
+    r = fresh()
+    mine = "# Ours\n\nKeep this.\n"
+    (r / "AGENTS.md").write_text(mine)
+    (r / "CLAUDE.md").write_text("Our rules.")
+    _init(r)
+    a1, c1 = _text(r / "AGENTS.md"), _text(r / "CLAUDE.md")
+    stale = a1.replace("Only `ELIGIBLE` may be relied on.", "Anything may be relied on.") + "Our tail.\n"
+    (r / "AGENTS.md").write_text(stale)
+    _, again = _init(r)
+    a2 = _text(r / "AGENTS.md")
+    check("IN2 an AGENTS.md or CLAUDE.md of the repository's own keeps every byte outside the marks: the block is added at "
+          "its end, the import on a line of its own; a block edited between the marks is put back, the text after them "
+          "kept, and nothing else is written",
+          a1.startswith(mine) and _block(a1) is not None and c1 == "Our rules.\n@AGENTS.md\n"
+          and a2 == a1 + "Our tail.\n" and again.get("wrote") == ["AGENTS.md"],
+          (a1[:60], c1, again))
+    r = fresh()
+    (r / ".mcp.json").write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}}))
+    _, m1 = _init(r, "--no-entry")
+    servers = json.loads((r / ".mcp.json").read_text())["mcpServers"]
+    cfg = json.loads(_text(r / ".warrant" / "agent.json") or '{"workspaces": {"repo": null}}')
+    (r / ".mcp.json").write_text(json.dumps({"mcpServers": {"warrant": {"command": "mine"}}}))
+    _, m2 = _init(r, "--no-entry")
+    r5 = fresh()
+    _, m5 = _init(r5, "--no-mcp")
+    kept = json.loads((r / ".mcp.json").read_text())["mcpServers"]
+    plain = Path(tempfile.mkdtemp())
+    _, q = _init(plain, "--store", "store")
+    check("IN3 init adds the server `warrant` (unless --no-mcp: the experiment measured the block and the server together) (warrant-agent-mcp on .warrant/agent.json: this repository, read only) "
+          "beside the servers .mcp.json names and never replaces one named warrant; `--no-entry` writes no AGENTS.md; a "
+          "store not named .warrant is made alone, as before",
+          servers.get("other") == {"command": "x"} and servers.get("warrant") == {"command": "warrant-agent-mcp", "args": ["--config", ".warrant/agent.json"]}
+          and cfg["workspaces"]["repo"] == {"repo": ".", "operations": ["context", "read", "graph"]} and "signer" not in cfg["workspaces"]["repo"]
+          and not (r / "AGENTS.md").exists() and m1.get("wrote") == [".warrant/v3.json", ".warrant/agent.json", ".mcp.json"]
+          and kept == {"warrant": {"command": "mine"}} and m2.get("wrote") == [] and q == {"store": "store"}
+          and m5.get("wrote") == [".warrant/v3.json", "AGENTS.md", "CLAUDE.md"] and not (r5 / ".mcp.json").exists()
+          and sorted(p.name for p in plain.iterdir()) == ["store"],
+          (m1, m2, servers, kept, q))
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
     drift_cases()
+    entry_cases()
     freshness_cases()
     drift_impact_cases()
     review_cases()

@@ -283,7 +283,16 @@ the file is absent (the owner runs it).
 ## The review loop in another repository
 
 Another repository runs the same loop on its own records with the installed package, pinned to an
-exact version (and hashes), from a checkout of that repository:
+exact version (and hashes), from a checkout of that repository. `warrant init` in it starts the store and leaves
+what the next agent reads (`warrant/entry.py`): `.warrant/v3.json` with an empty trust and profile, the block of
+`warrant/entry.py` in `AGENTS.md` between `<!-- warrant:begin -->` and `<!-- warrant:end -->` (a file of the
+repository's own keeps every byte outside them), `@AGENTS.md` in `CLAUDE.md`, a read-only `.warrant/agent.json` and
+the server `warrant` in `.mcp.json` (Claude Code asks the user to approve a project's server the first time it opens it:
+that is its behaviour, not a defect). `--no-entry` leaves the two markdown files alone, `--no-mcp` the server. The
+block and the server are what the adoption experiment measured, together (experiments/adoption, #385: 0 of 18 agents
+used the records without them, 18 of 18 with them), and the block changes only with a new measurement. Not measured:
+the block without the server, the comment marks around it, and agents that read no `.mcp.json` (they have the block's
+CLI commands only). `warrant status` on such a store says that no actor holds a role, so no acceptance counts yet.
 
 - `.warrant/v3.json`: `{"warrant": "repository/3", "repository": "owner/name", "trust", "profile"}`;
   the profile names its `pr/acceptor`, `replayer` and, for claims, `claim/verifier`. Its store holds
