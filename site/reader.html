@@ -29,6 +29,8 @@
     <label for="base">Store root (a repository served over HTTP)</label>
     <input id="base" name="base" type="url" inputmode="url" autocomplete="off" spellcheck="false" required>
     <label class="check"><input id="full" type="checkbox"> Fetch every blob, to compute the store's root (slower)</label>
+    <label class="check"><input id="pins" type="checkbox"> Compare pins with the tree at this address: fetch each file a
+    claims checker's acceptance names and hash it as Git does (a moved file or a symlink reads STALE)</label>
     <details>
       <summary>Judge it under my own rules</summary>
       <label for="mine">A trust and a profile, as JSON: <code>{"trust": …, "profile": …}</code>. Empty: the publisher's own.</label>

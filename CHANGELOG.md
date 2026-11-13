@@ -6,6 +6,14 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The browser reader compares pins on request (`--pins`, a checkbox, `&pins=1`; off by default): each file a claims
+  checker's acceptance names is fetched at its path under the store's address and hashed as a Git blob, and each claim
+  the freshness gate covers reads ELIGIBLE or STALE by the gate's rule (`warrant.drift`: the checker's signed accepts,
+  the closure rule, any acceptance fresh). A fetch that fails other than by 404 answers nothing (PINS_NOT_CHECKED, the
+  failure named). A moved file, a symlink's entry and a non-SHA-1 blob read STALE where the gate reads ELIGIBLE; not
+  established: that the address serves one commit's tree, and a regular file replaced by a symlink whose bytes hash to
+  the accepted blob reads ELIGIBLE where the gate reads STALE. docs/VERIFY.md; impl_js_test J11 against
+  `warrant.drift.gate` (no mutant: R-JS-MUTANTS; twenty mutations run by hand).
 - The reader in a browser (`site/reader.html`, with the project page): a store fetched from any HTTP(S) root and
   assessed in the page by `warrant.mjs`, under the publisher's rules or the reader's own; the summary `warrant status`
   gives, the lineages, and one lineage's versions with their guards, acceptances and challenges. A quick read (the

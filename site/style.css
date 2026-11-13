@@ -60,7 +60,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .row-meta { color: var(--muted); font-size: 0.88rem; margin: 0.25rem 0 0; overflow-wrap: anywhere; }
 .pill { display: inline-block; padding: 0 0.45rem; border: 1px solid var(--muted); border-radius: 999px; font-size: 0.8rem; font-weight: 600; color: var(--fg); }
 .pill-eligible { border-color: var(--accent); color: var(--accent); }
-.pill-challenged, .pill-fork, .pill-pins-not-checked { border-style: dashed; }
+.pill-challenged, .pill-fork, .pill-pins-not-checked, .pill-stale { border-style: dashed; }
 .version { padding: 0.8rem 0 0.8rem 0.8rem; border-left: 3px solid var(--line); margin: 0.8rem 0; }
 .version.effective { border-left-color: var(--accent); }
 .statement { margin: 0.4rem 0; overflow-wrap: anywhere; white-space: pre-wrap; }

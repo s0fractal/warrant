@@ -2,7 +2,7 @@
 // through textContent (the `text` of el() below) or an attribute set by name: no markup is ever built from a string,
 // and the page's policy allows no script but this origin's (reader.html).
 import { utf16, webBackend } from "./warrant.mjs";
-import { fetchStore, lineage, PINS_NOT_CHECKED, read, receiver, rows, summary } from "./reader.mjs";
+import { comparePins, fetchStore, lineage, PINS_NOT_CHECKED, read, receiver, rows, STALE, summary } from "./reader.mjs";
 
 const DEFAULT_BASE = "https://raw.githubusercontent.com/s0fractal/warrant/master/";
 const PAGE = 150;                                         // rows drawn at once; the rest is named and asked for
@@ -30,12 +30,12 @@ const when = (at) => (Number.isInteger(at) ? new Date(at * 1000).toISOString().s
 const pill = (word) => el("span", { class: "pill pill-" + String(word || "none").toLowerCase().replace(/[^a-z]/g, "-"), text: word || "none" });
 const counts = (o) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(" · ") || "none";
 
-let current = null;                                       // {r, base, full}: the store read last
+let current = null;                                       // {r, base, full, pins}: the store read last
 let shownRows = PAGE;
 
 function params() {
   const p = new URLSearchParams(location.search);
-  return { base: p.get("base"), full: p.get("full") === "1", l: p.get("l"), schema: p.get("schema") || "", reliance: p.get("reliance") || "" };
+  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", l: p.get("l"), schema: p.get("schema") || "", reliance: p.get("reliance") || "" };
 }
 
 function href(over) {
@@ -43,16 +43,19 @@ function href(over) {
   const v = { ...now, ...over };
   if (v.base) q.set("base", v.base);
   if (v.full) q.set("full", "1");
+  if (v.pins) q.set("pins", "1");
   if (v.l) q.set("l", v.l);
   if (v.schema) q.set("schema", v.schema);
   if (v.reliance) q.set("reliance", v.reliance);
   return "?" + q.toString();
 }
 
+const same = (p) => current?.base === (p.base || DEFAULT_BASE) && current.full === p.full && current.pins === p.pins;
+
 function go(over) {                                       // the same page at another address, with no second read
   history.pushState(null, "", href(over));
   const p = params();
-  if (current?.base === (p.base || DEFAULT_BASE) && current.full === p.full) draw(); else start();
+  if (same(p)) draw(); else start();
 }
 
 function link(text, over, attrs) {
@@ -63,6 +66,28 @@ function link(text, over, attrs) {
 
 function fact(name, ...value) {
   return [el("dt", { text: name }), el("dd", {}, ...value)];
+}
+
+function pinsLine(p) {
+  if (p.config !== "present") return p.config === "absent" ? "compared nothing: this address serves no .warrant/claims.json, so no claim is gated"
+    : `compared nothing: .warrant/claims.json was not fetched (${p.refused.join("; ")})`;
+  return `${p.claims} gated claim(s): ${counts(p.verdicts)} · files: ${p.files.fetched} fetched of ${p.files.asked} asked for, `
+    + `${p.files.absent} not at their path, ${p.files.refused} not fetched · ${p.compared} comparison(s)`
+    + (p.refused.length ? ` · not fetched: ${p.refused.join("; ")}` : "");
+}
+
+const pinsWhy = {
+  [PINS_NOT_CHECKED]: " accepted on files at a commit; this reader compared no tree for it, so it does not say ELIGIBLE",
+  [STALE]: " no acceptance of the claims checker names the bytes this address serves (or a file it names moved, or is a symlink: see below)",
+};
+
+function drawPins(c) {
+  if (!c) return null;
+  return [el("h3", { text: `Pins: ${c.verdict}, compared with the tree at this address` }),
+    el("ul", { class: "said" }, c.acceptances.map((a) => el("li", {},
+      `acceptance `, short(a.attest), a.commit ? [" at ", short(a.commit)] : null, ` · ${a.verdict}`,
+      el("ul", {}, a.files.map((f) => el("li", { class: "small", text: [f.verdict, f.path, f.detail].filter(Boolean).join(" ") })))))),
+  ];
 }
 
 function drawFloor() {
@@ -77,7 +102,8 @@ function drawFloor() {
       fact("blobs", `${s.blobs.read} read of ${s.blobs.asked} asked for` + (s.blobs.missing ? ` · ${s.blobs.missing} named and not served` : "")),
       fact("completeness", `${s.completeness}: no store can show that it holds everything said about its records`),
       fact("reliance", counts(s.reliance)),
-      s.reliance[PINS_NOT_CHECKED] ? fact("not checked", s.not_checked[0]) : [],
+      s.pins ? fact("pins", pinsLine(s.pins)) : [],
+      s.reliance[PINS_NOT_CHECKED] || s.pins ? fact("not checked", s.not_checked.join(" · ")) : [],
       fact("schemas", s.schemas.join(", ") || "none", s.schemas_pending.length ? ` (pending: ${s.schemas_pending.length})` : null),
       fact("writers' forks", s.chain_forks.join(", ") || "none"),
       fact("problems", s.problems.length ? s.problems.map((p) => p[0]).join(", ") : "none"),
@@ -133,13 +159,14 @@ function drawLineage() {
     el("h2", { class: "statement-title", text: d.versions.at(-1).title || d.versions[0].title || "(no statement)" }),
     el("dl", { class: "facts floor" },
       fact("state", f.state || "none: no version is effective yet"),
-      fact("reliance", pill(f.reliance), f.reliance === PINS_NOT_CHECKED ? " accepted on files at a commit; this reader compared no checkout, so it does not say ELIGIBLE" : null),
+      fact("reliance", pill(f.reliance), Object.hasOwn(pinsWhy, f.reliance) ? pinsWhy[f.reliance] : null),
       fact("standing challenges", f.standing.length ? el("ul", {}, f.standing.map((c) => el("li", {}, `${c.actor}: `, el("span", { text: c.statement || "(no statement)" })))) : "none in this store"),
       f.forks ? fact("fork", `${f.forks}: two versions succeed one; the lineage has no leaf`) : [],
       fact("completeness", `${f.completeness}: an objection held elsewhere is not seen here`),
       fact("rules", f.rules === "reader" ? "yours" : "the publisher's own"),
       fact("lineage", short(f.id), ` · ${f.schema}`),
     ),
+    drawPins(f.pins),
     el("h3", { text: `Versions, newest first (${d.versions.length})` }),
     d.versions.map((v) => el("article", { class: "version" + (v.effective ? " effective" : "") },
       el("p", { class: "row-meta" }, short(v.id), ` · ${v.actor} · ${when(v.at)} · state ${v.state || "none"}`,
@@ -185,11 +212,16 @@ async function run() {
   try {
     const backend = webBackend();
     const started = performance.now();
-    const store = await fetchStore(base, backend, { full: p.full, fetcher: (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" }) });
+    const fetcher = (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+    const store = await fetchStore(base, backend, { full: p.full, fetcher });
     say(`Assessing ${store.lines.length} lines …`);
     const source = new Uint8Array(await (await fetch(new URL("./warrant.mjs", import.meta.url))).arrayBuffer());
     const r = await read(store, receiver(store.doc, mine), backend, source);
-    current = { r, base, full: p.full };
+    if (p.pins) {
+      say(`Comparing pins with the tree at ${base} …`);
+      await comparePins(r, base, { fetcher });
+    }
+    current = { r, base, full: p.full, pins: p.pins };
     shownRows = PAGE;
     say(`Read and assessed in ${((performance.now() - started) / 1000).toFixed(1)} s.`);
     draw();
@@ -209,15 +241,16 @@ function start() {
 
 $("ask").addEventListener("submit", (e) => {
   e.preventDefault();
-  history.pushState(null, "", href({ base: $("base").value.trim(), full: $("full").checked, l: null, schema: "", reliance: "" }));
+  history.pushState(null, "", href({ base: $("base").value.trim(), full: $("full").checked, pins: $("pins").checked, l: null, schema: "", reliance: "" }));
   start();
 });
 addEventListener("popstate", () => {
   const p = params();
-  if (current?.base === (p.base || DEFAULT_BASE) && current.full === p.full) draw(); else if (p.base) start();
+  if (same(p)) draw(); else if (p.base) start();
 });
 
 const first = params();
 $("base").value = first.base || DEFAULT_BASE;
 $("full").checked = first.full;
+$("pins").checked = first.pins;
 if (first.base) start();

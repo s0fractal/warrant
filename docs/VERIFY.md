@@ -167,6 +167,31 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
   still names a checkout's bytes (`STALE`, docs/V3.md §15). A lineage whose effective version carries an attest naming
   `files` or a `commit` reads `PINS_NOT_CHECKED` there, never `ELIGIBLE`: every lineage the freshness gate can read
   `STALE` is among them.
+- **Pins compared with the tree at the address (opt-in).** `--pins`, the page's checkbox or `&pins=1`: the store's
+  address is a tree's root too, so each file a claims checker's acceptance names (`{path: git blob}`) is fetched at
+  that path, once per path, and hashed as Git hashes a blob (SHA-1 of `blob <length>\0` and the bytes). The rule is
+  the gate's (`warrant/drift.py drift`, `gate`; `warrant/claims.py acceptances`, `live`): only when the address serves
+  `.warrant/claims.json`, only live `claim@1` lineages, only attests by `claims-checker` that are SIGNED in the view and
+  say `accept`; an acceptance without `closure: imports/1`, or whose files are not a non-empty `{path: blob}`, is not
+  fresh; a claim is fresh when any acceptance on its effective version has every file fresh; only an engine `ELIGIBLE`
+  is lowered. Fresh reads `ELIGIBLE`, not fresh `STALE`. A file whose fetch fails other than by 404 answers nothing:
+  an acceptance it could decide is not compared and its claim keeps `PINS_NOT_CHECKED` (a file of that acceptance
+  known to differ still decides it), and the summary names the failure (`pins.refused`); a failure to fetch
+  `claims.json` compares nothing. A lineage the gate does not cover keeps the rule above. impl_js_test J11 holds this
+  to `warrant.drift.gate` at HEAD on claims repositories accepted by the checker's replay.
+- **Where the comparison differs from the gate.** The reader says `STALE` where the gate says `ELIGIBLE`, in these
+  cases, by design: a file moved with its bytes unchanged (the gate lists the whole tree and reads it MOVED; HTTP lists
+  none, so 404 at the named path is not fresh); a symlink's entry (`link:<blob>`: HTTP serves a link as its target's
+  name or its target's bytes, never as a link, so it is never fresh here); a path no Git tree holds (`.`, `..`, `.git`
+  or empty segments: never fetched) or a blob that is no 40-hex SHA-1 id (a SHA-256 repository). Not established:
+  that the address serves one commit's tree. The comparison is with what it serves, not with a checkout's HEAD; the
+  transport is trusted for which tree that is (records and blobs authenticate themselves, a tree does not). It equals
+  the gate when the address serves exactly a commit's tree as Git stores it, as `raw.githubusercontent.com` at a
+  branch or commit does (a symlink served as its target's name, checked 2026-11-13; a branch is cached up to 300 s, and
+  `records.jsonl` and the files are separate requests). A directory served from a working tree can differ in either
+  direction (modified or untracked files, symlinks followed). One case can read `ELIGIBLE` here and `STALE` in the gate
+  even on a commit's tree: a regular file later replaced by a symlink whose served bytes hash to the accepted blob
+  (the gate reads the mode; HTTP cannot).
 - **A transport that fails is a refusal.** Only HTTP 404 reads as absent; any other failure refuses the read whole, and
   a blob whose bytes do not hash to its name refuses it too. Nothing partial is drawn.
 - **Record text is text.** The page builds no markup from a string, runs one script of its own origin and allows no
@@ -174,4 +199,6 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
 
 impl_js_test J10 holds the data the page draws to the Python engine, through node, by the functions the page runs; no
 case drives a browser, and the layout is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS):
-eleven mutations of the reader were run by hand on 2026-11-13 and each failed a J10 case.
+eleven mutations of the reader were run by hand on 2026-11-13 and each failed a J10 case; for the pin comparison,
+twenty more (listed in the change that added it) each failed a J11 case. The page's checkbox was not driven in a
+browser.

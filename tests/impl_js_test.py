@@ -969,6 +969,7 @@ def main():
     repo = repo_cases(tally, a)
     second_client_cases()
     browser_reader_cases()
+    browser_pins_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -1241,6 +1242,206 @@ def browser_reader_cases():
           and re.search(r"<[^>]*\son[a-z]+\s*=", html, re.I) is None
           and "script-src 'self'" in html and "default-src 'none'" in html and "'unsafe-inline'" not in html
           and "'unsafe-eval'" not in html, found)
+
+
+def _serve_counting(directory, failing=None):
+    """As _serve_failing (`failing`: a path ending answering 500, or None), and {request path: times asked}."""
+    import collections
+    import functools
+    import http.server
+    import threading
+    asked = collections.Counter()
+    class Counting(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def do_GET(self):
+            asked[self.path] += 1
+            if failing and self.path.endswith(failing):
+                self.send_error(500)
+            else:
+                super().do_GET()
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Counting, directory=str(directory)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}/", asked
+
+
+def _read_served(root, *args, failing=None):
+    """(the reader's rows {lineage: reliance}, its summary, {path: times asked}) of `root` served over HTTP."""
+    srv, base, asked = _serve_counting(root, failing)
+    try:
+        _, out = _reader(base, *args)
+    finally:
+        srv.shutdown()
+    return {x["id"]: x["reliance"] for x in out.get("rows", [])}, out.get("summary", out), asked
+
+
+def _lineage_served(root, L, *args):
+    srv, base, _ = _serve_counting(root)
+    try:
+        _, out = _reader(base, "--lineage", L, *args)
+    finally:
+        srv.shutdown()
+    return (out.get("lineage") or {}).get("floor", {})
+
+
+def _gate(root):
+    """({lineage: reliance} after the Python freshness gate at HEAD, {lineage: drift verdict}) of a checkout."""
+    from warrant import drift as D
+    from warrant import repo as RP
+    rep = RP.Repo(root).report()
+    d = D.gate(rep, root)
+    return {L: x["reliance"] for L, x in rep["lineages"].items()}, {L: x["verdict"] for L, x in d.items()}
+
+
+def browser_pins_cases():
+    """The reader's opt-in comparison of pins with the tree at its address (site/reader.mjs comparePins), held to the
+    Python freshness gate (warrant.drift.gate) on real claims repositories, built as tools_test builds them (claims
+    accepted by the claims checker's replay), served over HTTP from a clean checkout at HEAD."""
+    import contextlib
+    import io
+    import tools_test as TT
+    from warrant import claims as CL
+    from warrant import records as RR
+    from world import KEYS
+    from world import git as wgit
+    quiet = contextlib.redirect_stdout(io.StringIO())
+
+    # (a) differential, and (f) the option off: two claims stale after a helper both witnesses import changed, one fresh
+    with quiet:
+        r, Ls = TT.shared_repo()
+    (r.root / "tests" / "helper.py").write_text("ONE = 1  # the shared helper changes\n")
+    r.commit("the helper both witnesses import changes")
+    py, drift = _gate(r.root)
+    js, summ, asked = _read_served(r.root, "--pins")
+    paths = {p for x in _acceptance_files(r.root) for p in x}
+    tree_asked = {p: n for p, n in asked.items() if not p.startswith("/.warrant/")}
+    check("J11 the reader with --pins gives every lineage the freshness gate covers exactly the gate's reliance at HEAD, "
+          "where some claims read STALE (a file they ran changed) and one ELIGIBLE, and every other lineage the engine's",
+          drift and js == py and {py[L] for L in drift} == {"STALE", "ELIGIBLE"} and [py[Ls[k]] for k in "qps"] == ["STALE", "STALE", "ELIGIBLE"],
+          ({L[:12]: (py.get(L), js.get(L)) for L in drift}, summ.get("refused") or summ.get("crash")))
+    check("J11 each file an acceptance names is fetched once, however many acceptances name it, and the summary counts what "
+          "was fetched and compared",
+          tree_asked == {"/" + p: 1 for p in paths} and summ.get("pins", {}).get("files") == {"asked": len(paths), "fetched": len(paths), "absent": 0, "refused": 0}
+          and summ.get("pins", {}).get("compared", 0) >= len(paths) and summ.get("pins", {}).get("claims") == len(drift),
+          (tree_asked, sorted(paths), summ.get("pins")))
+    off, summ_off, asked_off = _read_served(r.root)
+    check("J11 without --pins nothing is compared: each gated claim reads PINS_NOT_CHECKED as before, no file of the tree "
+          "is fetched and the summary has no pins member",
+          all(off.get(L) == "PINS_NOT_CHECKED" for L in drift) and "pins" not in summ_off
+          and not [p for p in asked_off if not p.startswith("/.warrant/")], (off, sorted(asked_off)))
+
+    # (e) a transport that fails answers nothing: neither fresh nor stale, unless another file already decides
+    with quiet:
+        r, Ls = TT.shared_repo()
+    py, _ = _gate(r.root)
+    js, summ, _ = _read_served(r.root, "--pins", failing="helper.py")
+    check("J11 a file answered with HTTP 500 is not fetched, not absent: the claims that name it read PINS_NOT_CHECKED, "
+          "neither ELIGIBLE nor STALE, the gate's ELIGIBLE for the claim that does not name it, and the failure is named",
+          [py[Ls[k]] for k in "qps"] == ["ELIGIBLE"] * 3 and [js.get(Ls[k]) for k in "qps"] == ["PINS_NOT_CHECKED", "PINS_NOT_CHECKED", "ELIGIBLE"]
+          and summ.get("pins", {}).get("files", {}).get("refused") == 1 and any("HTTP 500" in x for x in summ.get("pins", {}).get("refused", [])),
+          ([js.get(Ls[k]) for k in "qps"], summ.get("pins")))
+    (r.root / "mutated.py").write_text("X = 9\n")
+    r.commit("the file both mutants mutate changes")
+    py, _ = _gate(r.root)
+    js, _, _ = _read_served(r.root, "--pins", failing="helper.py")
+    check("J11 a file another acceptance names changed decides it though one of its files was not fetched: STALE, as the gate",
+          [py[Ls[k]] for k in "qp"] == ["STALE"] * 2 and [js.get(Ls[k]) for k in "qp"] == ["STALE"] * 2, ([py[Ls[k]] for k in "qp"], [js.get(Ls[k]) for k in "qp"]))
+    js_cfg, summ_cfg, _ = _read_served(r.root, "--pins", failing="claims.json")
+    (r.root / ".warrant" / "claims.json").unlink()
+    py_none, drift_none = _gate(r.root)
+    js_none, summ_none, _ = _read_served(r.root, "--pins")
+    check("J11 .warrant/claims.json answered with HTTP 500 compares nothing (the claims read PINS_NOT_CHECKED, the failure "
+          "named); absent, the gate covers nothing (ELIGIBLE there) and the reader, which cannot tell what else compares "
+          "pins, keeps PINS_NOT_CHECKED",
+          all(js_cfg.get(Ls[k]) == "PINS_NOT_CHECKED" for k in "qps") and summ_cfg.get("pins", {}).get("config") == "refused"
+          and drift_none == {} and all(py_none[Ls[k]] == "ELIGIBLE" for k in "qps")
+          and all(js_none.get(Ls[k]) == "PINS_NOT_CHECKED" for k in "qps") and summ_none.get("pins", {}).get("config") == "absent",
+          (js_cfg, summ_cfg.get("pins"), drift_none, js_none, summ_none.get("pins")))
+
+    # (b) a file changed after acceptance
+    with quiet:
+        r, L = TT.drift_repo()
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    r.commit("the mutated file changes")
+    py, drift = _gate(r.root)
+    js, _, _ = _read_served(r.root, "--pins")
+    floor = _lineage_served(r.root, L, "--pins")
+    rows = [f for a in (floor.get("pins") or {}).get("acceptances", []) for f in a["files"]]
+    check("J11 a file changed after the acceptance: STALE in the reader as in the gate, and the opened lineage names the "
+          "file CHANGED", drift.get(L) == "CHANGED" and py[L] == "STALE" and js.get(L) == "STALE" and floor.get("reliance") == "STALE"
+          and {"path": "lib/code.py", "verdict": "CHANGED", "detail": "other bytes at this path"} in rows, (py.get(L), js.get(L), rows))
+
+    # (d) a file moved with its bytes: the documented difference, STALE here where the gate says ELIGIBLE
+    with quiet:
+        r, L = TT.drift_repo()
+    wgit(r.root, "mv", "lib/code.py", "lib/moved.py")
+    (r.root / "tests" / "mutants.py").write_text(TT.HARNESS.replace("warrant/engine.py", "lib/moved.py"))
+    r.commit("the mutated file moves, its bytes unchanged")
+    py, drift = _gate(r.root)
+    js, _, _ = _read_served(r.root, "--pins")
+    floor = _lineage_served(r.root, L, "--pins")
+    rows = [f for a in (floor.get("pins") or {}).get("acceptances", []) for f in a["files"]]
+    check("J11 a file moved with its bytes unchanged: the gate reads it fresh (it lists the tree) and says ELIGIBLE; the "
+          "reader, which cannot list a tree over HTTP, finds nothing at the path and says STALE (the documented difference, "
+          "in this direction only)", drift.get(L) == "UNCHANGED" and py[L] == "ELIGIBLE" and js.get(L) == "STALE"
+          and any(f["path"] == "lib/code.py" and f["verdict"] == "ABSENT" for f in rows), (py.get(L), js.get(L), rows))
+
+    # (c) which acceptances count: the closure rule, any of them, readable files, the checker's signed accept only;
+    # and a symlink's entry
+    with quiet:
+        r, L = TT.drift_repo()
+    rep = _report(r.root)
+    eff = rep["lineages"][L]["effective"]
+    body = next(x["body"] for x in rep["_recs"].values() if x["kind"] == "attest" and x["actor"] == CL.CHECKER and x["body"]["target"] == eff)
+    bare = {k: v for k, v in body.items() if k != "closure"}
+    TT.put_as(r, CL.CHECKER, {**bare, "target": eff}, [eff])               # a second acceptance of L, with no closure rule
+    L2 = TT.claim(r, id="V3-3-2")
+    TT.put_as(r, CL.CHECKER, {**bare, "target": L2}, [L2])
+    L3 = TT.claim(r, id="V3-3-3")
+    TT.put_as(r, CL.CHECKER, {**body, "target": L3, "files": {}}, [L3])
+    L5 = TT.claim(r, id="V3-3-5")
+    TT.put_as(r, CL.CHECKER, {**body, "target": L5, "files": {p: "0" * 40 for p in body["files"]}}, [L5])
+    r.t += 1                                                               # the checker's name, another's key: rejected
+    r.store.append(RR.record("attest", CL.CHECKER, r.t, {**body, "target": L5}, refs=[L5]), KEYS["alice"], r.trust)
+    r.attest("carol", L5, **{k: v for k, v in body.items() if k not in ("verdict", "target")})   # a verifier, not the checker
+    TT.put_as(r, CL.CHECKER, {**body, "target": L5, "verdict": "reject"}, [L5])                  # the checker, not accepting
+    os.symlink("code.py", r.root / "lib" / "alias.py")
+    r.commit("a symlink")
+    link = wgit(r.root, "rev-parse", "HEAD:lib/alias.py")
+    L4 = TT.claim(r, id="V3-3-4")
+    TT.put_as(r, CL.CHECKER, {**body, "target": L4, "files": {"lib/alias.py": "link:" + link}}, [L4])
+    L6 = TT.claim(r, id="V3-3-6")
+    TT.put_as(r, CL.CHECKER, {**body, "target": L6}, [L6])
+    r.put("carol", "challenge", {"target": L6, "statement": "a counterexample"}, refs=[L6])   # a verifier: counted
+    r.commit("acceptances of every shape")
+    py, drift = _gate(r.root)
+    js, _, _ = _read_served(r.root, "--pins")
+    want = {L: "ELIGIBLE", L2: "STALE", L3: "STALE", L4: "ELIGIBLE", L5: "STALE"}
+    check("J11 an acceptance without the import-closure rule is not fresh, whatever its files: its claim reads STALE in "
+          "the reader as in the gate; a claim with one such acceptance and one fresh is ELIGIBLE (any acceptance decides)",
+          {x: py.get(x) for x in want} == want and js.get(L2) == "STALE" and js.get(L) == "ELIGIBLE" and drift.get(L2) == "UNKNOWN",
+          ({x[:12]: (py.get(x), js.get(x)) for x in want}, drift))
+    check("J11 an acceptance naming no files compares nothing: STALE in the reader as in the gate", js.get(L3) == "STALE" == py.get(L3), (py.get(L3), js.get(L3)))
+    check("J11 only the claims checker's signed acceptances count: a stale claim stays STALE beside fresh files named by a "
+          "line under the checker's name that fails its signature, by a verifier who is not the checker, and by the "
+          "checker's attest that does not accept", js.get(L5) == "STALE" == py.get(L5) and drift.get(L5) == "CHANGED", (py.get(L5), js.get(L5)))
+    check("J11 a symlink's entry (link:<blob>): the gate reads the tree's link and says ELIGIBLE; HTTP serves no link as a "
+          "link, so the reader says STALE (the documented difference, in this direction only)",
+          py.get(L4) == "ELIGIBLE" and drift.get(L4) == "UNCHANGED" and js.get(L4) == "STALE", (py.get(L4), js.get(L4)))
+    check("J11 the comparison only ever lowers ELIGIBLE, as the gate does: a fresh claim the engine does not read ELIGIBLE "
+          "(a challenge stands against it) keeps the engine's reliance", drift.get(L6) == "UNCHANGED"
+          and py.get(L6) not in ("ELIGIBLE", "STALE") and js.get(L6) == py.get(L6), (py.get(L6), js.get(L6)))
+
+
+def _report(root):
+    from warrant import repo as RP
+    return RP.Repo(root).report()
+
+
+def _acceptance_files(root):
+    """The {path: blob} of every signed acceptance by the claims checker in the checkout's store."""
+    from warrant import claims as CL
+    return [f for xs in CL.acceptances(_report(root)).values() for _, f, _ in xs if isinstance(f, dict)]
 
 
 if __name__ == "__main__":

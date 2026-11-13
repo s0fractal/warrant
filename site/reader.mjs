@@ -7,7 +7,7 @@
 // This file has no DOM in it: it fetches, assesses and builds plain data (the view), so node can run the same
 // functions the page runs (tests/impl_js_test.py J10). reader-page.mjs draws that data, as text only.
 //
-//   node site/reader.mjs --base URL [--full] [--config RULES.json] [--lineage ID]     # canonical JSON
+//   node site/reader.mjs --base URL [--full] [--pins] [--config RULES.json] [--lineage ID]     # canonical JSON
 //
 // Two ways to read a store's blobs:
 //   quick (the default)   only the blobs the assessment itself reads: the map of each migration (docs/V3.md §9).
@@ -20,6 +20,13 @@
 // the repository's Git objects. So this reader never prints ELIGIBLE for a lineage whose acceptances name files or a
 // commit: it prints PINS_NOT_CHECKED, the word `warrant verify` uses for a comparison that was not made. A note beside
 // a green word is not enough: `warrant status` once said ELIGIBLE where the gate said STALE.
+//
+// Unless it is asked to compare (`--pins`, comparePins): the address of a repository's store is the root of a tree
+// too, so each file a claims checker's acceptance names, {path: git blob}, can be fetched at that path and hashed as
+// Git hashes a blob. The freshness gate's rule (warrant/drift.py drift, gate) then decides each claim it covers:
+// ELIGIBLE when one acceptance's every file holds its bytes, STALE when none does, and PINS_NOT_CHECKED when a file
+// that could decide it was not fetched. What the gate reads and HTTP does not, the reader does not guess: a file moved
+// with its bytes (the gate lists the whole tree) and a symlink's entry read STALE here, where the gate says ELIGIBLE.
 import { assessPrepared, canon, canonStr, codeIdentity, hex64, loadsLenient, prepare, Refused, utf16 } from "./warrant.mjs";
 
 export const MIGRATION = "migration@1";
@@ -130,10 +137,149 @@ export function pinned(r, root) {
   return false;
 }
 
-// The reliance this reader shows: the engine's, but never ELIGIBLE on pins it did not compare.
+// The reliance this reader shows: the engine's, but never ELIGIBLE on pins it did not compare. A claim the
+// comparison decided (comparePins) reads as the gate reads it, and the gate only ever lowers ELIGIBLE (drift.gate).
 export function shown(r, root, pins) {
   const lin = r.rep.lineages[root];
-  return lin.reliance === "ELIGIBLE" && (pins ?? pinned(r, root)) ? PINS_NOT_CHECKED : lin.reliance;
+  if (lin.reliance !== "ELIGIBLE") return lin.reliance;
+  const c = r.compared?.lineages.get(root);
+  if (c) return c.verdict === "UNCHANGED" ? "ELIGIBLE" : c.verdict === STALE ? STALE : PINS_NOT_CHECKED;
+  return (pins ?? pinned(r, root)) ? PINS_NOT_CHECKED : lin.reliance;
+}
+
+// ---------------------------------------------------------------- pins: the gate's comparison over HTTP (opt-in)
+
+export const STALE = "STALE";                             // warrant/drift.py STALE
+export const CHECKER = "claims-checker";                  // warrant/claims.py CHECKER: the actor, a name in every store
+export const CLOSURE = "imports/1";                       // warrant/claims.py CLOSURE: files named as the import closure
+export const CLAIM = "claim@1";                           // warrant/claims.py CLAIM
+const SHA1 = /^[0-9a-f]{40}$/;                            // a blob id of a SHA-1 repository, as `git ls-tree` spells it
+
+// warrant/claims.py acceptances: [{id, commit, files, closure}] by version of the claims checker's SIGNED attests whose
+// verdict is accept, in id order. The basis is the view's (graph nodes): a line whose signature fails is in `recs`
+// (every line read) but not in the view.
+function acceptances(r) {
+  const basis = new Map(r.rep.graph.nodes.map((n) => [n[0], n[5]]));
+  const out = new Map();
+  for (const [id, rec] of [...r.recs].sort((a, b) => utf16(a[0], b[0]))) {
+    if (rec.kind === "attest" && rec.actor === CHECKER && basis.get(id) === "SIGNED" && rec.body.verdict === "accept") {
+      if (!out.has(rec.body.target)) out.set(rec.body.target, []);
+      out.get(rec.body.target).push({ id, commit: rec.body.commit ?? null, files: rec.body.files, closure: rec.body.closure });
+    }
+  }
+  return out;
+}
+
+// warrant/claims.py live and drift: {root: effective version} of each claim@1 lineage whose leaf is not retired (a fork,
+// no leaf, is live) and whose effective version the claims checker accepted: the lineages the gate covers.
+function covered(r, done) {
+  const out = new Map();
+  for (const [root, lin] of Object.entries(r.rep.lineages)) {
+    if (lin.schema !== CLAIM || (lin.leaf ? r.recs.get(lin.leaf).body.state : null) === "retired") continue;
+    if (lin.effective && done.get(lin.effective)?.length) out.set(root, lin.effective);
+  }
+  return out;
+}
+
+// warrant/pins.py unreadable: why `files` cannot be compared with any tree, or null (Python's `not files`: none, {}, …).
+function unreadable(files) {
+  const obj = files !== null && typeof files === "object" && !Array.isArray(files);
+  if (!files || (obj && Object.keys(files).length === 0) || (Array.isArray(files) && files.length === 0)) return "the acceptance names no files";
+  if (!(obj && Object.values(files).every((b) => typeof b === "string"))) return "the acceptance's files are not {path: blob}";
+  return null;
+}
+
+// The URL of a tree path under `root`, or null for a string no Git tree holds as a path (empty, `.`, `..` or `.git`
+// segments, NUL, a lone surrogate): such a path is never UNCHANGED in the gate, and it must not reach the server.
+function treeUrl(root, path) {
+  if (typeof path !== "string" || path.includes("\0")) return null;
+  const segs = path.split("/");
+  if (segs.some((s) => s === "" || s === "." || s === ".." || s.toLowerCase() === ".git")) return null;
+  try { return root + segs.map(encodeURIComponent).join("/"); } catch { return null; }
+}
+
+// Git's blob id of `bytes`: SHA-1 of "blob <length>\0" and the bytes.
+async function blobId(bytes, digest) {
+  const head = new TextEncoder().encode(`blob ${bytes.length}\0`), all = new Uint8Array(head.length + bytes.length);
+  all.set(head);
+  all.set(bytes, head.length);
+  return [...new Uint8Array(await digest(all))].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+// One file of an acceptance against what the address served at its path ({id} | {absent} | {refused}, or undefined
+// when it was not asked for), in the words of warrant/pins.py where the reader can say them:
+//   UNCHANGED     the bytes at the path hash to the blob;           CHANGED   other bytes at the path;
+//   ABSENT        404 at the path: the gate's GONE, or its MOVED (fresh) when the bytes are at another path, which a
+//                 reader that cannot list the tree does not see: not fresh here;
+//   LINK          a symlink's entry (`link:<blob>`): over HTTP a link reads as its target's name or its target's bytes,
+//                 never as a link: not fresh here, whatever the gate reads;
+//   UNCOMPARABLE  a path no tree holds, or a blob that is no SHA-1 id: never UNCHANGED in the gate;
+//   NOT_FETCHED   the transport failed: no answer, neither fresh nor stale.
+function row(path, blob, got) {
+  if (blob.startsWith("link:")) return [path, "LINK", "a symlink's entry: HTTP serves no link as a link"];
+  if (!SHA1.test(blob) || got === undefined) return [path, "UNCOMPARABLE", "no tree holds this path, or the blob is no SHA-1 id"];
+  if (got.refused) return [path, "NOT_FETCHED", got.refused];
+  if (got.absent) return [path, "ABSENT", "not served at this path (moved or gone: the tree is not listed)"];
+  return got.id === blob ? [path, "UNCHANGED", ""] : [path, "CHANGED", "other bytes at this path"];
+}
+
+// One acceptance's verdict from its rows (warrant/pins.py verdict): UNCHANGED when every file is, NOT_COMPARED when no
+// file is known not to be and one was not fetched, else STALE.
+function judged(rows) {
+  if (rows.every((x) => x[1] === "UNCHANGED")) return "UNCHANGED";
+  return rows.every((x) => x[1] === "UNCHANGED" || x[1] === "NOT_FETCHED") ? "NOT_COMPARED" : STALE;
+}
+
+// Compare the pins of every claim the gate covers with the tree at `base`, the store's own address: sets r.compared.
+// Each distinct path is fetched once, 16 at a time. A transport that fails refuses no read here and answers nothing:
+// the claims it could decide read PINS_NOT_CHECKED and the failure is named (summary().pins.refused). Without
+// `.warrant/claims.json` at the address the gate has nothing to cover (drift: no drift answer); a failure to fetch it
+// compares nothing.
+export async function comparePins(r, base, { fetcher = globalThis.fetch, digest = (b) => globalThis.crypto.subtle.digest("SHA-1", b) } = {}) {
+  const root = base.endsWith("/") ? base : base + "/";
+  const out = { config: "present", lineages: new Map(), asked: 0, fetched: 0, absent: 0, compared: 0, refused: [] };
+  r.compared = out;
+  try { if ((await get(root + ".warrant/claims.json", fetcher)) === null) out.config = "absent"; }
+  catch (e) { out.config = "refused"; out.refused.push(e.message); }
+  if (out.config !== "present") return r;
+  const done = acceptances(r), gate = covered(r, done), urls = new Map();
+  for (const eff of gate.values()) {
+    for (const a of done.get(eff)) {
+      if (a.closure !== CLOSURE || unreadable(a.files)) continue;
+      for (const [p, b] of Object.entries(a.files)) {
+        const u = treeUrl(root, p);
+        if (u !== null && SHA1.test(b)) urls.set(p, u);
+      }
+    }
+  }
+  const paths = [...urls.keys()].sort(utf16), got = new Map();
+  let next = 0;
+  const worker = async () => {             // 16 requests at a time, as fetchStore asks for blobs
+    while (next < paths.length) { // NOSONAR S9382: one request after another within a worker, 16 workers at once
+      const p = paths[next++];
+      try {
+        const bytes = await get(urls.get(p), fetcher);
+        got.set(p, bytes === null ? { absent: true } : { id: await blobId(bytes, digest) });
+      } catch (e) { got.set(p, { refused: e.message }); }
+    }
+  };
+  await Promise.all(Array.from({ length: 16 }, worker));
+  out.asked = paths.length;
+  for (const g of got.values()) { if (g.id) out.fetched++; else if (g.absent) out.absent++; else out.refused.push(g.refused); }
+  for (const [lroot, eff] of gate) {
+    const seen = done.get(eff).map((a) => {
+      const why = a.closure === CLOSURE ? unreadable(a.files)
+        : "the acceptance names its test and mutated files, not the import closure they ran";
+      const rows = why ? [["", "UNKNOWN", why]] : Object.keys(a.files).sort(utf16).map((p) => row(p, a.files[p], got.get(p)));
+      out.compared += rows.filter((x) => x[1] === "UNCHANGED" || x[1] === "CHANGED").length;
+      return { attest: a.id, commit: a.commit, verdict: judged(rows), files: rows.map(([path, verdict, detail]) => ({ path, verdict, detail })) };
+    });
+    // drift: fresh when ANY acceptance is; else not compared when one could still be; else stale
+    const verdict = seen.some((s) => s.verdict === "UNCHANGED") ? "UNCHANGED" : seen.some((s) => s.verdict === "NOT_COMPARED") ? "NOT_COMPARED" : STALE;
+    out.lineages.set(lroot, { verdict, acceptances: seen });
+  }
+  out.refused.sort(utf16);
+  return r;
 }
 
 function pinsIndex(r) {                                   // {root: true} of every pinned lineage, in one pass over the records
@@ -172,8 +318,22 @@ export function summary(r) {
     problems: rep.problems,
     lineages: sorted(Object.fromEntries(Object.entries(lineages).map(([k, v]) => [k, sorted(v)]))),
     reliance: sorted(reliance),
-    not_checked: ["pins: whether an acceptance still names a checkout's bytes (STALE) needs Git objects; such a lineage reads PINS_NOT_CHECKED here, never ELIGIBLE"],
+    not_checked: r.compared ? NOT_CHECKED_COMPARED : ["pins: whether an acceptance still names a checkout's bytes (STALE) needs Git objects; such a lineage reads PINS_NOT_CHECKED here, never ELIGIBLE"],
+    ...(r.compared ? { pins: pinsSummary(r.compared) } : {}),       // only when asked: without it the summary is as it was
   };
+}
+
+const NOT_CHECKED_COMPARED = [
+  "pins: compared with the tree this address serves, not with a checkout's HEAD; PINS_NOT_CHECKED where a file was not fetched, or the lineage is no claim the freshness gate covers",
+  "moved files and symlinks: a file moved with its bytes, or a symlink's entry, reads STALE here where the gate reads it fresh (HTTP lists no tree and serves no link as a link)",
+];
+
+function pinsSummary(c) {
+  const by = {};
+  for (const x of c.lineages.values()) count(by, x.verdict);
+  return { config: c.config, claims: c.lineages.size, verdicts: sorted(by),
+           files: { asked: c.asked, fetched: c.fetched, absent: c.absent, refused: c.asked - c.fetched - c.absent }, compared: c.compared,
+           refused: c.refused };
 }
 
 // A record's one-line name: the first of TITLE_MEMBERS its body has as a string, as data (never markup).
@@ -222,7 +382,8 @@ export function lineage(r, root) {
   });
   const standing = versions.flatMap((v) => v.said.filter((s) => s.kind === "challenge" && s.stands));
   return { floor: { id: root, schema: lin.schema, state: lin.state, reliance: shown(r, root), verdict: lin.verdict,
-                    forks: lin.forks.length, standing, completeness: rep.completeness, rules: r.whose },
+                    forks: lin.forks.length, standing, completeness: rep.completeness, rules: r.whose,
+                    ...(r.compared ? { pins: r.compared.lineages.get(root) ?? null } : {}) },   // each acceptance's comparison
            versions };
 }
 
@@ -232,12 +393,13 @@ async function main(argv) {
   const backend = await nodeBackend();
   const opt = (name) => { const k = argv.indexOf(name); return k >= 0 ? argv[k + 1] : undefined; };
   const base = opt("--base");
-  if (!base) { process.stderr.write("usage: reader.mjs --base URL [--full] [--config RULES.json] [--lineage ID]\n"); return 2; }
+  if (!base) { process.stderr.write("usage: reader.mjs --base URL [--full] [--pins] [--config RULES.json] [--lineage ID]\n"); return 2; }
   try {
     const store = await fetchStore(base, backend, { full: argv.includes("--full") });
     const source = new Uint8Array(fs.readFileSync(new URL("./warrant.mjs", import.meta.url)));
     const mine = opt("--config") ? loadsLenient(fs.readFileSync(opt("--config"), "utf8")) : null;
     const r = await read(store, receiver(store.doc, mine), backend, source);
+    if (argv.includes("--pins")) await comparePins(r, base);
     const out = opt("--lineage") ? { lineage: lineage(r, opt("--lineage")) } : { summary: summary(r), rows: rows(r) };
     process.stdout.write(canonStr(out) + "\n");
   } catch (e) {
