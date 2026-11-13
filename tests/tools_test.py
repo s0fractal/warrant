@@ -1648,21 +1648,25 @@ def observer_cases():
 class FakeBoard:
     """A project board in memory, answering the calls warrant.board makes (two items a page, to walk the pages)."""
 
-    def __init__(self):
-        self.fields, self.items, self.mutations, self.readme, self.n = {}, [], [], None, 0
+    def __init__(self, kind="user"):
+        self.fields, self.items, self.mutations, self.readme, self.n, self.kind, self.asked = {}, [], [], None, 0, kind, []
 
     def _id(self, prefix):
         self.n += 1
         return f"{prefix}{self.n}"
 
     def call(self, query, v):
-        if query is BD.PROJECT:
+        asked = next((k for k in BD.OWNERS if query == BD.PROJECT.replace("OWNER", k)), None)
+        if asked:
+            self.asked.append(asked)
+            if asked != self.kind:
+                raise RP.Failed("GITHUB", f"Could not resolve to a {asked} with the login")       # as GitHub answers the other kind
             start = int(v["after"] or 0)
             page = self.items[start:start + 2]
             def values(it):
                 kind = {"TEXT": "text", "NUMBER": "number", "DATE": "date", "SINGLE_SELECT": "name"}
                 return [{kind[self.fields[n]["dataType"]]: x, "field": {"name": n}} for n, x in it["values"].items()]
-            return {"user": {"projectV2": {"id": "P", "title": "t", "public": False,
+            return {asked: {"projectV2": {"id": "P", "title": "t", "public": False,
                     "fields": {"nodes": list(self.fields.values())},
                     "items": {"pageInfo": {"hasNextPage": start + 2 < len(self.items), "endCursor": str(start + 2)},
                               "nodes": [{"id": it["id"], "isArchived": it["archived"],
@@ -1773,6 +1777,17 @@ def board_cases():
                   for i in by)
           and second["create"] == [] and second["update"] == {} and second["archive"] == [] and fb.mutations == []
           and man["digest"][:12] in (fb.readme or ""), (sorted(did["create"])[:2], second, len(fb.mutations)))
+    org, refusal = FakeBoard("organization"), None
+    try:
+        BD.sync(man, BD.read_board(org.call, "o", 1), org.call, "2026-11-13")
+    except RP.Failed as e:
+        refusal = e.code
+    fb.asked.clear()
+    BD.read_board(fb.call, "o", 1)                    # one read of a user's board of several pages
+    check("BD6 a board of an organization and a board of a user are read alike: the organization is asked first, and every "
+          "page after the first asks only the kind that answered", refusal is None and len(org.items) == len(by) and set(org.asked) == {"organization"}
+          and len(fb.asked) > 3 and fb.asked[:2] == ["organization", "user"] and set(fb.asked[2:]) == {"user"},
+          (refusal, org.asked[:3], fb.asked[:5]))
     made[o_accepted]["values"]["Warrant status"] = BD.OPEN            # a hand edit on the board: no record says so
     made[o_claimed]["title"] = "done, trust me"
     fb.items.append({"id": "X", "draft": "DX", "title": "a person's own note", "body": "", "archived": False, "values": {}})

@@ -134,8 +134,10 @@ python3 -m warrant.board sync --owner s0fractal --project N --root . --root ../m
 
 - **`manifest`** is a pure function of the stores, with no clock and no network: the same stores give the same bytes.
 - **`plan`** reads the board and says what a sync would change; **`sync`** does it. Both go through the `gh` of whoever
-  runs them, which needs the `project` scope (`gh auth refresh -s project`); a workflow's own token cannot reach a
-  project, and this module handles no token.
+  runs them; a workflow's own token cannot reach a project, and this module handles no token. A project of an
+  organization and one of a user are read alike (`--owner` names either). The narrowest token is a fine-grained one
+  bound to the one organization that owns the board, with the organization permission Projects and nothing else; a
+  user-owned project needs the classic `project` scope, which reaches every organization the user belongs to.
 - **Statuses** are the records' own, never one green "Done": `Open`, `Claimed, not accepted` (the author filed the
   closing version; no acceptor has accepted it), `Accepted` (its guard is met), `Released`, `Withdrawn`,
   `Challenged` (a counted challenge stands against its effective version or its leaf), `Forked`. None says verified:

@@ -190,7 +190,8 @@ def gh(query, variables):
     return out["data"]
 
 
-PROJECT = """query($owner: String!, $number: Int!, $after: String) { user(login: $owner) { projectV2(number: $number) {
+# A project belongs to an organization or to a user; the same selection under either root (OWNER is replaced).
+PROJECT = """query($owner: String!, $number: Int!, $after: String) { OWNER(login: $owner) { projectV2(number: $number) {
   id title public
   fields(first: 100) { nodes { ... on ProjectV2FieldCommon { id name dataType }
                                ... on ProjectV2SingleSelectField { options { id name } } } }
@@ -201,6 +202,7 @@ PROJECT = """query($owner: String!, $number: Int!, $after: String) { user(login:
       ... on ProjectV2ItemFieldNumberValue { number field { ... on ProjectV2FieldCommon { name } } }
       ... on ProjectV2ItemFieldDateValue { date field { ... on ProjectV2FieldCommon { name } } }
       ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } } } } } } } } }"""
+OWNERS = ("organization", "user")
 ADD_FIELD = """mutation($project: ID!, $name: String!, $type: ProjectV2CustomFieldType!, $options: [ProjectV2SingleSelectFieldOptionInput!]) {
   createProjectV2Field(input: {projectId: $project, name: $name, dataType: $type, singleSelectOptions: $options}) {
     projectV2Field { ... on ProjectV2FieldCommon { id name dataType } ... on ProjectV2SingleSelectField { options { id name } } } } }"""
@@ -219,12 +221,18 @@ DESCRIBE = """mutation($project: ID!, $readme: String!, $short: String!) { updat
 
 def read_board(call, owner, number):
     """{id, fields: {name: field}, items: [{item, draft, title, body, archived, values: {field name: value}}]}."""
-    after, items, proj = None, [], None
+    after, items, proj, kind = None, [], None, None
     while True:
-        data = call(PROJECT, {"owner": owner, "number": number, "after": after})
-        proj = (data.get("user") or {}).get("projectV2")
+        for k in ([kind] if kind else OWNERS):          # an organization's first: a token bound to one organization reads no user
+            try:
+                proj = (call(PROJECT.replace("OWNER", k), {"owner": owner, "number": number, "after": after}).get(k) or {}).get("projectV2")
+            except Failed:
+                proj = None                             # GitHub answers a login of the other kind with an error, not with null
+            if proj:
+                kind = k
+                break
         if not proj:
-            raise Failed("PROJECT", f"no project {number} of {owner} that this token can read")
+            raise Failed("PROJECT", f"no project {number} of {owner} (an organization or a user) that this token can read")
         for n in proj["items"]["nodes"]:
             values = {}
             for v in n["fieldValues"]["nodes"]:
