@@ -2658,7 +2658,7 @@ TOWARD_LINE = "toward what you watch"
 # fixture, taken from site/reader.mjs at f7e3637b (master before the cone): the sha256 of their canonical text with
 # the addresses made constant
 WATCH_GOLDEN = "60d95f1ae5fffa29d492f3dc75d89c23104dd4b0904cdd785db421b1b5b563c2"
-SUMMARY_GOLDEN = "c8da62c97454b78c7cef3387e5ea36e817e24bed6a6ba09ef3e5c0a4d9847ff5"
+SUMMARY_GOLDEN = "60896816c792cb5062918eed076db9ddef858edb64bab986f21dcb380af29281"       # without code and assessment: they name the runtime
 RESOLVE_WORDS = {"PRESENT", "RESOLVED", "MISSING", "NOT_FETCHED"}
 
 
@@ -2692,7 +2692,9 @@ def _watch_golden(reader):
     def ask(*args):
         rc, out, _ = _watch_run(bp, *args, reader=reader)
         w = {k: v for k, v in (out.get("watch") or {}).items() if k != "toward"}
-        s = {k: v for k, v in (out.get("summary") or {}).items() if k != "cited"}
+        # `code` and `assessment` name the runtime (impl-js codeIdentity: the node and OpenSSL versions), not what was
+        # read: a digest over them holds on one machine only (CI's node is not a developer's)
+        s = {k: v for k, v in (out.get("summary") or {}).items() if k not in ("cited", "code", "assessment")}
         outs.append([rc, w, s])
     try:
         m_a = mark("--with", bo, "--watch", w1)
@@ -2804,7 +2806,8 @@ def browser_toward_cases():
     check("J18 the cone changes nothing that was: what --watch answered (outcome, line, witnesses, counts, reasons) and "
           "the summary, over J17's kinds of answer (silent quick and full, touched inside, a voice read and not read, not "
           "established), are byte for byte master's (digests taken from site/reader.mjs at f7e3637b), `toward` and "
-          "`cited` apart", (w_digest, s_digest) == (WATCH_GOLDEN, SUMMARY_GOLDEN), (w_digest, s_digest))
+          "`cited` apart, and the summary's `code` and `assessment`, which name the runtime (the node version) and so "
+          "hold on one machine only", (w_digest, s_digest) == (WATCH_GOLDEN, SUMMARY_GOLDEN), (w_digest, s_digest))
 
     pub, other = Repo(), Repo()
     goal = pub.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": hostile})
