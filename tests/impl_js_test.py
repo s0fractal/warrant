@@ -2109,16 +2109,21 @@ def browser_door_cases():
     door = (ROOT / "site" / "object.html").read_text()
     shown = _shown_steps(door)
     check("J16 object.html shows the steps voice.mjs holds, word for word and in their order, each in a "
-          "<pre class=\"command\" data-step>: checkout, say, publish, read",
-          rc == 0 and list(shown) == list(steps) == ["checkout", "say", "publish", "read"] and shown == steps, (shown, steps))
+          "<pre class=\"command\" data-step>: install, say, publish, read",
+          rc == 0 and list(shown) == list(steps) == ["install", "say", "publish", "read"] and shown == steps, (shown, steps))
     navs = {n: (ROOT / "site" / n).read_text() for n in ("reader.html", "desk.html", "index.html")}
     check("J16 object.html is linked from the reader's nav, the desk's and index.html's",
           all('<a href="object.html">Object</a>' in t.split("</nav>")[0] for t in navs.values()), [n for n, t in navs.items() if "object.html" not in t])
-    check("J16 no command object.html shows is one for the package on PyPI (3.0.0a6 has no `warrant say`): the "
-          "checkout form alone, `python3 -m warrant` from a clone, and no `pip install`",
-          all("pip" not in l and not l.startswith("warrant ") for ls in shown.values() for l in ls)
-          and any(l.startswith("python3 -m warrant say ") for l in shown.get("say", []))
-          and shown.get("checkout") == ["git clone https://github.com/s0fractal/warrant.git"], shown)
+    lines = [l for ls in shown.values() for l in ls]
+    check("J16 the voice is said with the released package, installed into an environment of the objector's own: a venv "
+          "in the empty directory and the package by a specifier that admits 3.0.0a7 (the first with `warrant say`) and "
+          "later, never the system's interpreter (PEP 668 refuses it), no `sudo`, no `--break-system-packages`, nothing "
+          "piped into a shell; `warrant say` is the venv's, and no clone is needed before the read step",
+          shown.get("install") == ["python3 -m venv .venv", '.venv/bin/pip install "warrant-graph>=3.0.0a7"']
+          and shown.get("say") == ['.venv/bin/warrant say --store voices VERSION_ID "why this version is wrong"']
+          and not any("sudo" in l or "--break-system-packages" in l or "|" in l for l in lines)
+          and not any("git clone" in l for n in ("install", "say", "publish") for l in shown.get(n, []))
+          and "3.0.0a6" not in door and "next release" not in door, shown)
 
     srv_pub, b_pub = _serve(pub.root)
     try:
@@ -2127,7 +2132,7 @@ def browser_door_cases():
     finally:
         srv_pub.shutdown()
     blocks = tg.get("targets", [])
-    fill = lambda v: [l.replace("VERSION_ID", v) for n in ("checkout", "say", "publish") for l in steps.get(n, [])]
+    fill = lambda v: [l.replace("VERSION_ID", v) for n in ("install", "say", "publish") for l in steps.get(n, [])]
     check("J16 the reader's block names the full id of its version: one for the effective version and one for the leaf "
           "when they differ, each command the step's with that id filled in; one block, effective and leaf, when they are "
           "one version",
@@ -2152,7 +2157,7 @@ def browser_door_cases():
           and "not http(s)" in add3.get("why", "") and "with" not in add3 and "credentials" in add4.get("why", "") and "with" not in add4,
           (add1, add2, add3, add4))
 
-    # the commands run: the block's (checkout, say, publish, for the effective version) and object.html's read step
+    # the commands run: the block's (install, say, publish, for the effective version) and object.html's read step
     work = pub.home / "stranger"
     (work / "bin").mkdir(parents=True)
     (work / "home").mkdir()
@@ -2162,13 +2167,19 @@ def browser_door_cases():
            "GIT_CONFIG_GLOBAL": os.devnull, "GIT_AUTHOR_NAME": "a stranger", "GIT_AUTHOR_EMAIL": "stranger@example.org",
            "GIT_COMMITTER_NAME": "a stranger", "GIT_COMMITTER_EMAIL": "stranger@example.org", "LANG": "C.UTF-8"}
     eff = next((b for b in blocks if b["effective"]), {"commands": []})["commands"]
+    # two substitutions, both this checkout for where a stranger gets the code: for PyPI, the venv's `warrant` is made
+    # to run this checkout's package (no network, and the venv has no cryptography of its own); for GitHub, a clone of it
     clone = "git clone https://github.com/s0fractal/warrant.git"
-    ran = [l.replace(clone, f"git clone -q {shlex_quote(str(ROOT))} warrant") if l == clone else l for l in eff]    # the one substitution: this checkout for GitHub
+    pip = '.venv/bin/pip install "warrant-graph>=3.0.0a7"'
+    shim = (f"printf '#!/bin/sh\\nPYTHONPATH=%s exec %s -m warrant \"$@\"\\n' {shlex_quote(str(ROOT))} {shlex_quote(sys.executable)} "
+            "> .venv/bin/warrant && chmod +x .venv/bin/warrant")
+    swap = {clone: f"git clone -q {shlex_quote(str(ROOT))} warrant", pip: shim}
+    ran = [swap.get(l, l) for l in eff]
     srvs, (b_pub2, b_voices) = _serve_many(pub.root, work / "voices")
     safe = re.compile(r"[A-Za-z0-9:/._-]+")
     try:
         assert all(safe.fullmatch(x) for x in (b_pub2, b_voices, o)), (b_pub2, b_voices)
-        read = [l.replace("STORE_URL", b_pub2).replace("VOICES_URL", b_voices).replace("LINEAGE_ID", o) for l in shown.get("read", [])]
+        read = [swap.get(l, l).replace("STORE_URL", b_pub2).replace("VOICES_URL", b_voices).replace("LINEAGE_ID", o) for l in shown.get("read", [])]
         out, rc_run, err = _run_steps([("block", ran), ("read", read)], work, env)
         _, plain = _reader(b_pub2, "--lineage", o)
         _, listed = _reader(b_pub2, "--with", b_voices)
@@ -2185,12 +2196,14 @@ def browser_door_cases():
     vs = (floor.get("outside") or {}).get("voices", [])
     rows = {x["id"]: x for x in listed.get("rows", [])}
     seed = work / "home" / ".config" / "warrant" / "commons" / "commons.seed"
-    check("J16 the commands run as shown: in an empty directory the block's commands (a clone of this checkout in place "
-          "of GitHub, `warrant say` against the effective version into ../voices, that directory committed as a git "
-          "repository) and object.html's read step (the publisher served, the voices served beside it) exit 0; the "
-          "voice is filed under key:<hex> with its seed in the objector's own home",
+    check("J16 the commands run as shown: in an empty directory the block's commands (a venv made, this checkout's "
+          "package in place of PyPI's, the venv's `warrant say` against the effective version into ./voices, that "
+          "directory committed as a git repository) and object.html's read step (a clone of this checkout in place of "
+          "GitHub, the publisher served, the voices served beside it) exit 0; the voice is filed under key:<hex> with "
+          "its seed in the objector's own home, and both substituted lines were among the commands",
           rc_run == 0 and said.get("actor", "").startswith("key:") and len(said.get("actor", "")) == 68 and seed.is_file()
-          and (work / "voices" / ".git").is_dir(), (rc_run, err[-600:], said, sorted(out)))
+          and (work / "voices" / ".git").is_dir() and (work / ".venv" / "bin" / "warrant").is_file()
+          and pip in eff and clone in shown.get("read", []), (rc_run, err[-600:], said, sorted(out)))
     check("J16 the voice appears on the right lineage, uncounted, under its key: actor: the reader with --with the "
           "voices store lists it on that lineage's effective version, the store's state and reliance unchanged, no "
           "voice on another lineage",
