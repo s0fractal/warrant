@@ -353,6 +353,18 @@ def checker_cases():
     git(r.root, "add", "-f", "build/claims-done/ids")
     tracked = refused_code(CL.run, ["--root", str(r.root), "verify", "--base", base, "--done", str(ids_file)])
     git(r.root, "rm", "-q", "--cached", "build/claims-done/ids")
+    q = checker_repo()                                       # a repository holding the package and its shim, as CI's checkout
+    claim(q)
+    shutil.copytree(ROOT / "warrant", q.root / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
+    (q.root / "tools").mkdir()
+    shutil.copy(ROOT / "tools" / "claims.py", q.root / "tools" / "claims.py")
+    qx = q.commit("the package and its shim")
+    shim = subprocess.run([sys.executable, "-B", "tools/claims.py", "verify", "--base", qx, "--done", "build/claims-done/ids"],
+                          capture_output=True, text=True, cwd=q.root, env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"})
+    check("C22 the command line CI runs (tools/claims.py verify --done, the shim) works: the code a done entry is bound "
+          "to is the checker's code at the commit, not the identity of the running process (observed on #367 at 0eeb3072: "
+          "REFUSED IDENTITY tools/claims.py is imported and not in the identity)",
+          shim.returncode == 0 and "held before" in shim.stdout, (shim.returncode, shim.stdout[-200:], shim.stderr[-300:]))
     check("C21 a done file counts only as the runner's own: one the tree holds is refused (Codex on #367: a committed "
           "done file skipped the replay of what it named), and an entry counts only for the checker code that wrote it",
           "0 re-executed, 1 held before" in same and "1 re-executed" in other and (tracked or "").startswith("PATH"),

@@ -48,7 +48,7 @@ from . import records as R
 from . import pins as P
 from .pins import blobs
 from .store import Snapshot
-from .repo import Failed, Repo, checker_problem, code_tree, dump, emit, env_root, git, identity, inside, load_key, main, tree_id
+from .repo import Failed, Repo, checker_code, checker_problem, code_tree, dump, emit, env_root, git, identity, inside, load_key, main, tree_id
 
 CONFIG = "claims/1"
 CLAIM = "claim@1"
@@ -582,7 +582,9 @@ def _verify_cmd(repo, a, root):
     """`verify --base M [--done FILE]`: FILE is a file of the checkout (inside), as every path a tool reads or writes,
     that Git does not track; each line `<acceptance id> <checker code>`."""
     path = inside(a.done, root) if a.done else None
-    code = identity(root)["code"] if path else None
+    # the checker's code at the commit checked out, whatever started the process (a shim, -m): identity() refuses a run
+    # whose launcher lies in the repository (observed on #367 at 0eeb3072 in CI: tools/claims.py)
+    code = checker_code(git(root, "rev-parse", "HEAD"), root) if path else None
     done = _done_file(path, root, code) if path else frozenset()
     held = []
     n = verify(repo, a.base, done, held)

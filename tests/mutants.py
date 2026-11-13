@@ -272,6 +272,7 @@ MUTANTS = [
     ("T175", "warrant/claims.py", 'from . import pins as P\n', 'from . import gate as GT  # noqa: F401\nfrom . import pins as P\n', TOOLS, ["CF6"]),
     ("T176", "warrant/claims.py", '    if tracked:\n        raise Failed("PATH"', '    if False:\n        raise Failed("PATH"', TOOLS, ["C21"]),
     ("T177", "warrant/claims.py", 'return frozenset(r[0] for r in rows if len(r) == 2 and r[1] == code)', 'return frozenset(r[0] for r in rows if r)', TOOLS, ["C21"]),
+    ("T178", "warrant/claims.py", '    code = checker_code(git(root, "rev-parse", "HEAD"), root) if path else None', '    code = identity(root)["code"] if path else None', TOOLS, ["C22"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
     ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),
