@@ -899,6 +899,46 @@ def brake_cases():
     check("E73 a presence rule without a watched tier, with no days, a login that is not one or an unknown member refuses the "
           "base's configuration", all(x == {"BASE_CONFIG"} for x in refused), refused)
 
+def solo_record_cases():
+    """Codex challenge 338a305e15a4 on the #350 review (reproduced at 8278d4a3): a merge accepted by a second family was
+    recorded as solo (F1), and a commenter whose login merely begins with github-actions could suppress the
+    constitutional notice (F2)."""
+    def acceptors(*who):
+        def f(s):
+            s.r.profile["roles"]["pr/acceptor"] = sorted(who)
+            s.r.write_config()
+        return f
+    SOLO_ = dict(MERGE, solo={"window_hours": 0, "veto_role": "pr/owner"})
+    p = PR(merge=SOLO_, before_base=acceptors("bob", "alice"))                       # alice's change, bob accepts it
+    a = p.assess(checks=green(git(p.r.root, "rev-parse", "HEAD"), completed=NOW - 60), now=NOW)
+    q = PR(merge=WATCHED, before_base=acceptors("bob", "alice"))                     # two families, past the solo window
+    w = q.assess(checks=green(git(q.r.root, "rev-parse", "HEAD"), completed=NOW - 100 * 3600), now=NOW)
+    check("E74 a change a second family accepted is merged as accepted, not as solo, whatever the solo windows say: "
+          "solo is the record that no second family reviewed it (Codex F1 on #350)",
+          a.eligible and not a.facts.get("solo") and "accepted by bob" in GT.line(a)
+          and w.eligible and not w.facts.get("solo") and "accepted by bob" in GT.line(w),
+          (a.facts.get("solo"), GT.line(a), w.facts.get("solo"), GT.line(w)))
+
+    def rules(s):
+        (s.r.root / "AGENTS.md").write_text("rules, amended\n")
+    c = PR(merge=CONST, before_x=rules, before_base=acceptors("bob", "alice"))
+    ca = c.assess(checks=green(git(c.r.root, "rev-parse", "HEAD"), completed=NOW - 73 * 3600), now=NOW)
+
+    class GH:
+        def __init__(self, old):
+            self.old, self.posted = list(old), []
+
+        def comments(self, n):
+            return self.old
+
+        def comment(self, n, body):
+            self.posted.append(body)
+    mark = GT.NOTICE.format(x=(ca.facts.get("notice") or {}).get("x"))
+    lookalike = GH([{"body": mark, "user": {"login": "github-actions-evil", "type": "User"}}])
+    GT.notify(GT.Base(c.r.root, c.base), [ca], lookalike)
+    check("E75 a notice mark in a comment by a login that only begins with github-actions does not count: the notice is "
+          "posted (Codex F2 on #350)", len(lookalike.posted) == 1, lookalike.posted)
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -916,4 +956,5 @@ if __name__ == "__main__":
     watched_cases()
     constitution_cases()
     brake_cases()
+    solo_record_cases()
     sys.exit(finish())

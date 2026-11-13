@@ -733,7 +733,9 @@ def _review(a, root, b, pr, head, rep, checks=None, now=None):
         a.facts["solo_from"] = None if any(f is None for _, f in ready) else max(f for _, f in ready)
     elif owned == [] and SOLO in b.gate:
         a.facts["solo_ready"], a.facts["solo_from"] = _solo_window(a, b, rep, lin, b.gate[SOLO], checks or {}, head, now)
-    if a.facts.get("solo_ready"):
+    # solo only when something a second family would give is missing: an accepted change is merged as accepted
+    # (Codex F1 on #350: a merge accepted by codex was recorded as solo)
+    if a.facts.get("solo_ready") and any(c in ("NO_ACCEPT", "WATCHED_FAMILIES") for c, _ in a.reasons):
         _solo(a, rep, lin, x)
 
 
@@ -1322,7 +1324,7 @@ def notify(b, found, gh):
             continue
         mark = NOTICE.format(x=k["x"])
         try:
-            if any(mark in (c.get("body") or "") and (c.get("user") or {}).get("login", "").startswith(ACTIONS_APP)
+            if any(mark in (c.get("body") or "") and (c.get("user") or {}).get("login") == f"{ACTIONS_APP}[bot]"
                    for c in gh.comments(a.pr["number"])):
                 continue
             gh.comment(a.pr["number"], notice_text(a, b))

@@ -147,6 +147,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   revert (records kept; `gate/revert/`, merged as `how: revert`). Away, the windows come before the merge as before.
   No release is published while a brake in its history is open (release.yml, `warrant.gate brakes`). E67–E73;
   mutants G71–G84; V3-14-41, -42 new versions, V3-14-47..50.
+- Codex's review of #350 (challenge 338a305e15a4, reproduced at 8278d4a3): a merge a second family accepted was
+  recorded as solo (F1), and a commenter whose login only began with `github-actions` could suppress the
+  constitutional notice (F2). Solo now applies only when an acceptance or a family is missing; the notice's mark counts
+  only from `github-actions[bot]`. E74, E75; mutants G85, G86.
 
 ## 3.0.0a6 — one package, one receiver
 
