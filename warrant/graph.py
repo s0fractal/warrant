@@ -218,12 +218,17 @@ def grounded(rep, i):
     nodes, out, _ = index(rep)
     lineage = {v: root for root, lin in rep["lineages"].items() for v in lin["versions"]}
 
+    recs = rep.get("_recs") or {}
+
     def grounds(v):
         """The grounds of v: each entity it cites by `ref`, or requires, read as its lineage (a lineage is named by any
-        of its versions, its root as a rule): the lineage's effective version, or the version itself when none is."""
+        of its versions, its root as a rule): the lineage's effective version, or the version itself when none is. The
+        ref that is v's own `answers` (the goal an obligation answers, which warrant.roadmap also cites) is a direction,
+        not a ground: a met goal citing the obligations that answer it made each read CYCLE (minds: 88 failing on 18)."""
         gs, far = [], []
+        answers = ((recs.get(v) or {}).get("body") or {}).get("answers")
         for rel, b in sorted(out.get(v, [])):
-            if rel not in ("ref", "requires"):
+            if rel not in ("ref", "requires") or (rel == "ref" and b == answers):
                 continue
             if b not in nodes:
                 (far if rel == "ref" else gs).append(b)
