@@ -16,7 +16,9 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   not be deleted leaves the carry done (the analysis session on #383). Nothing is retired on a name: before the old
   pull request is closed, the carry on the branch must be the head and the base merged with the stores' union as its
   tree, and CI must have started on it (dispatched again when its dispatch failed); otherwise the old one stays open
-  (Codex on #383). E84, E89, E90, E91; mutants G109–G118.
+  (Codex on #383). The carry is of the head assessed: a source whose head moved since is not carried, one that
+  moves while it is carried is left open, and its branch is deleted only at the head carried (Codex on #383 at
+  f1da8d88: a verdict pushed after the survey was lost with the branch). E84, E89, E90–E92; mutants G109–G121.
 - A dispatched CI run whose `test` passed dispatches the gate (`wake-gate` in ci.yml, nothing checked out): a run the
   workflow token starts wakes no workflow_run, and GitHub mostly skips the gate's schedule, so a green verdicts pull
   request waited for a person to dispatch the gate (#379).

@@ -1118,14 +1118,17 @@ def refresh_cases():
     a = GT.assess(r.root, base, facts, green(head))
 
     class GH:
-        def __init__(self, state, fail=(), branches=(), carry=None, runs=(), dispatch_fails=False):
+        def __init__(self, state, fail=(), branches=(), carry=None, runs=(), dispatch_fails=False, heads=(), tip=None):
             self.state, self.calls, self.fail, self.branches = state, [], set(fail), set(branches)
             self.carry, self.runs, self.dispatch_fails = carry, list(runs), dispatch_fails
+            self.heads, self.tip = list(heads), tip            # the source's head at each read; its branch's tip
 
         def api(self, path, method="GET", body=None, pages=False):
             self.calls.append((path, method, body))
             if (path, method) in self.fail:
                 raise GT.Refused(f"gh api {method} {path}: HTTP 502", "GITHUB")
+            if path == "git/ref/heads/codex/verdicts/x":
+                return {"object": {"sha": self.tip or head}}
             if path.startswith("git/ref/heads/"):
                 if path[len("git/ref/heads/"):] not in self.branches:
                     raise GT.Refused(f"gh api GET {path}: gh: Not Found (HTTP 404)", "GITHUB")
@@ -1136,7 +1139,9 @@ def refresh_cases():
                 return {"workflow_runs": [{"path": w} for w in self.runs]}
             if path == "pulls" and method == "POST":
                 return {"number": 10}
-            return {"mergeable_state": self.state} if path.startswith("pulls/") else {"sha": "e" * 40}
+            if path.startswith("pulls/"):
+                return {"mergeable_state": self.state, "head": {"sha": self.heads.pop(0) if self.heads else head}}
+            return {"sha": "e" * 40}
 
         def dispatch(self, w, br):
             self.calls.append(("dispatch", w, br))
@@ -1222,6 +1227,22 @@ def refresh_cases():
           and ("dispatch", ".github/workflows/ci.yml", fresh) in rerun.calls and closed(rerun) and "FAILED" not in second_d[0][1]
           and not any(c[0] == "dispatch" for c in ran.calls) and closed(ran),
           (got_alien, got_hollow, first_d, second_d, [c[:2] for c in rerun.calls]))
+    # E92 (Codex on #383 at f1da8d88): a source that moves after the survey keeps what the carry did not take
+    moved = "c" * 40
+    before = GH("dirty", heads=[moved])
+    got_before = GT.refresh_verdicts(r.root, b, before, [a])
+    during = GH("dirty", heads=[head, moved])
+    got_during = GT.refresh_verdicts(r.root, b, during, [a])
+    after = GH("dirty", tip=moved)
+    got_after = GT.refresh_verdicts(r.root, b, after, [a])
+    check("E92 the carry is of the head assessed: a source whose head moved since is not carried (nothing made, the next "
+          "run reads it), one that moves while it is carried is left open, and its branch is deleted only at the head "
+          "carried, a branch that moved being kept (Codex on #383 at f1da8d88: a verdict pushed after the survey was "
+          "lost with the source's branch)",
+          "not carried" in got_before[0][1] and not posts(before, "git/refs") and not closed(before) and not deleted(before)
+          and "FAILED" in got_during[0][1] and not closed(during) and not deleted(during)
+          and closed(after) and not deleted(after) and "NOT deleted" in got_after[0][1] and "FAILED" not in got_after[0][1],
+          (got_before, got_during, got_after))
 
 
 def revert_pending_cases():

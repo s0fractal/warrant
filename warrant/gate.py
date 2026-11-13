@@ -1214,7 +1214,15 @@ def refresh_verdicts(root, b, gh, found):
             continue
         n, head, branch = a.pr["number"], a.pr["head"], a.pr.get("branch")
         try:
-            if gh.api(f"pulls/{_number(n)}").get("mergeable_state") != "dirty":
+            p = gh.api(f"pulls/{_number(n)}")
+            if p.get("mergeable_state") != "dirty":
+                continue
+            # The carry is of the head assessed; a source that moved since holds verdicts it would not carry (Codex
+            # on #383 at f1da8d88: a verdict pushed after the survey was lost with the source's branch). The next
+            # run assesses the new head.
+            if (p.get("head") or {}).get("sha") != head:
+                out.append((n, f"not carried: its head moved since it was assessed ({head[:12]} -> "
+                               f"{str((p.get('head') or {}).get('sha'))[:12]}); the next run reads it"))
                 continue
             prefix = CLAIMS_BRANCH if branch.startswith(CLAIMS_BRANCH) else VERDICT_BRANCH
             fresh = _branch(f"{prefix}{b.commit[:12]}-from-{_number(n)}")
@@ -1255,6 +1263,8 @@ def refresh_verdicts(root, b, gh, found):
             ran = {w.get("path") for w in gh.api(f"actions/runs?head_sha={_sha(tip)}&per_page=100").get("workflow_runs", [])}
             for w in sorted({c["workflow"] for c in b.gate["required"]} - ran):
                 gh.dispatch(w, fresh)
+            if (gh.api(f"pulls/{_number(n)}").get("head") or {}).get("sha") != head:
+                raise Refused(f"#{n}'s head moved while it was carried: it is left open, and the next run reads it", "GITHUB")
             gh.comment(n, f"Carried by #{carried} (the base merged in, records only, on {fresh}); closed by the gate.")
             gh.api(f"pulls/{n}", "PATCH", {"state": "closed"})
             done = f"carried by #{carried} from {fresh}" + (f" ({commit[:12]}, the base merged in)" if commit else " (resumed)")
@@ -1262,7 +1272,11 @@ def refresh_verdicts(root, b, gh, found):
             out.append((n, f"refresh FAILED: {e}"))
             continue
         try:
-            gh.api(f"git/refs/heads/{_branch(branch)}", "DELETE")
+            tip = _branch_tip(gh, branch)
+            if tip == head:                     # a branch that moved holds what was not carried: kept
+                gh.api(f"git/refs/heads/{_branch(branch)}", "DELETE")
+            elif tip is not None:
+                done += f"; its branch {branch} NOT deleted: it moved to {str(tip)[:12]} after the carry"
         except Refused as e:
             done += f"; its branch {branch} NOT deleted: {e}"
         out.append((n, done))
