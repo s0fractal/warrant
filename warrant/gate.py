@@ -1216,31 +1216,56 @@ def refresh_verdicts(root, b, gh, found):
         try:
             if gh.api(f"pulls/{_number(n)}").get("mergeable_state") != "dirty":
                 continue
-            records, blobs = union_plan(root, b.commit, head)
-            blob = gh.api("git/blobs", "POST", {"content": base64.b64encode(records).decode(), "encoding": "base64"})["sha"]
-            base_tree = git(root, "rev-parse", f"{b.commit}^{{tree}}").decode().strip()
-            tree = gh.api("git/trees", "POST", {"base_tree": base_tree, "tree": [
-                {"path": RECORDS, "mode": REGULAR, "type": "blob", "sha": blob}, *blobs]})["sha"]
-            commit = gh.api("git/commits", "POST", {"message": f"Merge {b.gate['base']} into {branch}: records only (warrant-gate)\n\n"
-                                                    f"The union of the stores, in canonical order; base {b.commit}.\n",
-                                                    "tree": tree, "parents": [head, b.commit]})["sha"]
             prefix = CLAIMS_BRANCH if branch.startswith(CLAIMS_BRANCH) else VERDICT_BRANCH
             fresh = _branch(f"{prefix}{b.commit[:12]}-from-{_number(n)}")
-            gh.api("git/refs", "POST", {"ref": f"refs/heads/{fresh}", "sha": commit})
-            new = gh.api("pulls", "POST", {"title": a.pr.get("title") or f"verdicts (from #{n})", "head": fresh,
-                                           "base": b.gate["base"],
-                                           "body": f"#{n}'s verdicts, the base {b.commit} merged in by the gate (records "
-                                                   f"only: the union of the stores). #{n} conflicted with the base and is "
-                                                   "closed; its records are all here."})["number"]
-            for w in sorted({c["workflow"] for c in b.gate["required"]}):
-                gh.dispatch(w, fresh)
-            gh.comment(n, f"Carried by #{new} (the base merged in, records only, on {fresh}); closed by the gate.")
+            # A run that failed part way leaves its steps done: the new pull request open (then only the old one's
+            # closing is left) or the branch made with no pull request (then it is opened from it). Each step is
+            # made once (the analysis session on #383: a second POST of the ref refused, every run, until the base
+            # moved, and both pull requests stayed open).
+            carried = next((x.pr["number"] for x in found if x.pr.get("branch") == fresh
+                            and x.pr.get("head_repo") == b.repository and x.pr["number"] != n), None)
+            commit = None
+            if carried is None:
+                if not _has_branch(gh, fresh):
+                    records, blobs = union_plan(root, b.commit, head)
+                    blob = gh.api("git/blobs", "POST", {"content": base64.b64encode(records).decode(), "encoding": "base64"})["sha"]
+                    base_tree = git(root, "rev-parse", f"{b.commit}^{{tree}}").decode().strip()
+                    tree = gh.api("git/trees", "POST", {"base_tree": base_tree, "tree": [
+                        {"path": RECORDS, "mode": REGULAR, "type": "blob", "sha": blob}, *blobs]})["sha"]
+                    commit = gh.api("git/commits", "POST", {"message": f"Merge {b.gate['base']} into {branch}: records only (warrant-gate)\n\n"
+                                                            f"The union of the stores, in canonical order; base {b.commit}.\n",
+                                                            "tree": tree, "parents": [head, b.commit]})["sha"]
+                    gh.api("git/refs", "POST", {"ref": f"refs/heads/{fresh}", "sha": commit})
+                carried = gh.api("pulls", "POST", {"title": a.pr.get("title") or f"verdicts (from #{n})", "head": fresh,
+                                                   "base": b.gate["base"],
+                                                   "body": f"#{n}'s verdicts, the base {b.commit} merged in by the gate "
+                                                           f"(records only: the union of the stores). #{n} conflicted with "
+                                                           "the base and is closed; its records are all here."})["number"]
+                for w in sorted({c["workflow"] for c in b.gate["required"]}):
+                    gh.dispatch(w, fresh)
+            gh.comment(n, f"Carried by #{carried} (the base merged in, records only, on {fresh}); closed by the gate.")
             gh.api(f"pulls/{n}", "PATCH", {"state": "closed"})
-            gh.api(f"git/refs/heads/{_branch(branch)}", "DELETE")
-            out.append((n, f"carried by #{new} from {fresh} ({commit[:12]}, the base merged in)"))
+            done = f"carried by #{carried} from {fresh}" + (f" ({commit[:12]}, the base merged in)" if commit else " (resumed)")
         except Refused as e:
             out.append((n, f"refresh FAILED: {e}"))
+            continue
+        try:
+            gh.api(f"git/refs/heads/{_branch(branch)}", "DELETE")
+        except Refused as e:
+            done += f"; its branch {branch} NOT deleted: {e}"
+        out.append((n, done))
     return out
+
+
+def _has_branch(gh, name):
+    """Whether the branch `name` exists on GitHub; a refusal other than its absence is raised."""
+    try:
+        gh.api(f"git/ref/heads/{_branch(name)}")
+        return True
+    except Refused as e:
+        if "404" in str(e) or "Not Found" in str(e):
+            return False
+        raise
 
 
 def enforce_brakes(root, b, gh, found, now=None):

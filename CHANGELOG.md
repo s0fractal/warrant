@@ -11,7 +11,9 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   starts CI, closes the old one with a comment naming the new one and deletes its branch. It no longer moves the old
   branch: GitHub held a pull_request run of the workflow token's update for the owner's approval (action_required) and
   the required check stayed expected (#379 run 43427696972, #382 run 43468860556); a pull request the token opens
-  starts none. E84, E89; mutants G109–G111.
+  starts none. A run that failed part way is resumed with each step made once: the new pull request open, the next
+  run only closes the old one; its branch made with no pull request, it opens one from it; an old branch that could
+  not be deleted leaves the carry done (the analysis session on #383). E84, E89, E90; mutants G109–G114.
 - A dispatched CI run whose `test` passed dispatches the gate (`wake-gate` in ci.yml, nothing checked out): a run the
   workflow token starts wakes no workflow_run, and GitHub mostly skips the gate's schedule, so a green verdicts pull
   request waited for a person to dispatch the gate (#379).

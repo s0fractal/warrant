@@ -12,6 +12,7 @@ import importlib.machinery
 import importlib.util
 import json
 import time
+import types
 import os
 import py_compile
 import shutil
@@ -1117,11 +1118,17 @@ def refresh_cases():
     a = GT.assess(r.root, base, facts, green(head))
 
     class GH:
-        def __init__(self, state):
-            self.state, self.calls = state, []
+        def __init__(self, state, fail=(), branches=()):
+            self.state, self.calls, self.fail, self.branches = state, [], set(fail), set(branches)
 
         def api(self, path, method="GET", body=None, pages=False):
             self.calls.append((path, method, body))
+            if (path, method) in self.fail:
+                raise GT.Refused(f"gh api {method} {path}: HTTP 502", "GITHUB")
+            if path.startswith("git/ref/heads/"):
+                if path[len("git/ref/heads/"):] not in self.branches:
+                    raise GT.Refused(f"gh api GET {path}: gh: Not Found (HTTP 404)", "GITHUB")
+                return {"object": {"sha": "e" * 40}}
             if path == "pulls" and method == "POST":
                 return {"number": 10}
             return {"mergeable_state": self.state} if path.startswith("pulls/") else {"sha": "e" * 40}
@@ -1162,6 +1169,29 @@ def refresh_cases():
     check("E89 ... and the old pull request's branch is never moved: GitHub holds a pull_request run of the workflow "
           "token's update for approval (#379, #382), where a pull request it opens starts none",
           not any(c[1] == "PATCH" and c[0].startswith("git/refs/") for c in dirty.calls), [c[:2] for c in dirty.calls])
+    # E90: a run that failed part way is resumed, each step made once
+    broke = GH("dirty", fail={("pulls/9", "PATCH")})
+    first = GT.refresh_verdicts(r.root, b, broke, [a])
+    opened_pr = types.SimpleNamespace(pr={"number": 10, "branch": fresh, "head_repo": REPO}, facts={}, shared=[])
+    again = GH("dirty")
+    second = GT.refresh_verdicts(r.root, b, again, [a, opened_pr])
+    orphan = GH("dirty", branches={fresh})
+    third = GT.refresh_verdicts(r.root, b, orphan, [a])
+    undeleted = GH("dirty", fail={("git/refs/heads/codex/verdicts/x", "DELETE")})
+    fourth = GT.refresh_verdicts(r.root, b, undeleted, [a])
+    posts = lambda g, p: [c for c in g.calls if c[0] == p and c[1] == "POST"]
+    check("E90 a refresh that failed part way is resumed with each step made once: the new pull request open, the next "
+          "run only closes the old one (no second branch or pull request, no FAILED); the branch made with no pull "
+          "request, it opens one from it; a branch that could not be deleted leaves the carry done (the analysis "
+          "session on #383)",
+          "FAILED" in first[0][1] and posts(broke, "git/refs") and posts(broke, "pulls")
+          and second == [(9, f"carried by #10 from {fresh} (resumed)")] and not posts(again, "git/refs")
+          and not posts(again, "pulls") and not posts(again, "git/commits")
+          and ("pulls/9", "PATCH", {"state": "closed"}) in again.calls
+          and not posts(orphan, "git/refs") and posts(orphan, "pulls") and ("pulls/9", "PATCH", {"state": "closed"}) in orphan.calls
+          and "FAILED" not in fourth[0][1] and "NOT deleted" in fourth[0][1]
+          and ("pulls/9", "PATCH", {"state": "closed"}) in undeleted.calls,
+          (first, second, third, fourth, [c[:2] for c in again.calls], [c[:2] for c in orphan.calls]))
 
 
 def revert_pending_cases():
