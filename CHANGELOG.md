@@ -188,6 +188,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   voices no store counts, marked `uncounted`, beside the standing challenges. VS1, X10, DR1; mutants T171, T172, X52,
   X53 (A162–A173 now on warrant/commons.py); V3-13-23.
 
+- Codex's three findings on #356's last head (e8508e7f), reproduced at master 58e3cc74: `brakes` read only 300
+  first-parent commits, so a brake followed by more read closed for releases and for the revert (dccff737, P1); the
+  gate's exact-revert check compared object ids only, so its revert with an owner path turned into a link passed
+  (7a84e332, P1); an expired presence returned no deadline, so its end was never announced (cd8d1a0b, P2). The whole
+  first-parent history is read in one batch; modes and types are compared; signs are read back to twice `days`.
+  E80–E82 (Codex's cases); mutants G93–G95.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by
