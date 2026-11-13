@@ -4,6 +4,7 @@ the exact set of refusal codes (a mutant that removes one rule is seen even wher
 
     python3 tests/gate_test.py
 """
+import base64
 import contextlib
 import io
 import importlib
@@ -22,6 +23,7 @@ from pathlib import Path
 from world import KEYS, Repo, check, finish, git
 
 from warrant import gate as GT
+from warrant.store import _line_id
 from warrant import imports as IM
 from warrant import records as R
 
@@ -1089,6 +1091,57 @@ def codex_356_cases():
           before == expires and after == expires and notice == "away noticed" and len(gh.posted) == 1,
           (before, after, notice, gh.posted))
 
+def refresh_cases():
+    """#364 (2026-11-13): a pull request of verdicts only conflicts with the base whenever the base gains a record, since
+    both append to one file and GitHub applies no merge=union; the claims checker's acceptances run CI for 40 minutes,
+    so the base always moves first. The gate merges the base into such a branch itself: the stores' union."""
+    r = Repo()
+    (r.dot / "merge.json").write_text(json.dumps(MERGE))
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "o", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "o", "serves": []}, lineage=o)
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("base")
+    git(r.root, "checkout", "-q", "-b", "codex/verdicts/x")
+    r.attest("bob", d)
+    head = r.commit("bob's verdict")
+    head_lines = (r.dot / "records.jsonl").read_bytes()
+    git(r.root, "checkout", "-q", "master")
+    r.store.write_lines(GT.lines_of((r.dot / "records.jsonl").read_bytes()))
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "another", "serves": []})
+    base = r.commit("the base moves on")
+    base_lines = (r.dot / "records.jsonl").read_bytes()
+    facts = {"number": 9, "state": "open", "draft": False, "base": "master", "head": head, "labels": [],
+             "branch": "codex/verdicts/x", "head_repo": REPO}
+    a = GT.assess(r.root, base, facts, green(head))
+
+    class GH:
+        def __init__(self, state):
+            self.state, self.calls = state, []
+
+        def api(self, path, method="GET", body=None, pages=False):
+            self.calls.append((path, method, body))
+            return {"mergeable_state": self.state} if path.startswith("pulls/") else {"sha": "e" * 40}
+
+        def dispatch(self, w, br):
+            self.calls.append(("dispatch", w, br))
+    b = GT.Base(r.root, base)
+    dirty, clean = GH("dirty"), GH("clean")
+    out = GT.refresh_verdicts(r.root, b, dirty, [a])
+    GT.refresh_verdicts(r.root, b, clean, [a])
+    sent = next((c[2] for c in dirty.calls if c[0] == "git/blobs"), {})
+    union = base64.b64decode(sent.get("content", "")) if sent else b""
+    want = b"".join(sorted(set(GT.lines_of(base_lines) + GT.lines_of(head_lines)), key=_line_id))
+    commit = next((c[2] for c in dirty.calls if c[0] == "git/commits"), {})
+    plain = PR(accept=False)
+    other = GT.refresh_verdicts(plain.r.root, GT.Base(plain.r.root, plain.base), GH("dirty"), [plain.assess()])
+    check("E84 a pull request of verdicts only that conflicts with the base gets the base merged into its branch by the "
+          "gate: its records the union of both stores in canonical order, parents the head and the base, CI started; a "
+          "mergeable one, or one that is not verdicts only, is left alone (#364)",
+          a.facts.get("verdicts") and [n for n, _ in out] == [9] and union == want and commit.get("parents") == [head, base]
+          and any(c[0] == "git/refs/heads/codex/verdicts/x" and c[1] == "PATCH" for c in dirty.calls)
+          and any(c[0] == "dispatch" for c in dirty.calls) and [c[0] for c in clean.calls] == ["pulls/9"] and other == [],
+          (out, a.reasons, len(union), len(want), commit.get("parents"), [c[0] for c in clean.calls], other))
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -1110,4 +1163,5 @@ if __name__ == "__main__":
     presence_cases()
     notice_owner_cases()
     codex_356_cases()
+    refresh_cases()
     sys.exit(finish())

@@ -46,6 +46,7 @@ verdicts computed from the same facts:
 The gate (`gate`) merges at most one eligible pull request per run, reading the pull request and the base
 branch again just before (TOCTOU), giving GitHub the assessed head (it refuses the merge when the head
 moved), and then dispatches the required workflows on the base branch (a GITHUB_TOKEN merge starts none)."""
+import base64
 import calendar
 import importlib.machinery
 import json
@@ -59,7 +60,7 @@ from pathlib import PurePosixPath
 from . import engine as E
 from . import jcs as C
 from . import shapes as S
-from .store import Snapshot
+from .store import Snapshot, _line_id
 
 GATE = "warrant-review/gate@1"
 GATE_FIELDS = ("gate", "base", "required", "hold_label", "owner_paths")
@@ -1116,6 +1117,48 @@ def open_revert(root, b, gh, k, why):
     return f"revert of #{k['pr']} opened from {branch}"
 
 
+def union_plan(root, base, head):
+    """(records bytes, [tree entry]) that merge the base's store into a head that adds only records and blobs: the
+    union of both records.jsonl files in the store's canonical order (`warrant fmt`), and the head's blobs the base
+    does not hold. Git's merge=union does this locally; GitHub does not apply it (R-UNION-ON-FORGE)."""
+    files = {c: files_at(root, c, [RECORDS]).get(RECORDS, b"") for c in (base, head)}
+    union = b"".join(sorted(set(lines_of(files[base]) + lines_of(files[head])), key=_line_id))
+    have = {p for _, _, _, p in entries(root, base, BLOBS.rstrip("/"))}
+    return union, [{"path": p, "mode": m, "type": "blob", "sha": o} for m, t, o, p in entries(root, head, BLOBS.rstrip("/"))
+                   if p not in have and t == "blob"]
+
+
+def refresh_verdicts(root, b, gh, found):
+    """[(pr, outcome)]: each open pull request of verdicts only, from a branch of this repository under its prefix,
+    that GitHub cannot merge (its records conflict with the base's: two branches append to one file) gets the base
+    merged into its branch through GitHub's API, the stores' union as its records, and CI started on it. A pull request
+    of the claims checker's acceptances runs CI for long enough that the base moves on meanwhile; without this it
+    would conflict again and never merge (#364, 2026-11-13)."""
+    out = []
+    for a in found:
+        if not a.facts.get("verdicts") or {c for c, _ in a.shared} & {"VERDICTS_FORK", "VERDICTS_BRANCH", "HEAD_MOVED"}:
+            continue
+        n, head, branch = a.pr["number"], a.pr["head"], a.pr.get("branch")
+        try:
+            if gh.api(f"pulls/{_number(n)}").get("mergeable_state") != "dirty":
+                continue
+            records, blobs = union_plan(root, b.commit, head)
+            blob = gh.api("git/blobs", "POST", {"content": base64.b64encode(records).decode(), "encoding": "base64"})["sha"]
+            base_tree = git(root, "rev-parse", f"{b.commit}^{{tree}}").decode().strip()
+            tree = gh.api("git/trees", "POST", {"base_tree": base_tree, "tree": [
+                {"path": RECORDS, "mode": REGULAR, "type": "blob", "sha": blob}, *blobs]})["sha"]
+            commit = gh.api("git/commits", "POST", {"message": f"Merge {b.gate['base']} into {branch}: records only (warrant-gate)\n\n"
+                                                    f"The union of the stores, in canonical order; base {b.commit}.\n",
+                                                    "tree": tree, "parents": [head, b.commit]})["sha"]
+            gh.api(f"git/refs/heads/{_branch(branch)}", "PATCH", {"sha": commit, "force": False})
+            for w in sorted({c["workflow"] for c in b.gate["required"]}):
+                gh.dispatch(w, branch)
+            out.append((n, f"base merged into {branch} as {commit[:12]}"))
+        except Refused as e:
+            out.append((n, f"refresh FAILED: {e}"))
+    return out
+
+
 def enforce_brakes(root, b, gh, found, now=None):
     """[(pr, outcome)] of each merge whose brake is open, vetoed, not reverted and with no revert pull request open."""
     snap, _ = store_at(root, b.commit)
@@ -1452,7 +1495,8 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
     merged, noticed = None, []
     if merge:
         away = announce_away(b, gh, until)
-        noticed = notify(b, found, gh) + enforce_brakes(root, b, gh, found) + ([(0, away)] if away else [])
+        noticed = (notify(b, found, gh) + enforce_brakes(root, b, gh, found) + refresh_verdicts(root, b, gh, found)
+                   + ([(0, away)] if away else []))
         first = next((x for x in found if x.eligible and x.facts.get("revert")), None) or next((x for x in found if x.eligible), None)
         merged = merge_one(b, first, gh) if first is not None else None
     _append(summary, summary_markdown(found, describe(merged) if merged else None, base)

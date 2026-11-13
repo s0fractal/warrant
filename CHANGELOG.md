@@ -205,6 +205,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   first-parent history is read in one batch; modes and types are compared; signs are read back to twice `days`.
   E80–E82 (Codex's cases); mutants G93–G95.
 
+- A pull request of verdicts only that conflicts with the base only in its records (GitHub applies no merge=union,
+  R-UNION-ON-FORGE) gets the base merged into its branch by the gate: the union of both stores in canonical order, the
+  head's blobs kept, a merge commit made through GitHub's API, CI started on it. The claims checker's acceptances
+  (#364) run CI for about 40 minutes, so without this the base always moved first and the pull request never merged.
+  E84; mutants G98–G100.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by
