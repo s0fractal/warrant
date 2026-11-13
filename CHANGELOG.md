@@ -151,6 +151,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   recorded as solo (F1), and a commenter whose login only began with `github-actions` could suppress the
   constitutional notice (F2). Solo now applies only when an acceptance or a family is missing; the notice's mark counts
   only from `github-actions[bot]`. E74, E75; mutants G85, G86.
+- Presence by a touch (the analysis session): a reaction of the owner's login to a comment of the gate is a sign of
+  presence as his merge is; the gate's comments say until when he counts as present, and when that ends the gate opens
+  one issue naming him (the mode never changes silently). The constitutional notice is no longer posted on a change that
+  also touches an owner path (observed on #356: it promised a merge the gate would not make). Brake and revert lines are
+  whole lines checked by shapes (S6 on #356: the patterns copied a hex shape and ended in `$`). E76–E79; mutants
+  G87–G92.
 
 ## 3.0.0a6 — one package, one receiver
 

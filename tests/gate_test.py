@@ -809,7 +809,7 @@ def brake_cases():
     line = next((ln for ln in gh.merges[0].splitlines() if ln.startswith("warrant-gate brake until")), "") if gh.merges else ""
     check("E68 a merge with the owner present carries its brake in the merge commit (until when, the pull request, the head "
           "version) and the gate comments once, naming the owner, how long the brake acts and how to pull it",
-          m["merged"] and m.get("brake_until", 0) > time.time() + 167 * 3600 and GT.BRAKE.match(line) and here.accept[1] in line
+          m["merged"] and m.get("brake_until", 0) > time.time() + 167 * 3600 and GT.brake_lines(line) and here.accept[1] in line
           and len(gh.comments_) == 1 and "@owner-login" in gh.comments_[0] and "`hold`" in gh.comments_[0],
           (m, line, gh.comments_))
 
@@ -939,6 +939,76 @@ def solo_record_cases():
     check("E75 a notice mark in a comment by a login that only begins with github-actions does not count: the notice is "
           "posted (Codex F2 on #350)", len(lookalike.posted) == 1, lookalike.posted)
 
+def presence_cases():
+    """Presence by a touch (the analysis session, 2026-11-13: with only `.github/` and merge.json left to him, two quiet
+    weeks would read the owner away and bring the windows back while he is here): a reaction of his to a comment of the
+    gate is a sign as a merge is; the comments say until when he counts as present; the change to away is announced."""
+    v, x = "ab" * 32, "cd" * 20
+    check("E76 a brake line is a whole line naming a full record id; a shorter id, trailing words or a revert line naming no "
+          "full commit id are none",
+          len(GT.brake_lines(f"x\nwarrant-gate brake until 5: #7 head version {v}\ny")) == 1
+          and GT.brake_lines(f"warrant-gate brake until 5: #7 head version {v[:-2]}") == []
+          and GT.brake_lines(f"warrant-gate brake until 5: #7 head version {v} and more") == []
+          and len(GT.revert_lines(f"warrant-gate revert of {x}")) == 1 and GT.revert_lines(f"warrant-gate revert of {x[:-1]}") == [])
+    p = PR(merge=PRES)
+    b = GT.Base(p.r.root, p.base)
+    t = NOW - 86400
+    stamp = lambda e: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(e))      # noqa: E731
+
+    class GH:
+        def __init__(self, comments=(), reactions=None, issues=()):
+            self.comments_, self.reactions, self.issues, self.posted = list(comments), reactions or {}, list(issues), []
+
+        def commit(self, sha):
+            return {"author": {"login": "github-actions[bot]"}, "committer": {"login": "web-flow"}}
+
+        def api(self, path, method="GET", body=None, pages=False):
+            if path.startswith("issues/comments?"):
+                return [self.comments_]
+            if path.startswith("issues/comments/"):
+                return [self.reactions.get(int(path.split("/")[2]), [])]
+            if path.startswith("issues?"):
+                return [self.issues]
+            if path == "issues" and method == "POST":
+                self.posted.append(body)
+                self.issues.append({"body": body["body"], "user": {"login": "github-actions[bot]"}})
+                return {}
+            raise AssertionError(path)
+    bot = {"login": "github-actions[bot]"}
+    gate_c = {"id": 1, "user": bot, "body": GT.BRAKE_MARK + " merged"}
+    other_c = {"id": 2, "user": {"login": "owner-login"}, "body": "a comment of his own"}
+    mine = {"user": {"login": "owner-login"}, "created_at": stamp(t)}
+    seen = GT.presence_until(p.r.root, b, GH([gate_c], {1: [mine]}), now=NOW)
+    stranger = GT.presence_until(p.r.root, b, GH([gate_c], {1: [dict(mine, user={"login": "mallory"})]}), now=NOW)
+    not_gate = GT.presence_until(p.r.root, b, GH([other_c], {2: [mine]}), now=NOW)
+    check("E77 a reaction of the owner's login to a comment of the gate makes him present for `days` from it; a reaction by "
+          "another login, or to a comment that is not the gate's, does not",
+          seen == t + 14 * 86400 and stranger is None and not_gate is None, (seen, stranger, not_gate))
+    gh = GH()
+    first = GT.announce_away(b, gh, NOW - 60, now=NOW)
+    again = GT.announce_away(b, gh, NOW - 60, now=NOW)
+    still = GT.announce_away(b, GH(), NOW + 60, now=NOW)
+    check("E78 when his presence ends the gate says so once, in an issue naming him, with what makes him present again; "
+          "never again for the same end, and not while he is present",
+          first == "away noticed" and again is None and still is None and len(gh.posted) == 1
+          and "@owner-login" in gh.posted[0]["body"] and "reaction" in gh.posted[0]["body"], (first, again, still, gh.posted))
+
+def notice_owner_cases():
+    """Observed on #356 (head 78979a5f, 2026-11-13): the gate's notice said it may merge a change from a date, though the
+    change also touched owner paths (.github/, .warrant/merge.json), which only the owner merges."""
+    def both(s):
+        (s.r.root / "AGENTS.md").write_text("rules, amended\n")
+        (s.r.root / ".github").mkdir(exist_ok=True)
+        (s.r.root / ".github" / "x.yml").write_text("on: push\n")
+    def acceptors(s):
+        s.r.profile["roles"]["pr/acceptor"] = ["alice", "bob"]
+        s.r.write_config()
+    p = PR(merge=CONST, before_x=both, before_base=acceptors)
+    a = p.assess(checks=green(git(p.r.root, "rev-parse", "HEAD"), completed=NOW - 3600), now=NOW)
+    check("E79 a change that also touches an owner path gets no constitutional notice: the gate will not merge it, the "
+          "owner does", "OWNER_PATHS" in codes(a) and a.facts.get("constitutional") == ["AGENTS.md"] and "notice" not in a.facts,
+          (a.reasons, a.facts.get("notice")))
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -957,4 +1027,6 @@ if __name__ == "__main__":
     constitution_cases()
     brake_cases()
     solo_record_cases()
+    presence_cases()
+    notice_owner_cases()
     sys.exit(finish())

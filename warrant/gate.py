@@ -46,8 +46,8 @@ verdicts computed from the same facts:
 The gate (`gate`) merges at most one eligible pull request per run, reading the pull request and the base
 branch again just before (TOCTOU), giving GitHub the assessed head (it refuses the merge when the head
 moved), and then dispatches the required workflows on the base branch (a GITHUB_TOKEN merge starts none)."""
-import importlib.machinery
 import calendar
+import importlib.machinery
 import json
 import os
 import re
@@ -77,12 +77,15 @@ ACCEPTOR = "pr/acceptor"   # the role whose verdicts the gate counts
 # Present, a tier's change merges with no window before it, and the brake acts after it (brakes, open_revert).
 PRESENCE = "presence"
 PRESENCE_FIELDS = {"login", "days", "since"}
-BRAKE = re.compile(r"^warrant-gate brake until (\d{1,12}): #(\d{1,9}) head version ([0-9a-f]{64})$", re.M)
-REVERT = re.compile(r"^warrant-gate revert of ([0-9a-f]{40})$", re.M)
+BRAKE = re.compile(r"warrant-gate brake until (\d{1,12}): #(\d{1,9}) head version (\w+)")       # a whole line (fullmatch)
+REVERT = re.compile(r"warrant-gate revert of (\w+)")
 REVERT_BRANCH = "gate/revert/"
+BRAKE_MARK = "<!-- warrant-gate brake -->"
+AWAY = "<!-- warrant-gate presence ended {until} -->"
 WEB_FLOW = "web-flow"                       # GitHub's committer of a merge made on GitHub
 LOGIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}\Z")
 NOTICE = "<!-- warrant-gate constitutional window {x} -->"
+MARKS = ("<!-- warrant-gate constitutional window ", "<!-- warrant-gate brake -->")    # the gate's own comments
 ROLE = re.compile(r"[a-z][a-z0-9-]{0,39}/[a-z][a-z0-9-]{0,39}\Z")
 REPOSITORY_DOC = "repository/3"
 RECORDS, BLOBS = ".warrant/records.jsonl", ".warrant/blobs/"
@@ -805,7 +808,7 @@ def _watched(a, b, rep, lin, w, touched, checks, head, now, tier=WATCHED):
     solo_left = None if done is None else w["solo_window_hours"] * 3600 - (now - done)
     blocking = [c for c, _ in a.reasons + a.shared if c not in ("NO_ACCEPT", "WATCHED_FAMILIES", "WATCHED_WINDOW")]
     solo_from = None if done is None else int(done + w["solo_window_hours"] * 3600)
-    if tier == CONSTITUTIONAL and done is not None:
+    if tier == CONSTITUTIONAL and done is not None and not any(r[0] == "OWNER_PATHS" for r in a.reasons):
         a.facts["notice"] = {"x": lin_commit(rep, lin), "version": lin["leaf"], "paths": touched, "notify": w.get("notify", []),
                              "window_until": int(done + w["window_hours"] * 3600), "solo_until": solo_from, "families": w["families"]}
     return bool(families and not blocking and solo_left is not None and solo_left <= 0), solo_from
@@ -944,16 +947,41 @@ def first_parent(root, commit, n=300):
     return out
 
 
-def present(root, b, gh, now=None):
-    """Whether the owner is present: a merge into the base made on GitHub under the `presence` login (its author, with
-    GitHub's web-flow as committer), at or after `since` and within `days`. Agents never merge under that login (AGENTS.md
-    rule 1), so the owner's own merges, his ordinary activity, are the signal; nothing else he does is needed. Any
-    failure to read it is absence: the windows before a merge apply."""
+def _epoch(stamp):
+    """Seconds since the epoch of GitHub's UTC time stamp, None when it is not one."""
+    try:
+        return calendar.timegm(time.strptime(str(stamp), "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return None
+
+
+def _reacted(b, gh, since):
+    """The newest time the `presence` login reacted to a comment of the gate's own (its notice or its brake), at or
+    after `since`: one touch, from a phone, says «seen». Agents never react under that login (AGENTS.md rule 1)."""
+    login, newest = b.gate[PRESENCE]["login"], None
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since))
+    mine = [c for page in gh.api(f"issues/comments?since={stamp}&per_page=100", pages=True) for c in page
+            if (c.get("user") or {}).get("login") == f"{ACTIONS_APP}[bot]" and any(m in (c.get("body") or "") for m in MARKS)]
+    for c in mine[-20:]:
+        for page in gh.api(f"issues/comments/{int(c['id'])}/reactions?per_page=100", pages=True):
+            for r in page:
+                t = _epoch(r.get("created_at"))
+                if (r.get("user") or {}).get("login") == login and t is not None and t >= since:
+                    newest = t if newest is None else max(newest, t)
+    return newest
+
+
+def presence_until(root, b, gh, now=None):
+    """Until when the owner counts as present (seconds since the epoch), or None: `days` after his newest sign at or
+    after `since` and within `days`: a merge into the base made on GitHub under the `presence` login (its author, with
+    GitHub's web-flow as committer), or a reaction of his to a comment of the gate. Agents never merge or react under
+    that login (AGENTS.md rule 1), so his own acts are the signal; nothing else he does is needed. A failure to read
+    either is no sign: the windows before a merge apply."""
     p = b.gate.get(PRESENCE)
     if not p:
-        return False
+        return None
     now = time.time() if now is None else now
-    since, asked = max(p["since"], now - p["days"] * 86400), 0
+    since, asked, signs = max(p["since"], now - p["days"] * 86400), 0, []
     for x, parents, when, _ in first_parent(root, b.commit):
         if when < since or asked >= 30:
             break
@@ -963,10 +991,57 @@ def present(root, b, gh, now=None):
         try:
             c = gh.commit(x)
         except Refused:
-            return False
+            break
         if (c.get("author") or {}).get("login") == p["login"] and (c.get("committer") or {}).get("login") == WEB_FLOW:
-            return True
-    return False
+            signs.append(when)
+            break
+    try:
+        t = _reacted(b, gh, since)
+    except (Refused, AttributeError, KeyError, TypeError, ValueError):
+        t = None
+    signs += [t] if t is not None else []
+    return int(max(signs) + p["days"] * 86400) if signs else None
+
+
+def present(root, b, gh, now=None):
+    """Whether the owner is present at `now` (presence_until)."""
+    now = time.time() if now is None else now
+    until = presence_until(root, b, gh, now)
+    return until is not None and until > now
+
+
+def announce_away(b, gh, until, now=None):
+    """Once, when the owner's presence has ended, an issue naming him: the windows come before a merge again, and what
+    makes him present. The mode never changes silently. The outcome as text, or None."""
+    now = time.time() if now is None else now
+    if PRESENCE not in b.gate or until is None or until > now:
+        return None
+    mark = AWAY.format(until=until)
+    try:
+        if any(mark in (i.get("body") or "") for page in gh.api("issues?state=all&per_page=100", pages=True) for i in page
+               if (i.get("user") or {}).get("login") == f"{ACTIONS_APP}[bot]"):
+            return None
+        when = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(until))
+        login = b.gate[PRESENCE]["login"]
+        gh.api("issues", "POST", {"title": f"warrant-gate: {login} counts as away since {when}",
+                                  "body": f"{mark}\n@{login} no merge of yours on GitHub and no reaction of yours to a "
+                                          f"comment of the gate for {b.gate[PRESENCE]['days']} days: since {when} the "
+                                          "windows come before a merge again (watched 24/72 h, constitutional 72/168 h). "
+                                          "A merge of yours, or a reaction of yours to any comment of the gate, makes "
+                                          f"you present again for {b.gate[PRESENCE]['days']} days.\n"})
+    except Refused as e:
+        return f"away notice FAILED: {e}"
+    return "away noticed"
+
+
+def brake_lines(msg):
+    """The brake lines of a commit message: whole lines, the version a full record id (shapes)."""
+    return [m for ln in msg.splitlines() if (m := BRAKE.fullmatch(ln)) and S.hex64(m[3])]
+
+
+def revert_lines(msg):
+    """The revert lines of a commit message: whole lines naming a full commit id."""
+    return [m for ln in msg.splitlines() if (m := REVERT.fullmatch(ln)) and S.hex_of(m[1], 40)]
 
 
 def brakes(root, commit, now=None, open_only=True):
@@ -974,11 +1049,11 @@ def brakes(root, commit, now=None, open_only=True):
     brake line; with `open_only`, those whose brake has not ended at `now`."""
     now = time.time() if now is None else now
     return [{"merge": x, "until": int(m[1]), "pr": int(m[2]), "version": m[3]}
-            for x, _, _, msg in first_parent(root, commit) for m in BRAKE.finditer(msg) if not open_only or int(m[1]) > now]
+            for x, _, _, msg in first_parent(root, commit) for m in brake_lines(msg) if not open_only or int(m[1]) > now]
 
 
 def reverted(root, commit, merge):
-    return any(m[1] == merge for _, _, _, msg in first_parent(root, commit) for m in REVERT.finditer(msg))
+    return any(m[1] == merge for _, _, _, msg in first_parent(root, commit) for m in revert_lines(msg))
 
 
 def vetoed(b, rep, gh, k):
@@ -1056,7 +1131,7 @@ def _revert_only(a, root, b, pr, head):
     if pr.get("author") != f"{ACTIONS_APP}[bot]":
         return f"#{pr['number']} under {REVERT_BRANCH} was not opened by the gate"
     parents, _, msg = _commit(root, head)
-    m = REVERT.search(msg)
+    m = next(iter(revert_lines(msg)), None)
     if len(parents) != 1 or not m:
         return "the head is not one commit naming the merge it reverts"
     merge, parent = m[1], parents[0]
@@ -1292,7 +1367,10 @@ def brake_text(b, a, until):
     """The gate's comment on a change merged while the owner is present: merged, and how long the brake acts."""
     who = " ".join(f"@{x}" for x in [b.gate[PRESENCE]["login"]] if PRESENCE in b.gate)
     tiers = ", ".join(t for t in TIERS if a.facts.get(t))
-    return (f"{who} merged with no window before it (you are present). The brake holds until "
+    upto = a.facts.get("present_until")
+    seen = (f" You count as present until {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(upto))}; a reaction of yours to "
+            "this comment, or a merge of yours, extends it." if upto else "")
+    return (f"{BRAKE_MARK}\n{who} merged with no window before it (you are present).{seen} The brake holds until "
             f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(until))}: the label `{b.gate['hold_label']}` on this pull "
             f"request, or a challenge by `pr/owner` on the head version `{a.accept[1]}`, and the gate reverts this merge "
             f"({tiers} paths: {', '.join(f'`{p}`' for t in TIERS for p in (a.facts.get(t) or [])[:8])}).\n")
@@ -1311,7 +1389,10 @@ def notice_text(a, base):
                       f"with one family, from {when(k['solo_until'])}.",
                       f"To stop it: the label `{base.gate['hold_label']}` on this pull request, or a challenge on the head "
                       f"version `{k['version']}` by a holder of `pr/owner` (`warrant challenge`). Either stops the merge "
-                      "until it is removed or answered."]) + "\n"
+                      "until it is removed or answered.", "",
+                      (f"A reaction of yours to this comment makes you present for {base.gate[PRESENCE]['days']} days: then "
+                       "the gate merges such a change once its checks are green and the brake acts after the merge."
+                       if PRESENCE in base.gate else "")]) + "\n"
 
 
 def notify(b, found, gh):
@@ -1348,8 +1429,11 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
     b = Base(root, _sha(base))
     gh = gh or GitHub(b.repository)
     try:
-        here = present(root, b, gh)
+        until = presence_until(root, b, gh)
+        here = until is not None and until > time.time()
         found = survey(root, b, gh, set(prs), hold=hold, remote=remote, present_=here)
+        for x in found:
+            x.facts["present_until"] = until
     except Refused as e:
         _append(summary, f"## merge-on-acceptance\n\nNothing assessed: `{e.code}` {e}\n")
         if e.code == "BASE_MOVED":          # a merge landed meanwhile: the run its CI starts reads the new base
@@ -1358,7 +1442,8 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
         raise
     merged, noticed = None, []
     if merge:
-        noticed = notify(b, found, gh) + enforce_brakes(root, b, gh, found)
+        away = announce_away(b, gh, until)
+        noticed = notify(b, found, gh) + enforce_brakes(root, b, gh, found) + ([(0, away)] if away else [])
         first = next((x for x in found if x.eligible and x.facts.get("revert")), None) or next((x for x in found if x.eligible), None)
         merged = merge_one(b, first, gh) if first is not None else None
     _append(summary, summary_markdown(found, describe(merged) if merged else None, base)
