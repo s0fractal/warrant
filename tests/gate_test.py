@@ -21,7 +21,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from world import KEYS, Repo, check, finish, git
+from world import KEYS, Repo, check, git, run_sections
 
 from warrant import gate as GT
 from warrant.store import _line_id
@@ -1371,28 +1371,29 @@ def prerelease_cases():
           held == (["v3.0.0a7"], []) and far == ([], ["v3.0.0a7"]), (held, far))
 
 if __name__ == "__main__":
-    closure_cases()
-    shadow_cases()
-    unreadable_cases()
-    interpreter_cases()
-    eligible_cases()
-    store_cases()
-    schema_cases()
-    tail_cases()
-    catch_up_cases()
-    lineage_cases()
-    verdict_cases()
-    check_cases()
-    merge_cases()
-    watched_cases()
-    constitution_cases()
-    brake_cases()
-    solo_record_cases()
-    presence_cases()
-    notice_owner_cases()
-    codex_356_cases()
-    refresh_cases()
-    after_merge_cases()
-    prerelease_cases()
-    revert_pending_cases()
-    sys.exit(finish())
+    sys.exit(run_sections([
+        closure_cases,
+        shadow_cases,
+        unreadable_cases,
+        interpreter_cases,
+        eligible_cases,
+        store_cases,
+        schema_cases,
+        tail_cases,
+        catch_up_cases,
+        lineage_cases,
+        verdict_cases,
+        check_cases,
+        merge_cases,
+        watched_cases,
+        constitution_cases,
+        brake_cases,
+        solo_record_cases,
+        presence_cases,
+        notice_owner_cases,
+        codex_356_cases,
+        refresh_cases,
+        after_merge_cases,
+        prerelease_cases,
+        revert_pending_cases,
+    ]))

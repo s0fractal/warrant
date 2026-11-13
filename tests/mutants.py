@@ -2,8 +2,16 @@
 """Mutants: each is one exact find/replace (or a list of them) in one file and the cases it must fail. A mutant is KILLED only
 when its run prints `FAIL <case>` for one of those cases: an import error, a crash before the case, or a
 FAIL of another case proves nothing. The run happens in a copy of the tree under build/mutants/, one
-mutant at a time with no bytecode cache, the file restored after each. Before any mutant, each targeted
-test file runs once unmutated in the same copy and must pass (BASELINE_RED refuses the whole run).
+mutant at a time with no bytecode cache, the file restored after each.
+
+A run is of the sections that hold the mutant's cases, not of the whole test file (tests/world.py run_sections:
+a test file's *_cases functions), and it ends at the first `FAIL` of one of its cases. Which section holds a case is
+read, not written down: before any mutant, each section of each targeted test file runs alone, unmutated, in the same
+copy, and every check it prints is mapped to it (WARRANT_CASE_MAP). That run is also the check that each section
+passes alone (BASELINE_RED refuses the whole run otherwise: a section leaning on another's state would read a FAIL
+caused by its isolation as a kill). A test file without sections runs whole, once unmutated as before. A mutant whose
+case no clean run printed is NO_SECTION, never a full run that might find it. The test files still run whole in CI's
+suites.
 
     python3 tests/mutants.py [IDS ...] [--shard K/N] [--matrix OUT.json]
     python3 tests/mutants.py --merge OUT.json PART.json ...     # the union is every id once, each KILLED
@@ -278,6 +286,12 @@ MUTANTS = [
     ("T180", "warrant/resolve.py", '        got = p.in_git(i)\n        if got:\n            return got', '        got = None\n        if got:\n            return got', TOOLS, ["RV1"]),
     ("T181", "warrant/resolve.py", '        got = p.bytes_of(i)\n        if got:\n            return "RESOLVED", got[1]', '        got = None\n        if got:\n            return "RESOLVED", got[1]', TOOLS, ["RV1"]),
     ("T182", "warrant/resolve.py", '    if home is not None and home.holds(i):', '    if False:', TOOLS, ["RV1"]),
+    # the harness itself (tests/mutants.py, tests/world.py): what every KILLED above rests on
+    ("T198", "tests/mutants.py", '            if rc:\n                refused.append', '            if False:\n                refused.append', TOOLS, ["HM1"]),
+    ("T199", "tests/mutants.py", '    if not cases or not all(homes):\n        return None', '    if not cases or not all(homes):\n        return ["main"]', TOOLS, ["HM2"]),
+    ("T200", "tests/world.py", '            sys.stdout.flush()\n            os._exit(1)\n', '            pass\n', TOOLS, ["HM3"]),
+    ("T201", "tests/world.py", '    if unknown:\n        print(f"NO_SUCH_SECTION {unknown}", flush=True)\n        return 2\n', '', TOOLS, ["HM3"]),
+    ("T202", "tests/mutants.py", 'add("main" if not sec or where == "main" else where)\n', 'add("main")\n', TOOLS, ["HM1"]),
     ("T184", "warrant/drift.py", 'if r["kind"] != "attest" or rep["_basis"].get(i) != "SIGNED" or b.get("verdict") != "accept":', 'if r["kind"] != "attest" or b.get("verdict") != "accept":', TOOLS, ["DR31"]),
     ("T185", "warrant/drift.py", '        elif isinstance(b.get("files"), dict) and counted(rep, r):', '        elif False:', TOOLS, ["DR30"]),
     ("T186", "warrant/cli.py", '    if a.as_of is None and Path(store).name == ".warrant":\n        from . import drift as D\n        view = E.View(', '    if False:\n        from . import drift as D\n        view = E.View(', TOOLS, ["DR30"]),
@@ -887,13 +901,14 @@ def jobs():
     return max(1, n or min(os.cpu_count() or 1, 4))
 
 
-def run(test, cwd, tmp=TMP):
-    """(exit status, output); a run past the timeout is status None with what it printed (TIMEOUT, never a kill)."""
+def run(test, cwd, tmp=TMP, extra=None):
+    """(exit status, output); a run past the timeout is status None with what it printed (TIMEOUT, never a kill).
+    `extra`: the WARRANT_SECTION / WARRANT_STOP / WARRANT_CASE_MAP / WARRANT_LIST_SECTIONS of tests/world.py."""
     tmp.mkdir(parents=True, exist_ok=True)
     try:
         r = subprocess.run([sys.executable, "-B", test], cwd=cwd, capture_output=True, text=True, timeout=900,
                            env={"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "PYTHONDONTWRITEBYTECODE": "1",
-                                "HOME": str(Path.home()), "TMPDIR": str(tmp)})
+                                "HOME": str(Path.home()), "TMPDIR": str(tmp), **(extra or {})})
     except subprocess.TimeoutExpired as e:
         return None, (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode(errors="replace")
     return r.returncode, r.stdout + r.stderr
@@ -917,6 +932,55 @@ def copy_tree(dest=COPY):
             shutil.copy2(src, dest / f, follow_symlinks=False)
 
 
+def sections_of(test, cwd, tmp=TMP):
+    """The sections of a test file, in order, or [] for one without (it runs whole)."""
+    rc, out = run(test, cwd, tmp, {"WARRANT_LIST_SECTIONS": "1"})
+    line = next((x for x in out.splitlines() if x.startswith("SECTIONS ")), None)
+    return line.split()[1:] if rc == 0 and line else []
+
+
+def case_map(tests, places):
+    """({test: {case: {section, ...}}}, [refusal]): every section of each test file run alone and unmutated (the
+    whole file when it has none), each check it prints mapped to the section that printed it. A run that is not green
+    is a refusal: the section does not pass alone."""
+    runs = [(t, sec) for t in sorted(tests) for sec in (sections_of(t, places[0][0], places[0][1]) or [None])]
+    free, out, refused, lock = queue.Queue(), {t: {} for t in tests}, [], threading.Lock()
+    for p in places:
+        free.put(p)
+
+    def one(job):
+        t, sec = job
+        copy, tmp = free.get()
+        try:
+            m = tmp / f"case-map-{os.getpid()}-{threading.get_ident()}.tsv"
+            m.unlink(missing_ok=True)
+            rc, text = run(t, copy, tmp, {"WARRANT_CASE_MAP": str(m), **({"WARRANT_SECTION": sec} if sec else {})})
+            rows = [x.split("\t") for x in m.read_text().splitlines()] if m.exists() and sec else []
+            if not sec:          # a file without sections, with a check of its own: the cases it printed (ok/FAIL lines)
+                rows = [(x[5:].split()[0], "main") for x in text.splitlines() if x[:5] in ("ok   ", "FAIL ") and x[5:].split()]
+            m.unlink(missing_ok=True)
+        finally:
+            free.put((copy, tmp))
+        with lock:
+            if rc:
+                refused.append(f"{t} {sec or '(whole)'}\n{text[-1500:]}")
+            for case, where in rows:
+                out[t].setdefault(case, set()).add("main" if not sec or where == "main" else where)
+    with ThreadPoolExecutor(len(places)) as pool:
+        list(pool.map(one, runs))
+    return out, refused
+
+
+def home_sections(cases_of, cases):
+    """The sections to run for `cases` ({case: {section}} of one test file), sorted; ["main"] means the whole file;
+    None when a case is in no section (NO_SECTION: never a full run that might find it)."""
+    homes = [cases_of.get(c) for c in cases]
+    if not cases or not all(homes):
+        return None
+    secs = set().union(*homes)
+    return ["main"] if "main" in secs else sorted(secs)
+
+
 def shard(ids, k, n):
     return [i for j, i in enumerate(ids) if j % n == k - 1]
 
@@ -930,11 +994,10 @@ def run_mutants(ids):
         copy_tree(d)
         t.mkdir(parents=True, exist_ok=True)
     rows = {m[0]: m for m in MUTANTS}
-    for test in sorted({rows[i][4] for i in ids}):
-        rc, out = run(test, COPY)
-        if rc:
-            print(f"BASELINE_RED {test}\n{out[-2000:]}")
-            return None
+    where, refused = case_map({rows[i][4] for i in ids}, places)
+    if refused:
+        print("BASELINE_RED (a section does not pass alone, unmutated)\n" + "\n".join(refused))
+        return None
     free, lock = queue.Queue(), threading.Lock()
     for p in places:
         free.put(p)
@@ -947,20 +1010,25 @@ def run_mutants(ids):
             f = copy / path
             src = f.read_text()
             stale = [o for o, _ in pairs if src.count(o) != 1]
+            secs = home_sections(where.get(test, {}), cases)
             if stale:
                 r = {"id": i, "outcome": "STALE", "detail": f"a find text does not occur once in {path}: {stale[0][:60]!r}"}
+            elif secs is None:
+                r = {"id": i, "outcome": "NO_SECTION", "detail": f"no clean run of {test} printed the case(s) "
+                     f"{[c for c in cases if c not in where.get(test, {})]}"}
             else:
                 mutated = src
                 for o, n in pairs:
                     mutated = mutated.replace(o, n)
                 f.write_text(mutated)
+                env = {"WARRANT_STOP": ",".join(cases), **({} if secs == ["main"] else {"WARRANT_SECTION": ",".join(secs)})}
                 try:
-                    rc, out = run(test, copy, tmp)
+                    rc, out = run(test, copy, tmp, env)
                 finally:
                     f.write_text(src)
                 hit = failed(out, cases) if rc is not None else []
                 r = {"id": i, "outcome": "KILLED" if hit else "SURVIVED" if rc is not None else "TIMEOUT", "failed": hit,
-                     "rc": rc, "detail": "" if hit else out[-600:]}
+                     "rc": rc, "sections": secs, "detail": "" if hit else out[-600:]}
         finally:
             free.put((copy, tmp))
         with lock:

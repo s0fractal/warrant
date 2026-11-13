@@ -6,6 +6,16 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- A mutant runs only the sections of its test file that hold its cases (a test file's `*_cases` functions,
+  `tests/world.py` `run_sections`), and its run ends at the first `FAIL` of one of its cases; the verdict is the same
+  printed `FAIL <case>` line. Which section holds a case is read from clean runs of each section alone, unmutated, in
+  the same copy, before any mutant: that is also the check that every section passes alone (BASELINE_RED otherwise),
+  and a mutant whose case no clean run printed is NO_SECTION, never a full run. Test files without sections (core,
+  shapes, the plugin's) run whole; CI's suites still run every file whole. Measured on 80 mutants (40 of tools_test,
+  40 of agent_test, one laptop, 4 jobs): 496 s before, 36 s after, the map included, 80 of 80 killed both ways. CI runs
+  of one pull request cancel the older one; runs on master and dispatched runs are never cancelled. HM1–HM3; mutants
+  T198–T202 (the harness and `tests/world.py` themselves).
+
 - A pull request of verdicts only that conflicts with the base is carried by a new one: the gate merges the base into
   its head (records only, the union of the stores) on a new branch under the same prefix, opens it as a pull request,
   starts CI, closes the old one with a comment naming the new one and deletes its branch. It no longer moves the old

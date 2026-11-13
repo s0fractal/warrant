@@ -17,7 +17,7 @@ import threading
 import time
 from pathlib import Path
 
-from world import KEYS, ROLES, ROOT, Repo, check, finish, git
+from world import KEYS, ROLES, ROOT, Repo, check, git, run_sections
 
 from warrant import across as A
 from warrant import board as BD
@@ -2159,27 +2159,99 @@ def entry_cases():
           (m1, m2, servers, kept, q))
 
 
+FAKE_TEST = """import sys
+from world import check, run_sections
+STATE = []
+
+
+def a_cases():
+    STATE.append(1)
+    check("H1", True)
+
+
+def b_cases():
+    check("H2", bool(STATE) or "{lean}" == "no")
+
+
+def c_cases():
+    check("H3", "{fail}" != "H3")
+    check("H4", True)
+
+
 if __name__ == "__main__":
-    claims_cases()
-    preflight_cases()
-    drift_cases()
-    pinned_cases()
-    entry_cases()
-    freshness_cases()
-    drift_impact_cases()
-    review_cases()
-    roadmap_cases()
-    cli_cases()
-    chain_join_cases()
-    home_cases()
-    impact_cases()
-    differential_cases()
-    ledger_cases()
-    grounded_cases()
-    observer_cases()
-    merged_cases()
-    voices_cases()
-    board_cases()
-    narrow_cases()
-    resolve_cases()
-    sys.exit(finish())
+    sys.exit(run_sections([a_cases, b_cases, c_cases]))
+"""
+
+
+def harness_cases():
+    """tests/mutants.py, the harness every KILLED rests on: a mutant runs only the sections holding its cases, read
+    from clean runs of each section alone, and stops at its case's FAIL (the analysis session, 2026-11-13: 211 mutants
+    ran all of tools_test.py, 201 all of agent_test.py, for one case each)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("mutants_h", ROOT / "tests" / "mutants.py")
+    MU = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(MU)
+    case_map = getattr(MU, "case_map", None)
+    home = getattr(MU, "home_sections", None)
+
+    def tree(lean, fail=""):
+        d = Path(tempfile.mkdtemp())
+        shutil.copytree(ROOT / "warrant", d / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
+        (d / "tests").mkdir()
+        shutil.copy2(ROOT / "tests" / "world.py", d / "tests" / "world.py")
+        (d / "tests" / "fake_test.py").write_text(FAKE_TEST.replace("{lean}", lean).replace("{fail}", fail))
+        (d / "tmp").mkdir()
+        return d
+    lean, alone = tree("yes"), tree("no")
+    m_lean, r_lean = case_map({"tests/fake_test.py"}, [(lean, lean / "tmp")]) if case_map else ({}, [])
+    m_alone, r_alone = case_map({"tests/fake_test.py"}, [(alone, alone / "tmp")]) if case_map else ({}, [])
+    got = m_alone.get("tests/fake_test.py", {})
+    check("HM1 the harness maps each case to the section that printed it, from each section run alone and unmutated, "
+          "and refuses (BASELINE_RED) when a section does not pass alone: one leaning on another's state would read a "
+          "FAIL its isolation caused as a kill",
+          got == {"H1": {"a_cases"}, "H2": {"b_cases"}, "H3": {"c_cases"}, "H4": {"c_cases"}} and r_alone == []
+          and len(r_lean) == 1 and "b_cases" in r_lean[0], (got, r_alone, r_lean))
+    plan = [home(got, c) for c in (["H3"], ["H1", "H4"], ["H9"], ["H3", "H9"], [])] if home else []
+    check("HM2 a mutant runs the sections holding its cases, and one whose case no clean run printed is NO_SECTION (None), "
+          "never a full run that might find it", plan == [["c_cases"], ["a_cases", "c_cases"], None, None, None], plan)
+    stop = tree("no", fail="H3")
+    env = dict(os.environ, WARRANT_SECTION="c_cases", WARRANT_STOP="H3")
+    out = subprocess.run([sys.executable, "-B", "tests/fake_test.py"], cwd=stop, capture_output=True, text=True, env=env)
+    bad = subprocess.run([sys.executable, "-B", "tests/fake_test.py"], cwd=alone, capture_output=True, text=True,
+                         env=dict(os.environ, WARRANT_SECTION="nope_cases"))
+    whole = subprocess.run([sys.executable, "-B", "tests/fake_test.py"], cwd=alone, capture_output=True, text=True,
+                           env={k: v for k, v in os.environ.items() if not k.startswith("WARRANT_")})
+    check("HM3 WARRANT_SECTION runs only the named sections and WARRANT_STOP ends the run right after its case's FAIL "
+          "line; a section name the file does not have is refused (status 2); unset, the file runs whole as before",
+          out.returncode == 1 and "FAIL H3" in out.stdout and "H4" not in out.stdout and "H1" not in out.stdout
+          and bad.returncode == 2 and "NO_SUCH_SECTION" in bad.stdout
+          and whole.returncode == 0 and all(f"ok   {c}" in whole.stdout for c in ("H1", "H2", "H3", "H4")),
+          (out.returncode, out.stdout[-200:], bad.returncode, bad.stdout[-100:], whole.stdout[-200:]))
+
+
+if __name__ == "__main__":
+    sys.exit(run_sections([
+        claims_cases,
+        preflight_cases,
+        drift_cases,
+        pinned_cases,
+        entry_cases,
+        freshness_cases,
+        drift_impact_cases,
+        review_cases,
+        roadmap_cases,
+        cli_cases,
+        chain_join_cases,
+        home_cases,
+        impact_cases,
+        differential_cases,
+        ledger_cases,
+        grounded_cases,
+        observer_cases,
+        merged_cases,
+        voices_cases,
+        board_cases,
+        narrow_cases,
+        resolve_cases,
+        harness_cases,
+    ]))
