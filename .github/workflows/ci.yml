@@ -280,3 +280,21 @@ jobs:
         with:
           path: ${{ runner.temp }}/ci-code-pass
           key: ci-code-pass-${{ needs.code.outputs.tree }}
+
+  # A run dispatched with GITHUB_TOKEN (the gate's after a merge or on a verdicts pull request it opened, claims-replay's
+  # on its pull request) wakes no workflow_run, and GitHub mostly skips the gate's schedule: the gate slept until a
+  # person dispatched it (#379, 2026-11-13). After `test` passed in a dispatched run, this job dispatches the gate on
+  # the default branch. It checks out nothing and runs no code of the branch tested.
+  wake-gate:
+    needs: [test]
+    if: github.event_name == 'workflow_dispatch' && needs.test.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch merge-on-acceptance on the default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: gh workflow run merge-on-acceptance.yml --repo "$GITHUB_REPOSITORY" --ref "$BASE"

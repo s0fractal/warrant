@@ -133,12 +133,18 @@ def _parser():
                    add_help=False)
     sub.add_parser("resolve", help="where the bytes each cited hash names are, over Home (python -m warrant.resolve)",
                    add_help=False)
+    sub.add_parser("say", help="a voice on a record, under one's own key, with no rights against it (warrant init --voices)",
+                   add_help=False)
     for n, c in cmds.items():
         if n not in ("key", "trust", "init"):
             g = c.add_mutually_exclusive_group()
             g.add_argument("--store")
             g.add_argument("--repo", help="a repository registered in Home (warrant home)")
     cmds["init"].add_argument("--store")
+    cmds["init"].add_argument("--no-entry", action="store_true",
+                              help="a repository's store without the AGENTS.md block and CLAUDE.md import (warrant.entry)")
+    cmds["init"].add_argument("--no-mcp", action="store_true",
+                              help="a repository's store without .warrant/agent.json and the MCP server `warrant` in .mcp.json")
     cmds["init"].add_argument("--voices", action="store_true",
                               help="a store of voices: it trusts nobody and gives nobody a role (warrant say files into it)")
     x = sub.add_parser("across", help="one read over every repository registered in Home (docs/HOME.md); output is JSON")
@@ -245,6 +251,7 @@ def status(a):
         by[state] = by.get(state, 0) + 1
         reliance[lin["reliance"]] = reliance.get(lin["reliance"], 0) + 1
     return {"repository": name, "store": store, "snapshot": rep["snapshot"], "assessment": rep["assessment"],
+            "trusted": sorted(trust.get("keys", {})), "roles": {r: sorted(a) for r, a in sorted(profile.get("roles", {}).items())},
             "records": len(snap.lines), "blobs": len(snap.blobs), "canonical": rep["canonical"],
             "completeness": rep["completeness"], "rejected": len(rep["rejected"]),
             "chain_forks": sorted({f[0] for f in rep["chains"]["forks"]}),
@@ -265,7 +272,12 @@ def render(st):
             ("store", f"{st['store']} · snapshot {st['snapshot'][:12]}"),
             ("records", f"{st['records']} · blobs {st['blobs']} · {'canonical' if st['canonical'] else 'NOT canonical'}"
                         f" · rejected {st['rejected']} · completeness {st['completeness']}"),
-            ("schemas", ", ".join(st["schemas"]) + (f" (pending: {', '.join(st['schemas_pending'])})" if st["schemas_pending"] else ""))]
+            ("receiver", (f"{len(st['trusted'])} trusted actor(s) · roles: " + "; ".join(f"{r} {', '.join(a)}" for r, a in st["roles"].items()))
+                         if any(st["roles"].values()) else
+                         f"{len(st['trusted'])} trusted actor(s) · no actor holds a role: no acceptance counts here yet "
+                         "(.warrant/v3.json: trust binds keys, the profile gives roles)"),
+            ("schemas", (", ".join(st["schemas"]) or "none: `warrant bootstrap` files them")
+                        + (f" (pending: {', '.join(st['schemas_pending'])})" if st["schemas_pending"] else ""))]
     w = max([len(k) for k in st["lineages"]] or [0])
     rows += [("lineages" if i == 0 else "", f"{k.ljust(w)}  {_counts(v)}") for i, (k, v) in enumerate(st["lineages"].items())]
     rows += [("reliance", _counts(st["reliance"])),
@@ -406,6 +418,11 @@ def main(argv=None):
             store = store_dir(a)
             Store(store).init()
             out = {"store": a.store if a.store is not None else store}     # as named, else where it went
+            if Path(store).name == ".warrant":                             # a repository's store: what the next agent reads
+                from . import entry as EN
+                root = Path(store).parent
+                wrote = EN.receiver(root) + ([] if a.no_entry else EN.agents(root)) + ([] if a.no_mcp else EN.mcp(root))
+                out["wrote"] = wrote
         elif a.cmd == "key":
             k = K.Key.generate()
             fd = os.open(home(a.out), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

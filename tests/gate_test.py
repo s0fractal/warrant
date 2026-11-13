@@ -12,6 +12,7 @@ import importlib.machinery
 import importlib.util
 import json
 import time
+import types
 import os
 import py_compile
 import shutil
@@ -1117,15 +1118,33 @@ def refresh_cases():
     a = GT.assess(r.root, base, facts, green(head))
 
     class GH:
-        def __init__(self, state):
-            self.state, self.calls = state, []
+        def __init__(self, state, fail=(), branches=(), carry=None, runs=(), dispatch_fails=False):
+            self.state, self.calls, self.fail, self.branches = state, [], set(fail), set(branches)
+            self.carry, self.runs, self.dispatch_fails = carry, list(runs), dispatch_fails
 
         def api(self, path, method="GET", body=None, pages=False):
             self.calls.append((path, method, body))
+            if (path, method) in self.fail:
+                raise GT.Refused(f"gh api {method} {path}: HTTP 502", "GITHUB")
+            if path.startswith("git/ref/heads/"):
+                if path[len("git/ref/heads/"):] not in self.branches:
+                    raise GT.Refused(f"gh api GET {path}: gh: Not Found (HTTP 404)", "GITHUB")
+                return {"object": {"sha": "e" * 40}}
+            if path.startswith("git/commits/") and method == "GET":      # what the branch holds: given, else the carry made
+                return self.carry or {"parents": [{"sha": head}, {"sha": base}], "tree": {"sha": "e" * 40}}
+            if path.startswith("actions/runs?"):
+                return {"workflow_runs": [{"path": w} for w in self.runs]}
+            if path == "pulls" and method == "POST":
+                return {"number": 10}
             return {"mergeable_state": self.state} if path.startswith("pulls/") else {"sha": "e" * 40}
 
         def dispatch(self, w, br):
             self.calls.append(("dispatch", w, br))
+            if self.dispatch_fails:
+                raise GT.Refused(f"dispatch {w} on {br}: HTTP 502", "GITHUB")
+
+        def comment(self, n, body):
+            self.calls.append(("comment", n, body))
     b = GT.Base(r.root, base)
     dirty, clean = GH("dirty"), GH("clean")
     out = GT.refresh_verdicts(r.root, b, dirty, [a])
@@ -1136,13 +1155,73 @@ def refresh_cases():
     commit = next((c[2] for c in dirty.calls if c[0] == "git/commits"), {})
     plain = PR(accept=False)
     other = GT.refresh_verdicts(plain.r.root, GT.Base(plain.r.root, plain.base), GH("dirty"), [plain.assess()])
-    check("E84 a pull request of verdicts only that conflicts with the base gets the base merged into its branch by the "
-          "gate: its records the union of both stores in canonical order, parents the head and the base, CI started; a "
-          "mergeable one, or one that is not verdicts only, is left alone (#364)",
+    fresh = f"codex/verdicts/{base[:12]}-from-9"
+    made = [c for c in dirty.calls if c[0] == "git/refs" and c[1] == "POST"]
+    opened = [c for c in dirty.calls if c[0] == "pulls" and c[1] == "POST"]
+    check("E84 a pull request of verdicts only that conflicts with the base is carried by a new one: the base merged into "
+          "its head by the gate (records the union of both stores in canonical order, parents the head and the base) on "
+          "a new branch under the same prefix, opened as a pull request with CI started on it, the old one closed with a "
+          "comment naming the new one and its branch deleted; a mergeable one, or one not verdicts only, is left alone "
+          "(#364)",
           a.facts.get("verdicts") and [n for n, _ in out] == [9] and union == want and commit.get("parents") == [head, base]
-          and any(c[0] == "git/refs/heads/codex/verdicts/x" and c[1] == "PATCH" for c in dirty.calls)
-          and any(c[0] == "dispatch" for c in dirty.calls) and [c[0] for c in clean.calls] == ["pulls/9"] and other == [],
-          (out, a.reasons, len(union), len(want), commit.get("parents"), [c[0] for c in clean.calls], other))
+          and made and made[0][2] == {"ref": f"refs/heads/{fresh}", "sha": "e" * 40}
+          and opened and opened[0][2]["head"] == fresh and opened[0][2]["base"] == "master"
+          and ("dispatch", ".github/workflows/ci.yml", fresh) in dirty.calls
+          and any(c[0] == "comment" and c[1] == 9 and "#10" in c[2] for c in dirty.calls)
+          and ("pulls/9", "PATCH", {"state": "closed"}) in dirty.calls
+          and ("git/refs/heads/codex/verdicts/x", "DELETE", None) in dirty.calls
+          and [c[0] for c in clean.calls] == ["pulls/9"] and other == [],
+          (out, a.reasons, len(union), len(want), commit.get("parents"), [c[:2] for c in dirty.calls],
+           [c[0] for c in clean.calls], other))
+    check("E89 ... and the old pull request's branch is never moved: GitHub holds a pull_request run of the workflow "
+          "token's update for approval (#379, #382), where a pull request it opens starts none",
+          not any(c[1] == "PATCH" and c[0].startswith("git/refs/") for c in dirty.calls), [c[:2] for c in dirty.calls])
+    # E90: a run that failed part way is resumed, each step made once
+    broke = GH("dirty", fail={("pulls/9", "PATCH")})
+    first = GT.refresh_verdicts(r.root, b, broke, [a])
+    opened_pr = types.SimpleNamespace(pr={"number": 10, "branch": fresh, "head_repo": REPO, "head": "e" * 40}, facts={}, shared=[])
+    again = GH("dirty")
+    second = GT.refresh_verdicts(r.root, b, again, [a, opened_pr])
+    orphan = GH("dirty", branches={fresh})
+    third = GT.refresh_verdicts(r.root, b, orphan, [a])
+    undeleted = GH("dirty", fail={("git/refs/heads/codex/verdicts/x", "DELETE")})
+    fourth = GT.refresh_verdicts(r.root, b, undeleted, [a])
+    posts = lambda g, p: [c for c in g.calls if c[0] == p and c[1] == "POST"]
+    check("E90 a refresh that failed part way is resumed with each step made once: the new pull request open, the next "
+          "run only closes the old one (no second branch or pull request, no FAILED); the branch made with no pull "
+          "request, it opens one from it; a branch that could not be deleted leaves the carry done (the analysis "
+          "session on #383)",
+          "FAILED" in first[0][1] and posts(broke, "git/refs") and posts(broke, "pulls")
+          and second == [(9, f"carried by #10 from {fresh} (resumed)")] and not posts(again, "git/refs")
+          and not posts(again, "pulls") and not posts(again, "git/commits")
+          and ("pulls/9", "PATCH", {"state": "closed"}) in again.calls
+          and not posts(orphan, "git/refs") and posts(orphan, "pulls") and ("pulls/9", "PATCH", {"state": "closed"}) in orphan.calls
+          and "FAILED" not in fourth[0][1] and "NOT deleted" in fourth[0][1]
+          and ("pulls/9", "PATCH", {"state": "closed"}) in undeleted.calls,
+          (first, second, third, fourth, [c[:2] for c in again.calls], [c[:2] for c in orphan.calls]))
+    # E91 (Codex on #383 head version 5be30830): nothing is retired on a name, and never before CI started on the carry
+    closed = lambda g: ("pulls/9", "PATCH", {"state": "closed"}) in g.calls
+    deleted = lambda g: any(c[0] == "git/refs/heads/codex/verdicts/x" and c[1] == "DELETE" for c in g.calls)
+    alien = GH("dirty", carry={"parents": [{"sha": "d" * 40}, {"sha": base}], "tree": {"sha": "e" * 40}})
+    got_alien = GT.refresh_verdicts(r.root, b, alien, [a, opened_pr])
+    hollow = GH("dirty", branches={fresh}, carry={"parents": [{"sha": head}, {"sha": base}], "tree": {"sha": "f" * 40}})
+    got_hollow = GT.refresh_verdicts(r.root, b, hollow, [a])
+    nodispatch = GH("dirty", dispatch_fails=True)
+    first_d = GT.refresh_verdicts(r.root, b, nodispatch, [a])
+    rerun = GH("dirty")
+    second_d = GT.refresh_verdicts(r.root, b, rerun, [a, opened_pr])
+    ran = GH("dirty", runs=[".github/workflows/ci.yml"])
+    GT.refresh_verdicts(r.root, b, ran, [a, opened_pr])
+    check("E91 a resumed carry is bound to its source before anything is retired: an open pull request or a branch of the "
+          "carry's name whose commit is not the head and the base merged (other parents, or another tree than the "
+          "stores' union) leaves the old pull request open and its branch kept; and the old one is closed only once CI "
+          "has started on the carry, dispatched again when its dispatch failed (Codex on #383)",
+          "FAILED" in got_alien[0][1] and not closed(alien) and not deleted(alien) and not any(c[0] == "comment" for c in alien.calls)
+          and "FAILED" in got_hollow[0][1] and not closed(hollow) and not deleted(hollow) and not posts(hollow, "pulls")
+          and "FAILED" in first_d[0][1] and not closed(nodispatch)
+          and ("dispatch", ".github/workflows/ci.yml", fresh) in rerun.calls and closed(rerun) and "FAILED" not in second_d[0][1]
+          and not any(c[0] == "dispatch" for c in ran.calls) and closed(ran),
+          (got_alien, got_hollow, first_d, second_d, [c[:2] for c in rerun.calls]))
 
 
 def revert_pending_cases():

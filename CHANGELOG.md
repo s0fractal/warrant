@@ -6,13 +6,26 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- A pull request of verdicts only that conflicts with the base is carried by a new one: the gate merges the base into
+  its head (records only, the union of the stores) on a new branch under the same prefix, opens it as a pull request,
+  starts CI, closes the old one with a comment naming the new one and deletes its branch. It no longer moves the old
+  branch: GitHub held a pull_request run of the workflow token's update for the owner's approval (action_required) and
+  the required check stayed expected (#379 run 43427696972, #382 run 43468860556); a pull request the token opens
+  starts none. A run that failed part way is resumed with each step made once: the new pull request open, the next
+  run only closes the old one; its branch made with no pull request, it opens one from it; an old branch that could
+  not be deleted leaves the carry done (the analysis session on #383). Nothing is retired on a name: before the old
+  pull request is closed, the carry on the branch must be the head and the base merged with the stores' union as its
+  tree, and CI must have started on it (dispatched again when its dispatch failed); otherwise the old one stays open
+  (Codex on #383). E84, E89, E90, E91; mutants G109–G118.
+- A dispatched CI run whose `test` passed dispatches the gate (`wake-gate` in ci.yml, nothing checked out): a run the
+  workflow token starts wakes no workflow_run, and GitHub mostly skips the gate's schedule, so a green verdicts pull
+  request waited for a person to dispatch the gate (#379).
+- `warrant --help` lists `say`.
 - The door's commands use the released package instead of a checkout (`site/voice.mjs`, `site/object.html`, the
   reader's block): a venv in the objector's empty directory, `pip install "warrant-graph>=3.0.0a7"` (the first release
   with `warrant say`), the venv's `warrant say --store voices ID "…"`. No clone is needed to object; the clone remains
   only in the optional last step, reading from a terminal with the reader's own file. Run as shown against PyPI on
   2026-11-13.
-
-## Unreleased
 
 - The freshness gate (G14) reads every pinned acceptance: a signed `attest` accepting a version that names `files`,
   that the version's guard counts (its actor holds a role the guard names; `counted`), whatever the lineage's schema,
@@ -25,6 +38,19 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   (its summary has no `config` member). DR30–DR32; J10, J11; mutants T184–T188, T194, T195.
 - `warrant assess` applies the freshness gate to a repository's store read now, as `status`, `drift` and the agent's
   `context` do: it printed ELIGIBLE where they said STALE.
+- `warrant init` in a repository (`.warrant`) leaves what the next agent reads (`warrant/entry.py`): `.warrant/v3.json`
+  naming the repository (GitHub's `origin`, else the directory) with an empty trust and profile, so `warrant status`
+  reads the store it just made (it refused it, W4); the block the adoption experiment measured in `AGENTS.md`, byte for
+  byte between `<!-- warrant:begin -->` and `<!-- warrant:end -->`, and `@AGENTS.md` in `CLAUDE.md`, never over a file's
+  own text and written once; a read-only `.warrant/agent.json` and the server `warrant` in `.mcp.json` beside the
+  others (Claude Code asks the user to approve it the first time: its behaviour, not a defect). `--no-entry` skips the
+  markdown files, `--no-mcp` the server; a store not named `.warrant` is made alone, as before. The experiment (#385,
+  plan 4dd5fdc4, result 4f239352): with the repository as `init` left it 0 of 18 agents used the records, with the
+  block and the server 18 of 18, on both models and every task; its rule R1 said ship it, so the default is the pair it
+  measured. Not measured: the block without the server, the comment marks around it, agents that read no `.mcp.json`.
+  `warrant status` names the receiver: how many actors are trusted and who holds which role, or that no actor holds
+  one, so no acceptance counts yet; and with no schemas, that `warrant bootstrap` files them. IN1–IN3; mutants
+  T189–T193, T196, T197.
 
 ## 3.0.0a7 — the owner as observer; claims on a runner; a stranger's path
 
