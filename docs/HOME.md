@@ -125,6 +125,25 @@ node's `foreign`:
 
 A single store's graph reads such a node as `{"kind": "unavailable"}`.
 
+## Where cited bytes are: `warrant resolve`
+
+```bash
+warrant resolve              # every hash a store cites that it does not hold, and the counts of every state
+warrant resolve ID ... --json
+```
+
+Each cited hex64 gets one state: `PRESENT` (in the citing store), `RESOLVED` (its bytes found and hashed to the
+name in another store of Home, or in a registered clone's minds chain: `refs/vars/heads/*`, `cas/cells/` and
+`cas/atoms/`, named by the sha256 of their bytes), `LOCATED` (a tree names the path, the object is absent here) or
+`MISSING`. Where the bytes are is not whether they changed (that is `drift`'s). Bytes that do not hash to their name are
+refused (`BYTES_MISMATCH`), never `MISSING`. Nothing is executed or written; the answer binds what it read (`root`,
+`lens`) and says `completeness: UNATTESTED`. A store names itself by the `repository` string it gives itself, which is no
+identity: a store named by its root record is an obligation of stage 2.
+
+Measured on 2026-11-13 over the seven stores of this Home: 4198 cited ids `PRESENT`, 3 `RESOLVED` (the cells of the minds
+chain a goal of minds cites), 2 `MISSING` (no store and no history holds them), 0 `LOCATED`. Its one live consumer is
+the bridge to minds.
+
 ## Not yet
 
 These are the next steps of the plan:
@@ -132,5 +151,3 @@ These are the next steps of the plan:
 - **The waker.** It will read its repositories from Home.
 - **A read of one record by its hash from Git history or another machine.** `across` resolves hashes
   over the registered stores' current files only.
-- **A resolver for hashes cited across repositories.** Each cited hash will get one of four
-  states, `PRESENT`, `RESOLVED`, `LOCATED` or `MISSING`, from local stores and Git history only.

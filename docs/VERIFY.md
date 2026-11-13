@@ -236,6 +236,33 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
   built-in lens), no `grounded` member, no default past without a mark (it says there is none instead of using the
   last day), no overlay and no pin rows in the view, and an other store absent from the mark counts as wholly new.
   Not established: that the stores served are all that was said; storage that the browser drops loses the mark.
+- **A watch list (`watch=ID,ID`, `--watch ID[,ID…]`).** The lineages a reader relies on, named by their roots: in the
+  address, or kept in this browser per store address under `reader-watch/1` (a lineage's page has «Watch this
+  lineage» / «Stop watching»; the desk reads the same key; the address wins). A value that is not 64 lowercase hex
+  characters, or an id that is no lineage root here (a version of one is named with its root), is refused by name,
+  never dropped. With a watch list, what changed is said of the watched lineages first, by their **frames**; the
+  store-wide listing stays, collapsed under a summary. The frame of a lineage (`frame` in `site/reader.mjs` is the
+  definition) is the set of record ids a reliance on it can be moved through: the closure, from every version of the
+  lineage, under (a) the graph's out-edges whose relation is in `warrant/graph.py` `WALK` (lineage, requires, ref,
+  attest, challenge), (b) the in-edges attest and challenge (what was said on a member), and (c) every version of the
+  lineage of any member; its records of the view are the frame; and (d), with other stores read, each attest or
+  challenge another store's own graph holds on an id of the closure, named with that store's address. Measured on the
+  live stores, one lineage's frame is a median 0.1–0.3 % of warrant's 3065 records (6.8 % at most) and 2–15 % of
+  minds' 141. Three outcomes, each in one sentence and in `watch.outcome`: **touched** — a watched lineage has a new
+  record in its frame (the witness: each such record, its store, and a shortest chain of relations from it to the
+  lineage, so a record three steps away says why it matters), or its own floor moved (state, reliance as shown,
+  standing challenges, leaf; before and after), or its view differs; with no new record in its frame that is said as
+  «moved with no new record»; **silent** — «N new record(s) at this address (URL); none is in the frame of the K
+  lineage(s) you watch (F of R records)», naming every address read; **not established** — silence could not be said,
+  and why: no mark this read can use (none, unreadable, of another store, of other rules), a watched value refused or
+  no root here, an empty list, a store beside this one not read now, a marked record no longer served, a mark entry
+  that does not verify, or pins compared with no floor of a watched lineage recorded in the mark (a mark made with a
+  watch list records the floor the reader saw of each watched lineage, `floors`, so a pinned file that changed since is
+  seen; without it a pins-only move would not be). With `--watch` the CLI's exit status is the gate: 0 silent, 3
+  touched, 4 not established (2 stays a refused read). Without a watch list nothing changes (`changes` is answered byte
+  for byte as before). Not established by silence: that nothing was said elsewhere (completeness `UNATTESTED`: only the
+  records the addresses read serve now), that a lineage outside the frame cannot matter to the reader for reasons the
+  graph does not hold (text, a commit, a blob's contents), or anything about a store not read.
 - **What waits for whom (`actor=NAME`, `--actor NAME`).** For an actor the reader names (an input on the page,
   remembered in `localStorage` for both pages; the address wins), under the rules the store was read with, the reader
   shows `warrant.graph.frontier` as Python computes it (`frontier` in `site/reader.mjs`): the roles the profile gives
@@ -305,9 +332,14 @@ frontier to `warrant.graph.frontier` for every actor of a fixture that reaches e
 and claude on this repository's own store; J16 holds the door (object.html equal to `voice.mjs STEPS`, the block's id
 for the effective version and the leaf, hostile lineage text kept out of every command, the `with=` field, the
 commands run as shown) and the desk's release block (a served fixture: well-formed, another format, not JSON, a member
-missing, HTTP 500; no word of a verdict in any of them). No case drives a browser (neither `localStorage` nor the pages' buttons are
+missing, HTTP 500; no word of a verdict in any of them); J17 holds the watch list (the frame of every lineage of a
+fixture, with another store's voice, to a closure computed from the Python report; 1000 machine records outside the
+frames silent and one record three steps inside touching exactly its lineage, its witness and chain; a voice in
+another store read and not read; moved with no new record under pins; each reason for not established, with its exit
+status and no silence said; malformed values refused; the desk's watched line; and `changes` without a watch list
+equal to a digest taken before the watch list existed). No case drives a browser (neither `localStorage` nor the pages' buttons are
 exercised), and the layout is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS), so CI does
 not hold the tests to their mutants: eleven mutations of the reader were run by hand for J10, thirty-five more for J11
 and J12, twenty-four for J13, and thirty-three for J14, J15 and the page-source case of J10, thirty-five for J16 and the page-source case of J10
-extended to the door's files, each failing a case of its own on its assertion; the list is in the pull request that
+extended to the door's files, forty-two for J17 and the page-source case of J10, each failing a case of its own on its assertion; the list is in the pull request that
 added them.

@@ -6,6 +6,21 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The browser reader gains a watch list. A reader names the lineages it relies on (`watch=ID,ID`; «Watch this
+  lineage» on a lineage's page, kept per store under `reader-watch/1` and read by the desk too; `--watch`), and what
+  changed is said of those first, by their frames (`frame` in `site/reader.mjs`: the closure from every version of the
+  lineage under the graph's out-edges in `warrant.graph.WALK`, the in-edges attest and challenge, every version of a
+  member's lineage, and other stores' attests and challenges on the closure): touched, with the witness (each new
+  record in the frame, its store, a shortest chain of relations to the lineage) and the floor before and after, or
+  «moved with no new record»; silent, «N new record(s) at this address (URL); none is in the frame of the K lineage(s)
+  you watch (F of R records)»; or not established, with its reason (no usable mark, a value refused or no root here, a
+  store beside not read, a marked record gone, a mark entry unverified, pins compared with no floor recorded). A mark
+  made with a watch list records the watched floors. With `--watch` the CLI exits 0 silent, 3 touched, 4 not
+  established. The store-wide listing stays, collapsed under a summary; without a watch list `changes` is answered
+  byte for byte as before. The desk shows each store's watched line. Not established: completeness (UNATTESTED; the
+  sentences say «at this address»), and the page and the desk in a browser (no case drives one). docs/VERIFY.md;
+  impl_js_test J17; no mutant (R-JS-MUTANTS): forty-two mutations run by hand, each failing a J17 case or the
+  page-source case of J10 on its assertion, not held by CI.
 - The browser reader gains a door for a reader who disagrees. On an opened lineage, beside the effective version and
   the leaf, «Object to this version» gives the commands that file a voice against that version (its full id filled in;
   the checkout form, `python3 -m warrant say --store ../voices ID "…"`, since 3.0.0a6 has no `warrant say`), what the
@@ -263,6 +278,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   starts the required ones: `pages.yml` when the merge changed `site/`, `claims-replay.yml` after every merge but one
   of verdicts only. A merge with GITHUB_TOKEN starts no push workflow, and GitHub ran 5 of 52 scheduled gate runs in
   26 hours, so the site and the checker had not run after the gate's merges. E85, E86; mutants G101–G103.
+- `warrant resolve` (docs/HOME.md, W7): each hash a registered store cites gets one state, PRESENT, RESOLVED (its bytes
+  found in another store of Home or a clone's minds chain, `refs/vars/heads/*` cells and atoms, hashed to the name),
+  LOCATED or MISSING; bytes that do not hash to their name are refused. Over this Home: 4198 present, 3 resolved (minds
+  cells), 2 missing. RV1, RV2; mutants T179–T182.
 
 ## 3.0.0a6 — one package, one receiver
 
