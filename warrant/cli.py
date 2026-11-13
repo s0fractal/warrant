@@ -212,9 +212,20 @@ def _trust(a):
 
 
 def _assess(a):
+    """The engine's report; for a repository's store read now, with the freshness gate applied as `status`, `drift`
+    and the agent's `context` apply it (G14): `assess` alone once printed ELIGIBLE for a lineage they read STALE (the
+    analysis session, 2026-11-13). What the gate read is under `checkout`, and `assessment` stays the engine's."""
     store = store_dir(a)
     trust, profile, _ = receiver(a, store)
-    rep = E.assess(Store(store).snapshot(), trust, profile, a.as_of)
+    if a.as_of is None and Path(store).name == ".warrant":
+        from . import drift as D
+        view = E.View(Store(store).snapshot(), trust, profile, None)
+        rep = view.report()
+        rep["_recs"], rep["_basis"] = view.recs, view.basis
+        D.gate(rep, Path(store).resolve().parent)
+        del rep["_recs"], rep["_basis"]
+    else:
+        rep = E.assess(Store(store).snapshot(), trust, profile, a.as_of)
     if not a.lineage:
         return rep
     return {"lineage": rep["lineages"].get(a.lineage),
@@ -230,10 +241,10 @@ def status(a):
     view = E.View(snap, trust, profile, a.as_of)
     rep, forks = view.report(), CH.forks(view)
     root = Path(store).resolve().parent
-    if a.as_of is None and Path(store).name == ".warrant" and (root / ".warrant" / "claims.json").is_file():
+    if a.as_of is None and Path(store).name == ".warrant":
         from . import drift as D
         rep["_recs"], rep["_basis"] = view.recs, view.basis
-        D.gate(rep, root)            # G14: a claim whose acceptances name other bytes than HEAD's counts STALE here too
+        D.gate(rep, root)            # G14: a lineage whose acceptances name other bytes than HEAD's counts STALE here too
     lineages, reliance = {}, {}
     for lin in rep["lineages"].values():
         by, state = lineages.setdefault(lin["schema"], {}), lin["state"] or "none"     # none: no effective version yet

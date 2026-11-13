@@ -1,8 +1,13 @@
-"""Whether the bytes a claims checker's acceptance ran on are still the bytes at this receiver's head (G14).
+"""Whether the bytes an acceptance rests on are still the bytes at this receiver's head (G14).
 
-An acceptance names its `files`, {path: git blob}: each witness's test file, each mutant's mutated file and test
-file, as the checker found them at the commit it ran (`warrant claims replay`; CI's `claims verify` holds the list to
-that commit). Each is compared with HEAD's tree (warrant.pins):
+A pinned acceptance is a signed `attest` with verdict `accept` on a lineage's effective version that names `files`,
+{path: git blob}, and that the version's guard counts (`counted`: its actor holds a role the guard names and it matches
+the guard), whatever the schema: a lead accepting a goal on the bytes of one file at a commit is pinned as the claims
+checker is; a trusted actor with no role there pins nothing. The claims checker's own acceptances are read too when they name none
+(signed before they were named: UNKNOWN), and its files count only as the import closure of what ran (`imports/1`):
+its earlier lists named the test and mutated files alone. Its files are each witness's test file, each mutant's
+mutated file and test file, and what they load, as the checker found them at the commit it ran (`warrant claims
+replay`; CI's `claims verify` holds the list to that commit). Each file is compared with HEAD's tree (warrant.pins):
 
     UNCHANGED  the same bytes at the same path;
     MOVED      the path is gone from HEAD and the same bytes are at another path (unchanged, at its new path);
@@ -11,9 +16,9 @@ that commit). Each is compared with HEAD's tree (warrant.pins):
     GONE       the path is gone from HEAD and those bytes are nowhere in it;
     UNKNOWN    the acceptance names no files (one signed before they were named): nothing can be compared.
 
-A claim reads UNCHANGED when one of its effective version's acceptances has every file UNCHANGED or MOVED. When none
-has, the acceptance is stale: that lineage's reliance is STALE, not ELIGIBLE, until the claims checker accepts it
-again at a commit holding those bytes. This is a gate, not advice: time-lab Q10 H3 found a model under one sentence
+A lineage reads UNCHANGED when one of its effective version's pinned acceptances has every file UNCHANGED or MOVED.
+When none has, the acceptance is stale: that lineage's reliance is STALE, not ELIGIBLE, until it is accepted again at
+a commit holding those bytes. A lineage whose effective version has no pinned acceptance has no drift answer. This is a gate, not advice: time-lab Q10 H3 found a model under one sentence
 of pressure acting on a stale conclusion in 72 of 72 scenarios despite an honest freshness answer it heeded without
 pressure. The answer leads with the verdict on the bytes (Q10: "the pinned bytes are now at X" made a model re-read
 where git's rename line did not).
@@ -21,7 +26,10 @@ where git's rename line did not).
 It reads the store and Git's trees and history, and runs nothing of the repository's: `context` and `graph` answer
 through it, in workspaces permitted to read only (Codex finding c589d17da0f3), and what the current mutant harness
 lists is no part of it, so editing the harness cannot refresh an acceptance (finding 0e7a05e8832c). The head is the
-receiver's HEAD commit, not its working tree. A checkout without .warrant/claims.json has no drift answer.
+receiver's HEAD commit, not its working tree. No configuration is needed: until 3.0.0a7 only a checkout with
+.warrant/claims.json had a drift answer, and only the claims checker's acceptances were read (the analysis session,
+2026-11-13: a lead's acceptance on a file at C1, the file changed, read ELIGIBLE, while the browser reader said
+PINS_NOT_CHECKED; one predicate now, `pinned`, and site/reader.mjs reads the same).
 
     python3 -m warrant drift [--root DIR] [--json]     # one line per accepted claim, the verdict first
     python3 -m warrant drift --impact [[BASE..]HEAD] [--across] [--json]
@@ -60,27 +68,64 @@ def resolve(root, rev):
         raise Failed("BAD_REVISION", f"no commit {rev!r} in this clone") from None
 
 
+def pinned(rep):
+    """{version: [(commit, files, rule)]} of the pinned acceptances (above): every signed `attest` accepting a version
+    that names `files` as a map and that the version's guard counts, and the claims checker's even when it names none
+    (`files` None). `rule` is CLOSURE for any other actor's (its files are what it says it rests on) and the claims
+    checker's own `closure` for its."""
+    out = {}
+    for i, r in sorted(rep["_recs"].items()):
+        b = r["body"] if isinstance(r.get("body"), dict) else {}
+        if r["kind"] != "attest" or rep["_basis"].get(i) != "SIGNED" or b.get("verdict") != "accept":
+            continue
+        if r["actor"] == C.CHECKER:
+            out.setdefault(b["target"], []).append((b.get("commit"), b.get("files"), b.get("closure")))
+        elif isinstance(b.get("files"), dict) and counted(rep, r):
+            out.setdefault(b["target"], []).append((b.get("commit"), b["files"], C.CLOSURE))
+    return out
+
+
+def counted(rep, r):
+    """Whether the guard of the version attest `r` targets counts it: the version has a guard, `r` is not its author's,
+    its actor holds one of the guard's roles (the engine's `accepted_by`) and `r` matches the guard's `match`. A word
+    that does not count here neither refreshes a pin nor makes one stale (the analysis session on #386, 08b2276f: eve,
+    trusted with no role, accepted the changed bytes and the gate read the lineage ELIGIBLE again)."""
+    t = r["body"].get("target")
+    v, x = rep["versions"].get(t), rep["_recs"].get(t)
+    g = x.get("guard") if x else None
+    return bool(v and g and r["actor"] != x["actor"] and r["actor"] in v.get("accepted_by", [])
+                and all(r["body"].get(k, object()) == m for k, m in g["match"].items()))
+
+
+def _name(rep, L, eff):
+    """What a lineage is called in an answer: its claim id, else its key, else its root's first twelve."""
+    b = rep["_recs"][eff]["body"] if isinstance(rep["_recs"][eff].get("body"), dict) else {}
+    return b.get("id") or b.get("key") or L[:12]
+
+
 def drift(rep, root, at="HEAD"):
-    """{lineage: {id, version, verdict, commit, files}} for each live claim whose effective version the claims
-    checker accepted: the comparison of the acceptance that is freshest, against commit `at` (a resolved id or HEAD)."""
-    if not (Path(root) / ".warrant" / "claims.json").is_file():
+    """{lineage: {id, version, verdict, commit, files}} for each lineage (a claim@1 one not retired) whose effective
+    version has a pinned acceptance: the comparison of the acceptance that is freshest, against commit `at` (a resolved
+    id or HEAD)."""
+    done = pinned(rep)
+    if not done:
         return {}
-    done = C.acceptances(rep)
     try:
         head = blobs(root, at)
     except subprocess.CalledProcessError:
         head = {}
     where = paths_of(head)
-    out, memo = {}, {}
-    for L in sorted(C.live(rep)):
-        eff = rep["lineages"][L]["effective"]
-        if not done.get(eff):
+    out, memo, live = {}, {}, C.live(rep)
+    for L in sorted(rep["lineages"]):
+        lin = rep["lineages"][L]
+        eff = lin["effective"]
+        if not done.get(eff) or (lin["schema"] == C.CLAIM and L not in live):
             continue
         seen = [(x, compare(root, x, files, head, where, at, memo) if rule == C.CLOSURE else
                  [("UNKNOWN", "", "the acceptance names its test and mutated files, not the import closure they ran")])
                 for x, files, rule in done[eff]]
         x, rows = min(seen, key=lambda s: RANK[_verdict(s[1])])
-        out[L] = {"id": rep["_recs"][eff]["body"].get("id"), "version": eff, "verdict": _verdict(rows), "commit": x,
+        out[L] = {"id": _name(rep, L, eff), "version": eff, "verdict": _verdict(rows), "commit": x,
                   "files": [{"verdict": v, "path": p, "detail": d} for v, p, d in rows]}
     return out
 
@@ -114,21 +159,21 @@ def lines(d):
     for L, x in sorted(d.items(), key=lambda kv: (kv[1]["verdict"] == "UNCHANGED", str(kv[1]["id"]))):
         word = {"UNCHANGED": "unchanged", "CHANGED": "CHANGED", "UNKNOWN": "UNKNOWN"}[x["verdict"]]
         out.append(f"{word:9} {x['id']} ({L[:12]}), accepted at {str(x['commit'])[:12]}"
-                   + ("" if x["verdict"] == "UNCHANGED" else f": reliance {STALE} until the claims checker accepts it again"))
+                   + ("" if x["verdict"] == "UNCHANGED" else f": reliance {STALE} until it is accepted again on these bytes"))
         for f in x["files"]:
             if f["verdict"] == "MOVED":
                 out.append(f"  unchanged, moved: {f['detail']} (was {f['path']})")
             elif f["verdict"] != "UNCHANGED":
                 out.append("  " + " ".join(w for w in (f["verdict"], f["path"], f["detail"]) if w))
     n = sum(1 for x in d.values() if x["verdict"] != "UNCHANGED")
-    out.append(f"drift: {len(d)} accepted claim(s), {n} stale")
+    out.append(f"drift: {len(d)} pinned acceptance(s) read, {n} stale")
     return "\n".join(out) + "\n"
 
 
 def _accepted_files(rep, L):
-    """Every path any signed acceptance of claim lineage L's effective version names."""
+    """Every path any pinned acceptance of lineage L's effective version names."""
     eff = rep["lineages"][L]["effective"]
-    return {p for _, files, _ in C.acceptances(rep).get(eff, []) if isinstance(files, dict) for p in files}
+    return {p for _, files, _ in pinned(rep).get(eff, []) if isinstance(files, dict) for p in files}
 
 
 def rests_on(rep, L):
