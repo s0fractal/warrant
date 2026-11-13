@@ -268,6 +268,7 @@ MUTANTS = [
     ("T171", "warrant/cli.py", '        if a.cmd == "init" and a.voices:', '        if False:', TOOLS, ["VS1"]),
     ("T172", "warrant/cli.py", '    name = re.sub(r"[^A-Za-z0-9_.-]", "-", Path(root).name)[:100].strip(".-") or "local"', '    name = Path(root).name', TOOLS, ["VS1"]),
     ("T175", "warrant/claims.py", 'from . import pins as P\n', 'from . import gate as GT  # noqa: F401\nfrom . import pins as P\n', TOOLS, ["CF6"]),
+    ("T183", "warrant/graph.py", '            if rel not in ("ref", "requires") or (rel == "ref" and b == answers):', '            if rel not in ("ref", "requires"):', TOOLS, ["GR4"]),
     ("T179", "warrant/resolve.py", '                if _sha(data) != i:\n                    raise Mismatch', '                if False:\n                    raise Mismatch', TOOLS, ["RV2"]),
     ("T180", "warrant/resolve.py", '        got = p.in_git(i)\n        if got:\n            return got', '        got = None\n        if got:\n            return got', TOOLS, ["RV1"]),
     ("T181", "warrant/resolve.py", '        got = p.bytes_of(i)\n        if got:\n            return "RESOLVED", got[1]', '        got = None\n        if got:\n            return "RESOLVED", got[1]', TOOLS, ["RV1"]),

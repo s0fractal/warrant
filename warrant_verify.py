@@ -31,7 +31,7 @@ import types
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
     "warrant/jcs.py": "1caa6890ea01355224cb4dd4010777b388b51a2b3e5bc405192eeff717b3f9d3",
-    "warrant/graph.py": "773c51a6d9c72ddfebdd17ca44af9eeb5eeb8c82c5f083ffa603a03f6930d9c8",
+    "warrant/graph.py": "20d7486840528a0e6685daac1955a3b73b2ab6a7d51dd0c49edee9e263174d2d",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
@@ -405,12 +405,17 @@ def grounded(rep, i):
     nodes, out, _ = index(rep)
     lineage = {v: root for root, lin in rep["lineages"].items() for v in lin["versions"]}
 
+    recs = rep.get("_recs") or {}
+
     def grounds(v):
         """The grounds of v: each entity it cites by `ref`, or requires, read as its lineage (a lineage is named by any
-        of its versions, its root as a rule): the lineage's effective version, or the version itself when none is."""
+        of its versions, its root as a rule): the lineage's effective version, or the version itself when none is. The
+        ref that is v's own `answers` (the goal an obligation answers, which warrant.roadmap also cites) is a direction,
+        not a ground: a met goal citing the obligations that answer it made each read CYCLE (minds: 88 failing on 18)."""
         gs, far = [], []
+        answers = ((recs.get(v) or {}).get("body") or {}).get("answers")
         for rel, b in sorted(out.get(v, [])):
-            if rel not in ("ref", "requires"):
+            if rel not in ("ref", "requires") or (rel == "ref" and b == answers):
                 continue
             if b not in nodes:
                 (far if rel == "ref" else gs).append(b)
