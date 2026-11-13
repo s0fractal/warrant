@@ -1,8 +1,9 @@
 """Whether the bytes an acceptance rests on are still the bytes at this receiver's head (G14).
 
 A pinned acceptance is a signed `attest` with verdict `accept` on a lineage's effective version that names `files`,
-{path: git blob}, whoever signed it and whatever the schema: a lead accepting a goal on the bytes of one file at a
-commit is pinned as the claims checker is. The claims checker's own acceptances are read too when they name none
+{path: git blob}, and that the version's guard counts (`counted`: its actor holds a role the guard names and it matches
+the guard), whatever the schema: a lead accepting a goal on the bytes of one file at a commit is pinned as the claims
+checker is; a trusted actor with no role there pins nothing. The claims checker's own acceptances are read too when they name none
 (signed before they were named: UNKNOWN), and its files count only as the import closure of what ran (`imports/1`):
 its earlier lists named the test and mutated files alone. Its files are each witness's test file, each mutant's
 mutated file and test file, and what they load, as the checker found them at the commit it ran (`warrant claims
@@ -69,8 +70,9 @@ def resolve(root, rev):
 
 def pinned(rep):
     """{version: [(commit, files, rule)]} of the pinned acceptances (above): every signed `attest` accepting a version
-    that names `files` as a map, and the claims checker's even when it names none (`files` None). `rule` is CLOSURE
-    for any other actor's (its files are what it says it rests on) and the claims checker's own `closure` for its."""
+    that names `files` as a map and that the version's guard counts, and the claims checker's even when it names none
+    (`files` None). `rule` is CLOSURE for any other actor's (its files are what it says it rests on) and the claims
+    checker's own `closure` for its."""
     out = {}
     for i, r in sorted(rep["_recs"].items()):
         b = r["body"] if isinstance(r.get("body"), dict) else {}
@@ -78,9 +80,21 @@ def pinned(rep):
             continue
         if r["actor"] == C.CHECKER:
             out.setdefault(b["target"], []).append((b.get("commit"), b.get("files"), b.get("closure")))
-        elif isinstance(b.get("files"), dict):
+        elif isinstance(b.get("files"), dict) and counted(rep, r):
             out.setdefault(b["target"], []).append((b.get("commit"), b["files"], C.CLOSURE))
     return out
+
+
+def counted(rep, r):
+    """Whether the guard of the version attest `r` targets counts it: the version has a guard, `r` is not its author's,
+    its actor holds one of the guard's roles (the engine's `accepted_by`) and `r` matches the guard's `match`. A word
+    that does not count here neither refreshes a pin nor makes one stale (the analysis session on #386, 08b2276f: eve,
+    trusted with no role, accepted the changed bytes and the gate read the lineage ELIGIBLE again)."""
+    t = r["body"].get("target")
+    v, x = rep["versions"].get(t), rep["_recs"].get(t)
+    g = x.get("guard") if x else None
+    return bool(v and g and r["actor"] != x["actor"] and r["actor"] in v.get("accepted_by", [])
+                and all(r["body"].get(k, object()) == m for k, m in g["match"].items()))
 
 
 def _name(rep, L, eff):

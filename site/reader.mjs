@@ -26,7 +26,7 @@
 //
 // What a browser cannot say: whether an acceptance still names the bytes of a checkout (STALE, docs/V3.md §15) needs
 // the repository's Git objects. So this reader never prints ELIGIBLE for a lineage the freshness gate covers (a pinned
-// acceptance on its effective version, warrant/drift.py pinned: a signed accept naming `files`, whoever signed it, or
+// acceptance on its effective version, warrant/drift.py pinned: a signed accept naming `files` that its guard counts, or
 // the claims checker's): it prints PINS_NOT_CHECKED, the word `warrant verify` uses for a comparison that was not made.
 // A note beside a green word is not enough: `warrant status` once said ELIGIBLE where the gate said STALE.
 //
@@ -177,11 +177,22 @@ export const CLAIM = "claim@1";                           // warrant/claims.py C
 const SHA1 = /^[0-9a-f]{40}$/;                            // a blob id of a SHA-1 repository, as `git ls-tree` spells it
 
 // warrant/drift.py pinned: [{id, commit, files, closure}] by version of the pinned acceptances, in id order: each
-// SIGNED attest whose verdict is accept and that names `files` as a map, whoever signed it (closure CLOSURE: its files
-// are what it says it rests on), and the claims checker's even naming none (its own `closure`). The basis is the
+// SIGNED attest whose verdict is accept, that names `files` as a map and that the version's guard counts (counted:
+// warrant/drift.py counted; closure CLOSURE: its files are what it says it rests on), and the claims checker's even
+// naming none (its own `closure`). The basis is the
 // view's (graph nodes): a line whose signature fails is in `recs` (every line read) but not in the view, and a MIGRATED
 // one is not SIGNED.
 const isMap = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+
+// warrant/drift.py counted: the version has a guard, the attest is not its author's, its actor is among the engine's
+// accepted_by (holds a role the guard names, with an attest that matches) and this attest matches the guard. A word
+// that does not count neither refreshes a pin nor makes one stale (the analysis session on #386).
+function counted(r, rec) {
+  const t = rec.body.target, v = r.rep.versions?.[t], x = r.recs.get(t), g = x?.guard;
+  if (!v || !g || rec.actor === x.actor || !(v.accepted_by || []).includes(rec.actor)) return false;
+  // a member the attest does not have equals nothing, null included (engine.py _attested)
+  return Object.entries(g.match || {}).every(([k, m]) => Object.hasOwn(rec.body, k) && canonStr(rec.body[k]) === canonStr(m));
+}
 
 function acceptances(r) {
   const basis = new Map(r.rep.graph.nodes.map((n) => [n[0], n[5]]));
@@ -189,7 +200,7 @@ function acceptances(r) {
   for (const [id, rec] of [...r.recs].sort((a, b) => utf16(a[0], b[0]))) {
     if (rec.kind !== "attest" || basis.get(id) !== "SIGNED" || !isMap(rec.body) || rec.body.verdict !== "accept") continue;
     const own = rec.actor === CHECKER;
-    if (!own && !isMap(rec.body.files)) continue;
+    if (!own && !(isMap(rec.body.files) && counted(r, rec))) continue;
     if (!out.has(rec.body.target)) out.set(rec.body.target, []);
     out.get(rec.body.target).push({ id, commit: rec.body.commit ?? null, files: rec.body.files, closure: own ? rec.body.closure : CLOSURE });
   }

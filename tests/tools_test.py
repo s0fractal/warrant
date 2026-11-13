@@ -486,7 +486,7 @@ def pinned_cases():
     (r.root / "lib" / "a.py").write_text("A = 2\n")
     r.commit("the file changes")
     after = assessed(r, L)
-    check("DR30 any signed acceptance naming files at a commit pins the version it accepts, whoever signed it and whatever "
+    check("DR30 any signed acceptance naming files at a commit that the version's guard counts pins the version, whatever "
           "its schema, with no .warrant/claims.json: a lead's acceptance of a goal on a file reads ELIGIBLE while the file "
           "holds its bytes and STALE once it changes, in drift, status and assess alike (the analysis session, 2026-11-13: "
           "STALE needed claims.json and the claims checker's name, and `assess` printed ELIGIBLE where status said STALE)",
@@ -516,6 +516,29 @@ def pinned_cases():
           "trust, or carried unsigned by a migration (MIGRATED, as claims.acceptances reads only SIGNED), lowers nothing, "
           "and an acceptance naming no files leaves no drift answer",
           basis2 == "MIGRATED" and d2 == {} and rel2 == "ELIGIBLE", (basis2, d2, rel2))
+    r3, L3, met3 = pinned_by_lead()
+    (r3.root / "lib" / "a.py").write_text("A = 2\n")
+    c2 = r3.commit("the file changes")
+    stale3 = assessed(r3, L3)
+    r3.attest("eve", met3, commit=c2, files={"lib/a.py": git(r3.root, "rev-parse", f"{c2}:lib/a.py")})   # trusted, no role
+    r3.commit("an acceptance of the new bytes by an actor whose word does not count here")
+    after3 = assessed(r3, L3)
+    r4 = Repo(git_init=True)
+    (r4.root / "lib").mkdir()
+    (r4.root / "lib" / "a.py").write_text("A = 1\n")
+    x4 = r4.commit("the file")
+    L4 = r4.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a question"})
+    met4 = r4.entity("alice", "goal@1", {"state": "met", "key": "G1", "text": "a question", "established": ["held"]}, lineage=L4)
+    r4.attest("bob", met4)
+    r4.attest("eve", met4, commit=x4, files={"lib/a.py": "3" * 40})                                      # other bytes, no role
+    r4.commit("a counted acceptance naming no files, and a word with no role naming other bytes")
+    d4, rel4 = gated(r4, L4)
+    check("DR32 an acceptance the version's guard does not count pins nothing: eve, trusted with no role, accepting the "
+          "changed bytes leaves the stale lineage STALE in drift, status and assess; naming other bytes on a lineage no "
+          "counted acceptance pins, she gives it no drift answer and it stays ELIGIBLE (the analysis session on #386, "
+          "08b2276f)", stale3[:2] == ("CHANGED", D.STALE) and after3[:2] == ("CHANGED", D.STALE)
+          and after3[2].get(D.STALE) == 1 and after3[3] == D.STALE and d4 == {} and rel4 == "ELIGIBLE",
+          (stale3, after3, d4, rel4))
 
 
 def drift_cases():

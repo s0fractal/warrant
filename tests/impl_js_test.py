@@ -1390,6 +1390,15 @@ def browser_pins_cases():
     r.commit("the file changes")
     py1, d1 = _gate(r.root)
     js1, _, _ = _read_served(r.root, "--pins")
+    c2 = wgit(r.root, "rev-parse", "HEAD")
+    met = _report(r.root)["lineages"][L]["effective"]
+    r.attest("eve", met, commit=c2, files={"lib/a.py": wgit(r.root, "rev-parse", f"{c2}:lib/a.py")})   # trusted, no role
+    r.commit("an acceptance of the new bytes whose word does not count")
+    py2, d2 = _gate(r.root)
+    js2, _, _ = _read_served(r.root, "--pins")
+    check("J11 an acceptance the guard does not count pins nothing in the reader as in the gate: eve, with no role, "
+          "accepting the changed bytes leaves the lineage STALE in both (the analysis session on #386)",
+          d2.get(L) == "CHANGED" and py2[L] == js2.get(L) == "STALE", (d2.get(L), py2.get(L), js2.get(L)))
     check("J11 a lead's acceptance naming a file at a commit pins as the gate reads it: ELIGIBLE in both while the file holds "
           "its bytes, STALE in both once it changes, and PINS_NOT_CHECKED without --pins (one predicate, warrant/drift.py "
           "pinned; the analysis session, 2026-11-13)",
@@ -1466,7 +1475,7 @@ def browser_pins_cases():
     check("J11 only signed acceptances count: a stale claim stays STALE beside fresh files named by a line under the "
           "checker's name that fails its signature and by the checker's attest that does not accept", js.get(L5) == "STALE" == py.get(L5)
           and drift.get(L5) == "CHANGED", (py.get(L5), js.get(L5)))
-    check("J11 any signed acceptance that names files pins, whoever signed it: a verifier's on the bytes at HEAD keeps the "
+    check("J11 any signed acceptance that names files and that the guard counts pins: a verifier's on the bytes at HEAD keeps the "
           "claim ELIGIBLE beside the checker's stale one, in the reader as in the gate (warrant/drift.py pinned; until "
           "3.0.0a7 only the claims checker's counted)", js.get(L7) == "ELIGIBLE" == py.get(L7) and drift.get(L7) == "UNCHANGED",
           (py.get(L7), js.get(L7), drift.get(L7)))
