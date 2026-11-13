@@ -6,6 +6,17 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+## 3.0.0a7 — the owner as observer; claims on a runner; a stranger's path
+
+Read first:
+- **`code` names the Unicode version.** The engine's `code` now includes the interpreter's Unicode version, so the
+  reports of this release under two Pythons with other Unicode tables have different `code` and `assessment`, on
+  purpose: an actor id's verdict can differ between them (R-INTERPRETER).
+- **`warrant say` and `warrant resolve` are in the package.** `warrant init --voices` and `warrant say` file a voice
+  under one's own key with the package alone; `warrant resolve` says where the bytes of each cited hash are.
+- **Merges are the gate's.** With the owner present the brake acts after a merge, and no release leaves while a brake
+  in its history is open. The claims checker runs on a runner, and its acceptances name each witness's import closure.
+
 - The reader's pages show a record's invisible direction and width controls (U+200B to U+200F, U+202A to U+202E,
   U+2066 to U+2069) as their code points in angle brackets instead of obeying them (`plain` in `site/page.mjs`,
   through `el()` and `fill()`): a right-to-left override in a statement redrew the rest of its title backwards.
