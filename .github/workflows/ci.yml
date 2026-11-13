@@ -148,7 +148,10 @@ jobs:
       # What a run of this branch re-executed and found holding (claims verify --done): a result at the commit an
       # acceptance names cannot change, so after the gate merges a moved base into a branch of verdicts only, the
       # next run re-executes only what is new (#364: 136 acceptances, 40 minutes, the base always moved first).
+      # read and written by branches of this repository only (the verdicts branches the runner pushes); a fork's pull
+      # request re-executes everything
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
           path: build/claims-done
           key: claims-done-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
@@ -164,10 +167,12 @@ jobs:
           # the base into it) the merge base with master, never the branch's own previous head
           if [ -z "$BASE_SHA" ] && [ "$GITHUB_REF" = refs/heads/master ]; then BASE_SHA=$(git rev-parse "$GITHUB_SHA^1"); fi
           BASE_SHA=${BASE_SHA:-$(git merge-base origin/master "$GITHUB_SHA")}
-          python tools/review.py verify --base "$BASE_SHA"
+          # the done file is read before any code of the branch's findings runs (review.py verify runs their tests)
           python tools/claims.py verify --base "$BASE_SHA" --done build/claims-done/ids
+          python tools/review.py verify --base "$BASE_SHA"
 
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
           path: build/claims-done
           key: claims-done-${{ github.head_ref || github.ref_name }}-${{ github.sha }}

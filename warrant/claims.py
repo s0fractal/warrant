@@ -560,9 +560,11 @@ def _parser():
 
 
 def _done_file(path, root, code):
-    """The acceptance ids FILE says held under this checker `code`, or a refusal: FILE is a file of the checkout
-    (inside) that Git does not track, so no pull request can hand it in (Codex on #367: a committed done file skipped
-    the replay of acceptances it named), and an entry counts only for the checker code that wrote it."""
+    """The acceptance ids FILE says held under this checker `code`, or a refusal. What is established: FILE is a file
+    of the checkout (inside) that Git does not track (Codex on #367: a committed done file skipped the replay of the
+    acceptances it named), and an entry counts only for the checker code that wrote it. It is written by an earlier run
+    of the same branch, so it saves time, not trust against the branch's author: CI restores it for branches of this
+    repository only and reads it before any code of the branch's findings runs."""
     if path.is_symlink():
         raise Failed("PATH", f"{path}: the done file is a file, not a link")
     try:
