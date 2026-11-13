@@ -470,7 +470,7 @@ MUTANTS = [
     ("G98", "warrant/gate.py", '            if p.get("mergeable_state") != "dirty":\n                continue', '            if False:\n                continue', GATE, ["E84"]),
     ("G99", "warrant/gate.py", '    union = b"".join(sorted(set(lines_of(files[base]) + lines_of(files[head])), key=_line_id))', '    union = b"".join(sorted(set(lines_of(files[base]) + lines_of(files[head]))))', GATE, ["E84"]),
     ("G100", "warrant/gate.py", '        if not a.facts.get("verdicts") or {c for c, _ in a.shared}', '        if {c for c, _ in a.shared}', GATE, ["E84"]),
-    ("G101", "warrant/gate.py", '    if a.facts.get("verdicts"):\n        return []', '    if False:\n        return []', GATE, ["E85"]),
+    ("G101", "warrant/gate.py", '    if a.facts.get("verdicts"):\n        base = code_tree(b.root, b.commit)', '    if False:\n        base = code_tree(b.root, b.commit)', GATE, ["E85"]),
     ("G102", "warrant/gate.py", 'if "paths" not in x or changed is None or any(_listed(x["paths"], p) for p in changed)]', 'if True]', GATE, ["E85"]),
     ("G103", "warrant/gate.py", '    if why is None and AFTER in doc:\n        why = after_problem(doc[AFTER])', '    if False:\n        why = after_problem(doc[AFTER])', GATE, ["E86"]),
     ("G104", "warrant/gate.py", '            return 1 if open_ and not pre else 0', '            return 1 if open_ else 0', GATE, ["E87"]),
