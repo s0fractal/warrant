@@ -210,6 +210,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   verdicts only, its next run re-executes only what is new. On a branch run by dispatch CI's base is now the merge base
   with master, never the branch's previous head (which would have verified nothing after such a merge). claims-replay
   opens no second pull request of acceptances while one is open. C20; mutant T173.
+- A pull request of verdicts only that conflicts with the base only in its records (GitHub applies no merge=union,
+  R-UNION-ON-FORGE) gets the base merged into its branch by the gate: the union of both stores in canonical order, the
+  head's blobs kept, a merge commit made through GitHub's API, CI started on it. The claims checker's acceptances
+  (#364) run CI for about 40 minutes, so without this the base always moved first and the pull request never merged.
+  E84; mutants G98–G100.
 
 ## 3.0.0a6 — one package, one receiver
 
