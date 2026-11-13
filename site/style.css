@@ -47,7 +47,7 @@ button {
   border: 0; border-radius: 6px; cursor: pointer;
 }
 button:disabled { opacity: 0.5; cursor: default; }
-.status { min-height: 1.6em; color: var(--muted); margin: 0.8rem 0 0; overflow-wrap: anywhere; }
+.status { display: block; min-height: 1.6em; color: var(--muted); margin: 0.8rem 0 0; overflow-wrap: anywhere; }
 .status.bad { color: var(--fg); font-weight: 600; border-left: 3px solid var(--fg); padding-left: 0.6rem; }
 .facts { display: grid; grid-template-columns: minmax(6.5rem, max-content) 1fr; gap: 0.35rem 1rem; margin: 0.8rem 0; font-size: 0.95rem; }
 .facts dt { color: var(--muted); }

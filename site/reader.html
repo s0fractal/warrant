@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https: http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https:; base-uri 'none'; form-action 'none'">
 <meta name="description" content="Read any Warrant 3 store from its URL and assess it in this browser, under the publisher's rules or your own.">
 <title>Warrant reader</title>
 <link rel="stylesheet" href="style.css">
@@ -36,7 +36,7 @@
     </details>
     <button id="go" type="submit">Read</button>
   </form>
-  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <output id="status" class="status"></output>
 </section>
 
 <section id="floor" hidden></section>

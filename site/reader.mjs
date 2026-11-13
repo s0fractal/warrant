@@ -41,7 +41,7 @@ function split(raw) {
 // a transport that failed says nothing about what the store holds.
 async function get(url, fetcher) {
   let r;
-  try { r = await fetcher(url); } catch (e) { throw new Refused(`${url}: not fetched (${e && e.message ? e.message : e})`); }
+  try { r = await fetcher(url); } catch (e) { throw new Refused(`${url}: not fetched (${e?.message ?? e})`); }
   if (r.status === 404) return null;
   if (!r.ok) throw new Refused(`${url}: HTTP ${r.status}`);
   return new Uint8Array(await r.arrayBuffer());
@@ -66,9 +66,8 @@ async function named(lines, backend) {
       if (r.kind === "attest" && r.schema === MIGRATION && hex64(r.body.target)) maps.add(r.body.target);
     } catch { /* an unreadable line is the assessment's to reject */ }
   }
-  for (const r of records) {
-    try { all.delete(await backend.sha256(canon(r))); } catch { /* not canonical: the assessment rejects it; its id is unknown here */ }
-  }
+  const idOf = async (r) => { try { return await backend.sha256(canon(r)); } catch { return null; } };   // not canonical: the assessment rejects it
+  for (const id of await Promise.all(records.map(idOf))) all.delete(id);
   return { all, maps };
 }
 
@@ -84,13 +83,14 @@ export async function fetchStore(base, backend, { full = false, fetcher = global
   const wanted = [...(full ? all : maps)].sort(utf16), got = new Array(wanted.length);
   let next = 0;
   const worker = async () => {             // 16 requests at a time; the results are put back in order
-    while (next < wanted.length) { const k = next++; got[k] = await get(root + ".warrant/blobs/" + wanted[k], fetcher); }
+    while (next < wanted.length) { const k = next++; got[k] = await get(root + ".warrant/blobs/" + wanted[k], fetcher); } // NOSONAR S9382: one request after another within a worker, 16 workers at once
   };
   await Promise.all(Array.from({ length: 16 }, worker));
+  const hashes = await Promise.all(got.map((b) => (b === null ? null : backend.sha256(b))));
   const blobs = new Map(), missing = [];
   for (let k = 0; k < wanted.length; k++) {
     if (got[k] === null) { missing.push(wanted[k]); continue; }
-    if (await backend.sha256(got[k]) !== wanted[k]) throw new Refused(`the transport altered blob ${wanted[k]}: its bytes do not hash to its name`);
+    if (hashes[k] !== wanted[k]) throw new Refused(`the transport altered blob ${wanted[k]}: its bytes do not hash to its name`);
     blobs.set(wanted[k], got[k]);
   }
   return { lines, blobs, doc, missing, mode: full ? "full" : "quick", asked: wanted.length };
@@ -178,7 +178,7 @@ export function summary(r) {
 
 // A record's one-line name: the first of TITLE_MEMBERS its body has as a string, as data (never markup).
 export function title(record) {
-  if (!record || !record.body || typeof record.body !== "object") return "";
+  if (typeof record?.body !== "object" || record.body === null) return "";
   for (const k of TITLE_MEMBERS) if (typeof record.body[k] === "string" && record.body[k] !== "") return record.body[k];
   return "";
 }

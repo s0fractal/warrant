@@ -1,7 +1,7 @@
 // The page of the browser reader: it draws what reader.mjs computed. Everything a record says reaches the document
 // through textContent (the `text` of el() below) or an attribute set by name: no markup is ever built from a string,
 // and the page's policy allows no script but this origin's (reader.html).
-import { webBackend } from "./warrant.mjs";
+import { utf16, webBackend } from "./warrant.mjs";
 import { fetchStore, lineage, PINS_NOT_CHECKED, read, receiver, rows, summary } from "./reader.mjs";
 
 const DEFAULT_BASE = "https://raw.githubusercontent.com/s0fractal/warrant/master/";
@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 
 function el(tag, attrs, ...kids) {
   const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs || {})) {
+  for (const [k, v] of Object.entries(attrs ?? {})) {
     if (v === null || v === undefined || v === false) continue;
     if (k === "text") n.textContent = String(v);
     else if (k === "class") n.className = v;
@@ -52,11 +52,11 @@ function href(over) {
 function go(over) {                                       // the same page at another address, with no second read
   history.pushState(null, "", href(over));
   const p = params();
-  if (!current || current.base !== (p.base || DEFAULT_BASE) || current.full !== p.full) run(); else draw();
+  if (current?.base === (p.base || DEFAULT_BASE) && current.full === p.full) draw(); else start();
 }
 
 function link(text, over, attrs) {
-  const a = el("a", { href: href(over), text, ...(attrs || {}) });
+  const a = el("a", { href: href(over), text, ...attrs });
   a.addEventListener("click", (e) => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); go(over); } });
   return a;
 }
@@ -92,7 +92,7 @@ function drawFloor() {
 
 function drawList() {
   const p = params(), all = rows(current.r), box = $("list");
-  const schemas = [...new Set(all.map((x) => x.schema))].sort(), words = [...new Set(all.map((x) => x.reliance))].sort();
+  const schemas = [...new Set(all.map((x) => x.schema))].sort(utf16), words = [...new Set(all.map((x) => x.reliance))].sort(utf16);
   const kept = all.filter((x) => (!p.schema || x.schema === p.schema) && (!p.reliance || x.reliance === p.reliance));
   const select = (id, label, values, now) => {
     const sel = el("select", { id, "aria-label": label }, el("option", { value: "", text: `${label}: all` }),
@@ -115,6 +115,9 @@ function drawList() {
   box.hidden = false;
 }
 
+const word = (s) => (s.kind === "challenge" ? "challenge" : s.verdict || "attest");
+const fate = (s) => ` · ${s.counted ? "counted" : "not counted"}${s.stands ? ", stands" : ""}`;
+
 function drawLineage() {
   const p = params(), box = $("lineage");
   if (!p.l) { box.hidden = true; box.replaceChildren(); return; }
@@ -127,7 +130,7 @@ function drawLineage() {
   const f = d.floor;
   fill(box,
     el("p", { class: "small" }, link("← all lineages", { l: null })),
-    el("h2", { class: "statement-title", text: d.versions[d.versions.length - 1].title || d.versions[0].title || "(no statement)" }),
+    el("h2", { class: "statement-title", text: d.versions.at(-1).title || d.versions[0].title || "(no statement)" }),
     el("dl", { class: "facts floor" },
       fact("state", f.state || "none: no version is effective yet"),
       fact("reliance", pill(f.reliance), f.reliance === PINS_NOT_CHECKED ? " accepted on files at a commit; this reader compared no checkout, so it does not say ELIGIBLE" : null),
@@ -146,8 +149,8 @@ function drawLineage() {
          v.waiting.length ? ` · waits for: ${v.waiting.join("; ")}` : null),
       v.said.length ? el("ul", { class: "said" }, v.said.map((s) => el("li", {},
         el("span", { class: "glyph", text: s.kind === "challenge" ? "✗ " : "✓ " }),
-        `${s.actor} · ${s.kind === "challenge" ? "challenge" : s.verdict || "attest"} · ${when(s.at)}`,
-        s.kind === "challenge" ? ` · ${s.counted ? "counted" : "not counted"}${s.stands ? ", stands" : ""}` : null,
+        `${s.actor} · ${word(s)} · ${when(s.at)}`,
+        s.kind === "challenge" ? fate(s) : null,
         s.statement ? el("div", { class: "statement", text: s.statement }) : null,
         s.kind === "challenge" && s.why ? el("div", { class: "small", text: s.why }) : null))) : null)),
   );
@@ -193,23 +196,28 @@ async function run() {
   } catch (e) {
     current = null;
     for (const id of ["floor", "lineage", "list"]) $(id).hidden = true;
-    say(`Refused: ${e && e.message ? e.message : e}`, true);     // a refusal is shown whole; nothing partial is drawn
+    say(`Refused: ${e?.message ?? e}`, true);                    // a refusal is shown whole; nothing partial is drawn
   } finally {
     $("go").disabled = false;
   }
 }
 
+// run() reports its own refusals; anything it did not foresee is shown too, never dropped.
+function start() {
+  run().catch((e) => say(`Failed: ${e?.message ?? e}`, true));
+}
+
 $("ask").addEventListener("submit", (e) => {
   e.preventDefault();
   history.pushState(null, "", href({ base: $("base").value.trim(), full: $("full").checked, l: null, schema: "", reliance: "" }));
-  run();
+  start();
 });
 addEventListener("popstate", () => {
   const p = params();
-  if (current && current.base === (p.base || DEFAULT_BASE) && current.full === p.full) draw(); else if (p.base) run();
+  if (current?.base === (p.base || DEFAULT_BASE) && current.full === p.full) draw(); else if (p.base) start();
 });
 
 const first = params();
 $("base").value = first.base || DEFAULT_BASE;
 $("full").checked = first.full;
-if (first.base) run();
+if (first.base) start();
