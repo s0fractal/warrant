@@ -52,7 +52,7 @@ python3 tests/gate_test.py            # the merge gate (§14)
 python3 tests/tools_test.py           # claims, review replay, roadmap (§14)
 python3 tests/boundary_test.py        # the public surface; python3 tests/quickstart_test.py: QUICKSTART.md
 python3 integrations/warrant-review/test_plugin.py
-python3 tests/mutants.py --shard 1/4 --matrix part-1.json    # ... 4/4, then --merge
+python3 tests/mutants.py --shard 1/6 --matrix part-1.json    # ... 6/6, then --merge
 python3 tools/claims.py check && python3 tools/roadmap.py check
 python3 tools/review.py verify --base <base commit>          # replays new since the base, re-executed
 python3 tools/claims.py verify --base <base commit>          # claims checker acceptances new since the base, re-executed
