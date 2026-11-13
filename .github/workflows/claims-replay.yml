@@ -55,11 +55,27 @@ jobs:
           SEED: ${{ secrets.WARRANT_CLAIMS_SEED }}
         run: |
           set -euo pipefail
-          if [ -z "$SEED" ]; then
-            echo "the environment claims holds no WARRANT_CLAIMS_SEED: run claims-key first" >&2
-            exit 1
-          fi
           tip=$(git rev-parse HEAD)
+          echo "tip=$tip" >> "$GITHUB_OUTPUT"
+          # Until the key is made (claims-key.yml) and bound in the trust (a constitutional pull request on
+          # .warrant/v3.json, merged by the gate after its window), nothing this run could sign would count: it says so
+          # and ends green, rather than failing every two hours for a week.
+          if [ -z "$SEED" ]; then
+            echo "no WARRANT_CLAIMS_SEED in the environment claims yet (claims-key.yml has not run): nothing replayed" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "changed=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bound=$(printf '%s' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -c '
+          import json, sys
+          from warrant.keys import Key
+          pub = Key.from_seed_hex(sys.stdin.read()).public
+          keys = json.load(open(".warrant/v3.json"))["trust"]["keys"].get("claims-checker", [])
+          print("yes" if pub in keys else pub)')
+          if [ "$bound" != "yes" ]; then
+            echo "the runner key $bound is not yet bound to claims-checker in .warrant/v3.json at ${tip:0:12}: nothing replayed" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "changed=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if git ls-remote --exit-code --heads origin "claims/verdicts/${tip:0:12}" >/dev/null; then
             echo "claims/verdicts/${tip:0:12} exists already: nothing to do at this commit" | tee -a "$GITHUB_STEP_SUMMARY"
             echo "changed=" >> "$GITHUB_OUTPUT"
@@ -67,7 +83,6 @@ jobs:
           fi
           printf '%s\n' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.claims replay --key - | tee -a "$GITHUB_STEP_SUMMARY"
           rm -rf build
-          echo "tip=$tip" >> "$GITHUB_OUTPUT"
           if git diff --quiet -- .warrant; then echo "changed=" >> "$GITHUB_OUTPUT"; else echo "changed=1" >> "$GITHUB_OUTPUT"; fi
       - name: A pull request of the acceptances only
         if: steps.replay.outputs.changed == '1'
