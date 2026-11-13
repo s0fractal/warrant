@@ -121,7 +121,7 @@ class Refused(Exception):
 # The only options any caller passes; every other argument is an operand and may not look like an option.
 GIT_OPTIONS = {"-r", "-z", "-l", "-q", "-C", "-n", "--quiet", "--verify", "--end-of-options", "--full-tree", "--no-renames",
                "--no-commit-id", "--name-only", "--is-ancestor", "--batch", "--no-tags", "--detach", "--force", "--check",
-               "--parents", "--write-tree", "--no-messages", "-", "--"}
+               "--parents", "--write-tree", "--no-messages", "--first-parent", "-", "--"}
 
 
 def git(root, *args, stdin=None):
@@ -931,21 +931,25 @@ def _verdicts_only(a, root, b, pr, head, rep):
 
 def _commit(root, sha):
     """(parents, committer time, message) of commit `sha`, read from its object."""
-    head, _, msg = git(root, "cat-file", "commit", sha).decode(errors="replace").partition("\n\n")
+    return _parse_commit(git(root, "cat-file", "commit", sha))
+
+
+def _parse_commit(raw):
+    head, _, msg = raw.decode(errors="replace").partition("\n\n")
     lines = head.splitlines()
     parents = [ln.split()[1] for ln in lines if ln.startswith("parent ")]
     when = next(int(ln.split()[-2]) for ln in lines if ln.startswith("committer "))
     return parents, when, msg
 
 
-def first_parent(root, commit, n=300):
-    """[(commit, parents, committer time, message)] along the first parents of `commit`, newest first, at most n."""
-    out, x = [], commit
-    while x and len(out) < n:
-        parents, when, msg = _commit(root, x)
-        out.append((x, parents, when, msg))
-        x = parents[0] if parents else None
-    return out
+def first_parent(root, commit, n=None):
+    """[(commit, parents, committer time, message)] along the first parents of `commit`, newest first: all of them
+    (`n` None), read in one batch. A brake is found however many commits follow it (Codex dccff737 on #356: a scan
+    bounded at 300 called a brake closed that was open)."""
+    ids = git(root, "rev-list", "--first-parent", commit).decode().split()
+    ids = ids if n is None else ids[:n]
+    data = objects(root, ids)
+    return [(x, *_parse_commit(data[x])) for x in ids]
 
 
 def _epoch(stamp):
@@ -982,7 +986,9 @@ def presence_until(root, b, gh, now=None):
     if not p:
         return None
     now = time.time() if now is None else now
-    since, asked, signs = max(p["since"], now - p["days"] * 86400), 0, []
+    # signs older than `days` are read too (to twice that), so an expired deadline is still known and its end announced
+    # (Codex cd8d1a0b on #356: the expired sign was dropped and announce_away never ran)
+    since, asked, signs = max(p["since"], now - 2 * p["days"] * 86400), 0, []
     for x, parents, when, _ in first_parent(root, b.commit):
         if when < since or asked >= 30:
             break
@@ -1141,9 +1147,11 @@ def _revert_only(a, root, b, pr, head):
     plan, err = revert_plan(root, b.commit, merge)
     if err:
         return err
-    want = {e["path"]: e["sha"] for e in plan}
-    got = {p: o for _, _, o, p in entries(root, head, ".")}
-    was = {p: o for _, _, o, p in entries(root, parent, ".")}
+    # each path's mode and type as well as its object (Codex 7a84e332 on #356: the same blobs with an owner path made
+    # a link passed as the exact revert)
+    want = {e["path"]: (e["mode"], e["type"], e["sha"]) if e["sha"] else None for e in plan}
+    got = {p: (m, t, o) for m, t, o, p in entries(root, head, ".")}
+    was = {p: (m, t, o) for m, t, o, p in entries(root, parent, ".")}
     moved = {p for p in set(got) | set(was) if got.get(p) != was.get(p)}
     if any(got.get(p) != o for p, o in want.items()) or not moved <= set(want):
         return "the head is not the exact revert of the merge it names"

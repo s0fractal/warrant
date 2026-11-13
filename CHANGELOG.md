@@ -6,6 +6,29 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The browser reader says what changed for its reader (`warrant_agent/changes.py` without lenses). «Mark all as seen»
+  keeps the ids of every record of the stores read, per store address and rules identity (`localStorage`; the CLI's
+  `--write-mark FILE`, `--mark FILE`), as 8 bytes of each id and a SHA-256 of every 16 (exact: a record is seen only
+  when its group hashes to its digest; a group that does not verify counts as new). The past is the marked subset
+  assessed by the same engine under the same rules; a lineage is listed when its view (`viewOf`: floor, versions,
+  guards, attests and challenges, voices from outside) differs, with what appeared, vanished and moved; the new records
+  that change nothing are counted; no mark, or a mark under other rules, compares nothing and says so; `&changes=1`
+  shows only that. Not established: the page and its storage in a browser (no case drives one); the overlay and pin
+  rows are outside the view. docs/VERIFY.md; impl_js_test J13 (one case against `warrant.engine` on the marked
+  subset); no mutant (R-JS-MUTANTS): twenty-four mutations run by hand, not held by CI.
+- The browser reader reads beyond the one store. Pins on request (`--pins`, a checkbox, `&pins=1`; off by default):
+  each file a claims checker's acceptance names is fetched at its path under the store's address and hashed as a Git
+  blob, and each claim the freshness gate covers reads ELIGIBLE or STALE by the gate's rule (`warrant.drift`: the
+  checker's signed accepts, the closure rule, any acceptance fresh); a fetch that fails other than by 404 answers
+  nothing (PINS_NOT_CHECKED, the failure named); a moved file, a symlink's entry and a non-SHA-1 blob read STALE where
+  the gate reads ELIGIBLE. Other stores (`--with URL`, `&with=`): each assessed alone under its own rules, one that
+  cannot be read named; their admitted attests and challenges on the main store's versions shown as voices from
+  outside, never counted, a rejected one counted as left out. With the reader's own rules, the overlay of
+  `warrant_agent.overlay` (its receiver, #348 included) beside the store's verdict, the lineages that read otherwise
+  listed; it compares no pins. Not established: that the address serves one commit's tree (a regular file replaced by
+  a symlink whose bytes hash to the accepted blob reads ELIGIBLE where the gate reads STALE), and that the stores named
+  hold all that was said. docs/VERIFY.md; impl_js_test J11 (against `warrant.drift.gate`), J12 (against
+  `warrant_agent.overlay`); no mutant (R-JS-MUTANTS): thirty-five mutations run by hand, not held by CI.
 - The board (`python -m warrant.board manifest|plan|sync`): goals and obligations as rows of a GitHub Project, one way.
   The manifest is a pure function of the stores and names their snapshots; statuses are the records' own (`Claimed,
   not accepted` apart from `Accepted`, never one "Done"); a hand edit on the board is undone and named by the next
@@ -174,6 +197,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   it). `claims view` names each claim's leaf version id, the id a challenge targets. `across challenges` lists the
   voices no store counts, marked `uncounted`, beside the standing challenges. VS1, X10, DR1; mutants T171, T172, X52,
   X53 (A162–A173 now on warrant/commons.py); V3-13-23.
+
+- Codex's three findings on #356's last head (e8508e7f), reproduced at master 58e3cc74: `brakes` read only 300
+  first-parent commits, so a brake followed by more read closed for releases and for the revert (dccff737, P1); the
+  gate's exact-revert check compared object ids only, so its revert with an owner path turned into a link passed
+  (7a84e332, P1); an expired presence returned no deadline, so its end was never announced (cd8d1a0b, P2). The whole
+  first-parent history is read in one batch; modes and types are compared; signs are read back to twice `days`.
+  E80–E82 (Codex's cases); mutants G93–G95.
 
 ## 3.0.0a6 — one package, one receiver
 

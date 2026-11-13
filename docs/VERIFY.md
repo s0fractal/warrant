@@ -167,11 +167,86 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
   still names a checkout's bytes (`STALE`, docs/V3.md §15). A lineage whose effective version carries an attest naming
   `files` or a `commit` reads `PINS_NOT_CHECKED` there, never `ELIGIBLE`: every lineage the freshness gate can read
   `STALE` is among them.
+- **Pins compared with the tree at the address (opt-in).** `--pins`, the page's checkbox or `&pins=1`: the store's
+  address is a tree's root too, so each file a claims checker's acceptance names (`{path: git blob}`) is fetched at
+  that path, once per path, and hashed as Git hashes a blob (SHA-1 of `blob <length>\0` and the bytes). The rule is
+  the gate's (`warrant/drift.py drift`, `gate`; `warrant/claims.py acceptances`, `live`): only when the address serves
+  `.warrant/claims.json`, only live `claim@1` lineages, only attests by `claims-checker` that are SIGNED in the view and
+  say `accept`; an acceptance without `closure: imports/1`, or whose files are not a non-empty `{path: blob}`, is not
+  fresh; a claim is fresh when any acceptance on its effective version has every file fresh; only an engine `ELIGIBLE`
+  is lowered. Fresh reads `ELIGIBLE`, not fresh `STALE`. A file whose fetch fails other than by 404 answers nothing:
+  an acceptance it could decide is not compared and its claim keeps `PINS_NOT_CHECKED` (a file of that acceptance
+  known to differ still decides it), and the summary names the failure (`pins.refused`); a failure to fetch
+  `claims.json` compares nothing. A lineage the gate does not cover keeps the rule above. impl_js_test J11 holds this
+  to `warrant.drift.gate` at HEAD on claims repositories accepted by the checker's replay.
+- **Where the comparison differs from the gate.** The reader says `STALE` where the gate says `ELIGIBLE`, in these
+  cases, by design: a file moved with its bytes unchanged (the gate lists the whole tree and reads it MOVED; HTTP lists
+  none, so 404 at the named path is not fresh); a symlink's entry (`link:<blob>`: HTTP serves a link as its target's
+  name or its target's bytes, never as a link, so it is never fresh here); a path no Git tree holds (`.`, `..`, `.git`
+  or empty segments: never fetched) or a blob that is no 40-hex SHA-1 id (a SHA-256 repository). Not established:
+  that the address serves one commit's tree. The comparison is with what it serves, not with a checkout's HEAD; the
+  transport is trusted for which tree that is (records and blobs authenticate themselves, a tree does not). It equals
+  the gate when the address serves exactly a commit's tree as Git stores it, as `raw.githubusercontent.com` at a
+  branch or commit does (a symlink served as its target's name, checked 2026-11-13; a branch is cached up to 300 s, and
+  `records.jsonl` and the files are separate requests). A directory served from a working tree can differ in either
+  direction (modified or untracked files, symlinks followed). One case can read `ELIGIBLE` here and `STALE` in the gate
+  even on a commit's tree: a regular file later replaced by a symlink whose served bytes hash to the accepted blob
+  (the gate reads the mode; HTTP cannot).
+- **Other stores beside the one read (`--with URL`, repeatable; the page's second textarea, one address a line;
+  `&with=URL`, repeatable).** Each is fetched as the main store is (quick) and assessed alone under its own
+  `.warrant/v3.json`. One that cannot be read is named with its reason and the others still answer. On a lineage of the
+  main store the reader lists, as voices from outside, every attest and challenge another store holds whose
+  `body.target` is a version of that lineage and which that store's own assessment admits (in its view), with the
+  store's `repository` name and address, the actor as that store names it, the kind, the verdict or statement and the
+  time. The main store's rules count none of them: its state and reliance are unchanged, the floor counts the voices
+  apart (how many, in how many stores), and the list marks a lineage that has some. A line its own store rejects is no
+  voice; how many were left out is counted. A record the main store holds too is the main store's, not a voice. Unlike
+  `warrant_agent/observe.py elsewhere` (observations and challenges), every attest is listed.
+- **For me: the overlay.** Only when the reader gave its own trust and profile: the union of every line of the main
+  store and of each store read (`warrant_agent/overlay.py compose`, the blobs each quick read fetched) is assessed under
+  the reader's rules, with the keys `overlay.receiver` admits: the reader's own bindings, then a binding every store
+  naming that actor agrees on (each store's own `v3.json` trust), never one for an actor the reader's own profile gives
+  a role (#348); a binding held back is named, `role` or `disagree`. Beside the main store's verdict under its own rules,
+  never in its place, each of its lineages whose state or reliance reads otherwise is listed, store → reader, with the
+  challenges that stand for the reader and not in the store and the actors who accept a version for the reader and
+  not in the store; the identity is `overlay.identity` over the stores named by their addresses. Without the reader's
+  own rules there is no overlay and the answer says why. The overlay compares no pins: on both sides ELIGIBLE on an
+  attest naming files or a commit reads PINS_NOT_CHECKED. Not established: that the stores named are all that was said
+  (the overlay is honest, not complete); the rows are (state, reliance) of the engine, not the lens-drawn difference
+  `/overlay` in `warrant_agent/serve.py` shows (`view.delta`); and the main store's view and the pin comparison stay
+  under the rules the reader chose, as before.
+- **What changed for me (a mark, `--mark FILE`, `&changes=1`).** «Mark all as seen» keeps, in the browser's
+  `localStorage`, one mark per store address and rules identity (the digest of `{trust, profile}`, whoever gave them):
+  the ids of every record the main store and each other store read hold. `--write-mark FILE` writes the same JSON,
+  `--mark FILE` reads it. With a mark, the past is the marked subset of each store's lines assessed again by the same
+  engine (the main store under the same rules, each other store under its own; with `--pins`, compared with the tree
+  served now), as `warrant_agent/changes.py` does. A lineage is listed when its view differs (`viewOf` in
+  `site/reader.mjs` is the definition: the floor's state, reliance as shown, standing counted challenges, forks,
+  effective version and number of versions, named as moved; and the versions, their guards, acceptors and waits, the
+  attests and challenges on them with a challenge's counted and stands, the voices from outside, named as appeared or
+  vanished), new lineages as new; the new records that change no lineage's view are counted, not listed, and silence
+  is said: «N new record(s) changed nothing you see». Without a mark nothing is compared and the page offers one; a
+  mark under other rules is not used. `&changes=1` shows that section and the changed lineages alone. The mark keeps 8
+  bytes of each sorted id and a SHA-256 of every 16 full ids (10 bytes an id; 1.33 M characters for 100 000 records,
+  where whole ids in base64 are 4.3 M, near the ~5 M a browser keeps per origin); a record is seen only when its group
+  is found whole and hashes to its digest, so no new record is called seen unless SHA-256 collides. A group that does
+  not verify (a marked record no longer served, a new record sharing a prefix) counts its present records as new: more
+  is listed, nothing hidden; gone and unverified records are counted and said. Where it differs from `/changes`: no
+  lens (the view is the reader's own lineage view, so an attest by anyone on a version is a change, as under the
+  built-in lens), no `grounded` member, no default past without a mark (it says there is none instead of using the
+  last day), no overlay and no pin rows in the view, and an other store absent from the mark counts as wholly new.
+  Not established: that the stores served are all that was said; storage that the browser drops loses the mark.
 - **A transport that fails is a refusal.** Only HTTP 404 reads as absent; any other failure refuses the read whole, and
   a blob whose bytes do not hash to its name refuses it too. Nothing partial is drawn.
 - **Record text is text.** The page builds no markup from a string, runs one script of its own origin and allows no
   other (`script-src 'self'`).
 
-impl_js_test J10 holds the data the page draws to the Python engine, through node, by the functions the page runs; no
-case drives a browser, and the layout is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS):
-eleven mutations of the reader were run by hand on 2026-11-13 and each failed a J10 case.
+impl_js_test J10 holds the data the page draws to the Python engine, through node, by the functions the page runs; J11
+holds the pin comparison to `warrant.drift.gate` at HEAD; J12 holds the voices and the overlay to
+`warrant_agent.overlay` on the same three stores and the same reader rules; J13 holds what changed for me on a store
+built in steps (one mark a step) and, from the first mark, the lineages whose (state, reliance, standing) it lists as
+moved to the Python assessments of the marked subset and of the whole store. No case drives a browser (neither
+`localStorage` nor the page's button is exercised), and the layout is checked by eye. No mutant targets these files
+(docs/V3.md §12 R-JS-MUTANTS), so CI does not hold the tests to their mutants: eleven mutations of the reader were run
+by hand for J10, thirty-five more for J11 and J12, and twenty-four for J13, each failing a case of its own on its
+assertion; the list is in the pull request that added them.
