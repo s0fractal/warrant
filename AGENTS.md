@@ -17,12 +17,18 @@ repository's records, tools, review loop and merge gate).
    - an accepted change to no listed path: at once;
    - an unaccepted one whose author holds `pr/acceptor` (`solo`): once its window (`solo.window_hours`, 0 h: as soon as
      the checks are green) has passed, with no finding and no veto;
-   - a change to a watched path (the core modules): two families after 24 h, or one family after 72 h (`solo_ready`);
-   - a change to a constitutional path (these rules, `.warrant/v3.json`, `.warrant/v3/`, the gate): two families after
-     72 h, or one family after 7 days; when such a window opens the gate comments once, naming the owner.
+   - a change to a watched path (the core modules) or a constitutional path (these rules, `.warrant/v3.json`,
+     `.warrant/v3/`, the gate), **the owner present** (a merge of his on GitHub within 14 days, `presence`): as soon
+     as the checks are green, and the brake acts after the merge: his `hold` label on the merged pull request, or his
+     challenge on its head version, within the window it would have waited (24/72 h watched, 72/168 h constitutional,
+     two families/one) and the gate reverts it; the gate comments once on the merge, naming him;
+   - the same changes, **the owner away**: the windows come before the merge, as above, and the gate comments once
+     when a constitutional window opens.
+   No release is tagged from a commit with an open brake in its history (`python -m warrant.gate brakes --at C`).
    The owner vetoes with the `hold` label or a challenge on the head version (`pr/owner`, `challenger`). His word
    can lower reliance, never raise it: he holds no role that accepts. A merge the gate cannot make (its own defect) is
-   an open point to report, not a reason to merge by hand.
+   an open point to report, not a reason to merge by hand. His own merges on GitHub are the presence signal, so an
+   agent merging under his login would also fake his presence.
 
 2. **Never claim review authority you do not hold.** A trailer such as `Reviewed-by: X` or a
    sentence saying "independently reviewed" is false provenance unless X filed that review. A review

@@ -46,8 +46,8 @@ verdicts computed from the same facts:
 The gate (`gate`) merges at most one eligible pull request per run, reading the pull request and the base
 branch again just before (TOCTOU), giving GitHub the assessed head (it refuses the merge when the head
 moved), and then dispatches the required workflows on the base branch (a GITHUB_TOKEN merge starts none)."""
-import importlib.machinery
 import calendar
+import importlib.machinery
 import json
 import os
 import re
@@ -72,8 +72,21 @@ TIERS = (WATCHED, CONSTITUTIONAL)
 SOLO = "solo"           # optional: {window_hours, veto_role}: one family merges a change to no listed path after the window
 SOLO_FIELDS = {"window_hours", "veto_role"}
 ACCEPTOR = "pr/acceptor"   # the role whose verdicts the gate counts
+# optional: {login, days, since}: the owner is present when a merge into the base on GitHub is his (author login, the
+# committer GitHub's web-flow) since `since` and within `days`; agents never merge under his login (AGENTS.md rule 1).
+# Present, a tier's change merges with no window before it, and the brake acts after it (brakes, open_revert).
+PRESENCE = "presence"
+PRESENCE_FIELDS = {"login", "days", "since"}
+BRAKE = re.compile(r"warrant-gate brake until (\d{1,12}): #(\d{1,9}) head version (\w+)")       # a whole line (fullmatch)
+REVERT = re.compile(r"warrant-gate revert of (\w+)")
+REVERT_BRANCH = "gate/revert/"
+BRAKE_MARK = "<!-- warrant-gate brake -->"
+AWAY = "<!-- warrant-gate presence ended {until} -->"
+WEB_FLOW = "web-flow"                       # GitHub's committer of a merge made on GitHub
+STAMP = "%Y-%m-%dT%H:%M:%SZ"                # GitHub's UTC time stamps
 LOGIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}\Z")
 NOTICE = "<!-- warrant-gate constitutional window {x} -->"
+MARKS = ("<!-- warrant-gate constitutional window ", "<!-- warrant-gate brake -->")    # the gate's own comments
 ROLE = re.compile(r"[a-z][a-z0-9-]{0,39}/[a-z][a-z0-9-]{0,39}\Z")
 REPOSITORY_DOC = "repository/3"
 RECORDS, BLOBS = ".warrant/records.jsonl", ".warrant/blobs/"
@@ -367,7 +380,7 @@ def gate_config(doc):
 
 def _gate_shape(doc):
     req = doc.get("required") if isinstance(doc, dict) else None
-    return bool(isinstance(doc, dict) and set(GATE_FIELDS) <= set(doc) <= set(GATE_FIELDS) | {*TIERS, SOLO} and doc["gate"] == GATE
+    return bool(isinstance(doc, dict) and set(GATE_FIELDS) <= set(doc) <= set(GATE_FIELDS) | {*TIERS, SOLO, PRESENCE} and doc["gate"] == GATE
                 and isinstance(doc["base"], str) and BRANCH.match(doc["base"]) and isinstance(req, list) and req
                 and all(isinstance(c, dict) and set(c) == {"check", "workflow"} and isinstance(c["check"], str)
                         and CHECK.match(c["check"]) and isinstance(c["workflow"], str) and WORKFLOW.match(c["workflow"]) for c in req)
@@ -385,7 +398,18 @@ def policy_problem(doc):
         why = constitutional_problem(doc[CONSTITUTIONAL], w, doc["owner_paths"])
     if why is None and SOLO in doc:
         why = solo_problem(doc[SOLO], w)
+    if why is None and PRESENCE in doc:
+        why = presence_problem(doc[PRESENCE], w)
     return why
+
+
+def presence_problem(p, w):
+    """`presence` only beside `watched`: {login: a GitHub login, days: 1..90, since: seconds since the epoch}."""
+    if w is None:
+        return "presence is read beside watched"
+    ok = (isinstance(p, dict) and set(p) == PRESENCE_FIELDS and isinstance(p["login"], str) and LOGIN.match(p["login"])
+          and type(p["days"]) is int and 1 <= p["days"] <= 90 and type(p["since"]) is int and p["since"] >= 0)
+    return None if ok else "presence is {login: a GitHub login, days: 1..90, since: seconds since the epoch}"
 
 
 def constitutional_problem(c, w, owner):
@@ -546,7 +570,7 @@ def checks_completed(required, checks, head):
             return None
         last = max(ours, key=lambda r: r.get("id", 0))
         try:
-            out = max(out, calendar.timegm(time.strptime(last.get("completed_at") or "", "%Y-%m-%dT%H:%M:%SZ")))
+            out = max(out, calendar.timegm(time.strptime(last.get("completed_at") or "", STAMP)))
         except ValueError:
             return None
     return out
@@ -594,10 +618,12 @@ def pr_reasons(b, pr, hold=False):
     return out
 
 
-def assess(root, base, pr, checks, hold=False, now=None):
+def assess(root, base, pr, checks, hold=False, now=None, present=False):
     """The Assessment of pull request `pr` against the base commit `base` (a full id, or a Base already read); `now`
-    (seconds since the epoch, default the clock) is when a watched change's window is read."""
+    (seconds since the epoch, default the clock) is when a watched change's window is read; `present`, whether the
+    owner is (present: no window before a tier's merge, the brake after it)."""
     a = Assessment(pr, base if isinstance(base, str) else base.commit)
+    a.facts["present"] = bool(present)
     try:
         b = base if isinstance(base, Base) else Base(root, base)
     except (Refused, subprocess.CalledProcessError) as e:
@@ -664,6 +690,11 @@ def _uncited(rep, added, blobs):
 
 def _review(a, root, b, pr, head, rep, checks=None, now=None):
     sh, n = a.shared, pr["number"]
+    if str(pr.get("branch") or "").startswith(REVERT_BRANCH):
+        why = _revert_only(a, root, b, pr, head)
+        if why:
+            sh.append(("REVERT_NOT_EXACT", why))
+        return
     found = _lineage(b, rep, n)
     if not found:
         why = _verdicts_only(a, root, b, pr, head, rep)
@@ -706,7 +737,9 @@ def _review(a, root, b, pr, head, rep, checks=None, now=None):
         a.facts["solo_from"] = None if any(f is None for _, f in ready) else max(f for _, f in ready)
     elif owned == [] and SOLO in b.gate:
         a.facts["solo_ready"], a.facts["solo_from"] = _solo_window(a, b, rep, lin, b.gate[SOLO], checks or {}, head, now)
-    if a.facts.get("solo_ready"):
+    # solo only when something a second family would give is missing: an accepted change is merged as accepted
+    # (Codex F1 on #350: a merge accepted by codex was recorded as solo)
+    if a.facts.get("solo_ready") and any(c in ("NO_ACCEPT", "WATCHED_FAMILIES") for c, _ in a.reasons):
         _solo(a, rep, lin, x)
 
 
@@ -763,6 +796,12 @@ def _watched(a, b, rep, lin, w, touched, checks, head, now, tier=WATCHED):
         a.reasons.append(("OWNER_VETO", f"a {w['veto_role']} challenged the head version: " + ", ".join(c[:12] for c in veto)))
     done = checks_completed(b.gate["required"], checks, head)
     now = time.time() if now is None else now
+    if a.facts.get("present"):
+        # the owner present: no window before the merge; the brake holds after it for as long as the window would have
+        blocking = [c for c, _ in a.reasons + a.shared if c not in ("NO_ACCEPT", "WATCHED_FAMILIES")]
+        hours = w["window_hours"] if len(families) >= w["families"] else w["solo_window_hours"]
+        a.facts["brake_hours"] = max(a.facts.get("brake_hours", 0), hours)
+        return bool(families and not blocking and done is not None), None if done is None else int(done)
     if done is None or now - done < w["window_hours"] * 3600:
         left = "the required checks have not completed" if done is None else \
             f"{(w['window_hours'] * 3600 - (now - done)) / 3600:.1f} h of {w['window_hours']} h remain"
@@ -770,7 +809,7 @@ def _watched(a, b, rep, lin, w, touched, checks, head, now, tier=WATCHED):
     solo_left = None if done is None else w["solo_window_hours"] * 3600 - (now - done)
     blocking = [c for c, _ in a.reasons + a.shared if c not in ("NO_ACCEPT", "WATCHED_FAMILIES", "WATCHED_WINDOW")]
     solo_from = None if done is None else int(done + w["solo_window_hours"] * 3600)
-    if tier == CONSTITUTIONAL and done is not None:
+    if tier == CONSTITUTIONAL and done is not None and not any(r[0] == "OWNER_PATHS" for r in a.reasons):
         a.facts["notice"] = {"x": lin_commit(rep, lin), "version": lin["leaf"], "paths": touched, "notify": w.get("notify", []),
                              "window_until": int(done + w["window_hours"] * 3600), "solo_until": solo_from, "families": w["families"]}
     return bool(families and not blocking and solo_left is not None and solo_left <= 0), solo_from
@@ -888,6 +927,230 @@ def _verdicts_only(a, root, b, pr, head, rep):
     return out
 
 
+# ---------------------------------------------------------------- the brake after a merge
+
+def _commit(root, sha):
+    """(parents, committer time, message) of commit `sha`, read from its object."""
+    head, _, msg = git(root, "cat-file", "commit", sha).decode(errors="replace").partition("\n\n")
+    lines = head.splitlines()
+    parents = [ln.split()[1] for ln in lines if ln.startswith("parent ")]
+    when = next(int(ln.split()[-2]) for ln in lines if ln.startswith("committer "))
+    return parents, when, msg
+
+
+def first_parent(root, commit, n=300):
+    """[(commit, parents, committer time, message)] along the first parents of `commit`, newest first, at most n."""
+    out, x = [], commit
+    while x and len(out) < n:
+        parents, when, msg = _commit(root, x)
+        out.append((x, parents, when, msg))
+        x = parents[0] if parents else None
+    return out
+
+
+def _epoch(stamp):
+    """Seconds since the epoch of GitHub's UTC time stamp, None when it is not one."""
+    try:
+        return calendar.timegm(time.strptime(str(stamp), STAMP))
+    except ValueError:
+        return None
+
+
+def _reacted(b, gh, since):
+    """The newest time the `presence` login reacted to a comment of the gate's own (its notice or its brake), at or
+    after `since`: one touch, from a phone, says «seen». Agents never react under that login (AGENTS.md rule 1)."""
+    login, newest = b.gate[PRESENCE]["login"], None
+    stamp = time.strftime(STAMP, time.gmtime(since))
+    mine = [c for page in gh.api(f"issues/comments?since={stamp}&per_page=100", pages=True) for c in page
+            if (c.get("user") or {}).get("login") == f"{ACTIONS_APP}[bot]" and any(m in (c.get("body") or "") for m in MARKS)]
+    for c in mine[-20:]:
+        for page in gh.api(f"issues/comments/{int(c['id'])}/reactions?per_page=100", pages=True):
+            for r in page:
+                t = _epoch(r.get("created_at"))
+                if (r.get("user") or {}).get("login") == login and t is not None and t >= since:
+                    newest = t if newest is None else max(newest, t)
+    return newest
+
+
+def presence_until(root, b, gh, now=None):
+    """Until when the owner counts as present (seconds since the epoch), or None: `days` after his newest sign at or
+    after `since` and within `days`: a merge into the base made on GitHub under the `presence` login (its author, with
+    GitHub's web-flow as committer), or a reaction of his to a comment of the gate. Agents never merge or react under
+    that login (AGENTS.md rule 1), so his own acts are the signal; nothing else he does is needed. A failure to read
+    either is no sign: the windows before a merge apply."""
+    p = b.gate.get(PRESENCE)
+    if not p:
+        return None
+    now = time.time() if now is None else now
+    since, asked, signs = max(p["since"], now - p["days"] * 86400), 0, []
+    for x, parents, when, _ in first_parent(root, b.commit):
+        if when < since or asked >= 30:
+            break
+        if len(parents) != 2:
+            continue
+        asked += 1
+        try:
+            c = gh.commit(x)
+        except Refused:
+            break
+        if (c.get("author") or {}).get("login") == p["login"] and (c.get("committer") or {}).get("login") == WEB_FLOW:
+            signs.append(when)
+            break
+    try:
+        t = _reacted(b, gh, since)
+    except (Refused, AttributeError, KeyError, TypeError, ValueError):
+        t = None
+    signs += [t] if t is not None else []
+    return int(max(signs) + p["days"] * 86400) if signs else None
+
+
+def present(root, b, gh, now=None):
+    """Whether the owner is present at `now` (presence_until)."""
+    now = time.time() if now is None else now
+    until = presence_until(root, b, gh, now)
+    return until is not None and until > now
+
+
+def announce_away(b, gh, until, now=None):
+    """Once, when the owner's presence has ended, an issue naming him: the windows come before a merge again, and what
+    makes him present. The mode never changes silently. The outcome as text, or None."""
+    now = time.time() if now is None else now
+    if PRESENCE not in b.gate or until is None or until > now:
+        return None
+    mark = AWAY.format(until=until)
+    try:
+        if any(mark in (i.get("body") or "") for page in gh.api("issues?state=all&per_page=100", pages=True) for i in page
+               if (i.get("user") or {}).get("login") == f"{ACTIONS_APP}[bot]"):
+            return None
+        when = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(until))
+        login = b.gate[PRESENCE]["login"]
+        gh.api("issues", "POST", {"title": f"warrant-gate: {login} counts as away since {when}",
+                                  "body": f"{mark}\n@{login} no merge of yours on GitHub and no reaction of yours to a "
+                                          f"comment of the gate for {b.gate[PRESENCE]['days']} days: since {when} the "
+                                          "windows come before a merge again (watched 24/72 h, constitutional 72/168 h). "
+                                          "A merge of yours, or a reaction of yours to any comment of the gate, makes "
+                                          f"you present again for {b.gate[PRESENCE]['days']} days.\n"})
+    except Refused as e:
+        return f"away notice FAILED: {e}"
+    return "away noticed"
+
+
+def brake_lines(msg):
+    """The brake lines of a commit message: whole lines, the version a full record id (shapes)."""
+    return [m for ln in msg.splitlines() if (m := BRAKE.fullmatch(ln)) and S.hex64(m[3])]
+
+
+def revert_lines(msg):
+    """The revert lines of a commit message: whole lines naming a full commit id."""
+    return [m for ln in msg.splitlines() if (m := REVERT.fullmatch(ln)) and S.hex_of(m[1], 40)]
+
+
+def brakes(root, commit, now=None, open_only=True):
+    """[{merge, until, pr, version}] of the merges along the first parents of `commit` whose message carries the gate's
+    brake line; with `open_only`, those whose brake has not ended at `now`."""
+    now = time.time() if now is None else now
+    return [{"merge": x, "until": int(m[1]), "pr": int(m[2]), "version": m[3]}
+            for x, _, _, msg in first_parent(root, commit) for m in brake_lines(msg) if not open_only or int(m[1]) > now]
+
+
+def reverted(root, commit, merge):
+    return any(m[1] == merge for _, _, _, msg in first_parent(root, commit) for m in revert_lines(msg))
+
+
+def vetoed(b, rep, gh, k):
+    """Why the merge of brake `k` is vetoed, or None: the hold label on its pull request, or a challenge on its head
+    version by a holder of a veto role (counted or not)."""
+    if b.gate["hold_label"] in gh.pull(k["pr"])["labels"]:
+        return f"the label {b.gate['hold_label']!r} on #{k['pr']}"
+    roles = {w["veto_role"] for t, w in b.gate.items() if t in (*TIERS, SOLO)}
+    vetoers = set().union(*(b.holders(r) for r in roles)) if roles else set()
+    veto = sorted(c for c, x in rep["challenges"].items() if x["target"] == k["version"] and rep["_recs"].get(c, {}).get("actor") in vetoers)
+    return f"a challenge by {rep['_recs'][veto[0]]['actor']} on #{k['pr']}'s head version: {veto[0][:12]}" if veto else None
+
+
+def _kept(path):
+    """A revert never takes records back: the store is append-only, and its history stays whole."""
+    return path == RECORDS or path.startswith(BLOBS)
+
+
+def revert_plan(root, base, merge):
+    """([tree entry], None) that revert `merge` (its change against its first parent) on top of `base`, the store's
+    records kept; (None, why) when it is no merge or a path it changed has changed again since (no exact revert)."""
+    parents, _, _ = _commit(root, merge)
+    if len(parents) != 2:
+        return None, f"{merge[:12]} is not a merge"
+    rows = {c: {p: (m, t, o) for m, t, o, p in entries(root, c, ".")} for c in (parents[0], merge, base)}
+    before, after, now = rows[parents[0]], rows[merge], rows[base]
+    changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p) and not _kept(p))
+    bad = [p for p in changed if now.get(p) != after.get(p) or any(r.get(p, ("", "blob"))[1] != "blob" for r in (before, after))]
+    if bad:
+        return None, f"changed again since, or not a file: {', '.join(bad[:4])}"
+    return [{"path": p, "mode": before[p][0], "type": "blob", "sha": before[p][2]} if p in before
+            else {"path": p, "mode": after[p][0], "type": "blob", "sha": None} for p in changed], None
+
+
+def open_revert(root, b, gh, k, why):
+    """Open the gate's revert of the merge of brake `k` as a pull request from gate/revert/<pr>-<merge>, made through
+    GitHub's API with the workflow's token, and start the required workflows on it; the outcome as text."""
+    plan, err = revert_plan(root, b.commit, k["merge"])
+    if err:
+        return f"revert of #{k['pr']} NOT made: {err}"
+    try:
+        tree = gh.api("git/trees", "POST", {"base_tree": git(root, "rev-parse", f"{b.commit}^{{tree}}").decode().strip(), "tree": plan})["sha"]
+        msg = f"Revert #{k['pr']} (vetoed in its brake window)\n\nwarrant-gate revert of {k['merge']}\nvetoed: {why}\n"
+        commit = gh.api("git/commits", "POST", {"message": msg, "tree": tree, "parents": [b.commit]})["sha"]
+        branch = f"{REVERT_BRANCH}{k['pr']}-{k['merge'][:12]}"
+        gh.api("git/refs", "POST", {"ref": f"refs/heads/{branch}", "sha": commit})
+        gh.api("pulls", "POST", {"title": f"Revert #{k['pr']} (vetoed in its brake window)", "head": branch, "base": b.gate["base"],
+                                 "body": f"The gate reverts {k['merge']}: {why}. The store's records are kept."})
+        for w in sorted({c["workflow"] for c in b.gate["required"]}):
+            gh.dispatch(w, branch)
+    except Refused as e:
+        return f"revert of #{k['pr']} FAILED: {e}"
+    return f"revert of #{k['pr']} opened from {branch}"
+
+
+def enforce_brakes(root, b, gh, found, now=None):
+    """[(pr, outcome)] of each merge whose brake is open, vetoed, not reverted and with no revert pull request open."""
+    snap, _ = store_at(root, b.commit)
+    rep = assess_snapshot(b, snap)
+    branches = {str(a.pr.get("branch") or "") for a in found}
+    out = []
+    for k in brakes(root, b.commit, now):
+        if reverted(root, b.commit, k["merge"]) or any(x.startswith(f"{REVERT_BRANCH}{k['pr']}-") for x in branches):
+            continue
+        why = vetoed(b, rep, gh, k)
+        if why:
+            out.append((k["pr"], open_revert(root, b, gh, k, why)))
+    return out
+
+
+def _revert_only(a, root, b, pr, head):
+    """None when the pull request is the gate's exact revert of a braked merge of the base (opened by the workflow's
+    bot, one commit naming the merge, its parent on the base, changing exactly what the merge changed back to what it
+    was, records kept, nothing changed there since); else why not."""
+    if pr.get("author") != f"{ACTIONS_APP}[bot]":
+        return f"#{pr['number']} under {REVERT_BRANCH} was not opened by the gate"
+    parents, _, msg = _commit(root, head)
+    m = next(iter(revert_lines(msg)), None)
+    if len(parents) != 1 or not m:
+        return "the head is not one commit naming the merge it reverts"
+    merge, parent = m[1], parents[0]
+    if not any(k["merge"] == merge for k in brakes(root, b.commit, open_only=False)) or not is_ancestor(root, parent, b.commit):
+        return f"{merge[:12]} is no braked merge of the base, or the revert's parent is not on the base"
+    plan, err = revert_plan(root, b.commit, merge)
+    if err:
+        return err
+    want = {e["path"]: e["sha"] for e in plan}
+    got = {p: o for _, _, o, p in entries(root, head, ".")}
+    was = {p: o for _, _, o, p in entries(root, parent, ".")}
+    moved = {p for p in set(got) | set(was) if got.get(p) != was.get(p)}
+    if any(got.get(p) != o for p, o in want.items()) or not moved <= set(want):
+        return "the head is not the exact revert of the merge it names"
+    a.facts["revert"], a.verdict, a.accept = merge, True, (f"{ACTIONS_APP}[bot]", merge, parent)
+    return None
+
+
 # ---------------------------------------------------------------- formats
 
 def line(a):
@@ -965,6 +1228,9 @@ class GitHub:
         return self.api(f"pulls/{_number(n)}/merge", "PUT", {"sha": _sha(sha), "merge_method": "merge",
                                                               "commit_title": title, "commit_message": message})
 
+    def commit(self, sha):
+        return self.api(f"commits/{_sha(sha)}")
+
     def comments(self, n):
         return [c for page in self.api(f"issues/{_number(n)}/comments?per_page=100", pages=True) for c in page]
 
@@ -1002,7 +1268,8 @@ def _branch(b):
 def facts(p):
     return {"number": p["number"], "state": p["state"], "draft": bool(p.get("draft")), "base": p["base"]["ref"],
             "head": p["head"]["sha"], "labels": sorted(x["name"] for x in p.get("labels", [])),
-            "branch": p["head"].get("ref"), "title": p.get("title"), "head_repo": (p["head"].get("repo") or {}).get("full_name")}
+            "branch": p["head"].get("ref"), "title": p.get("title"), "head_repo": (p["head"].get("repo") or {}).get("full_name"),
+            "author": (p.get("user") or {}).get("login")}
 
 
 def fetch(root, n, remote="origin"):
@@ -1012,7 +1279,7 @@ def fetch(root, n, remote="origin"):
     return git(root, "rev-parse", "--verify", ref).decode().strip()
 
 
-def survey(root, b, gh, prs=None, hold=False, remote="origin"):
+def survey(root, b, gh, prs=None, hold=False, remote="origin", present_=False):
     """[Assessment] of the open pull requests into the base branch, each fetched as Git data and assessed against
     the base `b`. Refused BASE_MOVED when the base branch on GitHub is no longer at that commit."""
     tip = gh.tip(b.gate["base"])
@@ -1031,7 +1298,7 @@ def survey(root, b, gh, prs=None, hold=False, remote="origin"):
             a.shared.append(("HEAD_MOVED", f"#{pr['number']} reads {pr['head'][:12]} on GitHub and {got[:40]} fetched"))
             a.reasons += a.shared
         else:
-            a = assess(root, b, pr, gh.checks(pr["head"]), hold=hold)
+            a = assess(root, b, pr, gh.checks(pr["head"]), hold=hold, present=present_)
         out.append(a)
     return out
 
@@ -1051,7 +1318,16 @@ def merge_one(b, a, gh):
     if tip != base:
         return {"pr": n, "merged": False, "why": f"BASE_MOVED: {b.gate['base']} is at {tip[:12]}"}
     actor, rid, x = a.accept
-    if a.facts.get("solo"):
+    hours = a.facts.get("brake_hours")
+    until = int(time.time() + hours * 3600) if hours and not a.facts.get("revert") else None
+    if a.facts.get("revert"):
+        title = f"Merge pull request #{n} (the gate's revert of {rid[:12]}, vetoed in its brake window)"
+        message = f"merge-on-acceptance: revert of {rid}: the change it reverts was vetoed in its brake window; head {head}; base {base}."
+    elif a.facts.get("solo") and a.facts.get("present") and hours:
+        title = f"Merge pull request #{n} (solo: {actor}, the owner present: the brake after the merge)"
+        message = (f"merge-on-acceptance: solo: head version {rid} by {actor} at {x}, one model family, merged with the owner "
+                   f"present and no window before it; head {head}; base {base}.")
+    elif a.facts.get("solo"):
         title = f"Merge pull request #{n} (solo: {actor}, the window passed)"
         message = (f"merge-on-acceptance: solo: head version {rid} by {actor} at {x}, one model family, its window passed "
                    f"since {a.facts.get('solo_from')} with no veto; head {head}; base {base}.")
@@ -1061,8 +1337,11 @@ def merge_one(b, a, gh):
     else:
         title = f"Merge pull request #{n} (accepted by {actor})"
         message = f"merge-on-acceptance: head version {rid} accepted by {actor} at {x}; head {head}; base {base}."
+    message += " Required checks green at the head."
+    if until:
+        message += f"\n\nwarrant-gate brake until {until}: #{n} head version {rid}"
     try:
-        res = gh.merge(n, head, title, message + " Required checks green at the head.")
+        res = gh.merge(n, head, title, message)
     except Refused as e:
         return {"pr": n, "merged": False, "why": f"GitHub refused the merge: {e}"}
     if res.get("merged") is not True or not S.hex_of(res.get("sha"), 40):
@@ -1076,7 +1355,26 @@ def merge_one(b, a, gh):
             out["dispatched"].append(w)
         except Refused as e:
             out["dispatch_failed"].append(f"{w}: {e}")
+    if until:
+        out["brake_until"] = until
+        try:
+            gh.comment(n, brake_text(b, a, until))
+        except Refused as e:
+            out["dispatch_failed"].append(f"brake comment: {e}")
     return out
+
+
+def brake_text(b, a, until):
+    """The gate's comment on a change merged while the owner is present: merged, and how long the brake acts."""
+    who = " ".join(f"@{x}" for x in [b.gate[PRESENCE]["login"]] if PRESENCE in b.gate)
+    tiers = ", ".join(t for t in TIERS if a.facts.get(t))
+    upto = a.facts.get("present_until")
+    seen = (f" You count as present until {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(upto))}; a reaction of yours to "
+            "this comment, or a merge of yours, extends it." if upto else "")
+    return (f"{BRAKE_MARK}\n{who} merged with no window before it (you are present).{seen} The brake holds until "
+            f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(until))}: the label `{b.gate['hold_label']}` on this pull "
+            f"request, or a challenge by `pr/owner` on the head version `{a.accept[1]}`, and the gate reverts this merge "
+            f"({tiers} paths: {', '.join(f'`{p}`' for t in TIERS for p in (a.facts.get(t) or [])[:8])}).\n")
 
 
 def notice_text(a, base):
@@ -1092,7 +1390,10 @@ def notice_text(a, base):
                       f"with one family, from {when(k['solo_until'])}.",
                       f"To stop it: the label `{base.gate['hold_label']}` on this pull request, or a challenge on the head "
                       f"version `{k['version']}` by a holder of `pr/owner` (`warrant challenge`). Either stops the merge "
-                      "until it is removed or answered."]) + "\n"
+                      "until it is removed or answered.", "",
+                      (f"A reaction of yours to this comment makes you present for {base.gate[PRESENCE]['days']} days: then "
+                       "the gate merges such a change once its checks are green and the brake acts after the merge."
+                       if PRESENCE in base.gate else "")]) + "\n"
 
 
 def notify(b, found, gh):
@@ -1105,7 +1406,7 @@ def notify(b, found, gh):
             continue
         mark = NOTICE.format(x=k["x"])
         try:
-            if any(mark in (c.get("body") or "") and (c.get("user") or {}).get("login", "").startswith(ACTIONS_APP)
+            if any(mark in (c.get("body") or "") and (c.get("user") or {}).get("login") == f"{ACTIONS_APP}[bot]"
                    for c in gh.comments(a.pr["number"])):
                 continue
             gh.comment(a.pr["number"], notice_text(a, b))
@@ -1129,7 +1430,11 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
     b = Base(root, _sha(base))
     gh = gh or GitHub(b.repository)
     try:
-        found = survey(root, b, gh, set(prs), hold=hold, remote=remote)
+        until = presence_until(root, b, gh)
+        here = until is not None and until > time.time()
+        found = survey(root, b, gh, set(prs), hold=hold, remote=remote, present_=here)
+        for x in found:
+            x.facts["present_until"] = until
     except Refused as e:
         _append(summary, f"## merge-on-acceptance\n\nNothing assessed: `{e.code}` {e}\n")
         if e.code == "BASE_MOVED":          # a merge landed meanwhile: the run its CI starts reads the new base
@@ -1138,8 +1443,9 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
         raise
     merged, noticed = None, []
     if merge:
-        noticed = notify(b, found, gh)
-        first = next((x for x in found if x.eligible), None)
+        away = announce_away(b, gh, until)
+        noticed = notify(b, found, gh) + enforce_brakes(root, b, gh, found) + ([(0, away)] if away else [])
+        first = next((x for x in found if x.eligible and x.facts.get("revert")), None) or next((x for x in found if x.eligible), None)
         merged = merge_one(b, first, gh) if first is not None else None
     _append(summary, summary_markdown(found, describe(merged) if merged else None, base)
             + "".join(f"- notice #{n}: {o}\n" for n, o in noticed))
@@ -1178,6 +1484,7 @@ def _append(path, text):
 def main(argv=None):
     """python3 -m warrant.gate [--root DIR] gate --base M [--merge] [--gate-var V] [--summary FILE] [--pr N ...] [--json]
        python3 -m warrant.gate [--root DIR] due --base M [--json]
+       python3 -m warrant.gate [--root DIR] brakes --at C       # exit 1 while a merge in C's history may still be vetoed
     The workflow runs this module from the base commit's checkout (`tools/gate.py`, a shim of it, in this package's
     own repository), so that what merges is decided by this file and the core alone."""
     import argparse
@@ -1195,8 +1502,17 @@ def main(argv=None):
     g.add_argument("--gate-var", default="")
     g.add_argument("--summary")
     g.add_argument("--pr", type=int, action="append", default=[])
+    k = sub.add_parser("brakes")
+    k.add_argument("--at", required=True)
     a = ap.parse_args(argv)
     try:
+        if a.cmd == "brakes":
+            open_ = brakes(a.root, _sha(a.at))
+            for x in open_:
+                print(f"OPEN #{x['pr']} merged as {x['merge'][:12]}: its brake holds until "
+                      f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(x['until']))}")
+            print(f"{len(open_)} merge(s) at {a.at[:12]} whose brake is still open")
+            return 1 if open_ else 0
         if a.cmd == "due":
             return cmd_due(a.root, a.base, a.json, a.remote)
         return cmd_gate(a.root, a.base, a.merge, a.gate_var == "hold", a.summary, a.pr, a.remote, a.json)

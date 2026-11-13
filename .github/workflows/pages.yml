@@ -3,10 +3,14 @@ name: pages
 # The project page (site/: static HTML, CSS and llms.txt; no build step, no script). It describes
 # Warrant 3; it replaced the 0.x browser verifier that was retired with that generation.
 
+# A merge by the gate (GITHUB_TOKEN) starts no push workflow, so the page is also deployed on a schedule: what site/
+# holds on master is live within three hours of any merge (observed: #357 merged by the gate, the page unchanged).
 on:
   push:
     branches: [master]
     paths: ['site/**', '.github/workflows/pages.yml']
+  schedule:
+    - cron: '17 */3 * * *'
   workflow_dispatch:
 
 permissions:
