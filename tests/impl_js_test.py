@@ -39,6 +39,7 @@ import os
 import random
 import shutil
 import subprocess
+from shlex import quote as shlex_quote
 import sys
 import tempfile
 import time
@@ -974,6 +975,7 @@ def main():
     browser_changes_cases()
     browser_desk_cases()
     browser_frontier_cases()
+    browser_door_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -1087,6 +1089,7 @@ READER = ROOT / "site" / "reader.mjs"
 PAGE_FILES = [ROOT / "site" / "reader.html", ROOT / "site" / "reader-page.mjs", ROOT / "site" / "reader.mjs"]
 DESK_FILES = [ROOT / "site" / "desk.html", ROOT / "site" / "desk-page.mjs", ROOT / "site" / "desk.mjs", ROOT / "site" / "page.mjs"]
 DESK = ROOT / "site" / "desk.mjs"
+DOOR_FILES = [ROOT / "site" / "object.html", ROOT / "site" / "voice.mjs"]   # J16: the door (object.html runs no script)
 # bidirectional controls and zero-width characters: none may stand literally in a page's source (written as escapes)
 INVISIBLE = {chr(c) for c in [*range(0x202a, 0x202f), *range(0x2066, 0x206a), 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x2060, 0xfeff, 0x061c]}
 MARKUP_FROM_TEXT = ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "srcdoc", "eval(",
@@ -1241,21 +1244,25 @@ def browser_reader_cases():
           "not hash to its name", len(maps) > 0 and rc_blob == 2 and "transport altered blob" in altered.get("refused", ""),
           (maps, rc_blob, altered))
 
-    texts = {p.name: p.read_text() for p in PAGE_FILES + DESK_FILES}
-    html, desk_html = texts["reader.html"], texts["desk.html"]
+    texts = {p.name: p.read_text() for p in PAGE_FILES + DESK_FILES + DOOR_FILES}
+    html, desk_html, door_html = texts["reader.html"], texts["desk.html"], texts["object.html"]
     csp = lambda h: re.findall(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', h)
     found = sorted((name, word) for name, text in texts.items() for word in MARKUP_FROM_TEXT if word in text)
     hidden = sorted((name, f"U+{ord(ch):04X}") for name, text in texts.items() for ch in INVISIBLE if ch in text)
-    check("J10 the page's source: no call that builds markup from a string in the reader's three files and the desk's "
-          "four (desk.html, desk-page.mjs, desk.mjs, page.mjs), no literal bidirectional or zero-width character in "
-          "any of them; each page one script element and that one external, no inline handler, and a policy allowing "
-          "scripts of its own origin only; the desk's policy is the reader's, word for word",
+    door_csp = csp(door_html)
+    check("J10 the page's source: no call that builds markup from a string in the reader's three files, the desk's "
+          "four (desk.html, desk-page.mjs, desk.mjs, page.mjs) and the door's two (object.html, voice.mjs), no literal "
+          "bidirectional or zero-width character in any of them; the reader and the desk one script element each and "
+          "that one external, object.html none and a policy allowing none (default-src 'none', no script-src), no "
+          "inline handler, and a policy allowing scripts of its own origin only; the desk's policy is the reader's, word "
+          "for word",
           not found and not hidden and html.count("<script") == 1 and '<script type="module" src="reader-page.mjs"></script>' in html
           and desk_html.count("<script") == 1 and '<script type="module" src="desk-page.mjs"></script>' in desk_html
-          and all(re.search(r"<[^>]*\son[a-z]+\s*=", h, re.I) is None for h in (html, desk_html))
+          and "<script" not in door_html and len(door_csp) == 1 and "default-src 'none'" in door_csp[0] and "script-src" not in door_csp[0]
+          and all(re.search(r"<[^>]*\son[a-z]+\s*=", h, re.I) is None for h in (html, desk_html, door_html))
           and "script-src 'self'" in html and "default-src 'none'" in html and "'unsafe-inline'" not in html
           and "'unsafe-eval'" not in html and len(csp(html)) == 1 and csp(desk_html) == csp(html)
-          and "connect-src 'self' https:" in csp(html)[0], (found, hidden, csp(html), csp(desk_html)))
+          and "connect-src 'self' https:" in csp(html)[0], (found, hidden, csp(html), csp(desk_html), door_csp))
 
 
 def _serve_counting(directory, failing=None):
@@ -1924,8 +1931,9 @@ def browser_desk_cases():
     want = [{"base": "https://raw.githubusercontent.com/s0fractal/warrant/master/", "name": "s0fractal/warrant"},
             {"base": "https://raw.githubusercontent.com/s0fractal/minds/main/", "name": "s0fractal/minds"}]
     check("J14 the default list: site/stores.json is a plain list of {name, base} holding this repository's store and "
-          "minds', and it is what the desk reads when no store= is given and none is kept (no network: the selection "
-          "alone)", [dict(sorted(x.items())) for x in default] == want and plan0 == {"from": "list", "stores": want, "why": []}, (default, plan0))
+          "minds' (beside its release entries, J16), and it is what the desk reads when no store= is given and none is "
+          "kept (no network: the selection alone)",
+          [dict(sorted(x.items())) for x in default if "release" not in x] == want and plan0 == {"from": "list", "stores": want, "why": []}, (default, plan0))
     check("J14 the selection rule: store= addresses first (each read once, named by its address; one that is not "
           "http(s) is named and skipped), then the list kept in the browser (an address listed twice is read once, under "
           "its first name), then stores.json; a kept list that is "
@@ -2039,6 +2047,231 @@ def _acceptance_files(root):
     """The {path: blob} of every signed acceptance by the claims checker in the checkout's store."""
     from warrant import claims as CL
     return [f for xs in CL.acceptances(_report(root)).values() for _, f, _ in xs if isinstance(f, dict)]
+
+
+VOICE = ROOT / "site" / "voice.mjs"
+# words that read as a verdict: none may stand in a release block the desk draws, which verifies nothing (its one
+# sentence «as published; not verified here», the member `note`, is the exception the case names)
+VERDICT_WORDS = ("accept", "accepted", "settled", "verified", "valid", "eligible", "passed", "endorsed", "ok")
+
+
+def _node_json(script, *args):
+    """(exit status, JSON answer) of `node SCRIPT ARGS`."""
+    p = subprocess.run([NODE, str(script), *args], capture_output=True, check=False, timeout=600)
+    try:
+        return p.returncode, json.loads(p.stdout)
+    except ValueError:
+        return p.returncode, {"crash": p.stderr.decode(errors="replace")[-300:]}
+
+
+def _shown_steps(html):
+    """{step: [lines]} of object.html: each `<pre class="command" data-step="NAME"><code>...</code></pre>`, unescaped."""
+    import html as H
+    import re
+    return {m.group(1): H.unescape(m.group(2)).split("\n")
+            for m in re.finditer(r'<pre class="command" data-step="([a-z-]+)"><code>(.*?)</code></pre>', html, re.S)}
+
+
+def _run_steps(steps, cwd, env, marker="@@STEP "):
+    """Run `steps` [(name, [lines])] in ONE shell from `cwd`, as a reader runs them in order (each `cd` carries to the
+    next line); {name: stdout of that step}, the exit status, stderr."""
+    script = "set -e\n" + "".join(f"echo '{marker}{name}'\n" + "\n".join(lines) + "\n" for name, lines in steps)
+    p = subprocess.run(["/bin/sh", "-c", script], cwd=cwd, env=env, capture_output=True, text=True, check=False, timeout=600)
+    out, name = {}, None
+    for line in p.stdout.splitlines(keepends=True):
+        if line.startswith(marker):
+            name = line[len(marker):].strip()
+            out[name] = ""
+        elif name is not None:
+            out[name] += line
+    return out, p.returncode, p.stderr
+
+
+def browser_door_cases():
+    """The door (site/voice.mjs; drawn by site/reader-page.mjs beside a lineage's effective version and leaf, and shown
+    by site/object.html) and the desk's published releases (site/desk.mjs readReleases). The commands the pages show are
+    run here, as shown, against this checkout's package: a voice said, published as a git repository, served, and read
+    beside a publisher's store by the reader's CLI. No case drives a browser."""
+    import re
+    import urllib.parse
+    pub = Repo()
+    o = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the claim", "serves": []})
+    d = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the claim", "serves": []}, lineage=o)
+    pub.attest("bob", d)
+    hostile = "<img src=x onerror=alert(1)> \u202e\u200b \"; touch pwned; $(touch pwned2) `touch pwned3` ' VERSION_ID"
+    leaf = pub.entity("alice", "obligation@1", {"state": "done", "statement": hostile, "serves": []}, lineage=d)
+    other = pub.entity("alice", "obligation@1", {"state": "open", "statement": "nobody spoke of this", "serves": []})
+
+    rc, st = _node_json(VOICE, "--steps")
+    steps = {x["step"]: x["lines"] for x in st.get("steps", [])}
+    door = (ROOT / "site" / "object.html").read_text()
+    shown = _shown_steps(door)
+    check("J16 object.html shows the steps voice.mjs holds, word for word and in their order, each in a "
+          "<pre class=\"command\" data-step>: checkout, say, publish, read",
+          rc == 0 and list(shown) == list(steps) == ["checkout", "say", "publish", "read"] and shown == steps, (shown, steps))
+    navs = {n: (ROOT / "site" / n).read_text() for n in ("reader.html", "desk.html", "index.html")}
+    check("J16 object.html is linked from the reader's nav, the desk's and index.html's",
+          all('<a href="object.html">Object</a>' in t.split("</nav>")[0] for t in navs.values()), [n for n, t in navs.items() if "object.html" not in t])
+    check("J16 no command object.html shows is one for the package on PyPI (3.0.0a6 has no `warrant say`): the "
+          "checkout form alone, `python3 -m warrant` from a clone, and no `pip install`",
+          all("pip" not in l and not l.startswith("warrant ") for ls in shown.values() for l in ls)
+          and any(l.startswith("python3 -m warrant say ") for l in shown.get("say", []))
+          and shown.get("checkout") == ["git clone https://github.com/s0fractal/warrant.git"], shown)
+
+    srv_pub, b_pub = _serve(pub.root)
+    try:
+        rc_t, tg = _node_json(VOICE, "--base", b_pub, "--lineage", o)
+        _, tg_one = _node_json(VOICE, "--base", b_pub, "--lineage", other)
+    finally:
+        srv_pub.shutdown()
+    blocks = tg.get("targets", [])
+    fill = lambda v: [l.replace("VERSION_ID", v) for n in ("checkout", "say", "publish") for l in steps.get(n, [])]
+    check("J16 the reader's block names the full id of its version: one for the effective version and one for the leaf "
+          "when they differ, each command the step's with that id filled in; one block, effective and leaf, when they are "
+          "one version",
+          rc_t == 0 and [(b["version"], b["effective"], b["leaf"]) for b in blocks] == [(leaf, False, True), (d, True, False)]
+          and all(b["commands"] == fill(b["version"]) for b in blocks)
+          and [(b["version"], b["effective"], b["leaf"]) for b in tg_one.get("targets", [])] == [(other, True, True)], (blocks, tg_one))
+    pieces = ["<img", "onerror", "\u202e", "\u200b", "touch pwned", "$(", "`"]
+    dumped = json.dumps(blocks, ensure_ascii=False)
+    bad_ids = ['x"; touch pwned', leaf.upper(), leaf[:63], leaf + "\n", leaf + " ", "$(touch pwned)" + leaf[14:]]
+    refused = [_node_json(VOICE, "--version", x)[1].get("commands", "absent") for x in bad_ids]
+    check("J16 hostile text in a lineage (markup, a direction override, a zero-width space, shell metacharacters, the "
+          "placeholder's own name) reaches no command: the block is built from the version id alone, and an id that is "
+          "not 64 lowercase hex (quoted, upper case, short, with a newline or a space after it) gives no command at all",
+          not any(x in dumped for x in pieces) and "VERSION_ID" not in dumped and refused == [None] * len(bad_ids), (dumped[:400], refused))
+    _, add1 = _node_json(VOICE, "--with", "https://a.example/s", "--add", " https://b.example/v ")
+    _, add2 = _node_json(VOICE, "--with", "https://a.example/s", "--add", "https://a.example/s/")
+    _, add3 = _node_json(VOICE, "--add", "javascript:alert(1)")
+    _, add4 = _node_json(VOICE, "--add", "https://u:p@b.example/")
+    check("J16 the block's field adds an address to the page's with= list: an http(s) address with no credentials, ending "
+          "in /, once; anything else is named and not added",
+          add1 == {"with": ["https://a.example/s", "https://b.example/v/"]} and add2 == {"with": ["https://a.example/s"]}
+          and "not http(s)" in add3.get("why", "") and "with" not in add3 and "credentials" in add4.get("why", "") and "with" not in add4,
+          (add1, add2, add3, add4))
+
+    # the commands run: the block's (checkout, say, publish, for the effective version) and object.html's read step
+    work = pub.home / "stranger"
+    (work / "bin").mkdir(parents=True)
+    (work / "home").mkdir()
+    (work / "bin" / "python3").write_text(f"#!/bin/sh\nexec {shlex_quote(sys.executable)} \"$@\"\n")
+    (work / "bin" / "python3").chmod(0o755)
+    env = {"PATH": f"{work / 'bin'}:{os.environ.get('PATH', '')}", "HOME": str(work / "home"), "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_AUTHOR_NAME": "a stranger", "GIT_AUTHOR_EMAIL": "stranger@example.org",
+           "GIT_COMMITTER_NAME": "a stranger", "GIT_COMMITTER_EMAIL": "stranger@example.org", "LANG": "C.UTF-8"}
+    eff = next((b for b in blocks if b["effective"]), {"commands": []})["commands"]
+    clone = "git clone https://github.com/s0fractal/warrant.git"
+    ran = [l.replace(clone, f"git clone -q {shlex_quote(str(ROOT))} warrant") if l == clone else l for l in eff]    # the one substitution: this checkout for GitHub
+    srvs, (b_pub2, b_voices) = _serve_many(pub.root, work / "voices")
+    safe = re.compile(r"[A-Za-z0-9:/._-]+")
+    try:
+        assert all(safe.fullmatch(x) for x in (b_pub2, b_voices, o)), (b_pub2, b_voices)
+        read = [l.replace("STORE_URL", b_pub2).replace("VOICES_URL", b_voices).replace("LINEAGE_ID", o) for l in shown.get("read", [])]
+        out, rc_run, err = _run_steps([("block", ran), ("read", read)], work, env)
+        _, plain = _reader(b_pub2, "--lineage", o)
+        _, listed = _reader(b_pub2, "--with", b_voices)
+    finally:
+        for x in srvs:
+            x.shutdown()
+    said = {}
+    with contextlib.suppress(ValueError, IndexError):
+        said = json.loads([l for l in out.get("block", "").splitlines() if l.startswith("{")][-1])
+    seen = {}
+    with contextlib.suppress(ValueError):
+        seen = json.loads(out.get("read", ""))
+    floor = (seen.get("lineage") or {}).get("floor", {})
+    vs = (floor.get("outside") or {}).get("voices", [])
+    rows = {x["id"]: x for x in listed.get("rows", [])}
+    seed = work / "home" / ".config" / "warrant" / "commons" / "commons.seed"
+    check("J16 the commands run as shown: in an empty directory the block's commands (a clone of this checkout in place "
+          "of GitHub, `warrant say` against the effective version into ../voices, that directory committed as a git "
+          "repository) and object.html's read step (the publisher served, the voices served beside it) exit 0; the "
+          "voice is filed under key:<hex> with its seed in the objector's own home",
+          rc_run == 0 and said.get("actor", "").startswith("key:") and len(said.get("actor", "")) == 68 and seed.is_file()
+          and (work / "voices" / ".git").is_dir(), (rc_run, err[-600:], said, sorted(out)))
+    check("J16 the voice appears on the right lineage, uncounted, under its key: actor: the reader with --with the "
+          "voices store lists it on that lineage's effective version, the store's state and reliance unchanged, no "
+          "voice on another lineage",
+          [(v["id"], v["actor"], v["kind"], v["target"], v["counted"], v["statement"]) for v in vs]
+          == [(said.get("filed"), said.get("actor"), "challenge", d, False, "why this version is wrong")]
+          and (floor.get("state"), floor.get("reliance")) == ((plain.get("lineage") or {}).get("floor", {}).get("state"), (plain.get("lineage") or {}).get("floor", {}).get("reliance"))
+          and floor.get("reliance") == "ELIGIBLE" and rows.get(o, {}).get("outside") == 1 and rows.get(other, {}).get("outside") == 0,
+          (vs, floor.get("reliance"), rows.get(o), rows.get(other)))
+
+    # the desk's published releases: a served fixture, never the network
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        site = tmp / "site"
+        roster = [{"name": "github-actions", "key": "1" * 64}, {"name": "<b>maintainer</b> \u202e", "key": "2" * 64}]
+        good = {"format": "minds.published-bundles@1", "about": "the publisher's word", "chain": "refs/vars/heads/minds",
+                "chain_tip": "f" * 40, "published": "2026-11-13T06:48:59Z",
+                "projection": {"id": "c" * 64, "tip": "3" * 40, "witnesses": ["1" * 64, "9" * 64], "file": "bundles/p.json", "sha256": "a" * 64},
+                "attestation": {"decision": "4" * 64, "statement": "minds release main@cec236 rules@1ca798; checks: lake build", "endorsers": ["1" * 64, "2" * 64],
+                                "file": "bundles/a.json", "sha256": "7" * 64},
+                "roster": roster, "rules": [{"id": "8" * 64, "file": "rules/8.wasm", "sha256": "8" * 64}],
+                "verifier": {"main": "4" * 40, "file": "minds_verify.mjs", "sha256": "e" * 64}}
+        missing = copy.deepcopy(good)
+        del missing["attestation"]["endorsers"]
+        files = {"good": json.dumps(good), "other": json.dumps(dict(good, format="minds.published-bundles@2")),
+                 "notjson": "<html>not json</html>", "missing": json.dumps(missing), "fail": json.dumps(good)}
+        for k, text in files.items():
+            (site / k).mkdir(parents=True)
+            (site / k / "index.json").write_text(text)
+        srv, b = _serve_failing(site, "fail/index.json")
+        lst = tmp / "list.json"
+        lst.write_text(json.dumps([{"name": k, "base": b + k + "/", "release": "minds.published-bundles@1"} for k in files]
+                                  + [{"name": "unknown kind", "base": b + "good/", "release": "something@1"}]))
+        try:
+            rc_d, dk = _node_json(DESK, "--list", str(lst))
+            _, dk_addr = _node_json(DESK, "--list", str(lst), "--store", b + "good/")
+            _, plan = _node_json(DESK, "--plan", "--list", str(lst))
+            (tmp / "plain.json").write_text(json.dumps([{"name": "plain", "base": b + "good/"}]))
+            _, dk_none = _node_json(DESK, "--list", str(tmp / "plain.json"))
+        finally:
+            srv.shutdown()
+    finally:
+        shutil.rmtree(tmp)
+    rel = {x["name"]: x for x in (dk.get("desk") or {}).get("releases", [])}
+    g = rel.get("good", {})
+    index = b + "good/index.json"
+    check("J16 a well-formed release index gives the statement, the chain and its tip, when published, the endorsers and "
+          "the witnesses with the roster's names (null for a key it does not name; a name holding markup kept as text), "
+          "the sentence «as published; not verified here» and the minds page's link with ?index=<the index address>",
+          rc_d == 0 and g.get("read") is True and g.get("statement") == good["attestation"]["statement"] and g.get("chain_tip") == "f" * 40
+          and g.get("chain") == good["chain"] and g.get("published") == good["published"] and g.get("index") == index
+          and g.get("endorsers") == [{"key": "1" * 64, "name": "github-actions"}, {"key": "2" * 64, "name": roster[1]["name"]}]
+          and g.get("witnesses") == [{"key": "1" * 64, "name": "github-actions"}, {"key": "9" * 64, "name": None}]
+          and g.get("note") == "as published; not verified here"
+          and g.get("verify") == "https://s0fractal.github.io/minds/?index=" + urllib.parse.quote(index, safe="-_.!~*'()"), g)
+    whys = {k: rel.get(k, {}).get("why") or "" for k in ("other", "notjson", "missing", "fail", "unknown kind")}
+    printed = ("statement", "chain_tip", "endorsers", "witnesses", "published", "verify", "note")
+    check("J16 an index of another format, one that is not JSON, one with a member missing, HTTP 500 and an entry of a "
+          "kind the desk does not read are each named with their reason and print no release; the others still answer",
+          all(rel.get(k, {}).get("read") is False and not any(m in rel.get(k, {}) for m in printed) for k in whys)
+          and "minds.published-bundles@2" in whys["other"] and "not JSON" in whys["notjson"]
+          and "attestation.endorsers" in whys["missing"] and "HTTP 500" in whys["fail"] and "something@1" in whys["unknown kind"]
+          and g.get("read") is True, whys)
+    words = lambda x: {w for w in VERDICT_WORDS if re.search(rf"\b{w}\b", json.dumps({k: v for k, v in x.items() if k != "note"}).lower())}
+    check("J16 no word of a verdict (" + ", ".join(VERDICT_WORDS) + ") in any release block's data, read or not, but the "
+          "one sentence that says it is not verified here",
+          len(rel) == 6 and not any(words(x) for x in rel.values()), {k: words(x) for k, x in rel.items()})
+    js = ("import * as d from %s; import fs from 'node:fs'; const t = fs.readFileSync(%s, 'utf8');"
+          " console.log(JSON.stringify({releases: d.parseReleases(t), stores: d.parseStores(t)}))") % (json.dumps(DESK.as_uri()), json.dumps(str(ROOT / "site" / "stores.json")))
+    p = subprocess.run([NODE, "--input-type=module", "-e", js], capture_output=True, text=True, check=False, timeout=60)
+    dflt = json.loads(p.stdout) if p.returncode == 0 else {}
+    check("J16 the default list (site/stores.json) holds minds' latest release as a second kind of entry, {name, base, "
+          "release}: its index is <base>index.json on minds' site branch, its format minds.published-bundles@1, and it "
+          "keeps a base (a desk.mjs of an earlier release reads it as a store it cannot read, not as a broken list); "
+          "parseStores leaves it out",
+          [(x["index"], x["format"], x["why"]) for x in dflt.get("releases", [])]
+          == [("https://raw.githubusercontent.com/s0fractal/minds/site/index.json", "minds.published-bundles@1", None)]
+          and len(dflt.get("stores", [])) == 2, (p.stderr[-300:], dflt))
+    check("J16 without release entries nothing changes: a list's stores are read as before (the plan names no release), "
+          "a desk whose stores the address names shows no release, and the CLI answers no releases member for a list with none",
+          plan == {"from": "list", "stores": [], "why": []} and "releases" not in (dk_addr.get("desk") or {})
+          and len((dk_addr.get("desk") or {}).get("stores", [])) == 1
+          and sorted(dk_none.get("desk") or {}) == ["actor", "from", "stores", "why"] and len(dk_none["desk"]["stores"]) == 1,
+          (plan, dk_addr, dk_none))
 
 
 if __name__ == "__main__":

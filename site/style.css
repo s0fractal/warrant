@@ -77,3 +77,11 @@ button:disabled { opacity: 0.5; cursor: default; }
 .desk-store p { margin: 0.3rem 0; overflow-wrap: anywhere; }
 #desk-edit textarea { width: 100%; font: 0.9em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem; }
 .desk-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+
+/* The door (reader.html: «Object to this version»; object.html): commands to copy, never run by the page. */
+.command { background: var(--code); padding: 0.7rem 0.9rem; border-radius: 6px; overflow-x: auto; white-space: pre; }
+.command code { background: none; padding: 0; }
+.door { margin: 0.6rem 0 0; font-size: 0.95rem; }
+.door summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.door p { overflow-wrap: anywhere; }
+.copy { margin: 0 0 0.4rem; padding: 0.35rem 0.8rem; font-size: 0.9rem; }

@@ -5,6 +5,7 @@ import * as reader from "./reader.mjs";
 import { changes, changesLine, comparePins, fetchStore, lineage, makeMark, memoFetch, overlay, PINS_NOT_CHECKED, read, readOthers,
          receiver, rows, rulesId, STALE, summary } from "./reader.mjs";
 import { $, counts, el, fill, keepActor, keptActor, loadMark, markKey, pill, saveMark, section, short, when } from "./page.mjs";
+import * as voice from "./voice.mjs";
 
 const DEFAULT_BASE = "https://raw.githubusercontent.com/s0fractal/warrant/master/";
 const PAGE = 150;                                         // rows drawn at once; the rest is named and asked for
@@ -176,6 +177,9 @@ function drawLineage() {
     return;
   }
   const f = d.floor;
+  // the door beside the effective version and the leaf (voice.mjs targets: built from their ids alone); none when
+  // voice.mjs is of an earlier release, cached apart from this script
+  const doors = new Map((typeof voice.targets === "function" ? voice.targets(d) : []).map((t) => [t.version, t]));
   fill(box,
     el("p", { class: "small" }, link("← all lineages", { l: null })),
     el("h2", { class: "statement-title", text: d.versions.at(-1).title || d.versions[0].title || "(no statement)" }),
@@ -202,10 +206,58 @@ function drawLineage() {
         `${s.actor} · ${word(s)} · ${when(s.at)}`,
         s.kind === "challenge" ? fate(s) : null,
         s.statement ? el("div", { class: "statement", text: s.statement }) : null,
-        s.kind === "challenge" && s.why ? el("div", { class: "small", text: s.why }) : null))) : null)),
+        s.kind === "challenge" && s.why ? el("div", { class: "small", text: s.why }) : null))) : null,
+      objectBlock(doors.get(v.id)))),
   );
   box.hidden = false;
   box.scrollIntoView({ block: "start" });
+}
+
+// ---------------------------------------------------------------- the door: object to this version
+//
+// A collapsed block beside the effective version and the leaf: the commands that file a voice against exactly that
+// version (voice.mjs voiceCommands: its full id, nothing a record says), what such a voice is and is not, and a field
+// that adds the address of a store of voices to this page's `with=` list. The commands are text to copy; the page runs
+// nothing. The copy button exists only where the browser offers the Clipboard API (a user gesture, no permission
+// asked of the page's policy); elsewhere the text is selected by hand.
+
+function copyButton(text) {
+  const clip = globalThis.navigator?.clipboard;
+  if (typeof clip?.writeText !== "function") return null;
+  const b = el("button", { type: "button", class: "copy", text: "Copy" });
+  b.addEventListener("click", () => {
+    clip.writeText(text).then(() => { b.textContent = "Copied"; }, () => { b.textContent = "Not copied: select the text"; });
+  });
+  return b;
+}
+
+function withField() {
+  const input = el("input", { type: "url", inputmode: "url", autocomplete: "off", spellcheck: "false", placeholder: "https://…/", "aria-label": "address of a store of voices" });
+  const form = el("form", { class: "who" }, input, el("button", { type: "submit", text: "Read it beside this store" }));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const got = voice.withAdded(params().with, input.value);
+    if (got.why) { say(`Not added: ${got.why}.`, true); return; }
+    const area = $("with");                               // a cached page of an earlier release may have none
+    if (area) area.value = got.with.join("\n");
+    go({ with: got.with });
+  });
+  return form;
+}
+
+function objectBlock(t) {
+  if (!t) return null;
+  const text = t.commands.join("\n");
+  const role = t.effective && t.leaf ? "the effective version and the leaf" : t.effective ? "the effective version" : "the leaf, not effective";
+  return el("details", { class: "door" },
+    el("summary", { text: `Object to this version (${role})` }),
+    el("p", { class: "small" }, "From an empty directory, with git and Python ≥ 3.10 (with the package cryptography); the next release of warrant-graph carries ",
+      el("code", { text: "warrant say" }), ", 3.0.0a6 does not. ", el("a", { href: "object.html", text: "The steps, explained" }), "."),
+    el("pre", { class: "command" }, el("code", { text })),
+    copyButton(text),
+    (typeof voice.MEANING === "object" ? voice.MEANING : []).map((m) => el("p", { class: "small", text: m })),
+    el("p", { class: "small", text: "The address of a store of voices, to read beside this store (added to the list under \"Other stores beside this one\"):" }),
+    withField());
 }
 
 // ---------------------------------------------------------------- what changed for me
