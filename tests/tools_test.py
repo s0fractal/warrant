@@ -1638,6 +1638,17 @@ def grounded_cases():
           "the least fixed point", not got["grounded"] and {w for _, w in got["failing"]} == {"CYCLE"}, got)
     check("GR3 the version asked about must be its lineage's effective version", G.grounded(r.report(), c0)["failing"][:1] == [[c0, "NOT_EFFECTIVE"]],
           G.grounded(r.report(), c0))
+    q = Repo()
+    g = q.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a goal"})
+    o = q.entity("alice", "obligation@1", {"state": "open", "statement": "answers it", "answers": g, "serves": []}, refs=[g])
+    met = q.entity("alice", "goal@1", {"state": "met", "key": "G1", "text": "a goal"}, lineage=g, refs=[o])
+    q.attest("bob", met)
+    rq = RP.Repo(q.root).report()
+    answered = G.grounded(rq, o)
+    check("GR4 the goal an obligation answers is a direction, not a ground: a met goal citing the obligation that answers "
+          "it makes no CYCLE (the analysis session, 2026-11-13: minds read 88 failing on 18 items for this alone)",
+          rq["lineages"][g]["effective"] == met and not any(w == "CYCLE" for _, w in answered["failing"]),
+          (rq["lineages"][g]["effective"] == met, answered))
 
 def narrow_cases():
     """The analysis session, 2026-11-13 (#364): every one of 136 claims read STALE after one change to warrant/gate.py,

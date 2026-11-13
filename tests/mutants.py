@@ -273,6 +273,7 @@ MUTANTS = [
     ("T176", "warrant/claims.py", '    if tracked:\n        raise Failed("PATH"', '    if False:\n        raise Failed("PATH"', TOOLS, ["C21"]),
     ("T177", "warrant/claims.py", 'return frozenset(r[0] for r in rows if len(r) == 2 and r[1] == code)', 'return frozenset(r[0] for r in rows if r)', TOOLS, ["C21"]),
     ("T178", "warrant/claims.py", '    code = checker_code(git(root, "rev-parse", "HEAD"), root) if path else None', '    code = identity(root)["code"] if path else None', TOOLS, ["C22"]),
+    ("T183", "warrant/graph.py", '            if rel not in ("ref", "requires") or (rel == "ref" and b == answers):', '            if rel not in ("ref", "requires"):', TOOLS, ["GR4"]),
     ("T179", "warrant/resolve.py", '                if _sha(data) != i:\n                    raise Mismatch', '                if False:\n                    raise Mismatch', TOOLS, ["RV2"]),
     ("T180", "warrant/resolve.py", '        got = p.in_git(i)\n        if got:\n            return got', '        got = None\n        if got:\n            return got', TOOLS, ["RV1"]),
     ("T181", "warrant/resolve.py", '        got = p.bytes_of(i)\n        if got:\n            return "RESOLVED", got[1]', '        got = None\n        if got:\n            return "RESOLVED", got[1]', TOOLS, ["RV1"]),
