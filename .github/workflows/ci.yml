@@ -282,12 +282,16 @@ jobs:
           key: ci-code-pass-${{ needs.code.outputs.tree }}
 
   # A run dispatched with GITHUB_TOKEN (the gate's after a merge or on a verdicts pull request it opened, claims-replay's
-  # on its pull request) wakes no workflow_run, and GitHub mostly skips the gate's schedule: the gate slept until a
+  # on its pull request), and a held pull_request run once approved, wake no workflow_run, and GitHub mostly skips the gate's schedule: the gate slept until a
   # person dispatched it (#379, 2026-11-13). After `test` passed in a dispatched run, this job dispatches the gate on
   # the default branch. It checks out nothing and runs no code of the branch tested.
   wake-gate:
     needs: [test]
-    if: github.event_name == 'workflow_dispatch' && needs.test.result == 'success'
+    # also a pull_request run of a branch of this repository: a run the owner approved (action_required) wakes no
+    # workflow_run either (#389, 2026-11-13). A fork's pull request gets a read-only token and is left out.
+    if: >-
+      needs.test.result == 'success' && (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:

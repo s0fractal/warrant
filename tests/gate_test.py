@@ -1174,7 +1174,7 @@ def refresh_cases():
           and ("dispatch", ".github/workflows/ci.yml", fresh) in dirty.calls
           and any(c[0] == "comment" and c[1] == 9 and "#10" in c[2] for c in dirty.calls)
           and ("pulls/9", "PATCH", {"state": "closed"}) in dirty.calls
-          and ("git/refs/heads/codex/verdicts/x", "DELETE", None) in dirty.calls
+          and not any(c[1] == "DELETE" for c in dirty.calls)
           and [c[0] for c in clean.calls] == ["pulls/9"] and other == [],
           (out, a.reasons, len(union), len(want), commit.get("parents"), [c[:2] for c in dirty.calls],
            [c[0] for c in clean.calls], other))
@@ -1189,21 +1189,16 @@ def refresh_cases():
     second = GT.refresh_verdicts(r.root, b, again, [a, opened_pr])
     orphan = GH("dirty", branches={fresh})
     third = GT.refresh_verdicts(r.root, b, orphan, [a])
-    undeleted = GH("dirty", fail={("git/refs/heads/codex/verdicts/x", "DELETE")})
-    fourth = GT.refresh_verdicts(r.root, b, undeleted, [a])
     posts = lambda g, p: [c for c in g.calls if c[0] == p and c[1] == "POST"]
     check("E90 a refresh that failed part way is resumed with each step made once: the new pull request open, the next "
           "run only closes the old one (no second branch or pull request, no FAILED); the branch made with no pull "
-          "request, it opens one from it; a branch that could not be deleted leaves the carry done (the analysis "
-          "session on #383)",
+          "request, it opens one from it (the analysis session on #383)",
           "FAILED" in first[0][1] and posts(broke, "git/refs") and posts(broke, "pulls")
-          and second == [(9, f"carried by #10 from {fresh} (resumed)")] and not posts(again, "git/refs")
+          and second == [(9, f"carried by #10 from {fresh} (resumed); codex/verdicts/x kept")] and not posts(again, "git/refs")
           and not posts(again, "pulls") and not posts(again, "git/commits")
           and ("pulls/9", "PATCH", {"state": "closed"}) in again.calls
-          and not posts(orphan, "git/refs") and posts(orphan, "pulls") and ("pulls/9", "PATCH", {"state": "closed"}) in orphan.calls
-          and "FAILED" not in fourth[0][1] and "NOT deleted" in fourth[0][1]
-          and ("pulls/9", "PATCH", {"state": "closed"}) in undeleted.calls,
-          (first, second, third, fourth, [c[:2] for c in again.calls], [c[:2] for c in orphan.calls]))
+          and not posts(orphan, "git/refs") and posts(orphan, "pulls") and ("pulls/9", "PATCH", {"state": "closed"}) in orphan.calls,
+          (first, second, third, [c[:2] for c in again.calls], [c[:2] for c in orphan.calls]))
     # E91 (Codex on #383 head version 5be30830): nothing is retired on a name, and never before CI started on the carry
     closed = lambda g: ("pulls/9", "PATCH", {"state": "closed"}) in g.calls
     deleted = lambda g: any(c[0] == "git/refs/heads/codex/verdicts/x" and c[1] == "DELETE" for c in g.calls)
@@ -1236,12 +1231,12 @@ def refresh_cases():
     after = GH("dirty", tip=moved)
     got_after = GT.refresh_verdicts(r.root, b, after, [a])
     check("E92 the carry is of the head assessed: a source whose head moved since is not carried (nothing made, the next "
-          "run reads it), one that moves while it is carried is left open, and its branch is deleted only at the head "
-          "carried, a branch that moved being kept (Codex on #383 at f1da8d88: a verdict pushed after the survey was "
-          "lost with the source's branch)",
+          "run reads it), one that moves while it is carried is left open, and its branch is never deleted: GitHub "
+          "deletes a ref with no expected head, so a verdict pushed between a read and the delete would go with it "
+          "(Codex on #383 at f1da8d88 and on #388 at e42e6695)",
           "not carried" in got_before[0][1] and not posts(before, "git/refs") and not closed(before) and not deleted(before)
           and "FAILED" in got_during[0][1] and not closed(during) and not deleted(during)
-          and closed(after) and not deleted(after) and "NOT deleted" in got_after[0][1] and "FAILED" not in got_after[0][1],
+          and closed(after) and not deleted(after) and "kept" in got_after[0][1] and "FAILED" not in got_after[0][1],
           (got_before, got_during, got_after))
     # E93: a run GitHub holds for approval at a verdicts-only head is approved by the gate, and no other
     class Held:

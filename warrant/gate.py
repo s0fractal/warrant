@@ -1202,7 +1202,7 @@ def refresh_verdicts(root, b, gh, found):
     that GitHub cannot merge (its records conflict with the base's: two branches append to one file) is carried by a
     new one: the base merged into its head through GitHub's API, the stores' union as its records, on a new branch
     under the same prefix named by the base and the old number, opened as a pull request with CI started on it; the
-    old one is closed with a comment naming the new one, and its branch deleted. A pull request of the claims
+    old one is closed with a comment naming the new one, its branch kept. A pull request of the claims
     checker's acceptances runs CI for long enough that the base moves on meanwhile; without this it would conflict
     again and never merge (#364, 2026-11-13). Not the old branch moved: GitHub answers the workflow token's update of
     a pull request's branch with a pull_request run held for approval (action_required, under the repository's
@@ -1236,7 +1236,7 @@ def refresh_verdicts(root, b, gh, found):
             # A run that failed part way leaves its steps done: the new pull request open, or the branch made with no
             # pull request. Each step is made once (the analysis session on #383), and nothing is retired on a name:
             # what is on the branch must be this carry, its parents the head and the base and its tree the one above,
-            # and CI must have started on it, before the old pull request is closed and its branch deleted (Codex on
+            # and CI must have started on it, before the old pull request is closed (Codex on
             # #383 head version 5be30830: an open pull request or a branch of that name was read as the carry done,
             # and one whose dispatch had failed was never run).
             open_ = next((x.pr for x in found if x.pr.get("branch") == fresh and x.pr.get("head_repo") == b.repository
@@ -1267,18 +1267,14 @@ def refresh_verdicts(root, b, gh, found):
                 raise Refused(f"#{n}'s head moved while it was carried: it is left open, and the next run reads it", "GITHUB")
             gh.comment(n, f"Carried by #{carried} (the base merged in, records only, on {fresh}); closed by the gate.")
             gh.api(f"pulls/{n}", "PATCH", {"state": "closed"})
-            done = f"carried by #{carried} from {fresh}" + (f" ({commit[:12]}, the base merged in)" if commit else " (resumed)")
+            done = (f"carried by #{carried} from {fresh}" + (f" ({commit[:12]}, the base merged in)" if commit else " (resumed)")
+                    + f"; {branch} kept")
         except Refused as e:
             out.append((n, f"refresh FAILED: {e}"))
             continue
-        try:
-            tip = _branch_tip(gh, branch)
-            if tip == head:                     # a branch that moved holds what was not carried: kept
-                gh.api(f"git/refs/heads/{_branch(branch)}", "DELETE")
-            elif tip is not None:
-                done += f"; its branch {branch} NOT deleted: it moved to {str(tip)[:12]} after the carry"
-        except Refused as e:
-            done += f"; its branch {branch} NOT deleted: {e}"
+        # The source's branch is kept: GitHub deletes a ref with no expected head, so a verdict pushed between a read
+        # of its tip and the delete would go with it (Codex on #388 at e42e6695). Closing a pull request can be undone;
+        # the gate deletes nothing of a branch it did not make.
         out.append((n, done))
     return out
 
