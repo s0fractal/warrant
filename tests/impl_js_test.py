@@ -976,6 +976,7 @@ def main():
     browser_desk_cases()
     browser_frontier_cases()
     browser_door_cases()
+    browser_watch_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -2272,6 +2273,380 @@ def browser_door_cases():
           and len((dk_addr.get("desk") or {}).get("stores", [])) == 1
           and sorted(dk_none.get("desk") or {}) == ["actor", "from", "stores", "why"] and len(dk_none["desk"]["stores"]) == 1,
           (plan, dk_addr, dk_none))
+
+
+# ---------------------------------------------------------------- J17: a watch list, frames, silence with its evidence
+
+WATCH_EXIT = {"silent": 0, "touched": 3, "not established": 4}
+SILENCE = "none is in the frame"
+# what --mark answers without --watch (the `changes` member) over _changes_golden's fixture, before the watch list
+# existed (site/reader.mjs at f02c7e7a): the sha256 of its canonical text with addresses and mark times made constant
+CHANGES_GOLDEN = "7228e0c021d8318e04c4b997760232a18951a8f3a066794d1519f05d4b59ed8a"
+
+
+def _watch_run(base, *args, reader=None):
+    """(exit status, JSON answer, stdout as text) of `node site/reader.mjs --base BASE ...`."""
+    p = subprocess.run([NODE, str(reader or READER), "--base", base, *args], capture_output=True, check=False, timeout=600)
+    text = p.stdout.decode("utf-8", errors="replace")
+    try:
+        return p.returncode, json.loads(text), text
+    except ValueError:
+        return p.returncode, {"crash": p.stderr.decode(errors="replace")[-300:]}, text
+
+
+def _machine(repo, lineages, per, tag):
+    """`lineages` new obligation lineages by eve and `per` attests by dave on each: records nothing watched here rests
+    on and that rest on nothing watched (filed in two writes: Repo.put rewrites the store each time)."""
+    from world import KEYS
+    es = []
+    for k in range(lineages):
+        repo.t += 1
+        es.append(R.record("entity", "eve", repo.t, {"state": "open", "statement": f"machine {tag} {k}", "serves": []}, "obligation@1", None, [], None))
+    ids = repo.store.extend(es, KEYS["eve"], repo.trust)
+    ats = []
+    for e in ids:
+        for j in range(per):
+            repo.t += 1
+            ats.append(R.record("attest", "dave", repo.t, {"target": e, "verdict": "seen", "n": j}, None, None, [e], None))
+    repo.store.extend(ats, KEYS["dave"], repo.trust)
+
+
+def _closure_py(rep, roots):
+    """{id: steps from the nearest version of a root} of the closure a frame is (site/reader.mjs frame (a)-(c)), breadth
+    first, computed here from a Python report alone: out-edges whose relation is in warrant.graph.WALK, in-edges of
+    relation attest or challenge, and every version of the lineage of any member."""
+    import collections
+    from warrant import graph as G
+    out, into = {}, {}
+    for a, rel, b in rep["graph"]["edges"]:
+        if rel in G.WALK:
+            out.setdefault(a, []).append(b)
+        if rel in ("attest", "challenge"):
+            into.setdefault(b, []).append(a)
+    root_of = {v: L for L, x in rep["lineages"].items() for v in x["versions"]}
+    dist, todo = {}, collections.deque()
+    for L in roots:
+        for v in rep["lineages"][L]["versions"]:
+            if v not in dist:
+                dist[v] = 0
+                todo.append(v)
+    while todo:
+        cur = todo.popleft()
+        near = out.get(cur, []) + into.get(cur, []) + (rep["lineages"][root_of[cur]]["versions"] if cur in root_of else [])
+        for x in near:
+            if x not in dist:
+                dist[x] = dist[cur] + 1
+                todo.append(x)
+    return dist
+
+
+def _frame_py(rep, roots, held, others=()):
+    """(the frame's record ids, sorted; [(address, id)] of (d), sorted) of `roots`: the closure's ids that are records of
+    the view, and each other store's attest or challenge (an edge of its own report's graph) on an id of the closure
+    that the main store (`held`: the ids of its lines) does not hold. `others`: [(address, report)]."""
+    dist = _closure_py(rep, roots)
+    nodes = {n[0] for n in rep["graph"]["nodes"]}
+    outside = sorted({(addr, a) for addr, orep in others for a, rel, t in orep["graph"]["edges"]
+                      if rel in ("attest", "challenge") and t in dist and a not in held})
+    return sorted(i for i in dist if i in nodes), outside
+
+
+def _report_of(root):
+    doc = json.loads((Path(root) / ".warrant" / "v3.json").read_text())
+    return E.assess(ST.Store(Path(root) / ".warrant").snapshot(), doc["trust"], doc["profile"], None)
+
+
+def _chain_ok(rep, chain, start, L, first=None):
+    """Whether `chain` ([[from, rel, to]]) leads from `start` to a version of lineage L, each step an edge of the report's
+    graph in WALK or two versions of one lineage ("same lineage"); `first`, when given, the set of edges the first step
+    must be one of (another store's graph)."""
+    from warrant import graph as G
+    edges = {tuple(e) for e in rep["graph"]["edges"]}
+    root_of = {v: x for x, lin in rep["lineages"].items() for v in lin["versions"]}
+    node = start
+    for k, (a, rel, b) in enumerate(chain):
+        if node not in (a, b):
+            return False
+        if k == 0 and first is not None:
+            ok = (a, rel, b) in first
+        elif rel == "same lineage":
+            ok = a in root_of and root_of[a] == root_of.get(b)
+        else:
+            ok = rel in G.WALK and (a, rel, b) in edges
+        if not ok:
+            return False
+        node = b if node == a else a
+    return node in rep["lineages"][L]["versions"]
+
+
+def _frames_js(base, others=()):
+    """{lineage: frame} of every lineage of the store at `base` (site/reader.mjs frame), the stores `others` read beside."""
+    wm = ROOT / "site" / "warrant.mjs"
+    js = ("import * as R from %s; import { nodeBackend } from %s; import fs from 'node:fs';"
+          " const b = await nodeBackend(); const src = new Uint8Array(fs.readFileSync(%s));"
+          " const store = await R.fetchStore(%s, b); const r = await R.read(store, R.receiver(store.doc, null), b, src);"
+          " const others = %s; if (others.length) r.others = await R.readOthers(others, b, src);"
+          " const out = {}; for (const L of Object.keys(r.rep.lineages)) out[L] = R.frame(r, [L]);"
+          " process.stdout.write(JSON.stringify(out));") % (json.dumps(READER.as_uri()), json.dumps(wm.as_uri()), json.dumps(str(wm)),
+                                                            json.dumps(base), json.dumps(list(others)))
+    p = subprocess.run([NODE, "--input-type=module", "-e", js], capture_output=True, text=True, check=False, timeout=600)
+    return json.loads(p.stdout) if p.returncode == 0 and p.stdout else {"crash": p.stderr[-300:]}
+
+
+def _changes_golden(reader):
+    """The sha256 of what `--mark` answers without `--watch` (the CLI's `changes` member) over J13's kinds of change,
+    one mark each (an attest by no role, an acceptance at a commit, a counted challenge, a new lineage, a voice in another
+    store read beside), with the addresses and the mark times made constant. Deterministic: the test keys and times."""
+    pub, other = Repo(), Repo()
+    a1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the closure", "serves": []})
+    a2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the closure", "serves": []}, lineage=a1)
+    b1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the accepted one", "serves": []})
+    b2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the accepted one", "serves": []}, lineage=b1)
+    pub.attest("bob", b2)
+    srvs, (bp, bo) = _serve_many(pub.root, other.root)
+    outs = []
+    def step(change, *args):
+        path = pub.home / f"golden-{len(outs)}.json"
+        subprocess.run([NODE, str(reader), "--base", bp, "--write-mark", str(path), *args], capture_output=True, check=False, timeout=600)
+        doc = json.loads(path.read_text())
+        doc["at"] = 1
+        path.write_text(json.dumps(doc))
+        change()
+        p = subprocess.run([NODE, str(reader), "--base", bp, "--mark", str(path), *args], capture_output=True, check=False, timeout=600)
+        outs.append(json.loads(p.stdout).get("changes"))
+    try:
+        step(lambda: pub.attest("eve", b2))
+        step(lambda: pub.attest("bob", a2, commit="c" * 40))
+        step(lambda: pub.put("bob", "challenge", {"target": b2, "statement": "counted, and it stands"}, refs=[b2]))
+        step(lambda: pub.entity("alice", "obligation@1", {"state": "open", "statement": "a new task", "serves": []}))
+        step(lambda: other.put("carol", "challenge", {"target": a2, "statement": "from elsewhere"}, refs=[a2]), "--with", bo)
+    finally:
+        for s in srvs:
+            s.shutdown()
+    text = json.dumps(outs, sort_keys=True, ensure_ascii=False).replace(bp, "PUB/").replace(bo, "OTHER/")
+    return hashlib.sha256(text.encode()).hexdigest(), outs
+
+
+def _not_established(rc, out, text, reason):
+    """Whether an answer is "not established" with a reason holding `reason`, exit 4, and no silence said anywhere."""
+    w = out.get("watch") or {}
+    return (rc == WATCH_EXIT["not established"] and w.get("outcome") == "not established" and any(reason in x for x in w.get("reasons", []))
+            and "silent" not in text and SILENCE not in text)
+
+
+def browser_watch_cases():
+    """A watch list in the browser reader (site/reader.mjs frame, since, watched): what changed is said of the lineages
+    the reader relies on, by their frames, as touched (with the witness: the new record, its store and a shortest chain
+    of relations to the lineage), silent (with its numbers) or not established (with its reasons). The frame is held to
+    a closure computed here from the Python report; the CLI's exit status is the gate (0 silent, 3 touched, 4 not
+    established). No case drives a browser."""
+    import re
+    import contextlib as CTX
+    import tools_test as TT
+    hostile = "<img src=x onerror=alert(1)> \u202e\u200b \"; touch pwned; $(touch pwned2) `x`"
+    pub, other = Repo(), Repo()
+    goal = pub.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a goal"})
+    m1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the dependency", "serves": []})
+    m2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the dependency", "serves": []}, lineage=m1)
+    acc_m2 = pub.attest("bob", m2)
+    ev = pub.blob(b"evidence held as a blob: an id the closure reaches that is no record")
+    w1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": hostile, "serves": [goal], "evidence": [ev]})
+    w2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": hostile, "serves": [goal]}, lineage=w1, requires=[m1])
+    pub.attest("bob", w2)
+    x1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "watched, never touched", "serves": []})
+    y1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "not watched", "serves": []})
+    both = f"{w1},{x1}"
+    # a record both stores hold (bob's acceptance of m2, the same line): the main store's, never (d)
+    shared = next(l for l in pub.store.lines() if ST._line_id(l)[0] == acc_m2)
+    olines = other.dot / "records.jsonl"
+    olines.write_bytes(b"".join(sorted(set(olines.read_bytes().splitlines(keepends=True)) | {shared}, key=ST._line_id)))
+    (pub.home / "other-rules.json").write_text(json.dumps(dict(json.loads((pub.dot / "v3.json").read_text()),
+                                                               profile=dict(pub.profile, roles=dict(pub.profile["roles"], **{"roadmap/acceptor": ["carol"]})))))
+    srvs, (b_pub, b_oth, b_twin) = _serve_many(pub.root, other.root, pub.root)
+    n = iter(range(100))
+    def mark(*args):
+        path = pub.home / f"watch-mark-{next(n)}.json"
+        rc, out, _ = _watch_run(b_pub, "--write-mark", str(path), *args)
+        assert path.exists(), (rc, out)
+        return str(path)
+    try:
+        m_a = mark("--with", b_oth, "--watch", both)
+        _machine(pub, 250, 3, "a")
+        rc, out, text = _watch_run(b_pub, "--with", b_oth, "--mark", m_a, "--watch", both)
+        w = out.get("watch") or {}
+        rep = _report_of(pub.root)
+        held = set(pub.store.snapshot().lines)
+        size = len(_frame_py(rep, [w1, x1], held, [(b_oth, _report_of(other.root))])[0]) + len(_frame_py(rep, [w1, x1], held, [(b_oth, _report_of(other.root))])[1])
+        total = len(held) + len(other.store.snapshot().lines)
+        check("J17 the plan's check, silence: 1000 machine records filed outside the watched frames (250 new lineages, 750 "
+              "attests on them) leave the watch list silent, exit 0, nothing touched, and the one sentence carries the "
+              "numbers (1000 new, none in the frame, the frames' size and the stores') and the addresses read",
+              rc == 0 and w.get("outcome") == "silent" and w.get("touched") == [] and w.get("new") == 1000 and w.get("in_frames") == 0
+              and w.get("outside") == 1000 and w.get("frame") == size and w.get("records") == total and 0 < size < 40
+              and w.get("line", "").startswith(f"1000 new record(s) at these addresses ({b_pub}, {b_oth}); {SILENCE} of the 2 lineage(s) you watch ({size} of {total} records)")
+              and "completeness UNATTESTED" in w.get("line", ""), (rc, w, size, total))
+        check("J17 unwatched change: the same 250 new lineages are listed store-wide (changes) while the watch list is silent",
+              len((out.get("changes") or {}).get("listed", [])) == 250 and w.get("outcome") == "silent", (out.get("changes") or {}).get("line"))
+
+        m_b = mark("--with", b_oth, "--watch", both)
+        ch = pub.put("carol", "challenge", {"target": m2, "statement": "a counterexample"}, refs=[m2])
+        rc, out, text = _watch_run(b_pub, "--with", b_oth, "--mark", m_b, "--watch", both)
+        _, plain_out, _ = _watch_run(b_pub, "--with", b_oth, "--mark", m_b)
+        w = out.get("watch") or {}
+        rep = _report_of(pub.root)
+        dist = _closure_py(rep, [w1])
+        t = (w.get("touched") or [{}])[0]
+        wit = t.get("witness") or [{}]
+        check("J17 the plan's check, one record inside: a challenge on a version of a lineage a watched version requires "
+              "(three steps away) touches exactly that watched lineage, exit 3; the witness names exactly that record, "
+              "this store, and a shortest chain of the graph's relations from it to the watched lineage",
+              rc == WATCH_EXIT["touched"] and w.get("outcome") == "touched" and [x.get("lineage") for x in w.get("touched", [])] == [w1]
+              and w.get("quiet") == [x1] and [(x.get("id"), x.get("store"), x.get("kind")) for x in wit] == [(ch, b_pub, "challenge")]
+              and wit[0].get("distance") == dist.get(ch) == len(wit[0].get("chain", [])) and dist.get(ch, 0) >= 2
+              and _chain_ok(rep, wit[0].get("chain", []), ch, w1) and w.get("new") == 1 and w.get("in_frames") == 1 and w.get("outside") == 0
+              and t.get("said") == "1 new record(s) in its frame", (rc, w.get("outcome"), t, dist.get(ch)))
+        check("J17 the watch list changes nothing else: the `changes` member with --watch is the one without it",
+              out.get("changes") == plain_out.get("changes") and "watch" not in plain_out and out.get("summary") == plain_out.get("summary"),
+              (out.get("changes"), plain_out.get("changes")))
+        bad = ["<img", "onerror", "\u202e", "\u200b", "touch pwned", "$("]
+        check("J17 hostile text in a record's statement (markup, U+202E, U+200B, shell metacharacters) reaches the answer only "
+              "as data: the touched lineage's title is the statement unchanged, and no sentence holds any of it",
+              t.get("title") == hostile and not any(x in w.get("line", "") for x in bad)
+              and not any(x in r for r in w.get("reasons", []) for x in bad), (t.get("title"), w.get("line")))
+
+        m_c = mark("--with", b_oth, "--watch", both)
+        voice = other.put("carol", "challenge", {"target": m2, "statement": "from elsewhere"}, refs=[m2])
+        rc, out, _ = _watch_run(b_pub, "--with", b_oth, "--mark", m_c, "--watch", both)
+        rc_alone, alone, _ = _watch_run(b_pub, "--mark", m_c, "--watch", both)
+        w, wa = out.get("watch") or {}, alone.get("watch") or {}
+        wit = ((w.get("touched") or [{}])[0].get("witness") or [{}])
+        orep = _report_of(other.root)
+        check("J17 a voice appearing in another store on a member of a frame touches the watched lineage, naming that store's "
+              "address; its chain begins with the other store's own edge and is shortest",
+              rc == WATCH_EXIT["touched"] and [x.get("lineage") for x in w.get("touched", [])] == [w1]
+              and [(x.get("id"), x.get("store")) for x in wit] == [(voice, b_oth)] and wit[0].get("distance") == 1 + dist.get(m2, -9)
+              and _chain_ok(rep, wit[0].get("chain", []), voice, w1, first={tuple(e) for e in orep["graph"]["edges"]}), (rc, w))
+        check("J17 the same voice with that store not read: silent, exit 0, and the sentence names the one address read "
+              "(this address), not the store that holds the voice",
+              rc_alone == 0 and wa.get("outcome") == "silent" and wa.get("addresses") == [b_pub]
+              and f"at this address ({b_pub})" in wa.get("line", "") and b_oth not in wa.get("line", ""), (rc_alone, wa))
+
+        m_d = mark("--with", b_oth, "--watch", both)
+        y2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "not watched", "serves": []}, lineage=y1)
+        pub.attest("bob", y2)
+        rc, out, _ = _watch_run(b_pub, "--with", b_oth, "--mark", m_d, "--watch", both)
+        w = out.get("watch") or {}
+        check("J17 unwatched change: a lineage outside the watch list moves (accepted done): silent for the watch list, exit 0, "
+              "while the store-wide listing lists it",
+              rc == 0 and w.get("outcome") == "silent" and w.get("new") == 2
+              and [x.get("lineage") for x in (out.get("changes") or {}).get("listed", [])] == [y1], (rc, w, out.get("changes")))
+
+        rep, orep = _report_of(pub.root), _report_of(other.root)
+        held = set(pub.store.snapshot().lines)
+        js = _frames_js(b_pub, [b_oth])
+        py = {L: _frame_py(rep, [L], held, [(b_oth, orep)]) for L in rep["lineages"]}
+        got = {L: (f.get("ids"), sorted((x["address"], x["id"]) for x in f.get("outside", []))) for L, f in js.items() if isinstance(f, dict)}
+        check("J17 the frame of every lineage of the store (" + str(len(py)) + " of them) is the closure computed here from "
+              "the Python report: (a) out-edges in warrant.graph.WALK, (b) in-edges attest and challenge, (c) every version "
+              "of a member's lineage, the closure's records; and (d) the other store's attests and challenges on it",
+              got == {L: (a, b) for L, (a, b) in py.items()} and len(py) > 250 and py[w1][1] == [(b_oth, voice)]
+              and ch in py[w1][0] and goal in py[w1][0] and y1 not in py[w1][0] and py[y1][1] == []
+              and ev in _closure_py(rep, [w1]) and ev not in py[w1][0] and acc_m2 in py[w1][0]
+              and acc_m2 in {a for a, rel, _ in orep["graph"]["edges"] if rel == "attest"},
+              (len(got), len(py), [L[:12] for L in py if got.get(L) != py[L]][:5]))
+
+        # not established: each reason alone gives it, exit 4, and no silence is said anywhere in the output
+        m_e = mark("--with", b_oth)
+        cases = {
+            "no mark": (_watch_run(b_pub, "--watch", w1), "no mark yet"),
+            "other rules": (_watch_run(b_pub, "--mark", m_e, "--config", str(pub.home / "other-rules.json"), "--watch", w1), "other rules"),
+            "another store": (_watch_run(b_twin, "--mark", m_e, "--watch", w1), "another store"),
+            "a version, not a root": (_watch_run(b_pub, "--mark", m_e, "--watch", w2), f"{w2} is a version of lineage {w1}, not its root"),
+            "no lineage here": (_watch_run(b_pub, "--mark", m_e, "--watch", "e" * 64), f"{'e' * 64} is not the root of a lineage"),
+            "a store beside not read": (_watch_run(b_pub, "--mark", m_e, "--with", "http://127.0.0.1:9/", "--watch", w1), "could not be read now"),
+            "an empty watch list": (_watch_run(b_pub, "--mark", m_e, "--watch"), "no lineage is watched"),
+        }
+        lines_path = pub.dot / "records.jsonl"
+        whole = lines_path.read_bytes()
+        try:
+            lines_path.write_bytes(b"".join(l for l in whole.splitlines(keepends=True) if b"machine a 7\"" not in l))
+            cases["a marked record gone"] = (_watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch", w1), "no longer served")
+        finally:
+            lines_path.write_bytes(whole)
+        tampered = json.loads(Path(m_e).read_text())
+        g = bytearray(base64.b64decode(tampered["stores"][b_pub]["groups"]))
+        g[0] ^= 1
+        tampered["stores"][b_pub]["groups"] = base64.b64encode(bytes(g)).decode()
+        (pub.home / "watch-tampered.json").write_text(json.dumps(tampered))
+        cases["a mark entry unverified"] = (_watch_run(b_pub, "--mark", str(pub.home / "watch-tampered.json"), "--with", b_oth, "--watch", w1), "could not be verified")
+        rc_ok, ok_out, _ = _watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch", w1)
+        check("J17 not established: no mark, a mark of other rules, a mark of another store, a watched version that is no "
+              "root, an id that is no lineage here, a store beside this one not read now, an empty watch list, a marked "
+              "record no longer served, a mark entry that does not verify: each gives \"not established\" with its reason, "
+              "exit 4 (not touched's 3, not silence's 0), and neither the word silent nor the silence sentence anywhere "
+              "in the output; the same mark and watch list with nothing wrong is silent",
+              all(_not_established(*v, why) for v, why in cases.values()) and rc_ok == 0 and (ok_out.get("watch") or {}).get("outcome") == "silent",
+              {k: (v[0], (v[1].get("watch") or {}).get("outcome"), (v[1].get("watch") or {}).get("reasons")) for k, (v, why) in cases.items() if not _not_established(*v, why)})
+
+        malformed = [w1.upper(), w1[:63], w1 + "\n", w1 + " ", "", "$(touch pwned)" + w1[14:]]
+        refused = [_watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch", x) for x in malformed]
+        mixed = _watch_run(b_pub, "--mark", m_e, "--with", b_oth, "--watch", f"{w1},{w1.upper()}")
+        hexid = re.compile(r"[0-9a-f]{64}")
+        check("J17 a malformed watch value (upper case hex, 63 characters, a trailing newline or space, empty, shell text) is "
+              "refused by name, never dropped: not established, exit 4, the value itself in `refused` and its reason; beside "
+              "a valid id the valid one is still watched, and every id watched is 64 lowercase hex",
+              all(_not_established(*x, "the watched value") and [y["value"] for y in x[1]["watch"]["refused"]] == [v] and x[1]["watch"]["watch"] == []
+                  for x, v in zip(refused, malformed))
+              and _not_established(*mixed, "the watched value") and mixed[1]["watch"]["watch"] == [w1]
+              and [y["value"] for y in mixed[1]["watch"]["refused"]] == [w1.upper()]
+              and all(hexid.fullmatch(i) for i in mixed[1]["watch"]["watch"]),
+              [(x[0], (x[1].get("watch") or {}).get("refused")) for x in refused])
+
+        # the desk: per store, the same function, from the same kind of watch list the page keeps
+        dk_dir = pub.home / "desk-marks"
+        dk_dir.mkdir()
+        watches = pub.home / "watches.json"
+        watches.write_text(json.dumps({b_pub: [w1]}))
+        _desk("--store", b_pub, "--marks", str(dk_dir), "--watches", str(watches), "--write-mark", b_pub)
+        ch2 = pub.put("carol", "challenge", {"target": m1, "statement": "another counterexample"}, refs=[m1])
+        rc_d, dk = _desk("--store", b_pub, "--marks", str(dk_dir), "--watches", str(watches))
+        _, dk_plain = _desk("--store", b_pub, "--marks", str(dk_dir))
+        blk = ((dk.get("desk") or {}).get("stores") or [{}])[0]
+        check("J17 the desk says each store's watched answer with the reader's function: touched, the lineage named, from a "
+              "watches file as the page keeps them ({address: [id]}); a desk with no watch list has no watch member",
+              rc_d == 0 and (blk.get("watch") or {}).get("outcome") == "touched" and [x["lineage"] for x in blk["watch"]["touched"]] == [w1]
+              and "watch" not in ((dk_plain.get("desk") or {}).get("stores") or [{}])[0] and ch2, (rc_d, blk.get("watch")))
+    finally:
+        for s in srvs:
+            s.shutdown()
+
+    # moved with no new record: a pinned file changed, compared with the floor the mark recorded
+    with CTX.redirect_stdout(io.StringIO()):
+        r, L = TT.drift_repo()
+    srv, base, _ = _serve_counting(r.root)
+    try:
+        floors, bare = str(r.home / "pins-mark.json"), str(r.home / "pins-bare.json")
+        _watch_run(base, "--pins", "--watch", L, "--write-mark", floors)
+        _watch_run(base, "--pins", "--write-mark", bare)
+        (r.root / "lib" / "code.py").write_text("X = 2\n")
+        r.commit("the mutated file changes")
+        rc, out, _ = _watch_run(base, "--pins", "--mark", floors, "--watch", L)
+        nf = _watch_run(base, "--pins", "--mark", bare, "--watch", L)
+    finally:
+        srv.shutdown()
+    w = out.get("watch") or {}
+    t = (w.get("touched") or [{}])[0]
+    check("J17 moved with no new record: pins compared, a pinned file changed since the mark: the watched claim is touched, "
+          "exit 3, said as \"moved with no new record\", no witness, its reliance ELIGIBLE (the floor the mark recorded) "
+          "then STALE now; with a mark that recorded no floor of it, not established, and why",
+          rc == WATCH_EXIT["touched"] and t.get("lineage") == L and t.get("said") == "moved with no new record" and t.get("witness") == []
+          and t.get("moved", {}).get("reliance") == ["ELIGIBLE", "STALE"] and w.get("new") == 0
+          and "1 moved with no new record" in w.get("line", "") and _not_established(*nf, "recorded no floor"), (rc, w, nf[1].get("watch")))
+
+    digest, outs = _changes_golden(READER)
+    check("J17 without a watch list nothing changes: --mark answers the `changes` member byte for byte as before the watch "
+          "list existed (the digest of J13's kinds of change, taken from site/reader.mjs at f02c7e7a)",
+          digest == CHANGES_GOLDEN and len(outs) == 5 and all(o and o.get("listed") for o in outs), (digest, [o and o.get("line") for o in outs]))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import { webBackend } from "./warrant.mjs";
 import * as desk from "./desk.mjs";
 import { makeMark } from "./reader.mjs";
 import { $, counts, el, fill, keepActor, keptActor, loadMark, loadText, markKey, saveMark, saveText, section, short } from "./page.mjs";
+import * as page from "./page.mjs";
 
 const STORES = "warrant-desk-stores/1";                   // the list the reader edited here, as stores.json holds one
 const SHOWN = 12;                                         // changed lineages named in a block; the rest is the reader's
@@ -46,6 +47,7 @@ function storeBlock(entry, k) {
     el("p", { class: "row-meta", text: `${b.repository ?? "no name"} · the publisher's rules · ${b.records} records · rejected ${b.rejected} · ${b.lineages} lineages` }),
     el("p", { class: "small", text: `reliance: ${counts(b.reliance)}` }),
     el("p", { class: "small", text: `standing counted challenges: on ${b.challenged} lineage(s)` }),
+    watchBlock(b),
     el("p", {}, c.listed.length ? el("strong", { text: c.line }) : c.line),
     c.listed.length ? el("ul", { class: "rows" }, c.listed.slice(0, SHOWN).map((x) => el("li", {},
       el("a", { class: "row-title", href: readerHref(b.base, { l: x.lineage }), text: x.title || "(no statement)" }),
@@ -54,6 +56,26 @@ function storeBlock(entry, k) {
     b.waits ? el("p", {}, el("a", { href: readerHref(b.base, { actor: b.waits.actor }), text: `waits for ${b.waits.actor}: ${b.waits.count}` }),
       el("span", { class: "small", text: ` (may attest ${b.waits.attest} · own pending ${b.waits.pending} · own challenged ${b.waits.challenged})` })) : null,
     mark);
+}
+
+// The watched line of a block (desk.mjs block: reader.mjs watched()), and each touched lineage as a link; nothing when
+// the store has no watch list or desk.mjs is of an earlier release.
+function watchBlock(b) {
+  const w = b.watch;
+  if (!w) return null;
+  const word = { touched: `touched ${w.touched.length}`, silent: "silent", "not established": "not established" }[w.outcome] ?? w.outcome;
+  return el("div", { class: "desk-watch" },
+    el("p", {}, el("strong", { text: `Watched (${w.watch.length}): ${word}` }), " · ", el("span", { text: w.line })),
+    w.touched.length ? el("ul", { class: "rows" }, w.touched.map((x) => el("li", {},
+      el("a", { class: "row-title", href: readerHref(b.base, { l: x.lineage, changes: "1" }), text: x.title || "(no statement)" }),
+      el("div", { class: "row-meta", text: `${x.schema} · ${x.said}` })))) : null);
+}
+
+// The watch list kept for a store (page.mjs keptWatch, the key the reader edits), or null.
+function watchesOf(base) {
+  if (typeof page.keptWatch !== "function") return null;
+  const ids = page.keptWatch(base).ids;
+  return ids.length ? ids : null;
 }
 
 function drawStore(k) {
@@ -95,11 +117,11 @@ async function drawReleases(plan, list, id) {
 }
 
 async function remark(k) {                                 // the mark of now, kept; the block drawn again against it
-  const g = ctx.got[k], mark = await makeMark(g.r, g.block.base, ctx.backend);
+  const g = ctx.got[k], watch = watchesOf(g.block.base), mark = await makeMark(g.r, g.block.base, ctx.backend, undefined, { watch: watch ?? [] });
   const why = saveMark(markKey(g.block.base, g.rules), mark);
   if (why) return why;
   const s = { name: g.block.name, base: g.block.base };
-  g.block = await desk.block(s, g.r, mark, { backend: ctx.backend, source: ctx.source, actor: ctx.actor });
+  g.block = await desk.block(s, g.r, mark, { backend: ctx.backend, source: ctx.source, actor: ctx.actor, watch });
   drawStore(k);
   return null;
 }
@@ -205,7 +227,7 @@ async function run() {
   const started = performance.now();
   // each block is drawn as its store answers, in the list's order: a placeholder holds the place of the others
   ctx.plan.stores.forEach((s, k) => section("stores").append(el("article", { class: "desk-store", id: `store-${k}` }, el("h2", { text: s.name }), el("p", { class: "small", text: "reading …" }))));
-  await desk.readDesk(ctx.plan.stores, { backend: ctx.backend, source: ctx.source, fetcher, marks: marksOf, actor: ctx.actor,
+  await desk.readDesk(ctx.plan.stores, { backend: ctx.backend, source: ctx.source, fetcher, marks: marksOf, actor: ctx.actor, watches: watchesOf,
                                           done: (k, entry) => { if (id === ctx.run) { ctx.got[k] = entry; drawStore(k); } } });
   if (id !== ctx.run) return;
   const unread = ctx.got.filter((g) => !g.r).length;

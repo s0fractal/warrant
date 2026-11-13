@@ -10,6 +10,8 @@
 //   node site/desk.mjs [--store URL]... [--list FILE] [--kept FILE] [--marks DIR] [--actor NAME]   # canonical JSON
 //        [--write-mark URL]... [--write-marks]    after answering, write the mark of now for that store (for every one)
 //        [--plan]                                 only which stores would be read, and from where
+//        [--watches FILE]                         the lineages watched per store, {address: [root id]} as the page keeps
+//                                                 them (page.mjs, reader-watch/1): each such store's block says `watch`
 //   The releases of the list (parseReleases; none when --store names the stores) are read too: `releases`.
 //
 // Which stores (selectStores): the addresses in the page's address (`store=URL`, repeatable; `--store`), else the list
@@ -197,10 +199,14 @@ function readerOk() {
   }
 }
 
-// One store's block, from its read `r`, its mark (or null) and the actor named ("" for none): whole, or it throws.
-export async function block(s, r, mark, { backend, source, actor }) {
+// One store's block, from its read `r`, its mark (or null), the actor named ("" for none) and the lineages watched in
+// it (`watch`, a list as reader.mjs parseWatch takes it, or null): whole, or it throws. A block with no watch list is
+// as it was; with one, `watch` says the watched answer (reader.mjs watched(), the reader's own function).
+export async function block(s, r, mark, { backend, source, actor, watch = null }) {
   const sum = reader.summary(r), all = reader.rows(r);
-  const c = await reader.changes(r, mark, backend, source, { base: s.base });
+  const watching = watch?.length && typeof reader.since === "function" && typeof reader.watched === "function";
+  const since = watching ? await reader.since(r, mark, backend, source, { base: s.base }) : null;
+  const c = since ? reader.changesOf(r, since) : await reader.changes(r, mark, backend, source, { base: s.base });
   return {
     name: s.name, base: s.base, read: true, why: null,
     repository: sum.repository, rules: sum.rules, records: sum.records, rejected: sum.rejected, lineages: all.length,
@@ -209,8 +215,12 @@ export async function block(s, r, mark, { backend, source, actor }) {
     changes: { mark: c.mark !== null, at: c.mark?.at ?? null, line: reader.changesLine(c), new: c.mark ? c.new : null, quiet: c.mark ? c.quiet : null,
                listed: c.mark ? c.listed.map((x) => ({ lineage: x.lineage, schema: x.schema, title: x.title, new: x.new })) : [] },
     ...(actor ? { waits: waitsCount(reader.waitsFor(r, actor)) } : {}),          // nothing computed without an actor
+    ...(since ? { watch: watchOf(reader.watched(r, since, watch)) } : {}),      // nothing computed without a watch list
   };
 }
+
+const watchOf = (w) => ({ outcome: w.outcome, line: w.line, watch: w.watch, refused: w.refused.map((x) => x.value), reasons: w.reasons,
+                          touched: w.touched.map((t) => ({ lineage: t.lineage, schema: t.schema, title: t.title, said: t.said, witness: t.witness.length })) });
 
 const waitsCount = (w) => ({ actor: w.actor, roles: w.roles, count: w.count, attest: w.attest.length, pending: w.pending.length, challenged: w.challenged.length });
 
@@ -218,27 +228,37 @@ const waitsCount = (w) => ({ actor: w.actor, roles: w.roles, count: w.count, att
 // as the page keeps it or the CLI's file holds it; `done(k, entry)`, when given, hears of each store as it is read (a
 // page draws it at once). A store that cannot be read (a refusal, anything the engine throws on it) is {name, base,
 // read: false, why}; the others still answer.
-export async function readDesk(stores, { backend, source, fetcher = globalThis.fetch, marks, actor = "", done = null }) {
+export async function readDesk(stores, { backend, source, fetcher = globalThis.fetch, marks, actor = "", done = null, watches = null }) {
   readerOk();
   return bounded(stores, BOUND, async (s, k) => {
-    const entry = await readOne(s, { backend, source, fetcher, marks, actor });
+    const entry = await readOne(s, { backend, source, fetcher, marks, actor, watches });
     done?.(k, entry);
     return entry;
   });
 }
 
 // One store's entry: its block whole, or its refusal; a `done` that throws is the page's, not the store's.
-async function readOne(s, { backend, source, fetcher, marks, actor }) {
+async function readOne(s, { backend, source, fetcher, marks, actor, watches }) {
   try {
     const store = await reader.fetchStore(s.base, backend, { fetcher });
     const r = await reader.read(store, reader.receiver(store.doc, null), backend, source);
     const rules = await reader.rulesId(r, backend), kept = await marks(s.base, rules);
-    const b = await block(s, r, kept.mark, { backend, source, actor });
+    const b = await block(s, r, kept.mark, { backend, source, actor, watch: watches ? watches(s.base) : null });
     if (kept.why) b.changes.line = kept.why;              // storage that cannot be read: said, nothing presented as changed
     return { block: b, r, rules };
   } catch (e) {
     return { block: { name: s.name, base: s.base, read: false, why: String(e?.message ?? e) }, r: null, rules: null };
   }
+}
+
+// (address) => its watch list or null, of the text of a watches file ({address: [id]}, the page's reader-watch/1); a
+// file that is not that is refused whole.
+export function watchesFile(text) {
+  let doc;
+  try { doc = JSON.parse(text); } catch { throw new Refused("the watches file is not JSON"); }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc) || !Object.values(doc).every((v) => Array.isArray(v))) throw new Refused("the watches file is no {address: [id]}");
+  const by = new Map(Object.entries(doc).map(([a, v]) => [address(a).base ?? a, v]));
+  return (base) => (by.has(base) && by.get(base).length ? by.get(base).map(String) : null);
 }
 
 // The mark file of a store in DIR: the SHA-256 of its address (UTF-8), as hex, and ".json".
@@ -260,14 +280,18 @@ async function main(argv) {
   const marks = async (base) => (dir === undefined ? { mark: null, why: null }
     : { mark: reader.markFile(fs, path.join(dir, await markName(base, backend))), why: null });
   const source = new Uint8Array(fs.readFileSync(new URL("./warrant.mjs", import.meta.url)));
-  const got = await readDesk(plan.stores, { backend, source, marks, actor });
+  let watched = null;
+  try { if (opt("--watches") !== undefined) watched = watchesFile(fs.readFileSync(opt("--watches"), "utf8")); }
+  catch (e) { process.stdout.write(canonStr({ refused: String(e?.message ?? e) }) + "\n"); return 2; }
+  const got = await readDesk(plan.stores, { backend, source, marks, actor, watches: watched });
   const releases = await readReleases(releasesOf(plan, fs.readFileSync(listFile, "utf8")));
   process.stdout.write(canonStr({ desk: { from: plan.from, why: plan.why, actor: actor || null, stores: got.map((g) => g.block),
                                           ...(releases.length ? { releases } : {}) } }) + "\n");    // a list with none: as before
   const write = new Set(argv.includes("--write-marks") ? got.map((g) => g.block.base) : all("--write-mark").map((x) => address(x).base));
   if (write.size && dir === undefined) { process.stderr.write("--write-mark needs --marks DIR\n"); return 2; }
   for (const g of got) {
-    if (g.r && write.has(g.block.base)) fs.writeFileSync(path.join(dir, await markName(g.block.base, backend)), JSON.stringify(await reader.makeMark(g.r, g.block.base, backend)) + "\n");
+    const watch = watched ? watched(g.block.base) : null;
+    if (g.r && write.has(g.block.base)) fs.writeFileSync(path.join(dir, await markName(g.block.base, backend)), JSON.stringify(await reader.makeMark(g.r, g.block.base, backend, undefined, { watch: watch ?? [] })) + "\n");
   }
   return 0;
 }

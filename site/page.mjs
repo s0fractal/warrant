@@ -87,6 +87,38 @@ export function loadMark(key) {
 
 export const saveMark = (key, mark) => saveText(key, JSON.stringify(mark), "the mark");   // null, or why it was not kept
 
+// The lineages the reader watches, per store address: one key for every store, {address: [root id]} as JSON, shared by
+// the reader (which edits it on a lineage's page) and the desk (which reads it). The ids are kept as given: reader.mjs
+// parseWatch refuses by name what is no record id, so nothing kept is dropped unseen.
+export const WATCH = "reader-watch/1";
+const watchBase = (base) => (base.endsWith("/") ? base : base + "/");
+
+// {all, why}: the whole kept object ({} when none); `why` when storage cannot be read or holds no such object.
+function watchesKept() {
+  const { value, why } = loadText(WATCH);
+  if (why) return { all: {}, why };
+  if (value === null) return { all: {}, why: null };
+  try {
+    const all = JSON.parse(value);
+    if (all && typeof all === "object" && !Array.isArray(all) && Object.values(all).every((v) => Array.isArray(v))) return { all, why: null };
+  } catch { /* named below */ }
+  return { all: {}, why: "the watch list kept in this browser cannot be read" };
+}
+
+// {ids, why}: the watch list kept for the store at `base` ([] when none), and why storage could not give one.
+export function keptWatch(base) {
+  const { all, why } = watchesKept();
+  const ids = all[watchBase(base)];
+  return { ids: Array.isArray(ids) ? ids.map(String) : [], why };
+}
+
+// null, or why the watch list `ids` of the store at `base` was not kept (an empty list removes the store's entry).
+export function keepWatch(base, ids) {
+  const { all } = watchesKept();
+  if (ids.length) all[watchBase(base)] = ids; else delete all[watchBase(base)];
+  return saveText(WATCH, Object.keys(all).length ? JSON.stringify(all) : null, "the watch list");
+}
+
 // The actor whose frontier the pages show ("what waits for NAME"), remembered across pages; "" for none.
 const ACTOR = "warrant-reader-actor/1";
 export const keptActor = () => (loadText(ACTOR).value ?? "").trim();
