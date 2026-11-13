@@ -1970,6 +1970,27 @@ def board_cases():
           (edited["update"], edited["archive"], edited["foreign"]))
 
 
+def adoption_cases():
+    """experiments/adoption (PLAN.md): its scorer's self-test, with no network and no `claude`: every fixture built in
+    every arm, NOTES.md and the store held to facts.py, simulated transcripts scored, and the STALE/CHALLENGED reading
+    of each store checked by this checkout's CLI in place of the released one (a kit of two wrapper scripts)."""
+    import tempfile
+    sys.path[:0] = [str(ROOT / "experiments" / "adoption")]
+    import scorer as ADS
+    with tempfile.TemporaryDirectory() as kit:
+        for name, mod in (("warrant", "warrant"), ("warrant-agent", "warrant_agent.cli")):
+            f = Path(kit) / name
+            f.write_text(f'#!/bin/sh\nPYTHONPATH="{ROOT}" exec "{sys.executable}" -m {mod} "$@"\n')
+            f.chmod(0o755)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = ADS.selftest(kit)
+    lines = out.getvalue().splitlines()
+    check("AD1 the adoption experiment's scorer self-test passes over fixtures read by this checkout's CLI",
+          rc == 0 and any(ln.startswith("ok   FX-T1-S-cli-context") for ln in lines),
+          [ln for ln in lines if ln.startswith("FAIL")][:5])
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
@@ -1991,4 +2012,5 @@ if __name__ == "__main__":
     board_cases()
     narrow_cases()
     resolve_cases()
+    adoption_cases()
     sys.exit(finish())
