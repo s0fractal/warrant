@@ -6,6 +6,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The board (`python -m warrant.board manifest|plan|sync`): goals and obligations as rows of a GitHub Project, one way.
+  The manifest is a pure function of the stores and names their snapshots; statuses are the records' own (`Claimed,
+  not accepted` apart from `Accepted`, never one "Done"); a hand edit on the board is undone and named by the next
+  sync; record text lies in a code fence, so the board mentions nobody. docs/REPOSITORY.md; tools_test BD1–BD5 (a
+  board in memory: GitHub's own answers are not tested), mutants BM1–BM10.
 - The reader in a browser (`site/reader.html`, with the project page): a store fetched from any HTTP(S) root and
   assessed in the page by `warrant.mjs`, under the publisher's rules or the reader's own; the summary `warrant status`
   gives, the lineages, and one lineage's versions with their guards, acceptances and challenges. A quick read (the
