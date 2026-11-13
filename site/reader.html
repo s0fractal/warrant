@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https: http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'">
+<meta name="description" content="Read any Warrant 3 store from its URL and assess it in this browser, under the publisher's rules or your own.">
+<title>Warrant reader</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="mark" href="./">warrant</a>
+  <nav>
+    <a href="reader.html">Reader</a>
+    <a href="https://github.com/s0fractal/warrant/blob/master/docs/V3.md">Spec</a>
+    <a href="https://github.com/s0fractal/warrant/blob/master/docs/VERIFY.md">Verify</a>
+    <a href="https://github.com/s0fractal/warrant">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<section>
+  <h1 class="reader-title">Read a store</h1>
+  <p class="small">The records are fetched from the address below and assessed here, in this browser, by the second
+  implementation of the engine. No server of ours takes part and the transport is not trusted: an altered record
+  fails its signature, an altered blob its name.</p>
+  <form id="ask" class="ask">
+    <label for="base">Store root (a repository served over HTTP)</label>
+    <input id="base" name="base" type="url" inputmode="url" autocomplete="off" spellcheck="false" required>
+    <label class="check"><input id="full" type="checkbox"> Fetch every blob, to compute the store's root (slower)</label>
+    <details>
+      <summary>Judge it under my own rules</summary>
+      <label for="mine">A trust and a profile, as JSON: <code>{"trust": …, "profile": …}</code>. Empty: the publisher's own.</label>
+      <textarea id="mine" rows="6" spellcheck="false"></textarea>
+    </details>
+    <button id="go" type="submit">Read</button>
+  </form>
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+</section>
+
+<section id="floor" hidden></section>
+<section id="lineage" hidden></section>
+<section id="list" hidden></section>
+</main>
+
+<footer>
+  <p>This page runs one script of its own origin and no other. Record text is drawn as text, never as markup.</p>
+</footer>
+<script type="module" src="reader-page.mjs"></script>
+</body>
+</html>

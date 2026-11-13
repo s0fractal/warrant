@@ -32,3 +32,39 @@ th { color: var(--muted); font-weight: 600; }
 li { margin: 0.5rem 0; }
 .history { color: var(--muted); }
 footer { max-width: 52rem; margin: 0 auto; padding: 1rem; color: var(--muted); font-size: 0.9rem; }
+
+/* The reader (reader.html): a form, the floor's facts, the list of lineages and one lineage's versions. */
+.reader-title { font-size: clamp(1.5rem, 4vw, 2rem); margin: 0.3rem 0 0.6rem; }
+.ask { display: grid; gap: 0.6rem; margin-top: 1rem; }
+.ask input[type="url"], .ask textarea, select {
+  width: 100%; padding: 0.55rem 0.6rem; font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+.ask textarea { font: 0.9em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ask .check { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.95rem; }
+button {
+  justify-self: start; padding: 0.55rem 1.1rem; font: inherit; font-weight: 600; color: var(--bg); background: var(--accent);
+  border: 0; border-radius: 6px; cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+.status { min-height: 1.6em; color: var(--muted); margin: 0.8rem 0 0; overflow-wrap: anywhere; }
+.status.bad { color: var(--fg); font-weight: 600; border-left: 3px solid var(--fg); padding-left: 0.6rem; }
+.facts { display: grid; grid-template-columns: minmax(6.5rem, max-content) 1fr; gap: 0.35rem 1rem; margin: 0.8rem 0; font-size: 0.95rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.facts ul { margin: 0; padding-left: 1.1rem; }
+.filters { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin: 0.6rem 0 0.2rem; }
+.rows { list-style: none; padding: 0; margin: 0.6rem 0; }
+.rows li { padding: 0.7rem 0; margin: 0; border-bottom: 1px solid var(--line); }
+.row-title { display: block; font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.row-meta { color: var(--muted); font-size: 0.88rem; margin: 0.25rem 0 0; overflow-wrap: anywhere; }
+.pill { display: inline-block; padding: 0 0.45rem; border: 1px solid var(--muted); border-radius: 999px; font-size: 0.8rem; font-weight: 600; color: var(--fg); }
+.pill-eligible { border-color: var(--accent); color: var(--accent); }
+.pill-challenged, .pill-fork, .pill-pins-not-checked { border-style: dashed; }
+.version { padding: 0.8rem 0 0.8rem 0.8rem; border-left: 3px solid var(--line); margin: 0.8rem 0; }
+.version.effective { border-left-color: var(--accent); }
+.statement { margin: 0.4rem 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.said { list-style: none; padding: 0; margin: 0.5rem 0 0; font-size: 0.92rem; }
+.said li { margin: 0.4rem 0; }
+.glyph { font-weight: 700; }
+.statement-title { font-size: 1.1rem; line-height: 1.45; font-weight: 600; overflow-wrap: anywhere; }
