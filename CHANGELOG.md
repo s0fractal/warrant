@@ -13,7 +13,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   the required check stayed expected (#379 run 43427696972, #382 run 43468860556); a pull request the token opens
   starts none. A run that failed part way is resumed with each step made once: the new pull request open, the next
   run only closes the old one; its branch made with no pull request, it opens one from it; an old branch that could
-  not be deleted leaves the carry done (the analysis session on #383). E84, E89, E90; mutants G109–G114.
+  not be deleted leaves the carry done (the analysis session on #383). Nothing is retired on a name: before the old
+  pull request is closed, the carry on the branch must be the head and the base merged with the stores' union as its
+  tree, and CI must have started on it (dispatched again when its dispatch failed); otherwise the old one stays open
+  (Codex on #383). E84, E89, E90, E91; mutants G109–G118.
 - A dispatched CI run whose `test` passed dispatches the gate (`wake-gate` in ci.yml, nothing checked out): a run the
   workflow token starts wakes no workflow_run, and GitHub mostly skips the gate's schedule, so a green verdicts pull
   request waited for a person to dispatch the gate (#379).
