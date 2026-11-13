@@ -192,13 +192,37 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
   direction (modified or untracked files, symlinks followed). One case can read `ELIGIBLE` here and `STALE` in the gate
   even on a commit's tree: a regular file later replaced by a symlink whose served bytes hash to the accepted blob
   (the gate reads the mode; HTTP cannot).
+- **Other stores beside the one read (`--with URL`, repeatable; the page's second textarea, one address a line;
+  `&with=URL`, repeatable).** Each is fetched as the main store is (quick) and assessed alone under its own
+  `.warrant/v3.json`. One that cannot be read is named with its reason and the others still answer. On a lineage of the
+  main store the reader lists, as voices from outside, every attest and challenge another store holds whose
+  `body.target` is a version of that lineage and which that store's own assessment admits (in its view), with the
+  store's `repository` name and address, the actor as that store names it, the kind, the verdict or statement and the
+  time. The main store's rules count none of them: its state and reliance are unchanged, the floor counts the voices
+  apart (how many, in how many stores), and the list marks a lineage that has some. A line its own store rejects is no
+  voice; how many were left out is counted. A record the main store holds too is the main store's, not a voice. Unlike
+  `warrant_agent/observe.py elsewhere` (observations and challenges), every attest is listed.
+- **For me: the overlay.** Only when the reader gave its own trust and profile: the union of every line of the main
+  store and of each store read (`warrant_agent/overlay.py compose`, the blobs each quick read fetched) is assessed under
+  the reader's rules, with the keys `overlay.receiver` admits: the reader's own bindings, then a binding every store
+  naming that actor agrees on (each store's own `v3.json` trust), never one for an actor the reader's own profile gives
+  a role (#348); a binding held back is named, `role` or `disagree`. Beside the main store's verdict under its own rules,
+  never in its place, each of its lineages whose state or reliance reads otherwise is listed, store → reader, with the
+  challenges that stand for the reader and not in the store and the actors who accept a version for the reader and
+  not in the store; the identity is `overlay.identity` over the stores named by their addresses. Without the reader's
+  own rules there is no overlay and the answer says why. The overlay compares no pins: on both sides ELIGIBLE on an
+  attest naming files or a commit reads PINS_NOT_CHECKED. Not established: that the stores named are all that was said
+  (the overlay is honest, not complete); the rows are (state, reliance) of the engine, not the lens-drawn difference
+  `/overlay` in `warrant_agent/serve.py` shows (`view.delta`); and the main store's view and the pin comparison stay
+  under the rules the reader chose, as before.
 - **A transport that fails is a refusal.** Only HTTP 404 reads as absent; any other failure refuses the read whole, and
   a blob whose bytes do not hash to its name refuses it too. Nothing partial is drawn.
 - **Record text is text.** The page builds no markup from a string, runs one script of its own origin and allows no
   other (`script-src 'self'`).
 
-impl_js_test J10 holds the data the page draws to the Python engine, through node, by the functions the page runs; no
-case drives a browser, and the layout is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS):
-eleven mutations of the reader were run by hand on 2026-11-13 and each failed a J10 case; for the pin comparison,
-twenty more (listed in the change that added it) each failed a J11 case. The page's checkbox was not driven in a
-browser.
+impl_js_test J10 holds the data the page draws to the Python engine, through node, by the functions the page runs; J11
+holds the pin comparison to `warrant.drift.gate` at HEAD; J12 holds the voices and the overlay to
+`warrant_agent.overlay` on the same three stores and the same reader rules. No case drives a browser, and the layout
+is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS), so CI does not hold the tests to
+their mutants: eleven mutations of the reader were run by hand for J10, and thirty-five more for J11 and J12, each
+failing a case of its own on its assertion; the list is in the pull request that added them.

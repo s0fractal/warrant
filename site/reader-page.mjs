@@ -2,7 +2,7 @@
 // through textContent (the `text` of el() below) or an attribute set by name: no markup is ever built from a string,
 // and the page's policy allows no script but this origin's (reader.html).
 import { utf16, webBackend } from "./warrant.mjs";
-import { comparePins, fetchStore, lineage, PINS_NOT_CHECKED, read, receiver, rows, STALE, summary } from "./reader.mjs";
+import { comparePins, fetchStore, lineage, overlay, PINS_NOT_CHECKED, read, readOthers, receiver, rows, STALE, summary } from "./reader.mjs";
 
 const DEFAULT_BASE = "https://raw.githubusercontent.com/s0fractal/warrant/master/";
 const PAGE = 150;                                         // rows drawn at once; the rest is named and asked for
@@ -30,12 +30,12 @@ const when = (at) => (Number.isInteger(at) ? new Date(at * 1000).toISOString().s
 const pill = (word) => el("span", { class: "pill pill-" + String(word || "none").toLowerCase().replace(/[^a-z]/g, "-"), text: word || "none" });
 const counts = (o) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(" · ") || "none";
 
-let current = null;                                       // {r, base, full, pins}: the store read last
+let current = null;                                       // {r, base, full, pins, with}: the store read last
 let shownRows = PAGE;
 
 function params() {
   const p = new URLSearchParams(location.search);
-  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", l: p.get("l"), schema: p.get("schema") || "", reliance: p.get("reliance") || "" };
+  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: p.getAll("with").filter(Boolean), l: p.get("l"), schema: p.get("schema") || "", reliance: p.get("reliance") || "" };
 }
 
 function href(over) {
@@ -44,13 +44,15 @@ function href(over) {
   if (v.base) q.set("base", v.base);
   if (v.full) q.set("full", "1");
   if (v.pins) q.set("pins", "1");
+  for (const w of v.with ?? []) q.append("with", w);
   if (v.l) q.set("l", v.l);
   if (v.schema) q.set("schema", v.schema);
   if (v.reliance) q.set("reliance", v.reliance);
   return "?" + q.toString();
 }
 
-const same = (p) => current?.base === (p.base || DEFAULT_BASE) && current.full === p.full && current.pins === p.pins;
+const same = (p) => current?.base === (p.base || DEFAULT_BASE) && current.full === p.full && current.pins === p.pins
+  && current.with.join("\n") === p.with.join("\n");
 
 function go(over) {                                       // the same page at another address, with no second read
   history.pushState(null, "", href(over));
@@ -90,6 +92,42 @@ function drawPins(c) {
   ];
 }
 
+function drawOthers(s) {
+  if (!s.others) return [];
+  const o = s.others;
+  return [
+    fact("other stores", el("ul", {}, o.stores.map((x) => el("li", {}, `${x.name} · ${x.address} · `,
+      x.read ? `read, ${x.records} records, under its own rules` : el("strong", { text: `not read: ${x.why}` }))))),
+    fact("voices from outside", `${o.voices} on ${o.lineages} lineage(s), counted by this store's rules: none`
+      + (o.left_out ? ` · ${o.left_out} left out (their own store rejects them)` : "")),
+    fact("for me", overlayLine(s.overlay)),
+  ];
+}
+
+function overlayLine(v) {
+  if (!v) return "no overlay";
+  if (v.why) return `no overlay: ${v.why} (paste a trust and a profile under "Judge it under my own rules")`;
+  return [`the union of ${v.stores.length} store(s) under your rules: ${v.changed} lineage(s) read otherwise for you · identity `, short(v.identity),
+    v.unread.length ? ` · not read: ${v.unread.join(", ")}` : null,
+    v.held.length ? ` · key bindings not admitted: ${v.held.map((h) => `${h.actor} (${h.why === "role" ? "your rules give it a role: bind its key yourself" : "the stores disagree"})`).join("; ")}` : null,
+    ` · ${v.pins}`,
+    el("ul", {}, v.rows.map((x) => el("li", {}, link(x.lineage.slice(0, 12), { l: x.lineage }),
+      ` ${x.schema}: in the store ${x.store.state || "none"} ${x.store.shown} → for you ${x.reader ? `${x.reader.state || "none"} ${x.reader.shown}` : "not in the union under your rules"}`)))];
+}
+
+function drawOutside(out, ov) {
+  if (!out) return null;
+  return [el("h3", { text: `Voices from outside (${out.voices.length}, in ${out.stores} store(s)): not counted by this store's rules` }),
+    out.left_out ? el("p", { class: "small", text: `${out.left_out} record(s) left out: their own store rejects them` }) : null,
+    out.voices.length ? el("ul", { class: "said" }, out.voices.map((v) => el("li", {},
+      `${v.store} · ${v.actor} · ${v.kind === "challenge" ? "challenge" : v.verdict || "attest"} · ${when(v.at)} · on `, short(v.target),
+      v.statement ? el("div", { class: "statement", text: v.statement }) : null))) : null,
+    ov ? el("p", { class: "small" }, ...[ov.why ? `For me: no overlay: ${ov.why}` : ov.same ? "For me: it reads the same under your rules."
+      : [`For me: in the store ${ov.store.state || "none"} ${ov.store.shown} → for you ${ov.reader ? `${ov.reader.state || "none"} ${ov.reader.shown}` : "absent"}`,
+         ov.challenges.length ? [" · challenges that stand for you: ", ...ov.challenges.flatMap((c) => [short(c), " "])] : null,
+         ov.accepted_by.length ? ` · accepted for you by: ${ov.accepted_by.join(", ")}` : null]].flat(2)) : null];
+}
+
 function drawFloor() {
   const s = summary(current.r), box = $("floor");
   fill(box,
@@ -104,6 +142,7 @@ function drawFloor() {
       fact("reliance", counts(s.reliance)),
       s.pins ? fact("pins", pinsLine(s.pins)) : [],
       s.reliance[PINS_NOT_CHECKED] || s.pins ? fact("not checked", s.not_checked.join(" · ")) : [],
+      ...drawOthers(s),
       fact("schemas", s.schemas.join(", ") || "none", s.schemas_pending.length ? ` (pending: ${s.schemas_pending.length})` : null),
       fact("writers' forks", s.chain_forks.join(", ") || "none"),
       fact("problems", s.problems.length ? s.problems.map((p) => p[0]).join(", ") : "none"),
@@ -135,7 +174,8 @@ function drawList() {
       el("li", {},
         link(x.title || "(no statement)", { l: x.id }, { class: "row-title" }),
         el("div", { class: "row-meta" }, pill(x.reliance), ` ${x.schema} · ${x.state || "no effective version"} · ${x.actor} · ${when(x.at)}`,
-           x.standing ? el("strong", { text: ` · ${x.standing} standing challenge${x.standing === 1 ? "" : "s"}` }) : null)))),
+           x.standing ? el("strong", { text: ` · ${x.standing} standing challenge${x.standing === 1 ? "" : "s"}` }) : null,
+           x.outside ? ` · ${x.outside} voice${x.outside === 1 ? "" : "s"} from outside, not counted` : null)))),
     more,
   );
   box.hidden = false;
@@ -167,6 +207,7 @@ function drawLineage() {
       fact("lineage", short(f.id), ` · ${f.schema}`),
     ),
     drawPins(f.pins),
+    drawOutside(f.outside, f.overlay),
     el("h3", { text: `Versions, newest first (${d.versions.length})` }),
     d.versions.map((v) => el("article", { class: "version" + (v.effective ? " effective" : "") },
       el("p", { class: "row-meta" }, short(v.id), ` · ${v.actor} · ${when(v.at)} · state ${v.state || "none"}`,
@@ -221,7 +262,12 @@ async function run() {
       say(`Comparing pins with the tree at ${base} …`);
       await comparePins(r, base, { fetcher });
     }
-    current = { r, base, full: p.full, pins: p.pins };
+    if (p.with.length) {
+      say(`Reading ${p.with.length} other store(s) …`);
+      r.others = await readOthers(p.with, backend, source, { fetcher });
+      await overlay(r, base, backend, source);
+    }
+    current = { r, base, full: p.full, pins: p.pins, with: p.with };
     shownRows = PAGE;
     say(`Read and assessed in ${((performance.now() - started) / 1000).toFixed(1)} s.`);
     draw();
@@ -241,7 +287,7 @@ function start() {
 
 $("ask").addEventListener("submit", (e) => {
   e.preventDefault();
-  history.pushState(null, "", href({ base: $("base").value.trim(), full: $("full").checked, pins: $("pins").checked, l: null, schema: "", reliance: "" }));
+  history.pushState(null, "", href({ base: $("base").value.trim(), full: $("full").checked, pins: $("pins").checked, with: $("with").value.split("\n").map((x) => x.trim()).filter(Boolean), l: null, schema: "", reliance: "" }));
   start();
 });
 addEventListener("popstate", () => {
@@ -253,4 +299,5 @@ const first = params();
 $("base").value = first.base || DEFAULT_BASE;
 $("full").checked = first.full;
 $("pins").checked = first.pins;
+$("with").value = first.with.join("\n");
 if (first.base) start();

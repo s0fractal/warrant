@@ -32,6 +32,12 @@
     <label class="check"><input id="pins" type="checkbox"> Compare pins with the tree at this address: fetch each file a
     claims checker's acceptance names and hash it as Git does (a moved file or a symlink reads STALE)</label>
     <details>
+      <summary>Other stores beside this one</summary>
+      <label for="with">Store roots, one a line: what they hold about this store's lineages is shown as voices from
+      outside, never counted by this store's rules; with your own rules, the union is also read for you.</label>
+      <textarea id="with" rows="3" spellcheck="false"></textarea>
+    </details>
+    <details>
       <summary>Judge it under my own rules</summary>
       <label for="mine">A trust and a profile, as JSON: <code>{"trust": …, "profile": …}</code>. Empty: the publisher's own.</label>
       <textarea id="mine" rows="6" spellcheck="false"></textarea>

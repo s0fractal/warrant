@@ -7,7 +7,7 @@
 // This file has no DOM in it: it fetches, assesses and builds plain data (the view), so node can run the same
 // functions the page runs (tests/impl_js_test.py J10). reader-page.mjs draws that data, as text only.
 //
-//   node site/reader.mjs --base URL [--full] [--pins] [--config RULES.json] [--lineage ID]     # canonical JSON
+//   node site/reader.mjs --base URL [--full] [--pins] [--with URL]... [--config RULES.json] [--lineage ID]   # canonical JSON
 //
 // Two ways to read a store's blobs:
 //   quick (the default)   only the blobs the assessment itself reads: the map of each migration (docs/V3.md §9).
@@ -27,7 +27,11 @@
 // ELIGIBLE when one acceptance's every file holds its bytes, STALE when none does, and PINS_NOT_CHECKED when a file
 // that could decide it was not fetched. What the gate reads and HTTP does not, the reader does not guess: a file moved
 // with its bytes (the gate lists the whole tree) and a symlink's entry read STALE here, where the gate says ELIGIBLE.
+//
+// Other stores (`--with URL`, readOthers): each assessed alone under its own rules; what they hold about this store's
+// versions is shown as voices from outside, never counted here; with the reader's own rules, the overlay (overlay()).
 import { assessPrepared, canon, canonStr, codeIdentity, hex64, loadsLenient, prepare, Refused, utf16 } from "./warrant.mjs";
+
 
 export const MIGRATION = "migration@1";
 export const TITLE_MEMBERS = ["statement", "title", "text", "name", "what"];   // the first a body has, as its one-line name
@@ -120,7 +124,7 @@ export async function read(store, rules, backend, source) {
   const rep = assessPrepared(prep);
   const recs = new Map();
   for (const [id, envs] of prep.snap.lines) recs.set(id, envs[0].record);
-  return { rep, recs, store, whose: rules.whose };
+  return { rep, recs, store, whose: rules.whose, rules: { trust: rules.trust, profile: rules.profile } };
 }
 
 export const PINS_NOT_CHECKED = "PINS_NOT_CHECKED";
@@ -282,6 +286,143 @@ export async function comparePins(r, base, { fetcher = globalThis.fetch, digest 
   return r;
 }
 
+// ---------------------------------------------------------------- other stores: voices from outside, and "for me"
+//
+// The reader may name further stores. Each is read as the main one is (fetchStore, quick) and assessed ALONE under its
+// own .warrant/v3.json: its verdicts are its own. A store that cannot be read is named with its reason; the others
+// still answer (warrant.across). What they hold about the main store's lineages is shown as voices from outside, which
+// the main store's rules do not count (warrant_agent/observe.py elsewhere). Only a reader who gave its own rules gets
+// an overlay: the union of every store read, under the reader's rules (warrant_agent/overlay.py), beside each store's
+// verdict, never in its place.
+
+// [{address, name, r, why}] of the stores at `addresses`, each read and assessed under its own rules; `r` null and
+// `why` the reason for one that could not be (a refusal, a v3.json with no rules, anything the engine throws on it).
+export async function readOthers(addresses, backend, source, { fetcher = globalThis.fetch } = {}) {
+  return Promise.all([...new Set(addresses)].map(async (address) => {
+    try {
+      const store = await fetchStore(address, backend, { fetcher });
+      const r = await read(store, receiver(store.doc, null), backend, source);
+      return { address, name: typeof store.doc.repository === "string" ? store.doc.repository : address, r, why: null };
+    } catch (e) {
+      return { address, name: address, r: null, why: String(e?.message ?? e) };
+    }
+  }));
+}
+
+// {version: [voice]} and {version: n left out} of what the other stores hold about versions of the main store: their
+// attests and challenges whose body.target is such a version. A voice is a record its own store's assessment admits
+// (in its view: its graph's nodes); a line that store rejects is no voice and is counted apart. A record the main store
+// holds too is the main store's, not a voice. Built once per read.
+function outside(r) {
+  if (r._outside) return r._outside;
+  const versions = new Set();
+  for (const lin of Object.values(r.rep.lineages)) for (const v of lin.versions) versions.add(v);
+  const voices = new Map(), left = new Map();
+  for (const o of r.others ?? []) {
+    if (!o.r) continue;
+    const admitted = new Set(o.r.rep.graph.nodes.map((n) => n[0]));
+    for (const [id, rec] of [...o.r.recs].sort((a, b) => utf16(a[0], b[0]))) {
+      const t = rec.body?.target;
+      if (!((rec.kind === "attest" || rec.kind === "challenge") && typeof t === "string" && versions.has(t)) || r.recs.has(id)) continue;
+      if (!admitted.has(id)) { left.set(t, (left.get(t) || 0) + 1); continue; }
+      if (!voices.has(t)) voices.set(t, []);
+      voices.get(t).push({ id, store: o.name, address: o.address, kind: rec.kind, actor: rec.actor, at: rec.at, target: t,
+                           verdict: typeof rec.body.verdict === "string" ? rec.body.verdict : null, statement: title(rec), counted: false });
+    }
+  }
+  r._outside = { voices, left };
+  return r._outside;
+}
+
+// {voices, stores, left_out} of a lineage: what other stores hold about its versions, none of it counted here.
+function outsideOf(r, root) {
+  const { voices, left } = outside(r), lin = r.rep.lineages[root];
+  const vs = lin.versions.flatMap((v) => voices.get(v) || []).sort((a, b) => a.at - b.at || utf16(a.id, b.id));
+  return { voices: vs, stores: new Set(vs.map((x) => x.address)).size, left_out: lin.versions.reduce((n, v) => n + (left.get(v) || 0), 0) };
+}
+
+// warrant_agent/overlay.py receiver: (trust, profile, held) of the reader composing `sources` ({store: trust}). The
+// reader's own bindings; then each binding every source naming that actor agrees on, unless the reader's own profile
+// gives that actor a role (Codex 2026-11-12, #348: a role holder's key comes from the reader's trust alone); held:
+// [[actor, {store: keys}, "role" | "disagree"]] of the bindings not admitted.
+export function overlayReceiver(readerTrust, readerProfile, sources) {
+  const keys = new Map(Object.entries(readerTrust.keys).map(([a, k]) => [a, [...k].sort(utf16)]));
+  const holders = new Set(Object.values(readerProfile.roles).flat());
+  const named = new Map();
+  for (const store of Object.keys(sources).sort(utf16)) {
+    for (const [actor, k] of Object.entries(sources[store].keys)) {
+      if (!named.has(actor)) named.set(actor, {});
+      named.get(actor)[store] = [...k].sort(utf16);
+    }
+  }
+  const held = [];
+  for (const actor of [...named.keys()].sort(utf16)) {
+    if (keys.has(actor)) continue;
+    const by = named.get(actor), distinct = new Set(Object.values(by).map((k) => JSON.stringify(k)));
+    if (holders.has(actor)) held.push([actor, by, "role"]);
+    else if (distinct.size === 1) keys.set(actor, JSON.parse([...distinct][0]));
+    else held.push([actor, by, "disagree"]);
+  }
+  const trust = { ...readerTrust, keys: Object.fromEntries([...keys].sort((a, b) => utf16(a[0], b[0]))) };
+  return { trust, profile: readerProfile, held };
+}
+
+const bytesCmp = (a, b) => {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a.length - b.length;
+};
+
+// warrant_agent/overlay.py compose: every line of the stores once, in byte order, and all their blobs (each read
+// checked its blobs against their names).
+function compose(stores) {
+  const seen = new Map(), key = new TextDecoder("latin1");       // windows-1252 decoding: one code point per byte, injective
+  for (const s of stores) for (const l of s.lines) seen.set(key.decode(l), l);
+  const blobs = new Map();
+  for (const s of stores) for (const [h, b] of s.blobs) blobs.set(h, b);
+  return { lines: [...seen.values()].sort(bytesCmp), blobs };
+}
+
+const docId = (v, backend) => backend.sha256(canon(v));
+
+// The overlay (`r.overlay`): with the reader's own rules, the union of the main store (at `address`) and every other
+// store read, assessed under the reader's rules, beside the main store's own verdict under its own rules. Each lineage
+// of the main store whose state or reliance reads otherwise for the reader is a row: the store's (state, reliance) →
+// the reader's, the challenges that stand for the reader and not in the store, and the actors who accept a version for
+// the reader and not in the store. The reliance words are the engine's; `shown` applies this reader's rule to both
+// sides: ELIGIBLE on pins nobody compared reads PINS_NOT_CHECKED (the overlay compares no pins).
+export async function overlay(r, address, backend, source) {
+  const done = (o) => { r.overlay = o; return r; };
+  if (r.whose !== "reader") return done({ why: "no rules of the reader's own were given: there is nobody to read it for" });
+  let own;
+  try { own = await read(r.store, receiver(r.store.doc, null), backend, source); }
+  catch (e) { return done({ why: `the store's own verdict cannot be read: ${e?.message ?? e}` }); }
+  const readable = (r.others ?? []).filter((o) => o.r);
+  const stores = [{ name: address, store: r.store, ids: [...r.recs.keys()] },
+                  ...readable.map((o) => ({ name: o.address, store: o.r.store, ids: [...o.r.recs.keys()] }))];
+  const sources = Object.fromEntries(stores.map((s) => [s.name, (s.name === address ? own : readable.find((o) => o.address === s.name).r).rules.trust]));
+  const { trust, profile, held } = overlayReceiver(r.rules.trust, r.rules.profile, sources);
+  const { lines, blobs } = compose(stores.map((s) => s.store));
+  const over = await read({ lines, blobs, doc: r.store.doc }, { trust, profile, whose: "reader" }, backend, source);
+  const ids = {};
+  for (const s of [...stores].sort((a, b) => utf16(a.name, b.name))) ids[s.name] = await docId([...new Set(s.ids)].sort(utf16), backend);
+  const identity = await docId({ stores: ids, trust: await docId(trust, backend), profile: await docId(profile, backend), code: over.rep.code }, backend);
+  const out = [];
+  for (const [L, a] of Object.entries(own.rep.lineages).sort((x, y) => utf16(x[0], y[0]))) {
+    const b = over.rep.lineages[L];
+    if (b && a.state === b.state && a.reliance === b.reliance) continue;
+    const stands = (rep) => new Set(Object.entries(rep.challenges).filter(([, c]) => c.counted && c.stands && a.versions.includes(c.target)).map(([i]) => i));
+    const before = stands(own.rep);
+    const accepts = (rep, v) => new Set(rep.versions[v]?.accepted_by ?? []);
+    out.push({ lineage: L, schema: a.schema,
+               store: { state: a.state, reliance: a.reliance, shown: shown(own, L) },
+               reader: b ? { state: b.state, reliance: b.reliance, shown: shown(over, L) } : null,
+               challenges: [...stands(over.rep)].filter((i) => !before.has(i)).sort(utf16),
+               accepted_by: b ? [...new Set(b.versions.flatMap((v) => [...accepts(over.rep, v)].filter((x) => !accepts(own.rep, v).has(x))))].sort(utf16) : [] });
+  }
+  return done({ why: null, identity, code: over.rep.code, stores: stores.map((s) => s.name), unread: (r.others ?? []).filter((o) => !o.r).map((o) => o.address),
+                held, rows: out, rejected: Object.keys(over.rep.rejected).length });
+}
+
 function pinsIndex(r) {                                   // {root: true} of every pinned lineage, in one pass over the records
   const { rep, recs } = r;
   const eff = new Map();
@@ -320,6 +461,8 @@ export function summary(r) {
     reliance: sorted(reliance),
     not_checked: r.compared ? NOT_CHECKED_COMPARED : ["pins: whether an acceptance still names a checkout's bytes (STALE) needs Git objects; such a lineage reads PINS_NOT_CHECKED here, never ELIGIBLE"],
     ...(r.compared ? { pins: pinsSummary(r.compared) } : {}),       // only when asked: without it the summary is as it was
+    ...(r.others ? { others: othersSummary(r) } : {}),
+    ...(r.overlay ? { overlay: overlaySummary(r.overlay) } : {}),
   };
 }
 
@@ -327,6 +470,24 @@ const NOT_CHECKED_COMPARED = [
   "pins: compared with the tree this address serves, not with a checkout's HEAD; PINS_NOT_CHECKED where a file was not fetched, or the lineage is no claim the freshness gate covers",
   "moved files and symlinks: a file moved with its bytes, or a symlink's entry, reads STALE here where the gate reads it fresh (HTTP lists no tree and serves no link as a link)",
 ];
+
+// The other stores read: each named with its own reading or its reason, and the voices they hold about this store's
+// lineages, none counted by this store's rules.
+function othersSummary(r) {
+  const { voices, left } = outside(r);
+  const n = [...voices.values()].reduce((k, xs) => k + xs.length, 0);
+  return { stores: r.others.map((o) => ({ address: o.address, name: o.name, read: o.r !== null, why: o.why,
+                                           records: o.r ? o.r.recs.size : null, rules: o.r ? "its own" : null })),
+           voices: n, counted: 0, left_out: [...left.values()].reduce((k, x) => k + x, 0),
+           lineages: Object.keys(r.rep.lineages).filter((L) => outsideOf(r, L).voices.length).length };
+}
+
+function overlaySummary(o) {
+  if (o.why) return { why: o.why };
+  return { identity: o.identity, code: o.code, stores: o.stores, unread: o.unread, rejected: o.rejected, changed: o.rows.length, rows: o.rows,
+           held: o.held.map(([actor, by, why]) => ({ actor, stores: Object.keys(by).sort(utf16), why })),
+           pins: "the overlay compares no pins: ELIGIBLE on pins nobody compared reads PINS_NOT_CHECKED on both sides" };
+}
 
 function pinsSummary(c) {
   const by = {};
@@ -351,7 +512,8 @@ export function rows(r) {
     const rec = recs.get(lin.effective || lin.leaf || root);
     const standing = lin.versions.reduce((n, v) => n + rep.versions[v].challenged_by.length, 0);
     out.push({ id: root, schema: lin.schema, state: lin.state, reliance: shown(r, root, pins.has(root)), actor: lin.actor,
-               at: rec ? rec.at : null, versions: lin.versions.length, standing, title: title(rec) || title(recs.get(root)) });
+               at: rec ? rec.at : null, versions: lin.versions.length, standing, title: title(rec) || title(recs.get(root)),
+               ...(r.others ? { outside: outsideOf(r, root).voices.length } : {}) });
   }
   return out.sort((a, b) => (b.at ?? 0) - (a.at ?? 0) || utf16(a.id, b.id));
 }
@@ -383,7 +545,10 @@ export function lineage(r, root) {
   const standing = versions.flatMap((v) => v.said.filter((s) => s.kind === "challenge" && s.stands));
   return { floor: { id: root, schema: lin.schema, state: lin.state, reliance: shown(r, root), verdict: lin.verdict,
                     forks: lin.forks.length, standing, completeness: rep.completeness, rules: r.whose,
-                    ...(r.compared ? { pins: r.compared.lineages.get(root) ?? null } : {}) },   // each acceptance's comparison
+                    ...(r.compared ? { pins: r.compared.lineages.get(root) ?? null } : {}),     // each acceptance's comparison
+                    ...(r.others ? { outside: outsideOf(r, root) } : {}),                       // never counted here
+                    ...(r.overlay ? { overlay: r.overlay.why ? { why: r.overlay.why }
+                      : (r.overlay.rows.find((x) => x.lineage === root) ?? { lineage: root, same: true }) } : {}) },
            versions };
 }
 
@@ -393,13 +558,18 @@ async function main(argv) {
   const backend = await nodeBackend();
   const opt = (name) => { const k = argv.indexOf(name); return k >= 0 ? argv[k + 1] : undefined; };
   const base = opt("--base");
-  if (!base) { process.stderr.write("usage: reader.mjs --base URL [--full] [--pins] [--config RULES.json] [--lineage ID]\n"); return 2; }
+  if (!base) { process.stderr.write("usage: reader.mjs --base URL [--full] [--pins] [--with URL]... [--config RULES.json] [--lineage ID]\n"); return 2; }
+  const others = argv.flatMap((a, k) => (a === "--with" && k + 1 < argv.length ? [argv[k + 1]] : []));
   try {
     const store = await fetchStore(base, backend, { full: argv.includes("--full") });
     const source = new Uint8Array(fs.readFileSync(new URL("./warrant.mjs", import.meta.url)));
     const mine = opt("--config") ? loadsLenient(fs.readFileSync(opt("--config"), "utf8")) : null;
     const r = await read(store, receiver(store.doc, mine), backend, source);
     if (argv.includes("--pins")) await comparePins(r, base);
+    if (others.length) {
+      r.others = await readOthers(others, backend, source);
+      await overlay(r, base, backend, source);
+    }
     const out = opt("--lineage") ? { lineage: lineage(r, opt("--lineage")) } : { summary: summary(r), rows: rows(r) };
     process.stdout.write(canonStr(out) + "\n");
   } catch (e) {
