@@ -1680,7 +1680,8 @@ class FakeBoard:
             self.fields[v["name"]] = f
             return {"createProjectV2Field": {"projectV2Field": f}}
         if query is BD.ADD_ITEM:
-            it = {"id": self._id("I"), "draft": self._id("D"), "title": v["title"], "body": v["body"], "archived": False, "values": {}}
+            it = {"id": self._id("I"), "draft": self._id("D"), "title": v["title"], "body": v["body"], "archived": False,
+                  "values": {"Status": "Todo"} if "Status" in self.fields else {}}      # as a new project's own workflow does
             self.items.append(it)
             return {"addProjectV2DraftIssue": {"projectItem": {"id": it["id"], "content": {"id": it["draft"]}}}}
         if query is BD.SET_TEXT:
@@ -1760,11 +1761,12 @@ def board_cases():
           and links == ["- https://github.com/s0fractal/warrant/pull/7"], (title, outside[:6], links))
 
     fb = FakeBoard()
+    fb.fields["Status"] = {"id": "FS", "name": "Status", "dataType": "SINGLE_SELECT", "options": [{"id": "OT", "name": "Todo"}]}
     board = BD.read_board(fb.call, "o", 1)
     first_plan = BD.plan(man, board, "2026-11-13")
     reads_only = fb.mutations == []
     did = BD.sync(man, board, fb.call, "2026-11-13")
-    names = {n for n, _, _ in BD.FIELDS} | {BD.SYNCED}
+    names = {n for n, _, _ in BD.FIELDS} | {BD.SYNCED, "Status"}
     made = {it["values"].get(BD.ID): it for it in fb.items}
     fb.mutations.clear()
     second = BD.plan(man, BD.read_board(fb.call, "o", 1), "2026-11-13")
@@ -1774,6 +1776,7 @@ def board_cases():
           reads_only and sorted(first_plan["create"]) == sorted(by) and set(fb.fields) == names and set(made) == set(by)
           and all(made[i]["values"]["Warrant status"] == by[i]["status"] and made[i]["title"] == by[i]["title"]
                   and made[i]["values"][BD.SYNCED] == "2026-11-13" and made[i]["values"].get("Standing challenges", 0) == by[i]["challenges"]
+                  and "Status" not in made[i]["values"]
                   for i in by)
           and second["create"] == [] and second["update"] == {} and second["archive"] == [] and fb.mutations == []
           and man["digest"][:12] in (fb.readme or ""), (sorted(did["create"])[:2], second, len(fb.mutations)))
@@ -1788,19 +1791,29 @@ def board_cases():
           "page after the first asks only the kind that answered", refusal is None and len(org.items) == len(by) and set(org.asked) == {"organization"}
           and len(fb.asked) > 3 and fb.asked[:2] == ["organization", "user"] and set(fb.asked[2:]) == {"user"},
           (refusal, org.asked[:3], fb.asked[:5]))
+    clash, code = FakeBoard(), None
+    clash.fields["Store"] = {"id": "FX", "name": "Store", "dataType": "REPOSITORY"}
+    try:
+        BD.sync(man, BD.read_board(clash.call, "o", 1), clash.call, "2026-11-13")
+    except RP.Failed as e:
+        code = e.code
+    check("BD7 a board whose field bears one of our names and another type refuses the sync before anything is changed",
+          code == "FIELD" and clash.mutations == [] and clash.items == [], (code, len(clash.mutations)))
     made[o_accepted]["values"]["Warrant status"] = BD.OPEN            # a hand edit on the board: no record says so
     made[o_claimed]["title"] = "done, trust me"
-    fb.items.append({"id": "X", "draft": "DX", "title": "a person's own note", "body": "", "archived": False, "values": {}})
+    fb.items.append({"id": "X", "draft": "DX", "title": "a person's own note", "body": "", "archived": False, "values": {"Status": "Todo"}})
+    made[o_open]["values"]["Status"] = "Todo"                         # the board's own column, set again on a row of ours
     smaller = dict(man, rows=[x for x in man["rows"] if x["id"] != o_fork])
     edited = BD.plan(smaller, BD.read_board(fb.call, "o", 1), "2026-11-15")
     BD.sync(smaller, BD.read_board(fb.call, "o", 1), fb.call, "2026-11-15")
     note = next(i for i in fb.items if i["id"] == "X")
     check("BD5 a hand edit is no record: the plan names exactly the cells that differ and the sync puts them back; a row "
           "the manifest no longer holds is archived; an item with no Warrant ID is not ours, is counted and is left as it was",
-          edited["update"] == {o_accepted: ["Warrant status"], o_claimed: ["title"]} and edited["archive"] == [o_fork]
+          edited["update"] == {o_accepted: ["Warrant status"], o_claimed: ["title"], o_open: ["Status"]} and edited["archive"] == [o_fork]
           and edited["foreign"] == 1 and made[o_accepted]["values"]["Warrant status"] == BD.ACCEPTED
           and made[o_claimed]["title"] == by[o_claimed]["title"] and made[o_fork]["archived"] is True
-          and note["title"] == "a person's own note" and note["archived"] is False and note["values"] == {},
+          and note["title"] == "a person's own note" and note["archived"] is False and note["values"] == {"Status": "Todo"}
+          and "Status" not in made[o_open]["values"],
           (edited["update"], edited["archive"], edited["foreign"]))
 
 

@@ -786,6 +786,9 @@ MUTANTS = [
     ("BM8", "warrant/board.py", '    for rid in todo["archive"]:\n        call(ARCHIVE', '    for rid in []:\n        call(ARCHIVE', TOOLS, ["BD5"]),
     ("BM9", "warrant/board.py", "return dict(doc, digest=C.doc_id(doc))", 'return dict(doc, digest=C.doc_id(doc["stores"]))', TOOLS, ["BD2"]),
     ("BM11", "warrant/board.py", "        for k in ([kind] if kind else OWNERS):", "        for k in OWNERS[1:]:", TOOLS, ["BD6"]),
+    ("BM14", "warrant/board.py", '        diff += [THEIRS] if item["values"].get(THEIRS) else []', "", TOOLS, ["BD5"]),
+    ("BM15", "warrant/board.py", '        todo["update"][rid] = [name for name, _, _ in FIELDS] + [THEIRS]', '        todo["update"][rid] = [name for name, _, _ in FIELDS]', TOOLS, ["BD4"]),
+    ("BM13", "warrant/board.py", "    if other:                                           # a field of ours' name", "    if False:                                           # a field of ours' name", TOOLS, ["BD7"]),
     ("BM12", "warrant/board.py", "        for k in ([kind] if kind else OWNERS):", "        for k in OWNERS:", TOOLS, ["BD6"]),
     ("BM10", "warrant/board.py", 'if todo["create"] or todo["update"] or todo["archive"] or todo["fields"]:', "if True:", TOOLS, ["BD4"]),
 ]

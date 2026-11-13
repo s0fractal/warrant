@@ -142,6 +142,8 @@ python3 -m warrant.board sync --owner s0fractal --project N --root . --root ../m
   closing version; no acceptor has accepted it), `Accepted` (its guard is met), `Released`, `Withdrawn`,
   `Challenged` (a counted challenge stands against its effective version or its leaf), `Forked`. None says verified:
   a roadmap item has no checker, and claims are not on the board.
+- **GitHub's own `Status` is not ours.** A new project fills it with "Todo" for every item added; a sync clears it on
+  our rows, whose status is `Warrant status`.
 - **A hand edit is no record.** A sync puts every cell back and its plan names the cells that differed. An item with
   no `Warrant ID` is a person's own: counted, never touched. A row the manifest no longer holds is archived.
 - **Record text is data.** In a row's body it lies inside a code fence longer than any run of backticks in it, so the
@@ -149,7 +151,8 @@ python3 -m warrant.board sync --owner s0fractal --project N --root . --root ../m
   Each row links to the reader (docs/VERIFY.md), where the same lineage is assessed in the visitor's own browser.
 
 Not established: tools_test BD1–BD5 run against a board in memory, so what GitHub's API answers to these calls is held
-by no test; the board's views (which columns, grouped how) are made by hand on GitHub and can hide a column; and the
+by no test; the board's views (which columns, grouped how) are made by hand on GitHub and can hide a column; a board's field named as one of ours and of another type refuses the sync (GitHub's own
+`Repository` is why ours is `Store`); and the
 board shows no `Grounded` column, because `warrant.graph.grounded` reads an obligation's `answers` as a ground (a met
 goal citing its obligations is a cycle with each of them).
 

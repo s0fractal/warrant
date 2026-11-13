@@ -51,7 +51,10 @@ ZWSP = "\u200b"
 PR_REF = re.compile(r"([A-Za-z0-9][A-Za-z0-9-]*)/([A-Za-z0-9._-]+)#([0-9]+)\Z")
 # (field name, data type, the row member it shows); ID is the key a row is found by on the board
 ID, SYNCED = "Warrant ID", "Last sync"
-FIELDS = [("Warrant status", "SINGLE_SELECT", "status"), ("Kind", "TEXT", "kind"), ("Repository", "TEXT", "repository"),
+# GitHub's own column: a new project fills it with "Todo" for every item added. On a row of ours that word is no
+# record's (an accepted obligation is not "Todo"), so a sync clears it; the status of a row is `Warrant status`.
+THEIRS = "Status"
+FIELDS = [("Warrant status", "SINGLE_SELECT", "status"), ("Kind", "TEXT", "kind"), ("Store", "TEXT", "repository"),
           ("Goal", "TEXT", "goal"), ("Filed by", "TEXT", "filed_by"), ("Accepted by", "TEXT", "accepted_by"),
           ("Waits for", "TEXT", "waits_for"), ("Standing challenges", "NUMBER", "challenges"), ("Reliance", "TEXT", "reliance"),
           ("Assessment", "TEXT", "assessment"), (ID, "TEXT", "id")]
@@ -259,6 +262,10 @@ def plan(man, board, today):
     """What a sync would do, and nothing done: the fields to add, the rows to create, the members of each present row
     that differ (a hand edit among them), the rows to archive (ours, no longer in the manifest) and the items that are
     not ours (no Warrant ID: left alone)."""
+    other = sorted(name for name, dtype in [(n, t) for n, t, _ in FIELDS] + [(SYNCED, "DATE")]
+                   if name in board["fields"] and board["fields"][name].get("dataType") != dtype)
+    if other:                                           # a field of ours' name and another type (GitHub's own `Repository` is one)
+        raise Failed("FIELD", f"the board has fields named as ours and of another type: {', '.join(other)}")
     missing = [name for name, _, _ in FIELDS if name not in board["fields"]] + ([] if SYNCED in board["fields"] else [SYNCED])
     ours = {i["values"].get(ID): i for i in board["items"] if i["values"].get(ID) and not i["archived"]}
     want = {r["id"]: r for r in man["rows"]}
@@ -269,6 +276,7 @@ def plan(man, board, today):
             continue
         diff = [m for m in ("title", "body") if item[m] != row[m]]
         diff += [name for name, dtype, member in FIELDS if not _same(dtype, item["values"].get(name), row[member])]
+        diff += [THEIRS] if item["values"].get(THEIRS) else []
         if diff:
             update[rid] = diff
     return {"fields": missing, "create": sorted(set(want) - set(ours)), "update": update,
@@ -300,7 +308,7 @@ def sync(man, board, call, today):
         row = want[rid]
         made = call(ADD_ITEM, {"project": board["id"], "title": row["title"], "body": row["body"]})["addProjectV2DraftIssue"]["projectItem"]
         ours[rid] = {"item": made["id"], "draft": made["content"]["id"], "title": row["title"], "body": row["body"], "values": {}}
-        todo["update"][rid] = [name for name, _, _ in FIELDS]
+        todo["update"][rid] = [name for name, _, _ in FIELDS] + [THEIRS]
     for rid, diff in sorted(todo["update"].items()):
         row, item = want[rid], ours[rid]
         if "title" in diff or "body" in diff:
@@ -313,6 +321,8 @@ def sync(man, board, call, today):
                 call(CLEAR, where)                      # an empty text is no value: the cell is cleared, not set to ""
             else:
                 call(SET_FIELD, dict(where, value=_value(board["fields"][name], member, row)))
+        if THEIRS in diff and THEIRS in board["fields"]:
+            call(CLEAR, {"project": board["id"], "item": item["item"], "field": board["fields"][THEIRS]["id"]})
         call(SET_FIELD, {"project": board["id"], "item": item["item"], "field": board["fields"][SYNCED]["id"], "value": {"date": today}})
     for rid in todo["archive"]:
         call(ARCHIVE, {"project": board["id"], "item": ours[rid]["item"]})
