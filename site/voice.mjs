@@ -15,20 +15,23 @@
 import { canonStr } from "./warrant.mjs";
 
 export const CLONE = "https://github.com/s0fractal/warrant.git";
+export const PACKAGE = "warrant-graph>=3.0.0a7";   // the first release with `warrant say`; the specifier names a pre-release, so pip admits one
 export const VERSION = "VERSION_ID";      // the placeholders object.html shows; the reader fills VERSION_ID alone
 export const STORE = "STORE_URL";
 export const VOICES = "VOICES_URL";
 export const LINEAGE = "LINEAGE_ID";
 
-// The commands, step by step, from an empty directory: a checkout of master (the package on PyPI, 3.0.0a6, has no
-// `warrant say`), the voice said into ../voices (made on first use: it trusts nobody and gives nobody a role), that
-// directory made a git repository to publish, and the publisher's store read with the voices beside it. Each line is
-// one command a shell runs as written; `cd` lines carry the directory to the next.
+// The commands, step by step, from an empty directory: the released package installed into a venv of the objector's
+// own (never the system's interpreter, which PEP 668 refuses), the voice said into ./voices (made on first use: it
+// trusts nobody and gives nobody a role), that directory made a git repository to publish, and, for a reader at a
+// terminal, the publisher's store read with the voices beside it (the reader's CLI is in the repository, not in the
+// package: the page reads the same from an address). Each line is one command a shell runs as written; `cd` lines carry
+// the directory to the next.
 export const STEPS = [
-  { step: "checkout", lines: [`git clone ${CLONE}`] },
-  { step: "say", lines: ["cd warrant", `python3 -m warrant say --store ../voices ${VERSION} "why this version is wrong"`] },
-  { step: "publish", lines: ["cd ../voices", "git init", "git add .warrant", "git commit -m \"a voice\""] },
-  { step: "read", lines: ["cd ../warrant", `node site/reader.mjs --base ${STORE} --with ${VOICES} --lineage ${LINEAGE}`] },
+  { step: "install", lines: ["python3 -m venv .venv", `.venv/bin/pip install "${PACKAGE}"`] },
+  { step: "say", lines: [`.venv/bin/warrant say --store voices ${VERSION} "why this version is wrong"`] },
+  { step: "publish", lines: ["cd voices", "git init", "git add .warrant", "git commit -m \"a voice\""] },
+  { step: "read", lines: ["cd ..", `git clone ${CLONE}`, `node warrant/site/reader.mjs --base ${STORE} --with ${VOICES} --lineage ${LINEAGE}`] },
 ];
 
 // What the reader's block says beside the commands: what an objection is and is not.
@@ -40,7 +43,7 @@ export const MEANING = [
 
 const ID = /^[0-9a-f]{64}$/;                 // a record id: lowercase hex, 64 characters, nothing else (JS `$`: the end)
 
-// The command lines for one version (the steps that file and publish it: checkout, say, publish), or null when
+// The command lines for one version (the steps that file and publish it: install, say, publish), or null when
 // `version` is no record id: nothing but a 64-hex id is ever put into a command.
 export function voiceCommands(version) {
   if (typeof version !== "string" || !ID.test(version)) return null;
@@ -79,7 +82,7 @@ async function main(argv) {
   const opt = (name) => { const k = argv.indexOf(name); return k >= 0 ? argv[k + 1] : undefined; };
   const all = (name) => argv.flatMap((a, k) => (a === name && k + 1 < argv.length ? [argv[k + 1]] : []));
   let out;
-  if (argv.includes("--steps")) out = { steps: STEPS, clone: CLONE, meaning: MEANING };
+  if (argv.includes("--steps")) out = { steps: STEPS, clone: CLONE, package: PACKAGE, meaning: MEANING };
   else if (opt("--version") !== undefined) out = { commands: voiceCommands(opt("--version")) };
   else if (opt("--add") !== undefined) out = withAdded(all("--with"), opt("--add"));
   else if (opt("--base") !== undefined && opt("--lineage") !== undefined) {

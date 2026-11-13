@@ -291,8 +291,9 @@ function objectBlock(t) {
   const role = t.effective && t.leaf ? "the effective version and the leaf" : t.effective ? "the effective version" : "the leaf, not effective";
   return el("details", { class: "door" },
     el("summary", { text: `Object to this version (${role})` }),
-    el("p", { class: "small" }, "From an empty directory, with git and Python ≥ 3.10 (with the package cryptography); the next release of warrant-graph carries ",
-      el("code", { text: "warrant say" }), ", 3.0.0a6 does not. ", el("a", { href: "object.html", text: "The steps, explained" }), "."),
+    el("p", { class: "small" }, "From an empty directory, with git and Python ≥ 3.10: the package ",
+      el("code", { text: "warrant-graph" }), " (3.0.0a7 or later) goes into a venv there, nothing into the system. ",
+      el("a", { href: "object.html", text: "The steps, explained" }), "."),
     el("pre", { class: "command" }, el("code", { text })),
     copyButton(text),
     (typeof voice.MEANING === "object" ? voice.MEANING : []).map((m) => el("p", { class: "small", text: m })),

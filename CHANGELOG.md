@@ -4,6 +4,14 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
+## Unreleased
+
+- The door's commands use the released package instead of a checkout (`site/voice.mjs`, `site/object.html`, the
+  reader's block): a venv in the objector's empty directory, `pip install "warrant-graph>=3.0.0a7"` (the first release
+  with `warrant say`), the venv's `warrant say --store voices ID "…"`. No clone is needed to object; the clone remains
+  only in the optional last step, reading from a terminal with the reader's own file. Run as shown against PyPI on
+  2026-11-13.
+
 ## 3.0.0a7 — the owner as observer; claims on a runner; a stranger's path
 
 Read first:

@@ -35,25 +35,24 @@
 
 <section>
   <h2>The steps</h2>
-  <p class="small">From an empty directory, with git, Python ≥ 3.10 with the package <code>cryptography</code>, and
-  node for the last step. The commands use a checkout of master: the package on PyPI, warrant-graph 3.0.0a6, has no
-  <code>warrant say</code>; the next release carries it. <code>VERSION_ID</code> is the full id (64 hex) of the
-  version you object to: the reader shows it on the lineage, in the block «Object to this version», with the
-  commands filled in.</p>
+  <p class="small">From an empty directory, with git and Python ≥ 3.10; node only for reading from a terminal in the
+  last step. The package goes into a venv in that directory, nothing into the system's Python. warrant-graph 3.0.0a7 is
+  the first release with <code>warrant say</code>. <code>VERSION_ID</code> is the full id (64 hex) of the version you
+  object to: the reader shows it on the lineage, in the block «Object to this version», with the commands filled in.</p>
 
-  <h3>1. A checkout</h3>
-  <pre class="command" data-step="checkout"><code>git clone https://github.com/s0fractal/warrant.git</code></pre>
+  <h3>1. The package</h3>
+  <pre class="command" data-step="install"><code>python3 -m venv .venv
+.venv/bin/pip install "warrant-graph&gt;=3.0.0a7"</code></pre>
 
   <h3>2. Say it</h3>
-  <pre class="command" data-step="say"><code>cd warrant
-python3 -m warrant say --store ../voices VERSION_ID "why this version is wrong"</code></pre>
-  <p class="small">The directory <code>voices</code> beside the checkout becomes a store of voices on first use: it trusts nobody and gives nobody a role. The key
+  <pre class="command" data-step="say"><code>.venv/bin/warrant say --store voices VERSION_ID "why this version is wrong"</code></pre>
+  <p class="small">The directory <code>voices</code> becomes a store of voices on first use: it trusts nobody and gives nobody a role. The key
   is made on first use; its seed is kept at <code>~/.config/warrant/commons/commons.seed</code>, and
   <code>--as NAME</code> keeps another. The command prints the voice's id and its actor, <code>key:&lt;hex&gt;</code>.
   A store that trusts anyone is refused: a voice is never written into a project's store.</p>
 
   <h3>3. Publish it</h3>
-  <pre class="command" data-step="publish"><code>cd ../voices
+  <pre class="command" data-step="publish"><code>cd voices
 git init
 git add .warrant
 git commit -m "a voice"</code></pre>
@@ -66,10 +65,11 @@ git commit -m "a voice"</code></pre>
   <p>In the <a href="reader.html">reader</a>: open the publisher's store, add <code>VOICES_URL</code> under «Other
   stores beside this one» (or in the block «Object to this version» on the lineage), and open the lineage. The voice
   is listed on it among the voices from outside, under its <code>key:</code> actor, not counted by the store's
-  rules. Or from the checkout, with <code>STORE_URL</code> the publisher's store and <code>LINEAGE_ID</code> the
-  lineage:</p>
-  <pre class="command" data-step="read"><code>cd ../warrant
-node site/reader.mjs --base STORE_URL --with VOICES_URL --lineage LINEAGE_ID</code></pre>
+  rules. Or from a terminal, with the reader's own file from the repository, <code>STORE_URL</code> the publisher's
+  store and <code>LINEAGE_ID</code> the lineage:</p>
+  <pre class="command" data-step="read"><code>cd ..
+git clone https://github.com/s0fractal/warrant.git
+node warrant/site/reader.mjs --base STORE_URL --with VOICES_URL --lineage LINEAGE_ID</code></pre>
 </section>
 
 <section>
