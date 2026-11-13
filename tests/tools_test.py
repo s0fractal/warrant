@@ -16,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 
-from world import KEYS, ROOT, Repo, check, finish, git
+from world import KEYS, ROLES, ROOT, Repo, check, finish, git
 
 from warrant import across as A
 from warrant import board as BD
@@ -454,6 +454,70 @@ def gated(r, L):
     return d.get(L, {}), rep["lineages"][L]["reliance"]
 
 
+def pinned_by_lead():
+    """A repository with no .warrant/claims.json: bob (roadmap/acceptor) accepts goal G1 met on lib/a.py's bytes at a
+    commit (`files`, `commit`), the analysis session's case of 2026-11-13. Returns (repo, lineage, met version)."""
+    r = Repo(git_init=True)
+    (r.root / "lib").mkdir()
+    (r.root / "lib" / "a.py").write_text("A = 1\n")
+    x = r.commit("the file")
+    goal = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a question"})
+    met = r.entity("alice", "goal@1", {"state": "met", "key": "G1", "text": "a question", "established": ["held"]}, lineage=goal)
+    blob = git(r.root, "rev-parse", f"{x}:lib/a.py")
+    r.attest("bob", met, commit=x, files={"lib/a.py": blob})
+    r.commit("accepted on lib/a.py at its commit")
+    return r, goal, met
+
+
+def assessed(r, L):
+    """(drift verdict, gate reliance, status's reliance counts, assess CLI reliance) of lineage L at r's head."""
+    d, rel = gated(r, L)
+    out = io.StringIO()
+    with contextlib.chdir(r.root):
+        st = CLI.status(CLI._parser().parse_args(["status", "--store", ".warrant"]))
+        with contextlib.redirect_stdout(out):
+            CLI.main(["assess", "--store", ".warrant"])
+    return d.get("verdict"), rel, st["reliance"], json.loads(out.getvalue())["lineages"][L]["reliance"]
+
+
+def pinned_cases():
+    r, L, met = pinned_by_lead()
+    before = assessed(r, L)
+    (r.root / "lib" / "a.py").write_text("A = 2\n")
+    r.commit("the file changes")
+    after = assessed(r, L)
+    check("DR30 any signed acceptance naming files at a commit pins the version it accepts, whoever signed it and whatever "
+          "its schema, with no .warrant/claims.json: a lead's acceptance of a goal on a file reads ELIGIBLE while the file "
+          "holds its bytes and STALE once it changes, in drift, status and assess alike (the analysis session, 2026-11-13: "
+          "STALE needed claims.json and the claims checker's name, and `assess` printed ELIGIBLE where status said STALE)",
+          not (r.dot / "claims.json").exists() and before[:2] == ("UNCHANGED", "ELIGIBLE") and before[3] == "ELIGIBLE"
+          and after[:2] == ("CHANGED", D.STALE) and after[2].get(D.STALE) == 1 and after[3] == D.STALE, (before, after))
+    r2 = Repo(roles=dict(ROLES, migrator=["carol"]), git_init=True)
+    (r2.root / "lib").mkdir()
+    (r2.root / "lib" / "a.py").write_text("A = 1\n")
+    x = r2.commit("the file")
+    L2 = r2.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a question"})
+    met2 = r2.entity("alice", "goal@1", {"state": "met", "key": "G1", "text": "a question", "established": ["held"]}, lineage=L2)
+    r2.attest("bob", met2)                                                # counted, naming no files: not pinned
+    rec = R.record("attest", "eve", r2.t + 1, {"verdict": "accept", "target": met2, "commit": x,
+                                               "files": {"lib/a.py": "1" * 40}}, refs=[met2])
+    r2.store.append(rec, K.Key.from_seed_hex("ab" * 32), r2.trust)        # other bytes, under a key not trusted
+    vouched = R.record("attest", "bob", r2.t + 2, {"verdict": "accept", "target": met2, "commit": x,
+                                                   "files": {"lib/a.py": "2" * 40}}, refs=[met2])
+    vid, line = R.line(vouched, None)                                     # other bytes, unsigned, vouched by a migration
+    with open(r2.dot / "records.jsonl", "ab") as f:
+        f.write(line)
+    m = r2.blob(JCS.canon({"map": [[vid, ["11" * 32], []]]}))
+    r2.put("carol", "attest", {"target": m, "verdict": "migrated"}, R.MIGRATION, refs=[m])
+    r2.commit("an unpinned acceptance, an untrusted pinned attest, a migrated one")
+    d2, rel2 = gated(r2, L2)
+    basis2 = RP.Repo(r2.root).report()["_basis"].get(vid)
+    check("DR31 only a signed acceptance that names files pins: one naming other bytes under a key the receiver does not "
+          "trust, or carried unsigned by a migration (MIGRATED, as claims.acceptances reads only SIGNED), lowers nothing, "
+          "and an acceptance naming no files leaves no drift answer",
+          basis2 == "MIGRATED" and d2 == {} and rel2 == "ELIGIBLE", (basis2, d2, rel2))
+
+
 def drift_cases():
     from warrant_agent import api
     from warrant_agent.config import Config
@@ -551,7 +615,7 @@ def drift_cases():
     d2, rel2 = gated(r, L)
     bare = Repo()
     check("DR4 an acceptance naming no files compares nothing: UNKNOWN, the claim is not ELIGIBLE, and the checker accepts it again "
-          "though its tree is unchanged; a checkout without claims has no drift answer",
+          "though its tree is unchanged; a store with no pinned acceptance has no drift answer",
           d.get("verdict") == "UNKNOWN" and rel == D.STALE and len(again) == 1 and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE"
           and D.drift(RP.Repo(bare.root).report(), bare.root) == {}, (d, rel, again, d2, rel2))
     def accepted_with(**named):
@@ -1974,6 +2038,7 @@ if __name__ == "__main__":
     claims_cases()
     preflight_cases()
     drift_cases()
+    pinned_cases()
     freshness_cases()
     drift_impact_cases()
     review_cases()

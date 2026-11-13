@@ -12,6 +12,18 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   only in the optional last step, reading from a terminal with the reader's own file. Run as shown against PyPI on
   2026-11-13.
 
+## Unreleased
+
+- The freshness gate (G14) reads every pinned acceptance: a signed `attest` accepting a version that names `files`,
+  whoever signed it and whatever the lineage's schema, with or without `.warrant/claims.json` (`warrant/drift.py`
+  `pinned`). Until now it read the claims checker's acceptances of claims alone and only beside `claims.json`, so a
+  lead's acceptance of a goal on a file's bytes stayed ELIGIBLE after the file changed, while the browser reader said
+  PINS_NOT_CHECKED for any attest naming files or a commit (the analysis session, 2026-11-13). The reader now reads the
+  same predicate: an acceptance at a commit alone pins nothing there either, and `--pins` reads no `claims.json`
+  (its summary has no `config` member). DR30, DR31; J10, J11; mutants T184–T188.
+- `warrant assess` applies the freshness gate to a repository's store read now, as `status`, `drift` and the agent's
+  `context` do: it printed ELIGIBLE where they said STALE.
+
 ## 3.0.0a7 — the owner as observer; claims on a runner; a stranger's path
 
 Read first:

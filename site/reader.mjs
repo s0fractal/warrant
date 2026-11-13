@@ -25,9 +25,10 @@
 //                         the one `warrant status` prints for the same bytes.
 //
 // What a browser cannot say: whether an acceptance still names the bytes of a checkout (STALE, docs/V3.md §15) needs
-// the repository's Git objects. So this reader never prints ELIGIBLE for a lineage whose acceptances name files or a
-// commit: it prints PINS_NOT_CHECKED, the word `warrant verify` uses for a comparison that was not made. A note beside
-// a green word is not enough: `warrant status` once said ELIGIBLE where the gate said STALE.
+// the repository's Git objects. So this reader never prints ELIGIBLE for a lineage the freshness gate covers (a pinned
+// acceptance on its effective version, warrant/drift.py pinned: a signed accept naming `files`, whoever signed it, or
+// the claims checker's): it prints PINS_NOT_CHECKED, the word `warrant verify` uses for a comparison that was not made.
+// A note beside a green word is not enough: `warrant status` once said ELIGIBLE where the gate said STALE.
 //
 // Unless it is asked to compare (`--pins`, comparePins): the address of a repository's store is the root of a tree
 // too, so each file a claims checker's acceptance names, {path: git blob}, can be fetched at that path and hashed as
@@ -145,16 +146,16 @@ export async function read(store, rules, backend, source) {
 
 export const PINS_NOT_CHECKED = "PINS_NOT_CHECKED";
 
-// Whether some attest on a lineage's effective version speaks of bytes at a commit (`files`, `commit`), whoever
-// filed it and whether or not the guard counted it: the freshness gate (warrant.drift) reads every acceptance the
-// claims checker signed on that version, so this must not read fewer.
-const speaksOfBytes = (rec) => rec.kind === "attest" && ("files" in rec.body || "commit" in rec.body);
-
+// Whether the freshness gate covers a lineage: one predicate with warrant/drift.py (pinned, drift), held by
+// impl_js_test J11 against it. Until 3.0.0a7 this read any attest naming `files` or a `commit`, while the gate read the
+// claims checker's alone and only beside .warrant/claims.json (the analysis session, 2026-11-13).
 export function pinned(r, root) {
-  const eff = r.rep.lineages[root].effective;
-  if (!eff) return false;
-  for (const rec of r.recs.values()) if (speaksOfBytes(rec) && rec.body.target === eff) return true;
-  return false;
+  return gated(r).has(root);
+}
+
+function gated(r) {                                       // covered(), once per read: the lineages the gate covers
+  if (!r._gated) r._gated = covered(r, acceptances(r));
+  return r._gated;
 }
 
 // The reliance this reader shows: the engine's, but never ELIGIBLE on pins it did not compare. A claim the
@@ -175,27 +176,32 @@ export const CLOSURE = "imports/1";                       // warrant/claims.py C
 export const CLAIM = "claim@1";                           // warrant/claims.py CLAIM
 const SHA1 = /^[0-9a-f]{40}$/;                            // a blob id of a SHA-1 repository, as `git ls-tree` spells it
 
-// warrant/claims.py acceptances: [{id, commit, files, closure}] by version of the claims checker's SIGNED attests whose
-// verdict is accept, in id order. The basis is the view's (graph nodes): a line whose signature fails is in `recs`
-// (every line read) but not in the view.
+// warrant/drift.py pinned: [{id, commit, files, closure}] by version of the pinned acceptances, in id order: each
+// SIGNED attest whose verdict is accept and that names `files` as a map, whoever signed it (closure CLOSURE: its files
+// are what it says it rests on), and the claims checker's even naming none (its own `closure`). The basis is the
+// view's (graph nodes): a line whose signature fails is in `recs` (every line read) but not in the view, and a MIGRATED
+// one is not SIGNED.
+const isMap = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+
 function acceptances(r) {
   const basis = new Map(r.rep.graph.nodes.map((n) => [n[0], n[5]]));
   const out = new Map();
   for (const [id, rec] of [...r.recs].sort((a, b) => utf16(a[0], b[0]))) {
-    if (rec.kind === "attest" && rec.actor === CHECKER && basis.get(id) === "SIGNED" && rec.body.verdict === "accept") {
-      if (!out.has(rec.body.target)) out.set(rec.body.target, []);
-      out.get(rec.body.target).push({ id, commit: rec.body.commit ?? null, files: rec.body.files, closure: rec.body.closure });
-    }
+    if (rec.kind !== "attest" || basis.get(id) !== "SIGNED" || !isMap(rec.body) || rec.body.verdict !== "accept") continue;
+    const own = rec.actor === CHECKER;
+    if (!own && !isMap(rec.body.files)) continue;
+    if (!out.has(rec.body.target)) out.set(rec.body.target, []);
+    out.get(rec.body.target).push({ id, commit: rec.body.commit ?? null, files: rec.body.files, closure: own ? rec.body.closure : CLOSURE });
   }
   return out;
 }
 
-// warrant/claims.py live and drift: {root: effective version} of each claim@1 lineage whose leaf is not retired (a fork,
-// no leaf, is live) and whose effective version the claims checker accepted: the lineages the gate covers.
+// warrant/drift.py drift: {root: effective version} of each lineage whose effective version has a pinned acceptance,
+// a claim@1 one only when its leaf is not retired (a fork, no leaf, is live): the lineages the gate covers.
 function covered(r, done) {
   const out = new Map();
   for (const [root, lin] of Object.entries(r.rep.lineages)) {
-    if (lin.schema !== CLAIM || (lin.leaf ? r.recs.get(lin.leaf).body.state : null) === "retired") continue;
+    if (lin.schema === CLAIM && (lin.leaf ? r.recs.get(lin.leaf).body.state : null) === "retired") continue;
     if (lin.effective && done.get(lin.effective)?.length) out.set(root, lin.effective);
   }
   return out;
@@ -252,16 +258,12 @@ function judged(rows) {
 
 // Compare the pins of every claim the gate covers with the tree at `base`, the store's own address: sets r.compared.
 // Each distinct path is fetched once, 16 at a time. A transport that fails refuses no read here and answers nothing:
-// the claims it could decide read PINS_NOT_CHECKED and the failure is named (summary().pins.refused). Without
-// `.warrant/claims.json` at the address the gate has nothing to cover (drift: no drift answer); a failure to fetch it
-// compares nothing.
+// the claims it could decide read PINS_NOT_CHECKED and the failure is named (summary().pins.refused). No
+// configuration is read: the gate covers what the pinned acceptances name, with or without .warrant/claims.json.
 export async function comparePins(r, base, { fetcher = globalThis.fetch, digest = (b) => globalThis.crypto.subtle.digest("SHA-1", b) } = {}) {
   const root = base.endsWith("/") ? base : base + "/";
-  const out = { config: "present", lineages: new Map(), asked: 0, fetched: 0, absent: 0, compared: 0, refused: [] };
+  const out = { lineages: new Map(), asked: 0, fetched: 0, absent: 0, compared: 0, refused: [] };
   r.compared = out;
-  try { if ((await get(root + ".warrant/claims.json", fetcher)) === null) out.config = "absent"; }
-  catch (e) { out.config = "refused"; out.refused.push(e.message); }
-  if (out.config !== "present") return r;
   const done = acceptances(r), gate = covered(r, done), urls = new Map();
   for (const eff of gate.values()) {
     for (const a of done.get(eff)) {
@@ -439,16 +441,8 @@ export async function overlay(r, address, backend, source) {
                 held, rows: out, rejected: Object.keys(over.rep.rejected).length });
 }
 
-function pinsIndex(r) {                                   // {root: true} of every pinned lineage, in one pass over the records
-  const { rep, recs } = r;
-  const eff = new Map();
-  for (const [root, lin] of Object.entries(rep.lineages)) if (lin.effective) eff.set(lin.effective, root);
-  const out = new Set();
-  for (const rec of recs.values()) {
-    const root = speaksOfBytes(rec) ? eff.get(rec.body.target) : undefined;
-    if (root !== undefined) out.add(root);
-  }
-  return out;
+function pinsIndex(r) {                                   // the roots of every lineage the gate covers
+  return new Set(gated(r).keys());
 }
 
 const count = (into, key) => { into[key] = (into[key] || 0) + 1; };
@@ -509,7 +503,7 @@ function overlaySummary(o) {
 function pinsSummary(c) {
   const by = {};
   for (const x of c.lineages.values()) count(by, x.verdict);
-  return { config: c.config, claims: c.lineages.size, verdicts: sorted(by),
+  return { claims: c.lineages.size, verdicts: sorted(by),
            files: { asked: c.asked, fetched: c.fetched, absent: c.absent, refused: c.asked - c.fetched - c.absent }, compared: c.compared,
            refused: c.refused };
 }
