@@ -6,6 +6,19 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The browser reader reads beyond the one store. Pins on request (`--pins`, a checkbox, `&pins=1`; off by default):
+  each file a claims checker's acceptance names is fetched at its path under the store's address and hashed as a Git
+  blob, and each claim the freshness gate covers reads ELIGIBLE or STALE by the gate's rule (`warrant.drift`: the
+  checker's signed accepts, the closure rule, any acceptance fresh); a fetch that fails other than by 404 answers
+  nothing (PINS_NOT_CHECKED, the failure named); a moved file, a symlink's entry and a non-SHA-1 blob read STALE where
+  the gate reads ELIGIBLE. Other stores (`--with URL`, `&with=`): each assessed alone under its own rules, one that
+  cannot be read named; their admitted attests and challenges on the main store's versions shown as voices from
+  outside, never counted, a rejected one counted as left out. With the reader's own rules, the overlay of
+  `warrant_agent.overlay` (its receiver, #348 included) beside the store's verdict, the lineages that read otherwise
+  listed; it compares no pins. Not established: that the address serves one commit's tree (a regular file replaced by
+  a symlink whose bytes hash to the accepted blob reads ELIGIBLE where the gate reads STALE), and that the stores named
+  hold all that was said. docs/VERIFY.md; impl_js_test J11 (against `warrant.drift.gate`), J12 (against
+  `warrant_agent.overlay`); no mutant (R-JS-MUTANTS): thirty-five mutations run by hand, not held by CI.
 - The board (`python -m warrant.board manifest|plan|sync`): goals and obligations as rows of a GitHub Project, one way.
   The manifest is a pure function of the stores and names their snapshots; statuses are the records' own (`Claimed,
   not accepted` apart from `Accepted`, never one "Done"); a hand edit on the board is undone and named by the next

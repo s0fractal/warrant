@@ -2,7 +2,7 @@
 // through textContent (the `text` of el() below) or an attribute set by name: no markup is ever built from a string,
 // and the page's policy allows no script but this origin's (reader.html).
 import { utf16, webBackend } from "./warrant.mjs";
-import { fetchStore, lineage, PINS_NOT_CHECKED, read, receiver, rows, summary } from "./reader.mjs";
+import { comparePins, fetchStore, lineage, overlay, PINS_NOT_CHECKED, read, readOthers, receiver, rows, STALE, summary } from "./reader.mjs";
 
 const DEFAULT_BASE = "https://raw.githubusercontent.com/s0fractal/warrant/master/";
 const PAGE = 150;                                         // rows drawn at once; the rest is named and asked for
@@ -30,12 +30,12 @@ const when = (at) => (Number.isInteger(at) ? new Date(at * 1000).toISOString().s
 const pill = (word) => el("span", { class: "pill pill-" + String(word || "none").toLowerCase().replace(/[^a-z]/g, "-"), text: word || "none" });
 const counts = (o) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(" · ") || "none";
 
-let current = null;                                       // {r, base, full}: the store read last
+let current = null;                                       // {r, base, full, pins, with}: the store read last
 let shownRows = PAGE;
 
 function params() {
   const p = new URLSearchParams(location.search);
-  return { base: p.get("base"), full: p.get("full") === "1", l: p.get("l"), schema: p.get("schema") || "", reliance: p.get("reliance") || "" };
+  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: p.getAll("with").filter(Boolean), l: p.get("l"), schema: p.get("schema") || "", reliance: p.get("reliance") || "" };
 }
 
 function href(over) {
@@ -43,16 +43,21 @@ function href(over) {
   const v = { ...now, ...over };
   if (v.base) q.set("base", v.base);
   if (v.full) q.set("full", "1");
+  if (v.pins) q.set("pins", "1");
+  for (const w of v.with ?? []) q.append("with", w);
   if (v.l) q.set("l", v.l);
   if (v.schema) q.set("schema", v.schema);
   if (v.reliance) q.set("reliance", v.reliance);
   return "?" + q.toString();
 }
 
+const same = (p) => current?.base === (p.base || DEFAULT_BASE) && current.full === p.full && current.pins === p.pins
+  && current.with.join("\n") === p.with.join("\n");
+
 function go(over) {                                       // the same page at another address, with no second read
   history.pushState(null, "", href(over));
   const p = params();
-  if (current?.base === (p.base || DEFAULT_BASE) && current.full === p.full) draw(); else start();
+  if (same(p)) draw(); else start();
 }
 
 function link(text, over, attrs) {
@@ -63,6 +68,64 @@ function link(text, over, attrs) {
 
 function fact(name, ...value) {
   return [el("dt", { text: name }), el("dd", {}, ...value)];
+}
+
+function pinsLine(p) {
+  if (p.config !== "present") return p.config === "absent" ? "compared nothing: this address serves no .warrant/claims.json, so no claim is gated"
+    : `compared nothing: .warrant/claims.json was not fetched (${p.refused.join("; ")})`;
+  return `${p.claims} gated claim(s): ${counts(p.verdicts)} · files: ${p.files.fetched} fetched of ${p.files.asked} asked for, `
+    + `${p.files.absent} not at their path, ${p.files.refused} not fetched · ${p.compared} comparison(s)`
+    + (p.refused.length ? ` · not fetched: ${p.refused.join("; ")}` : "");
+}
+
+const pinsWhy = {
+  [PINS_NOT_CHECKED]: " accepted on files at a commit; this reader compared no tree for it, so it does not say ELIGIBLE",
+  [STALE]: " no acceptance of the claims checker names the bytes this address serves (or a file it names moved, or is a symlink: see below)",
+};
+
+function drawPins(c) {
+  if (!c) return null;
+  return [el("h3", { text: `Pins: ${c.verdict}, compared with the tree at this address` }),
+    el("ul", { class: "said" }, c.acceptances.map((a) => el("li", {},
+      `acceptance `, short(a.attest), a.commit ? [" at ", short(a.commit)] : null, ` · ${a.verdict}`,
+      el("ul", {}, a.files.map((f) => el("li", { class: "small", text: [f.verdict, f.path, f.detail].filter(Boolean).join(" ") })))))),
+  ];
+}
+
+function drawOthers(s) {
+  if (!s.others) return [];
+  const o = s.others;
+  return [
+    fact("other stores", el("ul", {}, o.stores.map((x) => el("li", {}, `${x.name} · ${x.address} · `,
+      x.read ? `read, ${x.records} records, under its own rules` : el("strong", { text: `not read: ${x.why}` }))))),
+    fact("voices from outside", `${o.voices} on ${o.lineages} lineage(s), counted by this store's rules: none`
+      + (o.left_out ? ` · ${o.left_out} left out (their own store rejects them)` : "")),
+    fact("for me", overlayLine(s.overlay)),
+  ];
+}
+
+function overlayLine(v) {
+  if (!v) return "no overlay";
+  if (v.why) return `no overlay: ${v.why} (paste a trust and a profile under "Judge it under my own rules")`;
+  return [`the union of ${v.stores.length} store(s) under your rules: ${v.changed} lineage(s) read otherwise for you · identity `, short(v.identity),
+    v.unread.length ? ` · not read: ${v.unread.join(", ")}` : null,
+    v.held.length ? ` · key bindings not admitted: ${v.held.map((h) => `${h.actor} (${h.why === "role" ? "your rules give it a role: bind its key yourself" : "the stores disagree"})`).join("; ")}` : null,
+    ` · ${v.pins}`,
+    el("ul", {}, v.rows.map((x) => el("li", {}, link(x.lineage.slice(0, 12), { l: x.lineage }),
+      ` ${x.schema}: in the store ${x.store.state || "none"} ${x.store.shown} → for you ${x.reader ? `${x.reader.state || "none"} ${x.reader.shown}` : "not in the union under your rules"}`)))];
+}
+
+function drawOutside(out, ov) {
+  if (!out) return null;
+  return [el("h3", { text: `Voices from outside (${out.voices.length}, in ${out.stores} store(s)): not counted by this store's rules` }),
+    out.left_out ? el("p", { class: "small", text: `${out.left_out} record(s) left out: their own store rejects them` }) : null,
+    out.voices.length ? el("ul", { class: "said" }, out.voices.map((v) => el("li", {},
+      `${v.store} · ${v.actor} · ${v.kind === "challenge" ? "challenge" : v.verdict || "attest"} · ${when(v.at)} · on `, short(v.target),
+      v.statement ? el("div", { class: "statement", text: v.statement }) : null))) : null,
+    ov ? el("p", { class: "small" }, ...[ov.why ? `For me: no overlay: ${ov.why}` : ov.same ? "For me: it reads the same under your rules."
+      : [`For me: in the store ${ov.store.state || "none"} ${ov.store.shown} → for you ${ov.reader ? `${ov.reader.state || "none"} ${ov.reader.shown}` : "absent"}`,
+         ov.challenges.length ? [" · challenges that stand for you: ", ...ov.challenges.flatMap((c) => [short(c), " "])] : null,
+         ov.accepted_by.length ? ` · accepted for you by: ${ov.accepted_by.join(", ")}` : null]].flat(2)) : null];
 }
 
 function drawFloor() {
@@ -77,7 +140,9 @@ function drawFloor() {
       fact("blobs", `${s.blobs.read} read of ${s.blobs.asked} asked for` + (s.blobs.missing ? ` · ${s.blobs.missing} named and not served` : "")),
       fact("completeness", `${s.completeness}: no store can show that it holds everything said about its records`),
       fact("reliance", counts(s.reliance)),
-      s.reliance[PINS_NOT_CHECKED] ? fact("not checked", s.not_checked[0]) : [],
+      s.pins ? fact("pins", pinsLine(s.pins)) : [],
+      s.reliance[PINS_NOT_CHECKED] || s.pins ? fact("not checked", s.not_checked.join(" · ")) : [],
+      ...drawOthers(s),
       fact("schemas", s.schemas.join(", ") || "none", s.schemas_pending.length ? ` (pending: ${s.schemas_pending.length})` : null),
       fact("writers' forks", s.chain_forks.join(", ") || "none"),
       fact("problems", s.problems.length ? s.problems.map((p) => p[0]).join(", ") : "none"),
@@ -109,7 +174,8 @@ function drawList() {
       el("li", {},
         link(x.title || "(no statement)", { l: x.id }, { class: "row-title" }),
         el("div", { class: "row-meta" }, pill(x.reliance), ` ${x.schema} · ${x.state || "no effective version"} · ${x.actor} · ${when(x.at)}`,
-           x.standing ? el("strong", { text: ` · ${x.standing} standing challenge${x.standing === 1 ? "" : "s"}` }) : null)))),
+           x.standing ? el("strong", { text: ` · ${x.standing} standing challenge${x.standing === 1 ? "" : "s"}` }) : null,
+           x.outside ? ` · ${x.outside} voice${x.outside === 1 ? "" : "s"} from outside, not counted` : null)))),
     more,
   );
   box.hidden = false;
@@ -133,13 +199,15 @@ function drawLineage() {
     el("h2", { class: "statement-title", text: d.versions.at(-1).title || d.versions[0].title || "(no statement)" }),
     el("dl", { class: "facts floor" },
       fact("state", f.state || "none: no version is effective yet"),
-      fact("reliance", pill(f.reliance), f.reliance === PINS_NOT_CHECKED ? " accepted on files at a commit; this reader compared no checkout, so it does not say ELIGIBLE" : null),
+      fact("reliance", pill(f.reliance), Object.hasOwn(pinsWhy, f.reliance) ? pinsWhy[f.reliance] : null),
       fact("standing challenges", f.standing.length ? el("ul", {}, f.standing.map((c) => el("li", {}, `${c.actor}: `, el("span", { text: c.statement || "(no statement)" })))) : "none in this store"),
       f.forks ? fact("fork", `${f.forks}: two versions succeed one; the lineage has no leaf`) : [],
       fact("completeness", `${f.completeness}: an objection held elsewhere is not seen here`),
       fact("rules", f.rules === "reader" ? "yours" : "the publisher's own"),
       fact("lineage", short(f.id), ` · ${f.schema}`),
     ),
+    drawPins(f.pins),
+    drawOutside(f.outside, f.overlay),
     el("h3", { text: `Versions, newest first (${d.versions.length})` }),
     d.versions.map((v) => el("article", { class: "version" + (v.effective ? " effective" : "") },
       el("p", { class: "row-meta" }, short(v.id), ` · ${v.actor} · ${when(v.at)} · state ${v.state || "none"}`,
@@ -185,11 +253,21 @@ async function run() {
   try {
     const backend = webBackend();
     const started = performance.now();
-    const store = await fetchStore(base, backend, { full: p.full, fetcher: (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" }) });
+    const fetcher = (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+    const store = await fetchStore(base, backend, { full: p.full, fetcher });
     say(`Assessing ${store.lines.length} lines …`);
     const source = new Uint8Array(await (await fetch(new URL("./warrant.mjs", import.meta.url))).arrayBuffer());
     const r = await read(store, receiver(store.doc, mine), backend, source);
-    current = { r, base, full: p.full };
+    if (p.pins) {
+      say(`Comparing pins with the tree at ${base} …`);
+      await comparePins(r, base, { fetcher });
+    }
+    if (p.with.length) {
+      say(`Reading ${p.with.length} other store(s) …`);
+      r.others = await readOthers(p.with, backend, source, { fetcher });
+      await overlay(r, base, backend, source);
+    }
+    current = { r, base, full: p.full, pins: p.pins, with: p.with };
     shownRows = PAGE;
     say(`Read and assessed in ${((performance.now() - started) / 1000).toFixed(1)} s.`);
     draw();
@@ -209,15 +287,17 @@ function start() {
 
 $("ask").addEventListener("submit", (e) => {
   e.preventDefault();
-  history.pushState(null, "", href({ base: $("base").value.trim(), full: $("full").checked, l: null, schema: "", reliance: "" }));
+  history.pushState(null, "", href({ base: $("base").value.trim(), full: $("full").checked, pins: $("pins").checked, with: $("with").value.split("\n").map((x) => x.trim()).filter(Boolean), l: null, schema: "", reliance: "" }));
   start();
 });
 addEventListener("popstate", () => {
   const p = params();
-  if (current?.base === (p.base || DEFAULT_BASE) && current.full === p.full) draw(); else if (p.base) start();
+  if (same(p)) draw(); else if (p.base) start();
 });
 
 const first = params();
 $("base").value = first.base || DEFAULT_BASE;
 $("full").checked = first.full;
+$("pins").checked = first.pins;
+$("with").value = first.with.join("\n");
 if (first.base) start();
