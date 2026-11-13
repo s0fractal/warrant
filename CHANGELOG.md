@@ -23,6 +23,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   workflow token starts wakes no workflow_run, and GitHub mostly skips the gate's schedule, so a green verdicts pull
   request waited for a person to dispatch the gate (#379).
 - `warrant --help` lists `say`.
+- The gate approves a run GitHub holds for approval (action_required) at the head of a pull request it assessed as
+  verdicts only (a branch of this repository, refused for nothing but its checks, its head still the one assessed),
+  of a required workflow only: GitHub held such runs for the claims checker's pull requests when they were opened too
+  (#389), and the owner approved each by hand. Whether GitHub lets the workflow's token approve is learnt from the
+  first try: the job summary says what it answered. E93; mutants G122–G125.
 - CI runs the mutants in six parts, not four: a part ran 22 to 28 minutes of its 30 (#385, #386), and every mutant
   added eats the margin; the wall time does not grow.
 - The door's commands use the released package instead of a checkout (`site/voice.mjs`, `site/object.html`, the

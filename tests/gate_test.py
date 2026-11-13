@@ -1243,6 +1243,40 @@ def refresh_cases():
           and "FAILED" in got_during[0][1] and not closed(during) and not deleted(during)
           and closed(after) and not deleted(after) and "NOT deleted" in got_after[0][1] and "FAILED" not in got_after[0][1],
           (got_before, got_during, got_after))
+    # E93: a run GitHub holds for approval at a verdicts-only head is approved by the gate, and no other
+    class Held:
+        def __init__(self, live=None, state="open"):
+            self.calls, self.live, self.state = [], live, state
+
+        def api(self, path, method="GET", body=None, pages=False):
+            self.calls.append((path, method))
+            if path.startswith("pulls/"):
+                return {"state": self.state, "head": {"sha": self.live or head}}
+            if path.startswith("actions/runs?"):
+                return {"workflow_runs": [
+                    {"id": 41, "path": ".github/workflows/ci.yml", "conclusion": "action_required", "head_sha": head},
+                    {"id": 42, "path": ".github/workflows/other.yml", "conclusion": "action_required", "head_sha": head},
+                    {"id": 43, "path": ".github/workflows/ci.yml", "conclusion": "success", "head_sha": head}]}
+            return {}
+    approve = lambda g: [c[0] for c in g.calls if c[1] == "POST"]
+    approve_held = getattr(GT, "approve_held", lambda *_: [])           # absent before #389's fix: nothing approved
+    held = Held()
+    got = approve_held(b, held, [a])
+    moved_h, closed_h, plain_h, other_h = Held(live="c" * 40), Held(state="closed"), Held(), Held()
+    approve_held(b, moved_h, [a])
+    approve_held(b, closed_h, [a])
+    approve_held(GT.Base(plain.r.root, plain.base), plain_h, [plain.assess()])
+    refused = types.SimpleNamespace(pr=a.pr, facts=a.facts, shared=a.shared, reasons=[("OWNER_VETO", "x")])
+    approve_held(b, other_h, [refused])
+    code_h = Held()                                                     # code changes, accepted, waiting for its checks only
+    approve_held(b, code_h, [types.SimpleNamespace(pr=a.pr, facts={}, shared=[], reasons=[("CHECK_MISSING", "x")])])
+    check("E93 the gate approves the run GitHub holds for approval (action_required) at the head of a pull request it "
+          "assessed as verdicts only, of a required workflow only, and none for a head that moved, a closed pull "
+          "request, one that is not verdicts only (code waiting for its checks alone included), or one refused for more than its "
+          "checks (#389: held when opened)",
+          approve(held) == ["actions/runs/41/approve"] and got and "41" in got[0][1]
+          and approve(moved_h) == approve(closed_h) == approve(plain_h) == approve(other_h) == approve(code_h) == [],
+          (got, held.calls, moved_h.calls, plain_h.calls, other_h.calls))
 
 
 def revert_pending_cases():

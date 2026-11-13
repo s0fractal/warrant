@@ -1283,6 +1283,41 @@ def refresh_verdicts(root, b, gh, found):
     return out
 
 
+HELD = {"CHECK_MISSING", "CHECK_PENDING", "CHECK_RED"}
+
+
+def approve_held(b, gh, found):
+    """[(pr, outcome)]: the gate approves a pull_request run GitHub holds for approval (action_required) at the head of
+    a pull request it assessed as verdicts only, from a branch of this repository, refused for nothing but its checks,
+    whose head is still the one assessed; of the required workflows only. Such a head adds records and blobs alone, so
+    the run is the base's workflow on data. GitHub held these runs for the bot's pull requests when they were opened as
+    well as when their branch moved (#389, 2026-11-13, after #379 and #382), and the owner approved each by hand.
+    Whether GitHub lets the workflow's token approve is not known before it is tried: the outcome says what it
+    answered."""
+    out = []
+    required = {c["workflow"] for c in b.gate["required"]}
+    for a in found:
+        if not a.facts.get("verdicts") or a.pr.get("head_repo") != b.repository:
+            continue
+        if {c for c, _ in a.reasons + a.shared} - HELD:
+            continue
+        n, head = a.pr["number"], a.pr["head"]
+        try:
+            p = gh.api(f"pulls/{_number(n)}")
+            if p.get("state") != "open" or (p.get("head") or {}).get("sha") != head:
+                continue                                              # closed, or moved since it was assessed
+            runs = gh.api(f"actions/runs?head_sha={_sha(head)}&event=pull_request&per_page=100").get("workflow_runs", [])
+            for w in runs:
+                if w.get("conclusion") == "action_required" and w.get("path") in required and w.get("head_sha") == head:
+                    gh.api(f"actions/runs/{int(w['id'])}/approve", "POST")
+                    out.append((n, f"approved the held run {int(w['id'])} of {w.get('path')} at {head[:12]}"))
+        except Refused as e:
+            out.append((n, f"approving a held run FAILED: {e}"))
+        except (KeyError, TypeError, ValueError) as e:
+            out.append((n, f"approving a held run FAILED: an answer not read ({type(e).__name__})"))
+    return out
+
+
 def _branch_tip(gh, name):
     """The commit the branch `name` is at on GitHub, or None when there is no such branch; another refusal is raised."""
     try:
@@ -1642,6 +1677,7 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
     if merge:
         away = announce_away(b, gh, until)
         noticed = (notify(b, found, gh) + enforce_brakes(root, b, gh, found) + refresh_verdicts(root, b, gh, found)
+                   + approve_held(b, gh, found)
                    + ([(0, away)] if away else []))
         first = next((x for x in found if x.eligible and x.facts.get("revert")), None) or next((x for x in found if x.eligible), None)
         merged = merge_one(b, first, gh) if first is not None else None
