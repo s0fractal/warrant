@@ -81,7 +81,7 @@ def _pairs(pairs):
     d = {}
     for k, v in pairs:
         if k in d:
-            raise NotCanonical(f"duplicate member {k!r}")
+            raise NotCanonical(f"duplicate member {json.dumps(k, ensure_ascii=True)}")
         d[k] = v
     return d
 

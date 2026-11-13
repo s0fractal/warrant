@@ -6,6 +6,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- **[protocol]** Reasons no longer depend on the interpreter (R-INTERPRETER narrowed): a value a reason quotes (a
+  schema, an actor, a state, body member names, a duplicate member, blob names) is written as JSON with every UTF-16 unit
+  outside space..~ escaped and keys in code point order, not as Python's `repr`; a package's blobs are read by the
+  format's own base64 rule (RFC 4648 §4, its one padded form) with the single sentence «a blob is not base64», not by
+  binascii's words of the running Python. `impl-js/` gives the same bytes; its vectors no longer depend on CPython
+  3.13. Reports with no problem whose reason quotes a value are unchanged. Tests U29 (three blobs), U44; mutants UM43 (the agent's refusal
+  sentence), UM54, UM55.
 - A writer's chain forks taken in (`warrant/chains.py`, `warrant join --actor A`): §7 lists every fork, and a writer
   that files on two Git branches forks its own chain at every merge (warrant's store: 16 forks, 11 of claude and 5 of
   codex), so a writer showing two histories to two readers read like any merge. A `joined` attest by the writer, on

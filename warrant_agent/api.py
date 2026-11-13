@@ -285,7 +285,7 @@ def _unpack(pkg, limit):
 def _refusal(e):
     if e.code == "TOO_LARGE":
         return AgentError("RESOURCE_LIMIT", "the package exceeds the workspace's store_bytes")
-    return AgentError("BAD_REQUEST", f"{e}: {e.detail}" if e.code == "BAD_BASE64" else str(e))
+    return AgentError("BAD_REQUEST", str(e))
 
 
 def handoff(cfg, req):

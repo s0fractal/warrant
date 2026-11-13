@@ -162,6 +162,31 @@ export function pyRepr(v) {
   return "{" + keysOf(v).map((k) => pyReprStr(k) + ": " + pyRepr(v[k])).join(", ") + "}";
 }
 const pyStr = (v) => (isStr(v) ? v : pyRepr(v));
+// How a reason quotes a value: Python's json.dumps(v, ensure_ascii=True, separators=(",", ":"), sort_keys=True).
+// Every UTF-16 unit outside space..~ is escaped (\\uXXXX, lowercase), so no interpreter's Unicode tables enter
+// the bytes (R-INTERPRETER); keys in code point order, as Python sorts them.
+const BS = String.fromCodePoint(0x5c);         // the backslash, named once
+const ESC = { '"': BS + '"', [BS]: BS + BS, "\b": BS + "b", "\f": BS + "f", "\n": BS + "n", "\r": BS + "r", "\t": BS + "t" };
+export function quoteStr(s) {
+  let out = '"';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i], c = s.charCodeAt(i);       // NOSONAR S7758: a UTF-16 unit, as Python's ensure_ascii escapes it
+    if (has(ESC, ch)) out += ESC[ch];
+    else if (c < 0x20 || c > 0x7e) out += BS + "u" + c.toString(16).padStart(4, "0");
+    else out += ch;
+  }
+  return out + '"';
+}
+export function quote(v) {
+  if (v === null || v === undefined) return "null";
+  if (v === true) return "true";
+  if (v === false) return "false";
+  if (typeof v === "number" || typeof v === "bigint") return String(v);
+  if (isStr(v)) return quoteStr(v);
+  if (v instanceof PyFloat) return v.text;
+  if (Array.isArray(v)) return "[" + v.map(quote).join(",") + "]";
+  return "{" + Object.keys(v).sort(cmp).map((k) => quoteStr(k) + ":" + quote(v[k])).join(",") + "}";
+}
 
 // ---------------------------------------------------------------- JSON reading (jcs.loads, and json.loads for a configuration)
 
@@ -254,7 +279,7 @@ function parseJSON(s, strict) {
     }
     const o = dict();
     for (const [k, v] of pairs) {
-      if (strict && has(o, k)) throw new NotCanonical(`duplicate member ${pyReprStr(k)}`);
+      if (strict && has(o, k)) throw new NotCanonical(`duplicate member ${quoteStr(k)}`);
       o[k] = v;
     }
     if (!strict) Object.defineProperty(o, ORDER, { value: [...new Set(pairs.map(([k]) => k))] });   // a dict's order, where Python's matters
@@ -638,15 +663,15 @@ function bodyProblem(r, s) {
   let f = s.fields;
   if ((r.kind === "attest" || r.kind === "challenge") && !has(f, "target")) { f = Object.assign(dict(), f); f.target = "ref"; }
   const extra = keysOf(b).filter((k) => !has(f, k)), missing = keysOf(f).filter((k) => !f[k].endsWith("?") && !has(b, k));
-  if (extra.length || missing.length) return `members ${pyRepr(sorted(extra))} are not in ${s.name}, or ${pyRepr(sorted(missing))} are missing`;
+  if (extra.length || missing.length) return `members ${quote(sorted(extra))} are not in ${s.name}, or ${quote(sorted(missing))} are missing`;
   const badTypes = keysOf(b).filter((k) => !typeOk(f[k], b[k]));
-  if (badTypes.length) return `members ${pyRepr(badTypes)} do not have their types in ${s.name}`;
+  if (badTypes.length) return `members ${quote(badTypes)} do not have their types in ${s.name}`;
   for (const x of bodyRefs(f, b)) if (!r.refs.includes(x)) return "a reference in the body is not in refs";
   if (r.kind !== "entity") return null;
   const state = getOr(b, "state", null);
-  if (!isObj(s.states) || !(isStr(state) && has(s.states, state))) return `state ${pyRepr(state)} is not a state of ${s.name}`;
+  if (!isObj(s.states) || !(isStr(state) && has(s.states, state))) return `state ${quote(state)} is not a state of ${s.name}`;
   const req = s.states[state];
-  if (req !== null && weaker(r.guard, req)) return `its guard is weaker than ${s.name}'s for state ${pyRepr(state)}`;
+  if (req !== null && weaker(r.guard, req)) return `its guard is weaker than ${s.name}'s for state ${quote(state)}`;
   return null;
 }
 
@@ -811,7 +836,7 @@ class View {
     for (const [i, r] of this.sortedRecs()) {
       if (r.kind === "schema" || (r.schema === null && r.kind !== "entity") || (r.schema === MIGRATION && r.kind === "attest")) continue;
       const s = this.schemas.get(r.schema);
-      const why = s === undefined ? `schema ${pyRepr(r.schema)} is not one this receiver counts` : bodyProblem(r, s);
+      const why = s === undefined ? `schema ${quote(r.schema)} is not one this receiver counts` : bodyProblem(r, s);
       if (why) { this.problem("INVALID", i, why); this.drop(i, `INVALID: ${why}`); }
     }
   }
@@ -857,7 +882,7 @@ class View {
       this.problem("LINEAGE_BROKEN", x, `it succeeds ${p.slice(0, 12)}, which is no admitted version of its kind and schema`);
     } else if (!maySucceed(r, this.recs.get(rt))) {
       rootOf.set(x, null);
-      this.problem("LINEAGE_NOT_AUTHOR", x, `filed by ${pyRepr(r.actor)}; the lineage is ${pyRepr(this.recs.get(rt).actor)}'s`);
+      this.problem("LINEAGE_NOT_AUTHOR", x, `filed by ${quote(r.actor)}; the lineage is ${quote(this.recs.get(rt).actor)}'s`);
     } else {
       rootOf.set(x, rt);
       if (r.at < this.recs.get(p).at) this.problem("LINEAGE_BACKDATED", x, "dated before the version it succeeds");
@@ -1051,38 +1076,24 @@ export async function codeIdentity(source, backend) {
 
 // ---------------------------------------------------------------- handoff inspect, alone (warrant_agent/api.py)
 
-// base64.b64decode(s, validate=True) as CPython 3.15 answers it, its refusal words included (binascii's strict mode).
-const B64 = /^[A-Za-z0-9+/]$/;
-function pyTypeName(v) {
-  return v === null ? "NoneType" : typeof v === "boolean" ? "bool" : isInt(v) ? "int" : v instanceof PyFloat ? "float" : Array.isArray(v) ? "list" : "dict";
+// A blob in a package: base64 of RFC 4648 §4 in its one padded form (warrant/verify.py _BASE64), a rule of the format and
+// not of any interpreter's decoder (R-INTERPRETER): a length that is a multiple of four, the alphabet only, then at most
+// two `=`. Read by a loop, not a regexp: V8 backtracks a repeated group on a stack that grows with the blob, and a
+// valid 12-MiB blob overflowed it (Codex F1 on #342 at 3efb118a).
+function isBase64(s) {
+  if (!isStr(s) || s.length % 4 !== 0) return false;
+  let end = s.length;
+  if (s.endsWith("==")) end -= 2;
+  else if (s.endsWith("=")) end -= 1;
+  for (let i = 0; i < end; i++) {
+    const c = s.codePointAt(i);
+    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 43 || c === 47)) return false;
+  }
+  return true;
 }
 function b64decode(s) {
-  const no = (why) => { throw new AgentError("BAD_REQUEST", `a blob is not base64: ${why}`); };
-  if (!isStr(s)) no(`argument should be a bytes-like object or ASCII string, not '${pyTypeName(s)}'`);
-  if (/[^\x00-\x7f]/.test(s)) no("string argument should contain only ASCII characters");
-  let qp = 0, pads = 0, started = false, full = 0, end = s.length;
-  const count = () => `Invalid base64-encoded string: number of data characters (${full * 4 + 1}) cannot be 1 more than a multiple of 4`;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (ch === "=") {
-      if (qp === 0) no(i === 0 ? "Leading padding not allowed" : "Excess padding not allowed");
-      if (qp === 1) no(count());
-      started = true;
-      if (qp + ++pads >= 4) {
-        if (i + 1 < s.length) no(s[i + 1] === "=" ? "Excess padding not allowed" : B64.test(s[i + 1]) ? "Excess data after padding" : "Only base64 data is allowed");
-        end = i + 1;
-        break;
-      }
-      continue;
-    }
-    if (!B64.test(ch)) no("Only base64 data is allowed");
-    if (started) no("Discontinuous padding not allowed");
-    qp = (qp + 1) % 4;
-    if (qp === 0) full++;
-  }
-  if (end === s.length && qp === 1) no(count());
-  if (end === s.length && qp !== 0 && !(started && qp + pads >= 4)) no("Incorrect padding");
-  const bin = atob(s.slice(0, end));
+  if (!isBase64(s)) throw new AgentError("BAD_REQUEST", "a blob is not base64");
+  const bin = atob(s);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
@@ -1182,7 +1193,7 @@ async function readStore(dir, backend) {
   if (fs.existsSync(bdir) && fs.statSync(bdir).isDirectory()) for (const n of sorted(fs.readdirSync(bdir))) blobs.set(n, new Uint8Array(fs.readFileSync(path.join(bdir, n))));
   const bad = [];
   for (const [h, b] of blobs) if ((await backend.sha256(b)) !== h) bad.push(h);
-  if (bad.length) throw new Refused(`blobs not named by their hash: ${pyRepr(bad.slice(0, 3))}`);
+  if (bad.length) throw new Refused(`blobs not named by their hash: ${quote(bad.slice(0, 3))}`);
   return { lines, blobs };
 }
 
