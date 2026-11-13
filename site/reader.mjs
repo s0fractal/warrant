@@ -9,6 +9,7 @@
 //
 //   node site/reader.mjs --base URL [--full] [--pins] [--with URL]... [--config RULES.json] [--lineage ID]   # canonical JSON
 //        [--mark FILE] [--write-mark FILE]     what changed since the mark in FILE; write the mark of now to FILE
+//        [--actor NAME]                        what waits for NAME (frontier(): warrant.graph.frontier)
 //
 // Two ways to read a store's blobs:
 //   quick (the default)   only the blobs the assessment itself reads: the map of each migration (docs/V3.md §9).
@@ -34,7 +35,7 @@
 //
 // What changed for me (`--mark FILE`, changes()): the lineages whose view differs since the reader marked the store as
 // seen (makeMark: the page keeps the mark in localStorage, the CLI in a file), the rest of the new records counted.
-import { assessPrepared, canon, canonStr, codeIdentity, hex64, loadsLenient, prepare, Refused, utf16 } from "./warrant.mjs";
+import { assessPrepared, canon, canonStr, cmp, codeIdentity, hex64, loadsLenient, prepare, Refused, utf16 } from "./warrant.mjs";
 
 
 export const MIGRATION = "migration@1";
@@ -617,13 +618,28 @@ function unb64(s) {                                       // only the one form b
 // record's bytes are not held, so the past never has it: it is counted, its lineage not reproduced),
 // unverified: present records whose group did not verify (counted as new)}: `entry` against the `present` ids.
 async function unmark(entry, present, backend) {
-  const pre = unb64(entry.ids), dig = unb64(entry.groups), where = new Map(), prefixes = [];
+  const { where, prefixes } = markIndex(entry, unb64(entry.ids));
+  const { cand, hit } = candidates(where, present);
+  const { seen, doubt } = await verified(cand, entry, unb64(entry.groups), backend);
+  return { seen, marked: entry.n, gone: prefixes.filter((p) => !hit.has(p)).length, unverified: [...doubt].filter((i) => !seen.has(i)).length };
+}
+
+// {where: {marked prefix: [the groups holding it]}, prefixes: every marked prefix, in the mark's order} of `entry`,
+// whose prefixes are `pre` (its decoded `ids`).
+function markIndex(entry, pre) {
+  const where = new Map(), prefixes = [];
   for (let k = 0; k < entry.n; k++) {
     const p = bytesHex(pre.subarray(k * PREFIX, (k + 1) * PREFIX)), g = Math.floor(k / GROUP);
     prefixes.push(p);
     if (!where.has(p)) where.set(p, []);
     if (!where.get(p).includes(g)) where.get(p).push(g);
   }
+  return { where, prefixes };
+}
+
+// {cand: {group: the present ids whose prefix it holds}, hit: the marked prefixes a present id has}: which present
+// record each group may be, before any digest says it is.
+function candidates(where, present) {
   const cand = new Map(), hit = new Set();
   for (const id of present) {
     const gs = where.get(id.slice(0, 2 * PREFIX));
@@ -631,6 +647,12 @@ async function unmark(entry, present, backend) {
     hit.add(id.slice(0, 2 * PREFIX));
     for (const g of gs) { if (!cand.has(g)) cand.set(g, []); cand.get(g).push(id); }
   }
+  return { cand, hit };
+}
+
+// {seen, doubt}: the candidates of each group found whole and hashing to its digest (`dig`, the decoded `groups`),
+// and those of every other group: a group that does not verify calls none of its records seen.
+async function verified(cand, entry, dig, backend) {
   const seen = new Set(), doubt = new Set();
   for (const [g, ids] of cand) {
     ids.sort(utf16);
@@ -638,7 +660,7 @@ async function unmark(entry, present, backend) {
     const ok = ids.length === size && (await groupDigest(ids, backend)) === bytesHex(dig.subarray(g * 32, (g + 1) * 32));
     for (const id of ids) (ok ? seen : doubt).add(id);
   }
-  return { seen, marked: entry.n, gone: prefixes.filter((p) => !hit.has(p)).length, unverified: [...doubt].filter((i) => !seen.has(i)).length };
+  return { seen, doubt };
 }
 
 // Why `m` is no mark this reader can read, or null.
@@ -755,31 +777,62 @@ export function difference(a, b) {
 // store under its own); with pins compared now (r.compared), the past's are compared with the same tree (`fetcher`:
 // memoFetch, to fetch nothing twice). An other store the mark does not hold is read as empty then: all of it is new.
 export async function changes(r, mark, backend, source, { base, fetcher = globalThis.fetch } = {}) {
-  const root = norm(base), none = (why) => ({ mark: null, why });
-  if (mark === null || mark === undefined) return none("no mark yet: nothing is compared until you mark this store as seen");
+  const root = norm(base);
+  const why = await markRefusal(r, mark, root, backend);
+  if (why) return { mark: null, why };
+  const { past, stores } = await pastOf(r, mark, root, backend, source);
+  if (r.compared) await comparePins(past, root, { fetcher });
+  const before = viewsOf(past), after = viewsOf(r);
+  const { fresh, touched } = newRecords(r, past);
+  const { listed, accounted } = changedLineages(r, before, after, fresh, touched);
+  return { mark: { at: mark.at, base: root, rules: mark.rules, stores }, new: fresh.size, listed,
+           quiet: [...fresh].filter((i) => !accounted.has(i)).length };
+}
+
+// Why `mark` cannot be compared with `r` (read from `root`), or null: none yet, unreadable, of another store, of other
+// rules, or holding nothing of this store.
+async function markRefusal(r, mark, root, backend) {
+  if (mark === null || mark === undefined) return "no mark yet: nothing is compared until you mark this store as seen";
   const bad = markProblem(mark);
-  if (bad) return none(`the mark cannot be read: ${bad}`);
-  if (mark.base !== root) return none(`the mark is of another store (${mark.base})`);
-  if (mark.rules !== (await rulesId(r, backend))) return none("the mark was set under other rules: a mark belongs to the rules it was read under, and is not used under these");
-  if (!mark.stores[root]) return none("the mark holds nothing of this store");
+  if (bad) return `the mark cannot be read: ${bad}`;
+  if (mark.base !== root) return `the mark is of another store (${mark.base})`;
+  if (mark.rules !== (await rulesId(r, backend))) return "the mark was set under other rules: a mark belongs to the rules it was read under, and is not used under these";
+  if (!mark.stores[root]) return "the mark holds nothing of this store";
+  return null;
+}
+
+// {past, stores}: the marked subset of the main store assessed under `r`'s rules, with (when `r` read others) the
+// marked subset of each other store under its own; `stores` the count of each against its mark entry.
+async function pastOf(r, mark, root, backend, source) {
   const m = await unmark(mark.stores[root], r.recs.keys(), backend);
   const past = await read(await subsetOf(r.store, m.seen, backend), { ...r.rules, whose: r.whose }, backend, source);
   const stores = [{ address: root, marked: m.marked, gone: m.gone, unverified: m.unverified, new: r.recs.size - past.recs.size }];
   if (r.others) {
     past.others = [];
     for (const o of r.others) {
-      if (!o.r) { past.others.push(o); continue; }
-      const e = mark.stores[norm(o.address)];
-      const mo = e ? await unmark(e, o.r.recs.keys(), backend) : { seen: new Set(), marked: null, gone: 0, unverified: 0 };
-      const pr = await read(await subsetOf(o.r.store, mo.seen, backend), receiver(o.r.store.doc, null), backend, source);
-      past.others.push({ ...o, r: pr });
-      stores.push({ address: norm(o.address), marked: mo.marked, gone: mo.gone, unverified: mo.unverified, new: o.r.recs.size - pr.recs.size });
+      const then = await otherPast(o, mark, backend, source);
+      past.others.push(then.other);
+      if (then.store) stores.push(then.store);
     }
   }
-  if (r.compared) await comparePins(past, root, { fetcher });
-  const before = viewsOf(past), after = viewsOf(r);
-  // the new records and the lineages each touches (an entity of it, an attest or a challenge on one of its versions,
-  // here or in another store): view.py candidates, for the count of those that change nothing
+  return { past, stores };
+}
+
+// {other, store} of one other store: the marked subset of it, read under its own rules (empty when the mark does not
+// hold it: all of it is new), and its count; a store that could not be read now stays as it is, uncounted.
+async function otherPast(o, mark, backend, source) {
+  if (!o.r) return { other: o, store: null };
+  const e = mark.stores[norm(o.address)];
+  const mo = e ? await unmark(e, o.r.recs.keys(), backend) : { seen: new Set(), marked: null, gone: 0, unverified: 0 };
+  const pr = await read(await subsetOf(o.r.store, mo.seen, backend), receiver(o.r.store.doc, null), backend, source);
+  return { other: { ...o, r: pr },
+           store: { address: norm(o.address), marked: mo.marked, gone: mo.gone, unverified: mo.unverified, new: o.r.recs.size - pr.recs.size } };
+}
+
+// {fresh, touched}: the new records (here and in the other stores read) and, by lineage, those each touches (an
+// entity of it, an attest or a challenge on one of its versions) with the latest time among them: view.py candidates,
+// for the count of those that change nothing.
+function newRecords(r, past) {
   const rootOf = new Map();
   for (const [L, lin] of Object.entries(r.rep.lineages)) for (const v of lin.versions) rootOf.set(v, L);
   const fresh = new Set(), touched = new Map();
@@ -792,8 +845,15 @@ export async function changes(r, mark, backend, source, { base, fetcher = global
     t.ids.add(id);
     if (Number.isInteger(rec.at) && (t.at === null || rec.at > t.at)) t.at = rec.at;
   };
-  for (const [id, rec] of r.recs) if (!past.recs.has(id)) touch(id, rec);
-  (r.others ?? []).forEach((o, k) => { if (o.r) for (const [id, rec] of o.r.recs) if (!past.others[k].r.recs.has(id)) touch(id, rec); });
+  const added = (now, then) => { for (const [id, rec] of now.recs) if (!then.recs.has(id)) touch(id, rec); };
+  added(r, past);
+  (r.others ?? []).forEach((o, k) => { if (o.r) added(o.r, past.others[k].r); });
+  return { fresh, touched };
+}
+
+// {listed, accounted}: each lineage whose view differs from `before` to `after`, newest first, and the new records
+// those listings account for (the ones touching a listed lineage, and the new ones named as what appeared).
+function changedLineages(r, before, after, fresh, touched) {
   const listed = [], accounted = new Set();
   for (const L of [...after.keys()].sort(utf16)) {
     const a = before.get(L) ?? null, b = after.get(L), diff = difference(a, b);
@@ -805,8 +865,7 @@ export async function changes(r, mark, backend, source, { base, fetcher = global
                   at: touched.get(L)?.at ?? null, ...diff, before: a ? a.floor : null, after: b.floor });
   }
   listed.sort((x, y) => (y.at ?? 0) - (x.at ?? 0) || utf16(x.lineage, y.lineage));
-  return { mark: { at: mark.at, base: root, rules: mark.rules, stores }, new: fresh.size, listed,
-           quiet: [...fresh].filter((i) => !accounted.has(i)).length };
+  return { listed, accounted };
 }
 
 // The one sentence a page says of `c` (changes()): silence said plainly, never everything presented as changed.
@@ -819,34 +878,100 @@ export function changesLine(c) {
   return `${c.listed.length} lineage(s) changed for you · ${c.quiet} other new record(s) changed nothing you see` + tail;
 }
 
+// ---------------------------------------------------------------- what waits for whom: the frontier of an actor
+//
+// warrant/graph.py frontier, for an actor the reader names (the observer mostly asks it of the agents: "what waits
+// for codex"), under the rules the store was read with (r.rules.profile). Python's rule, as it reads:
+//   roles       the roles the profile gives the actor;
+//   acted       every record an attest or a challenge BY the actor targets: the graph's `attest` and `challenge`
+//               edges (the view: a line whose signature fails is no node, so it is no act of the actor's);
+//   for each lineage, by root in Python's order, its LEAF only (an earlier pending version was replaced by it; a
+//   fork has no leaf and waits for nobody here), when its guard is PENDING:
+//     pending   the leaf is the actor's own version;
+//     attest    else, when the actor has not acted on it, the guard is still short of attests (`short`), requires
+//               no lineage still open (`open` empty), and one of its roles is the actor's: {version, lineage, schema,
+//               waiting};
+//   challenged  the roots of the lineages the actor wrote whose engine reliance is CHALLENGED.
+// No word here is the reader's own (shown(), pins): the frontier is the engine's report, as Python reads it.
+export function frontier(r, actor) {
+  const { rep } = r;
+  const roles = new Set(Object.entries(r.rules.profile.roles).filter(([, actors]) => actors.includes(actor)).map(([role]) => role));
+  const author = new Map(rep.graph.nodes.map((n) => [n[0], n[3]]));
+  const acted = new Set(rep.graph.edges.filter(([a, rel]) => (rel === "attest" || rel === "challenge") && author.get(a) === actor).map((e) => e[2]));
+  const attest = [], pending = [], byRoot = Object.entries(rep.lineages).sort((x, y) => cmp(x[0], y[0]));
+  for (const [root, lin] of byRoot) {
+    const v = lin.leaf, g = v === null ? null : rep.versions[v];
+    if (g?.guard !== "PENDING") continue;
+    if (author.get(v) === actor) pending.push(v);
+    else if (!acted.has(v) && g.short && !g.open.length && g.roles.some((x) => roles.has(x))) {
+      attest.push({ version: v, lineage: root, schema: lin.schema, waiting: g.waiting });
+    }
+  }
+  const challenged = byRoot.filter(([, lin]) => lin.reliance === "CHALLENGED" && lin.actor === actor).map(([root]) => root);
+  return { actor, roles: [...roles].sort(cmp), attest, pending, challenged };
+}
+
+// What a page draws of frontier(): each item with its lineage (a pending version's too) and its one-line name, and
+// how many wait in all.
+export function waitsFor(r, actor) {
+  const f = frontier(r, actor), rootOf = new Map();
+  for (const [L, lin] of Object.entries(r.rep.lineages)) for (const v of lin.versions) rootOf.set(v, L);
+  const named = (lineage, version) => ({ lineage, version, schema: r.rep.lineages[lineage].schema,
+                                         title: title(r.recs.get(version ?? r.rep.lineages[lineage].leaf ?? lineage)) || title(r.recs.get(lineage)) });
+  return { actor, roles: f.roles,
+           attest: f.attest.map((x) => ({ ...named(x.lineage, x.version), waiting: x.waiting })),
+           pending: f.pending.map((v) => named(rootOf.get(v), v)),
+           challenged: f.challenged.map((L) => named(L, null)),
+           count: f.attest.length + f.pending.length + f.challenged.length };
+}
+
+// The key a page keeps a store's mark under in localStorage: one per store address and rules identity (rulesId),
+// shared by the reader and the desk, so that a store marked on one is marked on the other.
+export const markKey = (base, rules) => `warrant-${MARK} ${norm(base)} ${rules}`;
+
+const USAGE = "usage: reader.mjs --base URL [--full] [--pins] [--with URL]... [--config RULES.json] [--lineage ID] [--mark FILE] [--write-mark FILE] [--actor NAME]\n";
+
+// The CLI's options: the value after `name`, every value after a repeated `name`, whether a flag is given.
+function options(argv) {
+  const opt = (name) => { const k = argv.indexOf(name); return k >= 0 ? argv[k + 1] : undefined; };
+  const all = (name) => argv.flatMap((a, k) => (a === name && k + 1 < argv.length ? [argv[k + 1]] : []));
+  return { opt, all, has: (name) => argv.includes(name) };
+}
+
+// A mark file as the CLI reads it: a missing file is no mark yet; one that is not JSON, no mark (changes() says so).
+export function markFile(fs, path) {
+  try { return JSON.parse(fs.readFileSync(path, "utf8")); } catch (e) { return e?.code === "ENOENT" ? null : {}; }
+}
+
+// The reading the CLI answers from: the store at `base` under the rules asked for, its pins and its other stores.
+async function cliRead(o, base, backend, fs) {
+  const store = await fetchStore(base, backend, { full: o.has("--full") });
+  const source = new Uint8Array(fs.readFileSync(new URL("./warrant.mjs", import.meta.url)));
+  const mine = o.opt("--config") ? loadsLenient(fs.readFileSync(o.opt("--config"), "utf8")) : null;
+  const r = await read(store, receiver(store.doc, mine), backend, source);
+  const tree = memoFetch(globalThis.fetch);              // the pins of now and of the past, from one fetch each
+  if (o.has("--pins")) await comparePins(r, base, { fetcher: tree });
+  const others = o.all("--with");
+  if (others.length) {
+    r.others = await readOthers(others, backend, source);
+    await overlay(r, base, backend, source);
+  }
+  return { r, source, tree };
+}
+
 async function main(argv) {
   const fs = await import("node:fs");
   const { nodeBackend } = await import("./warrant.mjs");
   const backend = await nodeBackend();
-  const opt = (name) => { const k = argv.indexOf(name); return k >= 0 ? argv[k + 1] : undefined; };
-  const base = opt("--base");
-  if (!base) { process.stderr.write("usage: reader.mjs --base URL [--full] [--pins] [--with URL]... [--config RULES.json] [--lineage ID] [--mark FILE] [--write-mark FILE]\n"); return 2; }
-  const others = argv.flatMap((a, k) => (a === "--with" && k + 1 < argv.length ? [argv[k + 1]] : []));
+  const o = options(argv), base = o.opt("--base");
+  if (!base) { process.stderr.write(USAGE); return 2; }
   try {
-    const store = await fetchStore(base, backend, { full: argv.includes("--full") });
-    const source = new Uint8Array(fs.readFileSync(new URL("./warrant.mjs", import.meta.url)));
-    const mine = opt("--config") ? loadsLenient(fs.readFileSync(opt("--config"), "utf8")) : null;
-    const r = await read(store, receiver(store.doc, mine), backend, source);
-    const tree = memoFetch(globalThis.fetch);              // the pins of now and of the past, from one fetch each
-    if (argv.includes("--pins")) await comparePins(r, base, { fetcher: tree });
-    if (others.length) {
-      r.others = await readOthers(others, backend, source);
-      await overlay(r, base, backend, source);
-    }
-    let changed = null;
-    if (opt("--mark") !== undefined) {                     // a missing file is no mark yet; one that is not JSON, no mark
-      let m = null;
-      try { m = JSON.parse(fs.readFileSync(opt("--mark"), "utf8")); } catch (e) { m = e?.code === "ENOENT" ? null : {}; }
-      changed = await changes(r, m, backend, source, { base, fetcher: tree });
-    }
-    if (opt("--write-mark") !== undefined) fs.writeFileSync(opt("--write-mark"), JSON.stringify(await makeMark(r, base, backend)) + "\n");
-    const out = opt("--lineage") ? { lineage: lineage(r, opt("--lineage")) }
+    const { r, source, tree } = await cliRead(o, base, backend, fs);
+    const changed = o.opt("--mark") === undefined ? null : await changes(r, markFile(fs, o.opt("--mark")), backend, source, { base, fetcher: tree });
+    if (o.opt("--write-mark") !== undefined) fs.writeFileSync(o.opt("--write-mark"), JSON.stringify(await makeMark(r, base, backend)) + "\n");
+    const out = o.opt("--lineage") ? { lineage: lineage(r, o.opt("--lineage")) }
       : { summary: summary(r), rows: rows(r), ...(changed ? { changes: { ...changed, line: changesLine(changed) } } : {}) };
+    if (o.opt("--actor") !== undefined) out.frontier = frontier(r, o.opt("--actor"));     // only when asked: else as it was
     process.stdout.write(canonStr(out) + "\n");
   } catch (e) {
     if (e instanceof Refused) { process.stdout.write(canonStr({ refused: e.message }) + "\n"); return 2; }

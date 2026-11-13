@@ -236,6 +236,29 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
   built-in lens), no `grounded` member, no default past without a mark (it says there is none instead of using the
   last day), no overlay and no pin rows in the view, and an other store absent from the mark counts as wholly new.
   Not established: that the stores served are all that was said; storage that the browser drops loses the mark.
+- **What waits for whom (`actor=NAME`, `--actor NAME`).** For an actor the reader names (an input on the page,
+  remembered in `localStorage` for both pages; the address wins), under the rules the store was read with, the reader
+  shows `warrant.graph.frontier` as Python computes it (`frontier` in `site/reader.mjs`): the roles the profile gives
+  the actor; of each lineage only its leaf (a fork has none), when its guard is `PENDING`: the actor's own version is
+  pending; any other it may attest when the actor filed no attest or challenge on it (the graph's `attest` and
+  `challenge` edges: a line its signature rejects is no act), the guard is still short of attests, requires no lineage
+  still open, and one of its roles is the actor's; and the lineages the actor wrote whose engine reliance is
+  `CHALLENGED`. Each item links to its lineage. The words are the engine's, not the reader's (no pins comparison). The
+  observer mostly asks it of the agents, so the actor is never assumed to be the reader; with no actor named nothing
+  is computed. Not established: that the store holds every act of the actor's (completeness `UNATTESTED`); the gate's
+  `due_for` adds a schema filter and a lineage verdict of `OK`, which this does not.
+- **The desk (`site/desk.html`; `node site/desk.mjs`).** Several stores on one screen, one block each: name, whose rules
+  (the publisher's own), records and rejected, the reliance counts (the rule above: never `ELIGIBLE` on pins not
+  compared), how many lineages have a standing counted challenge, what changed since that store's mark (the reader's
+  own mark: the same `localStorage` key, `markKey` in `site/page.mjs`, the same JSON and the same `changes()`; the
+  changed lineages as links into the reader), a button to mark one store and one to mark all, and with an actor named
+  how much waits for it there (linking to the reader with `actor=`). The stores: `store=URL` in the address
+  (repeatable), else the list the reader kept on the page, else `site/stores.json` (a list of `{name, base}`, http(s)
+  only, an address listed twice read once); a list that cannot be used is named, never silently replaced. Stores are
+  read three at a time, each as the reader reads it (quick); one that cannot be read is named with its reason and the
+  others still answer; a block is whole or a refusal. The CLI keeps a mark file per store in `--marks DIR`, named by
+  the SHA-256 of the store's address (`--write-mark URL`, `--write-marks`); `--plan` prints the selection alone. Not
+  established: the page itself in a browser (layout at 375 px, buttons, storage), and the stores' completeness.
 - **A transport that fails is a refusal.** Only HTTP 404 reads as absent; any other failure refuses the read whole, and
   a blob whose bytes do not hash to its name refuses it too. Nothing partial is drawn.
 - **Record text is text.** The page builds no markup from a string, runs one script of its own origin and allows no
@@ -245,8 +268,12 @@ impl_js_test J10 holds the data the page draws to the Python engine, through nod
 holds the pin comparison to `warrant.drift.gate` at HEAD; J12 holds the voices and the overlay to
 `warrant_agent.overlay` on the same three stores and the same reader rules; J13 holds what changed for me on a store
 built in steps (one mark a step) and, from the first mark, the lineages whose (state, reliance, standing) it lists as
-moved to the Python assessments of the marked subset and of the whole store. No case drives a browser (neither
-`localStorage` nor the page's button is exercised), and the layout is checked by eye. No mutant targets these files
-(docs/V3.md §12 R-JS-MUTANTS), so CI does not hold the tests to their mutants: eleven mutations of the reader were run
-by hand for J10, thirty-five more for J11 and J12, and twenty-four for J13, each failing a case of its own on its
-assertion; the list is in the pull request that added them.
+moved to the Python assessments of the marked subset and of the whole store; J14 holds the desk (several stores, one
+unreachable and one answering HTTP 500, marks per store and equal to the reader's, a change listed in its own block
+only, mark all, the default list and the selection rule) to the Python engine and to the reader's CLI; J15 holds the
+frontier to `warrant.graph.frontier` for every actor of a fixture that reaches each branch of its rule, and for codex
+and claude on this repository's own store. No case drives a browser (neither `localStorage` nor the pages' buttons are
+exercised), and the layout is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS), so CI does
+not hold the tests to their mutants: eleven mutations of the reader were run by hand for J10, thirty-five more for J11
+and J12, twenty-four for J13, and thirty-three for J14, J15 and the page-source case of J10, each failing a case of its own
+on its assertion; the list is in the pull request that added them.
