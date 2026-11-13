@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="description" content="How to object to one version of a lineage of a Warrant 3 store with a key of your own, and how a reader comes to see that objection.">
+<title>Warrant — objecting to a version</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="mark" href="./">warrant</a>
+  <nav>
+    <a href="reader.html">Reader</a>
+    <a href="desk.html">Desk</a>
+    <a href="object.html">Object</a>
+    <a href="https://github.com/s0fractal/warrant/blob/master/docs/V3.md">Spec</a>
+    <a href="https://github.com/s0fractal/warrant">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<section>
+  <h1 class="reader-title">Objecting to a version</h1>
+  <p>A voice is a challenge against one record, signed with a key of your own and filed in a store of your own. Its
+  actor is that key's name, <code>key:&lt;hex&gt;</code>: the signature verifies under the key whether or not anyone
+  binds it, so nobody can sign in that name and nobody's admission is needed. Nobody can remove it either: it lies in
+  your store, not in the store it objects to.</p>
+  <p>The publisher's rules do not count it. The lineage's state and reliance in the publisher's store do not move. A
+  reader counts it only under that reader's own rules, when a replayer that reader trusts reproduces it.</p>
+  <p>A store does not attest its own completeness, and neither does the reader: a voice held in a store nobody reads
+  is seen by nobody.</p>
+</section>
+
+<section>
+  <h2>The steps</h2>
+  <p class="small">From an empty directory, with git, Python ≥ 3.10 with the package <code>cryptography</code>, and
+  node for the last step. The commands use a checkout of master: the package on PyPI, warrant-graph 3.0.0a6, has no
+  <code>warrant say</code>; the next release carries it. <code>VERSION_ID</code> is the full id (64 hex) of the
+  version you object to: the reader shows it on the lineage, in the block «Object to this version», with the
+  commands filled in.</p>
+
+  <h3>1. A checkout</h3>
+  <pre class="command" data-step="checkout"><code>git clone https://github.com/s0fractal/warrant.git</code></pre>
+
+  <h3>2. Say it</h3>
+  <pre class="command" data-step="say"><code>cd warrant
+python3 -m warrant say --store ../voices VERSION_ID "why this version is wrong"</code></pre>
+  <p class="small">The directory <code>voices</code> beside the checkout becomes a store of voices on first use: it trusts nobody and gives nobody a role. The key
+  is made on first use; its seed is kept at <code>~/.config/warrant/commons/commons.seed</code>, and
+  <code>--as NAME</code> keeps another. The command prints the voice's id and its actor, <code>key:&lt;hex&gt;</code>.
+  A store that trusts anyone is refused: a voice is never written into a project's store.</p>
+
+  <h3>3. Publish it</h3>
+  <pre class="command" data-step="publish"><code>cd ../voices
+git init
+git add .warrant
+git commit -m "a voice"</code></pre>
+  <p class="small">Then push that repository to any host that serves its files over HTTP(S). The store's address is
+  the directory that holds <code>.warrant/</code>; for a public GitHub repository it is its raw address,
+  <code>https://raw.githubusercontent.com/OWNER/REPOSITORY/BRANCH/</code>. That address is <code>VOICES_URL</code>
+  below.</p>
+
+  <h3>4. Read it</h3>
+  <p>In the <a href="reader.html">reader</a>: open the publisher's store, add <code>VOICES_URL</code> under «Other
+  stores beside this one» (or in the block «Object to this version» on the lineage), and open the lineage. The voice
+  is listed on it among the voices from outside, under its <code>key:</code> actor, not counted by the store's
+  rules. Or from the checkout, with <code>STORE_URL</code> the publisher's store and <code>LINEAGE_ID</code> the
+  lineage:</p>
+  <pre class="command" data-step="read"><code>cd ../warrant
+node site/reader.mjs --base STORE_URL --with VOICES_URL --lineage LINEAGE_ID</code></pre>
+</section>
+
+<section>
+  <h2>What it establishes, and what it does not</h2>
+  <ul>
+    <li>It establishes that the holder of one key said this, against exactly this version, at the time it gives.</li>
+    <li>It does not establish that the objection is right, that anyone read it, or who holds the key.</li>
+    <li>It moves no verdict in the publisher's store. A reader whose rules give a replayer a role, and who reads a
+    store holding that replayer's reproduction of the objection, reads the lineage otherwise under those rules; the reader
+    shows that beside the store's verdict, never in its place.</li>
+    <li>No store and no reader attests that it holds every voice. One left unread is not seen.</li>
+  </ul>
+</section>
+</main>
+
+<footer>
+  <p>This page runs no script. <a href="https://github.com/s0fractal/warrant/blob/master/docs/AGENT.md">The commons</a> ·
+  <a href="https://github.com/s0fractal/warrant/blob/master/docs/VERIFY.md">Verify</a></p>
+</footer>
+</body>
+</html>

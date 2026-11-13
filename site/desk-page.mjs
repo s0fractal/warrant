@@ -4,7 +4,7 @@
 import { webBackend } from "./warrant.mjs";
 import * as desk from "./desk.mjs";
 import { makeMark } from "./reader.mjs";
-import { $, counts, el, fill, keepActor, keptActor, loadMark, loadText, markKey, saveMark, saveText, section } from "./page.mjs";
+import { $, counts, el, fill, keepActor, keptActor, loadMark, loadText, markKey, saveMark, saveText, section, short } from "./page.mjs";
 
 const STORES = "warrant-desk-stores/1";                   // the list the reader edited here, as stores.json holds one
 const SHOWN = 12;                                         // changed lineages named in a block; the rest is the reader's
@@ -62,6 +62,37 @@ function drawStore(k) {
 }
 
 const marksOf = (base, rules) => loadMark(markKey(base, rules));
+
+// A published release (desk.mjs readReleases): what its index says, as published, and the page that verifies it. The
+// desk verifies nothing of it, so it draws no pill and no word of a verdict; one that cannot be read is named.
+const whom = (xs) => xs.map((x) => x.name ?? `a key the roster does not name (${x.key.slice(0, 12)})`).join(", ") || "none";
+function releaseArticle(b) {
+  if (!b.read) {
+    return el("article", { class: "desk-store" }, el("h2", { text: b.name }),
+      el("p", {}, el("strong", { text: `not read: ${b.why}` })), el("p", { class: "small", text: b.index ?? b.base ?? "" }));
+  }
+  return el("article", { class: "desk-store" }, el("h2", { text: b.name }),
+    el("p", { class: "row-meta", text: `${b.note} · ${b.format}` }),
+    el("div", { class: "statement", text: b.statement }),
+    el("p", { class: "small" }, `chain ${b.chain} at `, short(b.chain_tip), ` · published ${b.published}`),
+    el("p", { class: "small", text: `endorsers: ${whom(b.endorsers)}` }),
+    el("p", { class: "small", text: `witnesses: ${whom(b.witnesses)}` }),
+    el("p", {}, el("a", { href: b.verify, text: "Check it on the minds page" }), el("span", { class: "small", text: " (it runs the published verifier in your browser)" })));
+}
+
+// The releases of the list, each drawn as it answers; nothing when desk.mjs is of an earlier release (cached apart).
+async function drawReleases(plan, list, id) {
+  const box = section("desk-releases");
+  const entries = typeof desk.releasesOf === "function" ? desk.releasesOf(plan, list) : [];
+  if (!entries.length) { fill(box); box.hidden = true; return; }
+  const head = [el("h2", { text: "Published releases" }), el("p", { class: "small", text: "Read from where they are published; not verified here." })];
+  fill(box, head, entries.map((e) => el("article", { class: "desk-store" }, el("h2", { text: e.name }), el("p", { class: "small", text: "reading …" }))));
+  box.hidden = false;
+  const fetcher = (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+  const got = await desk.readReleases(entries, { fetcher });
+  if (id !== ctx.run) return;
+  fill(box, head, got.map(releaseArticle));
+}
 
 async function remark(k) {                                 // the mark of now, kept; the block drawn again against it
   const g = ctx.got[k], mark = await makeMark(g.r, g.block.base, ctx.backend);
@@ -155,13 +186,14 @@ async function defaultList() {
 async function run() {
   const p = params(), id = ++ctx.run;
   say("Reading the list of stores …");
-  for (const name of ["desk-tools", "stores", "desk-edit"]) section(name);   // in this order on a page that has none of them
+  for (const name of ["desk-tools", "stores", "desk-releases", "desk-edit"]) section(name);   // in this order on a page that has none of them
   ctx.actor = p.actor || keptActor();
   const kept = loadText(STORES), list = await defaultList();
   ctx.plan = desk.selectStores({ addresses: p.stores, kept: kept.value, list: list.text });
   const why = [...ctx.plan.why, ...(list.why ? [list.why] : [])];
   drawTools();
   drawEditor();
+  drawReleases(ctx.plan, list.text, id).catch((e) => say(`Failed: ${e?.message ?? e}`, true));   // beside the stores, not after them
   ctx.got = new Array(ctx.plan.stores.length);
   fill(section("stores"));
   section("stores").hidden = false;
