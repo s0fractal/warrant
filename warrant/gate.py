@@ -83,6 +83,7 @@ REVERT_BRANCH = "gate/revert/"
 BRAKE_MARK = "<!-- warrant-gate brake -->"
 AWAY = "<!-- warrant-gate presence ended {until} -->"
 WEB_FLOW = "web-flow"                       # GitHub's committer of a merge made on GitHub
+STAMP = "%Y-%m-%dT%H:%M:%SZ"                # GitHub's UTC time stamps
 LOGIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}\Z")
 NOTICE = "<!-- warrant-gate constitutional window {x} -->"
 MARKS = ("<!-- warrant-gate constitutional window ", "<!-- warrant-gate brake -->")    # the gate's own comments
@@ -569,7 +570,7 @@ def checks_completed(required, checks, head):
             return None
         last = max(ours, key=lambda r: r.get("id", 0))
         try:
-            out = max(out, calendar.timegm(time.strptime(last.get("completed_at") or "", "%Y-%m-%dT%H:%M:%SZ")))
+            out = max(out, calendar.timegm(time.strptime(last.get("completed_at") or "", STAMP)))
         except ValueError:
             return None
     return out
@@ -950,7 +951,7 @@ def first_parent(root, commit, n=300):
 def _epoch(stamp):
     """Seconds since the epoch of GitHub's UTC time stamp, None when it is not one."""
     try:
-        return calendar.timegm(time.strptime(str(stamp), "%Y-%m-%dT%H:%M:%SZ"))
+        return calendar.timegm(time.strptime(str(stamp), STAMP))
     except ValueError:
         return None
 
@@ -959,7 +960,7 @@ def _reacted(b, gh, since):
     """The newest time the `presence` login reacted to a comment of the gate's own (its notice or its brake), at or
     after `since`: one touch, from a phone, says «seen». Agents never react under that login (AGENTS.md rule 1)."""
     login, newest = b.gate[PRESENCE]["login"], None
-    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since))
+    stamp = time.strftime(STAMP, time.gmtime(since))
     mine = [c for page in gh.api(f"issues/comments?since={stamp}&per_page=100", pages=True) for c in page
             if (c.get("user") or {}).get("login") == f"{ACTIONS_APP}[bot]" and any(m in (c.get("body") or "") for m in MARKS)]
     for c in mine[-20:]:
