@@ -1,0 +1,233 @@
+Codex roadmap verdict: P1, refused fork branch suppresses the owner brake
+
+D: 549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f
+T: 7be4012d08f8400008d066934c62783f5f20eeac13ddc570cc5ee8e6ca64f3cc
+M: 3a0e18f893d931d449e53cb7eb96dea23e2e5cd8
+Tree: 5ec8481f2a485e70e80433bd3a6b1cf7f0834e7f
+
+The review owed was performed. Its closure cannot be accepted while the new brake can be suppressed by a contributor's untrusted branch name. This is a new finding against T, not a claim that the five earlier fixes failed.
+
+Finding F1 (P1): warrant/gate.py:1123-1127 collects the branch name of every assessment and skips a braked merge whenever any name starts with gate/revert/<PR>-. survey() (1290-1311) includes refused assessments. facts() (1276-1281) obtains branch from head.ref, including forks. No repository, author, exact merge identity, or actual revert check is made before that branch name suppresses enforcement.
+
+A contributor opens a fork PR from gate/revert/7-blocker with an unrelated, real code.py diff. It is refused with REVERT_NOT_EXACT (its author is mallory, not github-actions[bot]), but its branch still suppresses the legitimate revert of vetoed PR #7. No privileged credentials, trusted record, acceptance or successful CI is required for this suppression; the probe supplies green checks to isolate the flaw. With that PR left open, each gate run skips the brake. Once its deadline expires it is no longer enforced. Thus the owner cannot rely on hold or a challenge to cause the promised revert.
+
+The fixture has one genuinely open braked merge that weakened AGENTS.md. A mocked GitHub pull read reports the owner's hold. Without the attacker assessment the real open_revert code makes tree/commit/ref/PR creation calls and dispatches CI. With it, enforce_brakes returns [] and makes no API calls. All GitHub writes in this experiment are in-memory stub calls; no external PR was opened. The probe fails on its F1 assertion at both 58e3cc74e3d2611d73a4917409394ae7117f3630 and M. A diagnostic guard confined to an extracted copy (require repository identity and bot PR author before treating a branch as pending revert) makes this case pass. That diagnostic is not a proposed complete fix: a real fix should bind suppression to the exact braked merge and an authenticated gate-created revert, while retaining legitimate reverts awaiting CI.
+
+Required follow-up: an ordinary constitutional PR fixing this bypass, with regression test and a mutant that removes the identity/merge binding; keep CI green. No repository code was edited in this verdict worktree.
+
+Review and validation:
+- Verified detached HEAD M, origin s0fractal/warrant, clean initial worktree, roadmap due and MCP guard waiting only for codex's roadmap/acceptor attest.
+- Read docs/AGENT.md, docs/V3.md, docs/REPOSITORY.md, the five requested paths' diff 9e183284..8278d4a3, later gate/policy changes through M, and GitHub metadata/descriptions for #350 and #356.
+- gate_test.py, tools_test.py (including OB1 profile transition), core_test.py: all passed at M.
+- G85, G86, G93, G94, G95: 5/5 KILLED by E74, E75, E80, E81, E82 respectively, with the mutant harness and its unmutated baseline.
+- Current E74/E75 against the historical 8278d4a3 gate fail their assertions; current E80/E81/E82 against 58e3cc74 fail their assertions. All five pass at M. These establish the specific earlier fixes, not absence of other defects.
+- roadmap check: 93 lineages, 0 problems; claims check: 136 live, 0 problems (pre-verdict; repeated after filing).
+- No full all-mutant campaign, live GitHub brake/revert exercise, agent suite or release validation performed. Named self-release, single-family quorum and presence-policy residuals are not presented as fixed.
+
+Runnable counterexample (Python standard library and this checkout's existing test dependencies): save the code below as brake_probe.py outside the repository, and run:
+TMPDIR=<review-work-directory> PYTHONDONTWRITEBYTECODE=1 python3 brake_probe.py <checkout-at-M-or-58e3cc74>
+Exit 1 with FAIL F1 reproduces; exit 0 with ok F1 is the expected behavior after fixing.
+
+```python
+import sys, json, time
+from pathlib import Path
+root=Path(sys.argv[1]).resolve()
+sys.path[:0]=[str(root/'tests'),str(root)]
+from world import Repo,git
+import gate_test as T
+from warrant import gate as G
+r=Repo(git_init=False)
+(r.dot/'merge.json').write_text(json.dumps(T.PRES))
+(r.root/'AGENTS.md').write_text('rules\n')
+git(r.root,'init','-q','-b','master')
+r.commit('base')
+git(r.root,'checkout','-q','-b','feature')
+(r.root/'AGENTS.md').write_text('weakened\n')
+r.commit('change')
+git(r.root,'checkout','-q','master')
+until=int(time.time())+86400
+v='a'*64
+git(r.root,'merge','-q','--no-ff','feature','-m',f'Merge #7\n\nwarrant-gate brake until {until}: #7 head version {v}')
+base=git(r.root,'rev-parse','HEAD')
+b=G.Base(r.root,base)
+class GH:
+ def __init__(self): self.calls=[]
+ def pull(self,n): return {'labels':['hold']}
+ def api(self,path,method='GET',body=None,pages=False):
+  self.calls.append((path,method))
+  return {'sha':'d'*40}
+ def dispatch(self,w,branch): self.calls.append(('dispatch',branch))
+control_gh=GH()
+control=G.enforce_brakes(r.root,b,control_gh,[])
+# A fork PR may choose this branch name without access to this repository.
+# Give it a real, nonempty diff, as GitHub requires for an open pull request.
+git(r.root,'checkout','-q','-b','gate/revert/7-blocker')
+(r.root/'code.py').write_text('unrelated = True\n')
+fork_head=r.commit('an unrelated fork change')
+pr={'number':99,'state':'open','draft':False,'base':'master','head':fork_head,'labels':[],
+ 'branch':'gate/revert/7-blocker','head_repo':'mallory/warrant','author':'mallory'}
+a=G.assess(r.root,b,pr,T.green(fork_head))
+attack_gh=GH()
+attack=G.enforce_brakes(r.root,b,attack_gh,[a])
+print(json.dumps({'open_brakes':len(G.brakes(r.root,base)), 'control':control,'control_calls':control_gh.calls,
+ 'blocker_eligible':a.eligible,'blocker_codes':a.codes(),'blocked':attack,'blocked_calls':attack_gh.calls},indent=2))
+assert len(control)==1 and 'opened' in control[0][1]
+assert not a.eligible and 'REVERT_NOT_EXACT' in a.codes()
+if not attack:
+ print('FAIL F1 an untrusted, refused fork PR branch suppresses the owner-veto revert')
+ sys.exit(1)
+print('ok   F1 the refused fork branch does not suppress the owner-veto revert')
+
+```
+
+Actual output at M:
+```text
+{
+  "open_brakes": 1,
+  "control": [
+    [
+      7,
+      "revert of #7 opened from gate/revert/7-8d55ab34ee5a"
+    ]
+  ],
+  "control_calls": [
+    [
+      "git/trees",
+      "POST"
+    ],
+    [
+      "git/commits",
+      "POST"
+    ],
+    [
+      "git/refs",
+      "POST"
+    ],
+    [
+      "pulls",
+      "POST"
+    ],
+    [
+      "dispatch",
+      "gate/revert/7-8d55ab34ee5a"
+    ]
+  ],
+  "blocker_eligible": false,
+  "blocker_codes": [
+    "REVERT_NOT_EXACT"
+  ],
+  "blocked": [],
+  "blocked_calls": []
+}
+FAIL F1 an untrusted, refused fork PR branch suppresses the owner-veto revert
+```
+
+Actual output at 58e3cc74:
+```text
+{
+  "open_brakes": 1,
+  "control": [
+    [
+      7,
+      "revert of #7 opened from gate/revert/7-ea35ca37cd87"
+    ]
+  ],
+  "control_calls": [
+    [
+      "git/trees",
+      "POST"
+    ],
+    [
+      "git/commits",
+      "POST"
+    ],
+    [
+      "git/refs",
+      "POST"
+    ],
+    [
+      "pulls",
+      "POST"
+    ],
+    [
+      "dispatch",
+      "gate/revert/7-ea35ca37cd87"
+    ]
+  ],
+  "blocker_eligible": false,
+  "blocker_codes": [
+    "REVERT_NOT_EXACT"
+  ],
+  "blocked": [],
+  "blocked_calls": []
+}
+FAIL F1 an untrusted, refused fork PR branch suppresses the owner-veto revert
+```
+
+Diagnostic guarded-copy output:
+```text
+{
+  "open_brakes": 1,
+  "control": [
+    [
+      7,
+      "revert of #7 opened from gate/revert/7-ea35ca37cd87"
+    ]
+  ],
+  "control_calls": [
+    [
+      "git/trees",
+      "POST"
+    ],
+    [
+      "git/commits",
+      "POST"
+    ],
+    [
+      "git/refs",
+      "POST"
+    ],
+    [
+      "pulls",
+      "POST"
+    ],
+    [
+      "dispatch",
+      "gate/revert/7-ea35ca37cd87"
+    ]
+  ],
+  "blocker_eligible": false,
+  "blocker_codes": [
+    "REVERT_NOT_EXACT"
+  ],
+  "blocked": [
+    [
+      7,
+      "revert of #7 opened from gate/revert/7-ea35ca37cd87"
+    ]
+  ],
+  "blocked_calls": [
+    [
+      "git/trees",
+      "POST"
+    ],
+    [
+      "git/commits",
+      "POST"
+    ],
+    [
+      "git/refs",
+      "POST"
+    ],
+    [
+      "pulls",
+      "POST"
+    ],
+    [
+      "dispatch",
+      "gate/revert/7-ea35ca37cd87"
+    ]
+  ]
+}
+ok   F1 the refused fork branch does not suppress the owner-veto revert
+```
