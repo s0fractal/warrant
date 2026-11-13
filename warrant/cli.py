@@ -133,6 +133,8 @@ def _parser():
                    add_help=False)
     sub.add_parser("resolve", help="where the bytes each cited hash names are, over Home (python -m warrant.resolve)",
                    add_help=False)
+    sub.add_parser("say", help="a voice on a record, under one's own key, with no rights against it (warrant init --voices)",
+                   add_help=False)
     for n, c in cmds.items():
         if n not in ("key", "trust", "init"):
             g = c.add_mutually_exclusive_group()
