@@ -99,7 +99,7 @@ MUTANTS = [
     ("V26", S, "        order = list(lines) == sorted(set(lines), key=_line_id)", "        order = True", CORE, ["T1"]),
     ("V35", S, "        self.canonical = order and not self.rejected", "        self.canonical = order", CORE, ["T13"]),
     ("V36", S, "                if len(line) > R.LINE_MAX:", "                if False:", CORE, ["T14"]),
-    ("V37", "warrant/cli.py", 'out = {"canonical": snap.canonical,', 'out = {"canonical": True,', CORE, ["T15"]),
+    ("V37", "warrant/cli.py", 'out = {"canonical": snap.canonical,', 'out = {"canonical": True,', TOOLS, ["K12"]),
     ("V27", E, "        if any(R.verifies(i, s, k) for s in sigs for k in keys):", "        if sigs:", CORE, ["T6"]),
     ("V28", S, "        if bad:\n            raise Refused", "        if False:\n            raise Refused", CORE, ["T12"]),
     # §9 migration
@@ -267,6 +267,7 @@ MUTANTS = [
     ("X53", "warrant/across.py", '            row["uncounted"] = True', '            pass', AGENT, ["X10"]),
     ("T171", "warrant/cli.py", '        if a.cmd == "init" and a.voices:', '        if False:', TOOLS, ["VS1"]),
     ("T172", "warrant/cli.py", '    name = re.sub(r"[^A-Za-z0-9_.-]", "-", Path(root).name)[:100].strip(".-") or "local"', '    name = Path(root).name', TOOLS, ["VS1"]),
+    ("T175", "warrant/claims.py", 'from . import pins as P\n', 'from . import gate as GT  # noqa: F401\nfrom . import pins as P\n', TOOLS, ["CF6"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
     ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),

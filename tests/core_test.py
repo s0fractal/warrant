@@ -458,23 +458,6 @@ def store_cases():
         except ValueError as e:
             ok = "more than" in str(e)
         check("T14 a writer refuses a record whose line its reader would reject as too long", ok and st.lines() == [])
-        (Path(d) / "s").mkdir()
-        from warrant import cli
-        import contextlib
-        import io
-        import os
-        st2 = Store(Path(d) / "s" / ".warrant").init()
-        st2.write_lines([b"{  " + canon[0][1:]] + canon[1:])
-        out, cwd = io.StringIO(), os.getcwd()
-        try:
-            os.chdir(Path(d) / "s")
-            with contextlib.redirect_stdout(out):
-                cli.main(["fmt"])
-        finally:
-            os.chdir(cwd)
-        doc = json.loads(out.getvalue() or "{}")
-        check("T15 `warrant fmt` reports the order it leaves: a rejected line stays, and the store is not canonical "
-              "(6d6bb700: it printed canonical true)", doc.get("canonical") is False and doc.get("rejected") == 1, doc)
     chain, prev = World(), None
     for n in range(200):         # each obligation's `done` requires the previous one's lineage
         prev = chain.put("alice", "entity", {"state": "done", "statement": f"o{n}", "serves": []}, "obligation@1",
