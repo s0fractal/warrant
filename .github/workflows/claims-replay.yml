@@ -53,8 +53,10 @@ jobs:
         id: replay
         env:
           SEED: ${{ secrets.WARRANT_CLAIMS_SEED }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          unchanged() { echo "changed=" >> "$GITHUB_OUTPUT"; }
           tip=$(git rev-parse HEAD)
           echo "tip=$tip" >> "$GITHUB_OUTPUT"
           # Until the key is made (claims-key.yml) and bound in the trust (a constitutional pull request on
@@ -62,7 +64,7 @@ jobs:
           # and ends green, rather than failing every two hours for a week.
           if [ -z "$SEED" ]; then
             echo "no WARRANT_CLAIMS_SEED in the environment claims yet (claims-key.yml has not run): nothing replayed" | tee -a "$GITHUB_STEP_SUMMARY"
-            echo "changed=" >> "$GITHUB_OUTPUT"
+            unchanged
             exit 0
           fi
           bound=$(printf '%s' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -c '
@@ -73,17 +75,26 @@ jobs:
           print("yes" if pub in keys else pub)')
           if [ "$bound" != "yes" ]; then
             echo "the runner key $bound is not yet bound to claims-checker in .warrant/v3.json at ${tip:0:12}: nothing replayed" | tee -a "$GITHUB_STEP_SUMMARY"
-            echo "changed=" >> "$GITHUB_OUTPUT"
+            unchanged
+            exit 0
+          fi
+          # one pull request of acceptances at a time: a second at a newer tip, before the first merged, would accept
+          # the same versions again. Only a branch of this repository counts: a fork's pull request named
+          # claims/verdicts/* must not stop the checker (Codex on #367)
+          open_=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq "[.[] | select(.head.ref | startswith(\"claims/verdicts/\")) | select(.head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number] | length")
+          if [ "$open_" != "0" ]; then
+            echo "a pull request of acceptances is open: nothing replayed until it merges" | tee -a "$GITHUB_STEP_SUMMARY"
+            unchanged
             exit 0
           fi
           if git ls-remote --exit-code --heads origin "claims/verdicts/${tip:0:12}" >/dev/null; then
             echo "claims/verdicts/${tip:0:12} exists already: nothing to do at this commit" | tee -a "$GITHUB_STEP_SUMMARY"
-            echo "changed=" >> "$GITHUB_OUTPUT"
+            unchanged
             exit 0
           fi
           printf '%s\n' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.claims replay --key - | tee -a "$GITHUB_STEP_SUMMARY"
           rm -rf build
-          if git diff --quiet -- .warrant; then echo "changed=" >> "$GITHUB_OUTPUT"; else echo "changed=1" >> "$GITHUB_OUTPUT"; fi
+          if git diff --quiet -- .warrant; then unchanged; else echo "changed=1" >> "$GITHUB_OUTPUT"; fi
       - name: A pull request of the acceptances only
         if: steps.replay.outputs.changed == '1'
         env:

@@ -278,6 +278,21 @@ Read first:
   first-parent history is read in one batch; modes and types are compared; signs are read back to twice `days`.
   E80–E82 (Codex's cases); mutants G93–G95.
 
+- `claims verify --done FILE` skips the acceptances a run of the same branch re-executed and found holding, and records
+  what held; CI keeps that file per branch (actions/cache), so after the gate merges a moved base into a branch of
+  verdicts only, its next run re-executes only what is new. On a branch run by dispatch CI's base is now the merge base
+  with master, never the branch's previous head (which would have verified nothing after such a merge). claims-replay
+  opens no second pull request of acceptances while one is open. C20; mutant T173. After Codex's review of #367: the
+  done file is refused when Git tracks it (a pull request could have committed it and skipped a replay), each entry
+  counts only for the checker code that wrote it, CI restores and saves it for branches of this repository only and
+  reads it before the branch's finding tests run (it saves time across runs of one branch, it is no defence against
+  that branch's author), and the open-PR guard counts only branches of this repository (a
+  fork's claims/verdicts/* would have stopped the checker). C21; mutants T176, T177.
+- A pull request of verdicts only that conflicts with the base only in its records (GitHub applies no merge=union,
+  R-UNION-ON-FORGE) gets the base merged into its branch by the gate: the union of both stores in canonical order, the
+  head's blobs kept, a merge commit made through GitHub's API, CI started on it. The claims checker's acceptances
+  (#364) run CI for about 40 minutes, so without this the base always moved first and the pull request never merged.
+  E84; mutants G98–G100.
 - Codex 8caa1ce8 (P1, reproduced at 58e3cc74 and 3a0e18f8): `enforce_brakes` held back a vetoed merge's revert when
   any open pull request sat on a branch named `gate/revert/<pr>-*`, a fork's refused one by anyone included. A revert
   now counts as pending only when the gate assessed an open pull request as that merge's exact revert, and an exact
@@ -290,6 +305,10 @@ Read first:
   core_test's closure is 9 files, not 24. `warrant.claims closures` prints each witness file's closure size and the
   claims on it. CF6, K12; mutant T175; V3-8-7.
 
+- `after_merge` (`.warrant/merge.json`): after its own merge the gate starts the listed workflows on the base, as it
+  starts the required ones: `pages.yml` when the merge changed `site/`, `claims-replay.yml` after every merge but one
+  of verdicts only. A merge with GITHUB_TOKEN starts no push workflow, and GitHub ran 5 of 52 scheduled gate runs in
+  26 hours, so the site and the checker had not run after the gate's merges. E85, E86; mutants G101–G103.
 - `graph.grounded` no longer reads an obligation's `answers` (the goal it answers, which `warrant.roadmap` also cites
   in refs) as a ground: a met goal citing the obligations that answer it made each read CYCLE. In minds 18 of 19 goal
   and obligation versions read not grounded, 88 CYCLE rows; now 0 and 0 (warrant unchanged, 0 and 0). GR4; mutant T183.

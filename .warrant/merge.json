@@ -51,5 +51,16 @@
     "login": "s0fractal",
     "days": 14,
     "since": 1794527025
-  }
+  },
+  "after_merge": [
+    {
+      "workflow": ".github/workflows/pages.yml",
+      "paths": [
+        "site/"
+      ]
+    },
+    {
+      "workflow": ".github/workflows/claims-replay.yml"
+    }
+  ]
 }

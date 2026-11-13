@@ -46,6 +46,7 @@ verdicts computed from the same facts:
 The gate (`gate`) merges at most one eligible pull request per run, reading the pull request and the base
 branch again just before (TOCTOU), giving GitHub the assessed head (it refuses the merge when the head
 moved), and then dispatches the required workflows on the base branch (a GITHUB_TOKEN merge starts none)."""
+import base64
 import calendar
 import importlib.machinery
 import json
@@ -59,7 +60,7 @@ from pathlib import PurePosixPath
 from . import engine as E
 from . import jcs as C
 from . import shapes as S
-from .store import Snapshot
+from .store import Snapshot, _line_id
 
 GATE = "warrant-review/gate@1"
 GATE_FIELDS = ("gate", "base", "required", "hold_label", "owner_paths")
@@ -71,6 +72,10 @@ CONSTITUTIONAL = "constitutional"
 TIERS = (WATCHED, CONSTITUTIONAL)
 SOLO = "solo"           # optional: {window_hours, veto_role}: one family merges a change to no listed path after the window
 SOLO_FIELDS = {"window_hours", "veto_role"}
+# optional: [{workflow, paths?}]: what the gate starts on the base after its own merge, as it starts the required
+# workflows (a merge with GITHUB_TOKEN starts no push workflow, and GitHub drops most scheduled runs): each workflow
+# when the merge changed a path under one of `paths` (every merge without them), never after a merge of verdicts only
+AFTER = "after_merge"
 ACCEPTOR = "pr/acceptor"   # the role whose verdicts the gate counts
 # optional: {login, days, since}: the owner is present when a merge into the base on GitHub is his (author login, the
 # committer GitHub's web-flow) since `since` and within `days`; agents never merge under his login (AGENTS.md rule 1).
@@ -380,7 +385,7 @@ def gate_config(doc):
 
 def _gate_shape(doc):
     req = doc.get("required") if isinstance(doc, dict) else None
-    return bool(isinstance(doc, dict) and set(GATE_FIELDS) <= set(doc) <= set(GATE_FIELDS) | {*TIERS, SOLO, PRESENCE} and doc["gate"] == GATE
+    return bool(isinstance(doc, dict) and set(GATE_FIELDS) <= set(doc) <= set(GATE_FIELDS) | {*TIERS, SOLO, PRESENCE, AFTER} and doc["gate"] == GATE
                 and isinstance(doc["base"], str) and BRANCH.match(doc["base"]) and isinstance(req, list) and req
                 and all(isinstance(c, dict) and set(c) == {"check", "workflow"} and isinstance(c["check"], str)
                         and CHECK.match(c["check"]) and isinstance(c["workflow"], str) and WORKFLOW.match(c["workflow"]) for c in req)
@@ -400,7 +405,19 @@ def policy_problem(doc):
         why = solo_problem(doc[SOLO], w)
     if why is None and PRESENCE in doc:
         why = presence_problem(doc[PRESENCE], w)
+    if why is None and AFTER in doc:
+        why = after_problem(doc[AFTER])
     return why
+
+
+def after_problem(after):
+    """`after_merge` is a list of distinct {workflow: a workflow file, paths?: a non-empty list of paths}."""
+    ok = (isinstance(after, list) and all(
+        isinstance(x, dict) and set(x) in ({"workflow"}, {"workflow", "paths"}) and isinstance(x["workflow"], str)
+        and WORKFLOW.match(x["workflow"]) and (isinstance(x.get("paths", ["x"]), list) and x.get("paths", ["x"])
+                                               and all(isinstance(p, str) and OWNER_PATH.match(p) for p in x.get("paths", ["x"])))
+        for x in after) and len({x["workflow"] for x in after}) == len(after))
+    return None if ok else "after_merge is a list of distinct {workflow, paths?}"
 
 
 def presence_problem(p, w):
@@ -715,7 +732,7 @@ def _review(a, root, b, pr, head, rep, checks=None, now=None):
         sh.append(("NO_HEAD", f"#{n} has no head version"))
         return
     a.facts.update(duty=L, closure=lin["leaf"], head_n=len(lin["path"]) - 1, x=leaf["body"].get("commit"),
-                   author=rep["_recs"][L]["actor"])
+                   author=rep["_recs"][L]["actor"], changed=changed_paths(root, b.commit, head))
     x = _reviewed(sh, root, leaf, head, n)
     if x is None:
         return
@@ -767,6 +784,15 @@ def _solo_window(a, b, rep, lin, solo, checks, head, now):
     ready = bool(author in b.holders(ACCEPTOR) and not others and done is not None
                  and now - done >= solo["window_hours"] * 3600)
     return ready, None if done is None else int(done + solo["window_hours"] * 3600)
+
+
+def changed_paths(root, base, head):
+    """The paths the pull request changes against its merge base with the base, or None when Git cannot say."""
+    try:
+        mb = git(root, "merge-base", base, head).decode().split()[0]
+        return sorted(p for p in git(root, "diff-tree", "-r", "-z", "--name-only", "--no-commit-id", mb, head).decode().split("\0") if p)
+    except (subprocess.CalledProcessError, IndexError, UnicodeDecodeError):
+        return None
 
 
 def _listed(paths, p):
@@ -1116,6 +1142,48 @@ def open_revert(root, b, gh, k, why):
     return f"revert of #{k['pr']} opened from {branch}"
 
 
+def union_plan(root, base, head):
+    """(records bytes, [tree entry]) that merge the base's store into a head that adds only records and blobs: the
+    union of both records.jsonl files in the store's canonical order (`warrant fmt`), and the head's blobs the base
+    does not hold. Git's merge=union does this locally; GitHub does not apply it (R-UNION-ON-FORGE)."""
+    files = {c: files_at(root, c, [RECORDS]).get(RECORDS, b"") for c in (base, head)}
+    union = b"".join(sorted(set(lines_of(files[base]) + lines_of(files[head])), key=_line_id))
+    have = {p for _, _, _, p in entries(root, base, BLOBS.rstrip("/"))}
+    return union, [{"path": p, "mode": m, "type": "blob", "sha": o} for m, t, o, p in entries(root, head, BLOBS.rstrip("/"))
+                   if p not in have and t == "blob"]
+
+
+def refresh_verdicts(root, b, gh, found):
+    """[(pr, outcome)]: each open pull request of verdicts only, from a branch of this repository under its prefix,
+    that GitHub cannot merge (its records conflict with the base's: two branches append to one file) gets the base
+    merged into its branch through GitHub's API, the stores' union as its records, and CI started on it. A pull request
+    of the claims checker's acceptances runs CI for long enough that the base moves on meanwhile; without this it
+    would conflict again and never merge (#364, 2026-11-13)."""
+    out = []
+    for a in found:
+        if not a.facts.get("verdicts") or {c for c, _ in a.shared} & {"VERDICTS_FORK", "VERDICTS_BRANCH", "HEAD_MOVED"}:
+            continue
+        n, head, branch = a.pr["number"], a.pr["head"], a.pr.get("branch")
+        try:
+            if gh.api(f"pulls/{_number(n)}").get("mergeable_state") != "dirty":
+                continue
+            records, blobs = union_plan(root, b.commit, head)
+            blob = gh.api("git/blobs", "POST", {"content": base64.b64encode(records).decode(), "encoding": "base64"})["sha"]
+            base_tree = git(root, "rev-parse", f"{b.commit}^{{tree}}").decode().strip()
+            tree = gh.api("git/trees", "POST", {"base_tree": base_tree, "tree": [
+                {"path": RECORDS, "mode": REGULAR, "type": "blob", "sha": blob}, *blobs]})["sha"]
+            commit = gh.api("git/commits", "POST", {"message": f"Merge {b.gate['base']} into {branch}: records only (warrant-gate)\n\n"
+                                                    f"The union of the stores, in canonical order; base {b.commit}.\n",
+                                                    "tree": tree, "parents": [head, b.commit]})["sha"]
+            gh.api(f"git/refs/heads/{_branch(branch)}", "PATCH", {"sha": commit, "force": False})
+            for w in sorted({c["workflow"] for c in b.gate["required"]}):
+                gh.dispatch(w, branch)
+            out.append((n, f"base merged into {branch} as {commit[:12]}"))
+        except Refused as e:
+            out.append((n, f"refresh FAILED: {e}"))
+    return out
+
+
 def enforce_brakes(root, b, gh, found, now=None):
     """[(pr, outcome)] of each merge whose brake is open, vetoed, not reverted and with no revert pending: an open pull
     request the gate assessed as the exact revert of that merge (_revert_only). A branch's name alone is no revert
@@ -1359,7 +1427,7 @@ def merge_one(b, a, gh):
     parents = gh.parents(res["sha"])
     out = {"pr": n, "merged": True, "merge": res["sha"], "parents": parents, "head": head, "base": base,
            "as_assessed": parents == [base, head], "dispatched": [], "dispatch_failed": []}
-    for w in sorted({c["workflow"] for c in b.gate["required"]}):
+    for w in sorted({c["workflow"] for c in b.gate["required"]}) + after_merge(b, a):
         try:
             gh.dispatch(w, b.gate["base"])
             out["dispatched"].append(w)
@@ -1372,6 +1440,16 @@ def merge_one(b, a, gh):
         except Refused as e:
             out["dispatch_failed"].append(f"brake comment: {e}")
     return out
+
+
+def after_merge(b, a):
+    """The `after_merge` workflows a merge of `a` starts: none after verdicts only (a merge of the claims checker's
+    acceptances must not start the checker again); one with `paths` when the change touched one of them."""
+    if a.facts.get("verdicts"):
+        return []
+    changed = a.facts.get("changed")
+    return [x["workflow"] for x in b.gate.get(AFTER, [])
+            if "paths" not in x or changed is None or any(_listed(x["paths"], p) for p in changed)]
 
 
 def brake_text(b, a, until):
@@ -1454,7 +1532,8 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
     merged, noticed = None, []
     if merge:
         away = announce_away(b, gh, until)
-        noticed = notify(b, found, gh) + enforce_brakes(root, b, gh, found) + ([(0, away)] if away else [])
+        noticed = (notify(b, found, gh) + enforce_brakes(root, b, gh, found) + refresh_verdicts(root, b, gh, found)
+                   + ([(0, away)] if away else []))
         first = next((x for x in found if x.eligible and x.facts.get("revert")), None) or next((x for x in found if x.eligible), None)
         merged = merge_one(b, first, gh) if first is not None else None
     _append(summary, summary_markdown(found, describe(merged) if merged else None, base)

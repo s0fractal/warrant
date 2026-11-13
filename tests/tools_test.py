@@ -332,6 +332,44 @@ def checker_cases():
           and a["tree"] == git(r.root, "rev-parse", f"{base}^{{tree}}") and a.get("code") == RP.checker_code(base, r.root)
           and set(a.get("env", {})) == {"python", "cryptography"} and again == [], (first, a, again))
     ok = CL.verify(rp, base)
+    held = []
+    once = CL.verify(rp, base, frozenset(), held)
+    skipped = CL.verify(rp, base, frozenset(held))
+    outside = refused_code(CL.run, ["--root", str(r.root), "verify", "--base", base, "--done", str(r.home / "done-ids")])
+    check("C20 an acceptance a run of the same branch re-executed and found holding is not run again (its result at its "
+          "commit cannot change), and a run names what held, so a pull request whose base moved re-executes only what is new "
+          "(#364: 136 acceptances, 40 minutes each time); the file it keeps is one of the checkout, as every path a tool "
+          "writes", once == 1 and held == first and skipped == 0 and (outside or "").startswith("PATH"), (once, held, skipped, outside))
+    ids_file = r.root / "build" / "claims-done" / "ids"
+    ids_file.parent.mkdir(parents=True, exist_ok=True)
+    code = RP.identity(r.root)["code"]
+    def verify_with(text):
+        ids_file.write_text(text)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            CL.run(["--root", str(r.root), "verify", "--base", base, "--done", str(ids_file)])
+        return buf.getvalue()
+    same, other = verify_with(f"{first[0]} {code}\n"), verify_with(f"{first[0]} {'0' * 64}\n")
+    ids_file.write_text(f"{first[0]} {code}\n")
+    git(r.root, "add", "-f", "build/claims-done/ids")
+    tracked = refused_code(CL.run, ["--root", str(r.root), "verify", "--base", base, "--done", str(ids_file)])
+    git(r.root, "rm", "-q", "--cached", "build/claims-done/ids")
+    q = checker_repo()                                       # a repository holding the package and its shim, as CI's checkout
+    claim(q)
+    shutil.copytree(ROOT / "warrant", q.root / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
+    (q.root / "tools").mkdir()
+    shutil.copy(ROOT / "tools" / "claims.py", q.root / "tools" / "claims.py")
+    qx = q.commit("the package and its shim")
+    shim = subprocess.run([sys.executable, "-B", "tools/claims.py", "verify", "--base", qx, "--done", "build/claims-done/ids"],
+                          capture_output=True, text=True, cwd=q.root, env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"})
+    check("C22 the command line CI runs (tools/claims.py verify --done, the shim) works: the code a done entry is bound "
+          "to is the checker's code at the commit, not the identity of the running process (observed on #367 at 0eeb3072: "
+          "REFUSED IDENTITY tools/claims.py is imported and not in the identity)",
+          shim.returncode == 0 and "held before" in shim.stdout, (shim.returncode, shim.stdout[-200:], shim.stderr[-300:]))
+    check("C21 a done file counts only as the runner's own: one the tree holds is refused (Codex on #367: a committed "
+          "done file skipped the replay of what it named), and an entry counts only for the checker code that wrote it",
+          "0 re-executed, 1 held before" in same and "1 re-executed" in other and (tracked or "").startswith("PATH"),
+          (same, other, tracked))
     put_as(r, CL.CHECKER, dict(a, code="0" * 64), [L])
     r.commit("an acceptance naming other code")
     why = refused_code(CL.verify, rp, x1)

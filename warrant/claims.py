@@ -48,7 +48,7 @@ from . import records as R
 from . import pins as P
 from .pins import blobs
 from .store import Snapshot
-from .repo import Failed, Repo, checker_problem, code_tree, dump, emit, env_root, git, identity, inside, load_key, main, tree_id
+from .repo import Failed, Repo, checker_code, checker_problem, code_tree, dump, emit, env_root, git, identity, inside, load_key, main, tree_id
 
 CONFIG = "claims/1"
 CLAIM = "claim@1"
@@ -437,14 +437,16 @@ def replay(repo, key):
     return repo.file(CHECKER, key, recs)
 
 
-def verify(repo, base):
+def verify(repo, base, done=frozenset(), verified=None):
     """Re-execute every acceptance the claims checker signed since commit `base`, in a temporary worktree of the
     commit it names: its `code` must be the checker's code at that commit (CODE_DIFFERS), its witnesses and mutants
     those of the version it accepts, the claims check must pass there and that version be the leaf of a live
     `backed` claim there, as replay requires before it signs (CLAIM_PREFLIGHT), and every witness must pass and
     every mutant be killed there again (CLAIM_REPLAY_DIFFERS), and the `files` it names, when it names them, be what
     that commit's checkout lists for the claim (warrant.drift reads them). Acceptances by a person (codex) are trust
-    decisions, not re-executed."""
+    decisions, not re-executed. An acceptance in `done` (ids a run on this branch re-executed and found holding: its
+    result at the commit it names cannot change) is checked but not run again; `verified`, when given, receives every
+    acceptance that held, so a later run of the same pull request after its base moved re-executes only what is new."""
     old = _records_at(repo.root, base)
     rep = repo.report()
     recs, bad, by_commit = rep["_recs"], [], {}
@@ -460,11 +462,15 @@ def verify(repo, base):
             bad.append(f"{i[:12]}: {why}")
         else:
             by_commit.setdefault(b["commit"], []).append((i, b["target"], v["body"]))
+    held = [i for rows in by_commit.values() for i, _, _ in rows if i in done]
+    by_commit = {x: kept for x, rows in by_commit.items() if (kept := [row for row in rows if row[0] not in done])}
     pins = {i: recs[i]["body"].get("files") for rows in by_commit.values() for i, _, _ in rows}
     for x, rows in sorted(by_commit.items()):
         bad += _reexecuted(repo, x, rows, pins)
     if bad:
         raise Failed("CLAIM_REPLAY_DIFFERS", "; ".join(bad))
+    if verified is not None:
+        verified.extend(held + [i for rows in by_commit.values() for i, _, _ in rows])
     return sum(len(rows) for rows in by_commit.values())
 
 
@@ -530,8 +536,7 @@ def _closures_cmd(repo, root):
     return 0
 
 
-def run(argv=None):
-    root, argv = env_root(list(sys.argv[1:] if argv is None else argv))
+def _parser():
     ap = argparse.ArgumentParser(prog="warrant.claims")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check")
@@ -549,7 +554,60 @@ def run(argv=None):
     r.add_argument("--key", required=True)
     vf = sub.add_parser("verify")
     vf.add_argument("--base", required=True)
-    a = ap.parse_args(argv)
+    vf.add_argument("--done", help="a file of the checkout (build/...) of acceptance ids already re-executed and held on "
+                                   "this branch; updated on success")
+    return ap
+
+
+def _done_file(path, root, code):
+    """The acceptance ids FILE says held under this checker `code`, or a refusal. What is established: FILE is a file
+    of the checkout (inside) that Git does not track (Codex on #367: a committed done file skipped the replay of the
+    acceptances it named), and an entry counts only for the checker code that wrote it. It is written by an earlier run
+    of the same branch, so it saves time, not trust against the branch's author: CI restores it for branches of this
+    repository only and reads it before any code of the branch's findings runs."""
+    if path.is_symlink():
+        raise Failed("PATH", f"{path}: the done file is a file, not a link")
+    try:
+        P.git(root, "ls-files", "--error-unmatch", "--", os.path.relpath(path, Path(root).resolve()))
+        tracked = True
+    except subprocess.CalledProcessError:
+        tracked = False
+    if tracked:
+        raise Failed("PATH", f"{path}: the done file is the runner's own, never a file the tree holds")
+    rows = [ln.split() for ln in path.read_text().splitlines()] if path.is_file() else []
+    return frozenset(r[0] for r in rows if len(r) == 2 and r[1] == code)
+
+
+def _verify_cmd(repo, a, root):
+    """`verify --base M [--done FILE]`: FILE is a file of the checkout (inside), as every path a tool reads or writes,
+    that Git does not track; each line `<acceptance id> <checker code>`."""
+    path = inside(a.done, root) if a.done else None
+    # the checker's code at the commit checked out, whatever started the process (a shim, -m): identity() refuses a run
+    # whose launcher lies in the repository (observed on #367 at 0eeb3072 in CI: tools/claims.py)
+    code = checker_code(git(root, "rev-parse", "HEAD"), root) if path else None
+    done = _done_file(path, root, code) if path else frozenset()
+    held = []
+    n = verify(repo, a.base, done, held)
+    if path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(f"{i} {code}\n" for i in sorted(set(held) | done)))
+    print(f"claims checker acceptances new since {a.base[:12]}: {n} re-executed, {len(set(held) & done)} held before, all held")
+    return 0
+
+
+def _check_cmd(repo, root):
+    rep, out = check(repo)
+    for c, d in out:
+        print(f"{c} {d}")
+    srcs = sources(config(root))
+    n = len([1 for b in live(rep).values() if b["source"] in srcs])
+    print(f"claims: {n} live of {', '.join(srcs)}; {len(out)} problem(s)")
+    return 1 if out else 0
+
+
+def run(argv=None):
+    root, argv = env_root(list(sys.argv[1:] if argv is None else argv))
+    a = _parser().parse_args(argv)
     repo = Repo(root)
     if a.cmd == "closures":
         return _closures_cmd(repo, root)
@@ -557,16 +615,9 @@ def run(argv=None):
         dump({"actor": CHECKER, **identity(root)})
         return 0
     if a.cmd == "verify":
-        print(f"claims checker acceptances new since {a.base[:12]}: {verify(repo, a.base)} re-executed, all held")
-        return 0
+        return _verify_cmd(repo, a, root)
     if a.cmd == "check":
-        rep, out = check(repo)
-        for c, d in out:
-            print(f"{c} {d}")
-        srcs = sources(config(root))
-        n = len([1 for b in live(rep).values() if b["source"] in srcs])
-        print(f"claims: {n} live of {', '.join(srcs)}; {len(out)} problem(s)")
-        return 1 if out else 0
+        return _check_cmd(repo, root)
     if a.cmd == "view":
         emit(view(repo.report(), repo.root), a.out, root)
         return 0
