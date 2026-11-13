@@ -1160,13 +1160,15 @@ def refresh_verdicts(root, b, gh, found):
 
 
 def enforce_brakes(root, b, gh, found, now=None):
-    """[(pr, outcome)] of each merge whose brake is open, vetoed, not reverted and with no revert pull request open."""
+    """[(pr, outcome)] of each merge whose brake is open, vetoed, not reverted and with no revert pending: an open pull
+    request the gate assessed as the exact revert of that merge (_revert_only). A branch's name alone is no revert
+    (Codex 8caa1ce8: a fork's pull request on gate/revert/7-blocker held back the revert of a vetoed #7)."""
     snap, _ = store_at(root, b.commit)
     rep = assess_snapshot(b, snap)
-    branches = {str(a.pr.get("branch") or "") for a in found}
+    pending = {a.facts.get("revert") for a in found if a.facts.get("revert")}
     out = []
     for k in brakes(root, b.commit, now):
-        if reverted(root, b.commit, k["merge"]) or any(x.startswith(f"{REVERT_BRANCH}{k['pr']}-") for x in branches):
+        if reverted(root, b.commit, k["merge"]) or k["merge"] in pending:
             continue
         why = vetoed(b, rep, gh, k)
         if why:
@@ -1178,8 +1180,8 @@ def _revert_only(a, root, b, pr, head):
     """None when the pull request is the gate's exact revert of a braked merge of the base (opened by the workflow's
     bot, one commit naming the merge, its parent on the base, changing exactly what the merge changed back to what it
     was, records kept, nothing changed there since); else why not."""
-    if pr.get("author") != f"{ACTIONS_APP}[bot]":
-        return f"#{pr['number']} under {REVERT_BRANCH} was not opened by the gate"
+    if pr.get("author") != f"{ACTIONS_APP}[bot]" or pr.get("head_repo") != b.repository:
+        return f"#{pr['number']} under {REVERT_BRANCH} was not opened by the gate from this repository"
     parents, _, msg = _commit(root, head)
     m = next(iter(revert_lines(msg)), None)
     if len(parents) != 1 or not m:
