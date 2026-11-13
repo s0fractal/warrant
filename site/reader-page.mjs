@@ -303,10 +303,19 @@ function drawChanges() {
   box.hidden = false;
 }
 
+// The form's section, when the page has one by that name: a cached page of an earlier release has none, and this
+// script must still draw there (the two files are fetched apart and a host may cache them apart).
+function showForm(yes) {
+  const box = $("asking");
+  if (box) box.hidden = !yes;
+}
+
 function draw() {
   if (!current) return;
   drawChanges();
-  if (params().changes && current.changes?.mark) $("floor").hidden = true; else drawFloor();
+  const onlyChanges = Boolean(params().changes && current.changes?.mark);
+  showForm(!onlyChanges);                                 // changes=1 on a phone: what changed comes first, not the form
+  if (onlyChanges) $("floor").hidden = true; else drawFloor();
   drawLineage();
   drawList();
 }
@@ -356,6 +365,7 @@ async function run() {
   } catch (e) {
     current = null;
     for (const id of ["changes", "floor", "lineage", "list"]) $(id).hidden = true;
+    showForm(true);                                         // a refusal is said beside the form that can ask again
     say(`Refused: ${e?.message ?? e}`, true);                    // a refusal is shown whole; nothing partial is drawn
   } finally {
     $("go").disabled = false;
