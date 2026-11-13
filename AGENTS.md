@@ -24,7 +24,9 @@ repository's records, tools, review loop and merge gate).
      two families/one) and the gate reverts it; the gate comments once on the merge, naming him;
    - the same changes, **the owner away**: the windows come before the merge, as above, and the gate comments once
      when a constitutional window opens.
-   No release is tagged from a commit with an open brake in its history (`python -m warrant.gate brakes --at C`).
+   No stable release is tagged from a commit with an open brake in its history (`python -m warrant.gate brakes --at C
+   --version V`); a pre-release (PEP 440) is, and when a revert names a published version an agent records an
+   obligation for it.
    The owner vetoes with the `hold` label or a challenge on the head version (`pr/owner`, `challenger`). His word
    can lower reliance, never raise it: he holds no role that accepts. A merge the gate cannot make (its own defect) is
    an open point to report, not a reason to merge by hand. His own merges on GitHub are the presence signal, so an

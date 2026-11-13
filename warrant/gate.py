@@ -85,6 +85,10 @@ PRESENCE_FIELDS = {"login", "days", "since"}
 BRAKE = re.compile(r"warrant-gate brake until (\d{1,12}): #(\d{1,9}) head version (\w+)")       # a whole line (fullmatch)
 REVERT = re.compile(r"warrant-gate revert of (\w+)")
 REVERT_BRANCH = "gate/revert/"
+# PEP 440's pre-releases (aN, bN, rcN, optionally .devN; or .devN alone), by the whole string: released with brakes
+# open (owner, 2026-11-13: «в нас нема клієнтів — ми обслуговуємо своє майбутнє»); a stable release waits for them
+_N = r"(?:0|[1-9][0-9]*)"
+PRERELEASE = re.compile(rf"{_N}(?:\.{_N})*(?:(?:a|b|rc){_N}(?:\.post{_N})?(?:\.dev{_N})?|\.dev{_N})")
 BRAKE_MARK = "<!-- warrant-gate brake -->"
 AWAY = "<!-- warrant-gate presence ended {until} -->"
 WEB_FLOW = "web-flow"                       # GitHub's committer of a merge made on GitHub
@@ -364,11 +368,19 @@ def loadable(path, written, status, mode, modules, held):
 
 
 def is_ancestor(root, a, b):
+    """Whether `a` is an ancestor of `b`; False also when Git cannot say (an object missing here): every caller that
+    reads False as a refusal is on the safe side. One that would read it as "it does not hold" uses ancestry()."""
+    return ancestry(root, a, b) is True
+
+
+def ancestry(root, a, b):
+    """True or False when Git establishes whether `a` is an ancestor of `b`; None when it cannot (an object not in
+    this clone: merge-base exits 128, not 1) (Codex on #376: a tag's commit not fetched read as "not published")."""
     try:
         git(root, "merge-base", "--is-ancestor", a, b)
         return True
-    except subprocess.CalledProcessError:
-        return False
+    except subprocess.CalledProcessError as e:
+        return False if e.returncode == 1 else None
 
 
 # ---------------------------------------------------------------- the base
@@ -1121,6 +1133,24 @@ def revert_plan(root, base, merge):
             else {"path": p, "mode": after[p][0], "type": "blob", "sha": None} for p in changed], None
 
 
+def published_with(root, gh, merge):
+    """(held, unknown): the tags of this repository (v...) whose commit holds `merge` (the published versions a revert
+    of it does not reach), and those whose relation to it this clone cannot establish (their commit is not here). An
+    agent records an obligation for each held one; a yank is the owner's act, if he wants one."""
+    held, unknown = [], []
+    for page in gh.api("tags?per_page=100", pages=True):
+        for t in page:
+            sha = (t.get("commit") or {}).get("sha")
+            if not str(t.get("name", "")).startswith("v"):
+                continue
+            rel = ancestry(root, merge, sha) if S.hex_of(sha, 40) else None
+            if rel is True:
+                held.append(t["name"])
+            elif rel is None:
+                unknown.append(t["name"])
+    return sorted(held), sorted(unknown)
+
+
 def open_revert(root, b, gh, k, why):
     """Open the gate's revert of the merge of brake `k` as a pull request from gate/revert/<pr>-<merge>, made through
     GitHub's API with the workflow's token, and start the required workflows on it; the outcome as text."""
@@ -1133,8 +1163,22 @@ def open_revert(root, b, gh, k, why):
         commit = gh.api("git/commits", "POST", {"message": msg, "tree": tree, "parents": [b.commit]})["sha"]
         branch = f"{REVERT_BRANCH}{k['pr']}-{k['merge'][:12]}"
         gh.api("git/refs", "POST", {"ref": f"refs/heads/{branch}", "sha": commit})
+        try:
+            held, unknown = published_with(root, gh, k["merge"])
+        except (Refused, AttributeError, TypeError, KeyError, ValueError):     # an answer that is no list of tags: not read
+            held, unknown = None, None
+        reached = ""
+        if held:
+            reached += ("Published versions hold the reverted change: " + ", ".join(held) + ". An agent records an "
+                        "obligation for each (the next pre-release closes it); a yank is the owner's act, if he wants one. ")
+        if unknown:
+            reached += "Whether these published versions hold it could not be established here: " + ", ".join(unknown) + ". "
+        if held is None:
+            reached = "Whether a published version holds it could not be read."
+        elif not held and not unknown:
+            reached = "No published version holds it (every tag was checked)."
         gh.api("pulls", "POST", {"title": f"Revert #{k['pr']} (vetoed in its brake window)", "head": branch, "base": b.gate["base"],
-                                 "body": f"The gate reverts {k['merge']}: {why}. The store's records are kept."})
+                                 "body": f"The gate reverts {k['merge']}: {why}. The store's records are kept. {reached}"})
         for w in sorted({c["workflow"] for c in b.gate["required"]}):
             gh.dispatch(w, branch)
     except Refused as e:
@@ -1593,6 +1637,7 @@ def main(argv=None):
     g.add_argument("--pr", type=int, action="append", default=[])
     k = sub.add_parser("brakes")
     k.add_argument("--at", required=True)
+    k.add_argument("--version", help="the version the release declares: a PEP 440 pre-release is released with brakes open")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "brakes":
@@ -1601,7 +1646,10 @@ def main(argv=None):
                 print(f"OPEN #{x['pr']} merged as {x['merge'][:12]}: its brake holds until "
                       f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(x['until']))}")
             print(f"{len(open_)} merge(s) at {a.at[:12]} whose brake is still open")
-            return 1 if open_ else 0
+            pre = a.version is not None and bool(PRERELEASE.fullmatch(a.version))
+            if open_ and pre:
+                print(f"{a.version} is a pre-release: released with brakes open; a revert names it")
+            return 1 if open_ and not pre else 0
         if a.cmd == "due":
             return cmd_due(a.root, a.base, a.json, a.remote)
         return cmd_gate(a.root, a.base, a.merge, a.gate_var == "hold", a.summary, a.pr, a.remote, a.json)

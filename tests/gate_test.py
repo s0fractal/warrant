@@ -1247,6 +1247,50 @@ def after_merge_cases():
     check("E86 an after_merge list naming no workflow file, empty paths, a workflow twice or an unknown member refuses the "
           "base's configuration", all(x == {"BASE_CONFIG"} for x in refused), refused)
 
+def prerelease_cases():
+    """The owner, 2026-11-13 (relayed): «в нас нема клієнтів — ми обслуговуємо своє майбутнє»: a pre-release (PEP 440
+    a, b, rc, .dev, by the form of the version the package declares) is released with brakes open; a stable release
+    waits for every brake, as before. A revert of a merge a published version holds says which."""
+    r = Repo(git_init=True)
+    tree = git(r.root, "rev-parse", "HEAD^{tree}")
+    base0 = git(r.root, "rev-parse", "HEAD")
+    other = git(r.root, "commit-tree", tree, "-p", base0, "-m", "feature")
+    merge = git(r.root, "commit-tree", tree, "-p", base0, "-p", other, "-m",
+                f"Merge #7\n\nwarrant-gate brake until {int(time.time()) + 86400}: #7 head version {'a' * 64}")
+
+    def rc(version):
+        args = ["--root", str(r.root), "brakes", "--at", merge] + (["--version", version] if version is not None else [])
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                return GT.main(args)
+            except SystemExit as e:          # an unknown option: argparse's own exit, a FAIL of the case, not its end
+                return f"exit {e.code}"
+    got = {v: rc(v) for v in ("3.0.0a7", "3.0.0b1", "3.0.0rc2", "3.0.0.dev3", "3.0.0a7.dev1", "3.0.0", "3.0.0.post1",
+                              "3.0.0a7\n", "3.0.0a", "3.0.0-alpha", "a7")}
+    check("E87 with brakes open, a pre-release by the form of its version (3.0.0a7, b1, rc2, .dev3) is admitted and a "
+          "stable one (3.0.0, 3.0.0.post1) refused; the form is the whole string, so 3.0.0a7 with a newline, 3.0.0a, "
+          "3.0.0-alpha or a7 are no pre-release; with no version the brakes refuse as before",
+          got == {"3.0.0a7": 0, "3.0.0b1": 0, "3.0.0rc2": 0, "3.0.0.dev3": 0, "3.0.0a7.dev1": 0, "3.0.0": 1, "3.0.0.post1": 1,
+                  "3.0.0a7\n": 1, "3.0.0a": 1, "3.0.0-alpha": 1, "a7": 1} and rc(None) == 1, got)
+    git(r.root, "update-ref", "refs/heads/master", merge)
+    later = git(r.root, "commit-tree", tree, "-p", merge, "-m", "a later commit, tagged")
+    b = GT.Base.__new__(GT.Base)
+    b.root, b.commit = r.root, later
+
+    class GH:
+        def api(self, path, method="GET", body=None, pages=False):
+            return [[{"name": "v3.0.0a7", "commit": {"sha": later}}, {"name": "v3.0.0a6", "commit": {"sha": base0}}]]
+    held = GT.published_with(r.root, GH(), merge)
+
+    class Far:
+        def api(self, path, method="GET", body=None, pages=False):
+            return [[{"name": "v3.0.0a7", "commit": {"sha": "f" * 40}}, {"name": "v3.0.0a6", "commit": {"sha": base0}}]]
+    far = GT.published_with(r.root, Far(), merge)
+    check("E88 a revert of a merge names the published versions whose tagged commit holds it (here v3.0.0a7, not v3.0.0a6, "
+          "tagged before it), and a tag whose commit this clone does not hold is unknown, never 'not published' (Codex "
+          "on #376: merge-base exits 128 there, and False was read as no)",
+          held == (["v3.0.0a7"], []) and far == ([], ["v3.0.0a7"]), (held, far))
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -1270,5 +1314,6 @@ if __name__ == "__main__":
     codex_356_cases()
     refresh_cases()
     after_merge_cases()
+    prerelease_cases()
     revert_pending_cases()
     sys.exit(finish())

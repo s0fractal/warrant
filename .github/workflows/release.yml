@@ -73,13 +73,16 @@ jobs:
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
       # A merge made while the owner was present has no window before it; its brake acts after it (warrant/gate.py).
-      # Nothing leaves the repository, to PyPI or to the gates of other repositories, before every brake in its
-      # history has closed: what is published has always passed the whole window.
-      - name: Every brake in the tagged commit's history has closed
+      # A stable release leaves the repository, to PyPI or to the gates of other repositories, only after every brake
+      # in its history has closed. A pre-release (PEP 440 a, b, rc, .dev, by the version the package declares) goes
+      # with brakes open (owner, 2026-11-13): a later revert names the published versions it does not reach.
+      - name: Every brake in the tagged commit's history has closed (a pre-release goes with brakes open)
+        env:
+          VER: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           python -m pip install --quiet --only-binary ':all:' --require-hashes -r .github/merge-gate-requirements.txt
-          PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.gate brakes --at "$GITHUB_SHA"
+          PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.gate brakes --at "$GITHUB_SHA" --version "$VER"
 
       - name: Build the sdist and the wheel (pinned frontend and backend, no isolation)
         run: |

@@ -6,6 +6,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- A pre-release (PEP 440 `aN`, `bN`, `rcN`, `.devN`, by the whole version the package declares) is released with brakes
+  open; a stable release still waits for every brake (owner, 2026-11-13). `brakes --version V`; release.yml passes the
+  version. A revert of a merge that a published version holds names that version in its pull request (an obligation for
+  an agent, a yank the owner's act). E87, E88; mutants G104–G107.
+
 ## 3.0.0a7 — the owner as observer; claims on a runner; a stranger's path
 
 Read first:
