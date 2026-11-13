@@ -1128,6 +1128,14 @@ def chain_join_cases():
 
 
 def cli_cases():
+    s = Repo()
+    lines = s.store.lines()
+    (s.dot / "records.jsonl").write_bytes(b"{  " + lines[0][1:] + b"".join(lines[1:]))
+    _, out = cli(s.root, "fmt")
+    doc = json.loads(out or "{}")
+    check("K12 `warrant fmt` reports the order it leaves: a rejected line stays, and the store is not canonical "
+          "(6d6bb700: it printed canonical true; moved from core_test T15, whose CLI import put the whole package in the "
+          "import closure of every core claim)", doc.get("canonical") is False and doc.get("rejected") == 1, doc)
     r = Repo()
     o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
     d = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
@@ -1600,6 +1608,25 @@ def grounded_cases():
     check("GR3 the version asked about must be its lineage's effective version", G.grounded(r.report(), c0)["failing"][:1] == [[c0, "NOT_EFFECTIVE"]],
           G.grounded(r.report(), c0))
 
+def narrow_cases():
+    """The analysis session, 2026-11-13 (#364): every one of 136 claims read STALE after one change to warrant/gate.py,
+    because the widest case of a witness file set its closure for all its claims (core_test T15 imported the CLI) and
+    claims.py imported the gate. A change to the gate stales no claim a core witness alone backs."""
+    from warrant import imports as IM
+    from warrant.pins import blobs
+    rep = RP.Repo(ROOT).report()
+    known, tree = CL.harness(ROOT), blobs(ROOT, "HEAD")
+    core = [b for b in CL.live(rep).values() if b["state"] == "backed" and b["witnesses"]
+            and all(w.startswith("core_test:") for w in b["witnesses"])]
+    named = [sorted(CL.files_of(b, ROOT, known, tree) or {}) for b in core[:5]]
+    rows = {f: (size, n) for f, size, n in CL.closures(ROOT, rep)}
+    check("CF6 a change to the gate stales no claim that core witnesses alone back: core_test's import closure and "
+          "claims.py's hold no warrant/gate.py, and `claims closures` names each witness file's closure and the claims on it",
+          core and all(names and "warrant/gate.py" not in names for names in named)
+          and "warrant/gate.py" not in IM.closure(ROOT, "warrant/claims.py")
+          and rows.get("tests/core_test.py", (0, 0))[0] and rows["tests/core_test.py"][0] < 12,
+          (len(core), [len(n) for n in named], rows.get("tests/core_test.py")))
+
 def voices_cases():
     """W4's stranger path in the core command: `warrant init --voices` and `warrant say`, with nothing but the package."""
     from warrant import commons as CM
@@ -1875,4 +1902,5 @@ if __name__ == "__main__":
     merged_cases()
     voices_cases()
     board_cases()
+    narrow_cases()
     sys.exit(finish())

@@ -233,6 +233,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   now counts as pending only when the gate assessed an open pull request as that merge's exact revert, and an exact
   revert must come from a branch of this repository. E83, E70; mutants G96, G97.
 
+- Narrower claim closures (the analysis session, #364: all 136 claims STALE after one change to `warrant/gate.py`). A
+  witness file's import closure is the closure of its widest case: core_test's T15 imported the CLI, which reaches the
+  whole package, so every core claim named the gate. T15 moves to tools_test as K12, and `claims.py` reads the store
+  at a base from Git itself instead of through the gate (`drift`, which imports it, no longer depends on the gate).
+  core_test's closure is 9 files, not 24. `warrant.claims closures` prints each witness file's closure size and the
+  claims on it. CF6, K12; mutant T175; V3-8-7.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by

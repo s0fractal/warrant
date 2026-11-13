@@ -43,10 +43,11 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
-from . import gate as GT
 from . import imports as IM
 from . import records as R
+from . import pins as P
 from .pins import blobs
+from .store import Snapshot
 from .repo import Failed, Repo, checker_problem, code_tree, dump, emit, env_root, git, identity, inside, load_key, main, tree_id
 
 CONFIG = "claims/1"
@@ -446,11 +447,11 @@ def verify(repo, base, done=frozenset(), verified=None):
     decisions, not re-executed. An acceptance in `done` (ids a run on this branch re-executed and found holding: its
     result at the commit it names cannot change) is checked but not run again; `verified`, when given, receives every
     acceptance that held, so a later run of the same pull request after its base moved re-executes only what is new."""
-    old, _ = GT.store_at(repo.root, base)
+    old = _records_at(repo.root, base)
     rep = repo.report()
     recs, bad, by_commit = rep["_recs"], [], {}
     for i, r in sorted(recs.items()):
-        if r["kind"] != "attest" or r["actor"] != CHECKER or i in old.lines or rep["_basis"].get(i) != "SIGNED":
+        if r["kind"] != "attest" or r["actor"] != CHECKER or i in old or rep["_basis"].get(i) != "SIGNED":
             continue
         b, v = r["body"], recs.get(r["body"].get("target"))
         why = checker_problem(b, repo.root)
@@ -471,6 +472,18 @@ def verify(repo, base, done=frozenset(), verified=None):
     if verified is not None:
         verified.extend(held + [i for rows in by_commit.values() for i, _, _ in rows])
     return sum(len(rows) for rows in by_commit.values())
+
+
+def _records_at(root, commit):
+    """The record ids of the store at `commit`, from Git objects. Read here, not through the gate's reader: claims (and
+    drift, which imports it) do not depend on the gate, the module that changes most (the import closure of every
+    claim whose witness reads drift would hold it)."""
+    x = P.git(root, "rev-parse", "--verify", "--end-of-options", f"{commit}^{{commit}}")
+    try:
+        raw = P.git(root, "show", f"{x}:.warrant/records.jsonl", raw=True)
+    except subprocess.CalledProcessError:
+        raw = b""
+    return set(Snapshot([ln + b"\n" for ln in raw.split(b"\n") if ln], {}).lines)
 
 
 def _reexecuted(repo, x, rows, pins):
@@ -497,6 +510,32 @@ def _reexecuted(repo, x, rows, pins):
     return bad + [f"{i[:12]}: CLAIM_REPLAY_DIFFERS {b['id']} does not hold at {x[:12]}" for i, _, b in rows if not held(b, ran, killed)]
 
 
+def closures(root, rep):
+    """[(witness file, files in its import closure, live backed claims it witnesses)], the widest first: what one
+    change to a module stales (a claim's acceptance names the closure of each file that runs, files_of)."""
+    tests, by = witness_files(root), {}
+    for b in live(rep).values():
+        if b["state"] == "backed":
+            for name in {w.split(":")[0] for w in b["witnesses"]}:
+                by[name] = by.get(name, 0) + 1
+    out = []
+    for name, n in by.items():
+        if name in tests:
+            f = tests[name].relative_to(root).as_posix()
+            try:
+                size = len(IM.closure(root, f, ("", os.path.dirname(f))))
+            except IM.Unreadable:
+                size = None
+            out.append((f, size, n))
+    return sorted(out, key=lambda r: (-(r[1] or 0) * r[2], r[0]))
+
+
+def _closures_cmd(repo, root):
+    for f, size, n in closures(root, repo.report()):
+        print(f"{f}: {size if size is not None else 'unreadable'} file(s) in its import closure, {n} backed claim(s)")
+    return 0
+
+
 def _parser():
     ap = argparse.ArgumentParser(prog="warrant.claims")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -510,6 +549,7 @@ def _parser():
         p.add_argument("--actor", required=True)
         p.add_argument("--key", required=True)
     sub.add_parser("identity")
+    sub.add_parser("closures")
     r = sub.add_parser("replay")
     r.add_argument("--key", required=True)
     vf = sub.add_parser("verify")
@@ -546,6 +586,8 @@ def run(argv=None):
     root, argv = env_root(list(sys.argv[1:] if argv is None else argv))
     a = _parser().parse_args(argv)
     repo = Repo(root)
+    if a.cmd == "closures":
+        return _closures_cmd(repo, root)
     if a.cmd == "identity":
         dump({"actor": CHECKER, **identity(root)})
         return 0
