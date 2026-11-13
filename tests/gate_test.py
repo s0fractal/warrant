@@ -1122,10 +1122,15 @@ def refresh_cases():
 
         def api(self, path, method="GET", body=None, pages=False):
             self.calls.append((path, method, body))
+            if path == "pulls" and method == "POST":
+                return {"number": 10}
             return {"mergeable_state": self.state} if path.startswith("pulls/") else {"sha": "e" * 40}
 
         def dispatch(self, w, br):
             self.calls.append(("dispatch", w, br))
+
+        def comment(self, n, body):
+            self.calls.append(("comment", n, body))
     b = GT.Base(r.root, base)
     dirty, clean = GH("dirty"), GH("clean")
     out = GT.refresh_verdicts(r.root, b, dirty, [a])
@@ -1136,13 +1141,27 @@ def refresh_cases():
     commit = next((c[2] for c in dirty.calls if c[0] == "git/commits"), {})
     plain = PR(accept=False)
     other = GT.refresh_verdicts(plain.r.root, GT.Base(plain.r.root, plain.base), GH("dirty"), [plain.assess()])
-    check("E84 a pull request of verdicts only that conflicts with the base gets the base merged into its branch by the "
-          "gate: its records the union of both stores in canonical order, parents the head and the base, CI started; a "
-          "mergeable one, or one that is not verdicts only, is left alone (#364)",
+    fresh = f"codex/verdicts/{base[:12]}-from-9"
+    made = [c for c in dirty.calls if c[0] == "git/refs" and c[1] == "POST"]
+    opened = [c for c in dirty.calls if c[0] == "pulls" and c[1] == "POST"]
+    check("E84 a pull request of verdicts only that conflicts with the base is carried by a new one: the base merged into "
+          "its head by the gate (records the union of both stores in canonical order, parents the head and the base) on "
+          "a new branch under the same prefix, opened as a pull request with CI started on it, the old one closed with a "
+          "comment naming the new one and its branch deleted; a mergeable one, or one not verdicts only, is left alone "
+          "(#364)",
           a.facts.get("verdicts") and [n for n, _ in out] == [9] and union == want and commit.get("parents") == [head, base]
-          and any(c[0] == "git/refs/heads/codex/verdicts/x" and c[1] == "PATCH" for c in dirty.calls)
-          and any(c[0] == "dispatch" for c in dirty.calls) and [c[0] for c in clean.calls] == ["pulls/9"] and other == [],
-          (out, a.reasons, len(union), len(want), commit.get("parents"), [c[0] for c in clean.calls], other))
+          and made and made[0][2] == {"ref": f"refs/heads/{fresh}", "sha": "e" * 40}
+          and opened and opened[0][2]["head"] == fresh and opened[0][2]["base"] == "master"
+          and ("dispatch", ".github/workflows/ci.yml", fresh) in dirty.calls
+          and any(c[0] == "comment" and c[1] == 9 and "#10" in c[2] for c in dirty.calls)
+          and ("pulls/9", "PATCH", {"state": "closed"}) in dirty.calls
+          and ("git/refs/heads/codex/verdicts/x", "DELETE", None) in dirty.calls
+          and [c[0] for c in clean.calls] == ["pulls/9"] and other == [],
+          (out, a.reasons, len(union), len(want), commit.get("parents"), [c[:2] for c in dirty.calls],
+           [c[0] for c in clean.calls], other))
+    check("E89 ... and the old pull request's branch is never moved: GitHub holds a pull_request run of the workflow "
+          "token's update for approval (#379, #382), where a pull request it opens starts none",
+          not any(c[1] == "PATCH" and c[0].startswith("git/refs/") for c in dirty.calls), [c[:2] for c in dirty.calls])
 
 
 def revert_pending_cases():

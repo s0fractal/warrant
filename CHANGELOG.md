@@ -4,6 +4,19 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
+## Unreleased
+
+- A pull request of verdicts only that conflicts with the base is carried by a new one: the gate merges the base into
+  its head (records only, the union of the stores) on a new branch under the same prefix, opens it as a pull request,
+  starts CI, closes the old one with a comment naming the new one and deletes its branch. It no longer moves the old
+  branch: GitHub held a pull_request run of the workflow token's update for the owner's approval (action_required) and
+  the required check stayed expected (#379 run 43427696972, #382 run 43468860556); a pull request the token opens
+  starts none. E84, E89; mutants G109–G111.
+- A dispatched CI run whose `test` passed dispatches the gate (`wake-gate` in ci.yml, nothing checked out): a run the
+  workflow token starts wakes no workflow_run, and GitHub mostly skips the gate's schedule, so a green verdicts pull
+  request waited for a person to dispatch the gate (#379).
+- `warrant --help` lists `say`.
+
 ## 3.0.0a7 — the owner as observer; claims on a runner; a stranger's path
 
 Read first:
