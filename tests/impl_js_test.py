@@ -972,6 +972,8 @@ def main():
     browser_pins_cases()
     browser_others_cases()
     browser_changes_cases()
+    browser_desk_cases()
+    browser_frontier_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -1083,6 +1085,10 @@ def second_client_cases():
 
 READER = ROOT / "site" / "reader.mjs"
 PAGE_FILES = [ROOT / "site" / "reader.html", ROOT / "site" / "reader-page.mjs", ROOT / "site" / "reader.mjs"]
+DESK_FILES = [ROOT / "site" / "desk.html", ROOT / "site" / "desk-page.mjs", ROOT / "site" / "desk.mjs", ROOT / "site" / "page.mjs"]
+DESK = ROOT / "site" / "desk.mjs"
+# bidirectional controls and zero-width characters: none may stand literally in a page's source (written as escapes)
+INVISIBLE = {chr(c) for c in [*range(0x202a, 0x202f), *range(0x2066, 0x206a), 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x2060, 0xfeff, 0x061c]}
 MARKUP_FROM_TEXT = ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "srcdoc", "eval(",
                     "new Function", "setAttribute(\"on", "javascript:")
 
@@ -1235,15 +1241,21 @@ def browser_reader_cases():
           "not hash to its name", len(maps) > 0 and rc_blob == 2 and "transport altered blob" in altered.get("refused", ""),
           (maps, rc_blob, altered))
 
-    texts = {p.name: p.read_text() for p in PAGE_FILES}
-    html = texts["reader.html"]
+    texts = {p.name: p.read_text() for p in PAGE_FILES + DESK_FILES}
+    html, desk_html = texts["reader.html"], texts["desk.html"]
+    csp = lambda h: re.findall(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', h)
     found = sorted((name, word) for name, text in texts.items() for word in MARKUP_FROM_TEXT if word in text)
-    check("J10 the page's source: no call that builds markup from a string in its three files, one script element and "
-          "that one external, no inline handler, and a policy allowing scripts of its own origin only",
-          not found and html.count("<script") == 1 and '<script type="module" src="reader-page.mjs"></script>' in html
-          and re.search(r"<[^>]*\son[a-z]+\s*=", html, re.I) is None
+    hidden = sorted((name, f"U+{ord(ch):04X}") for name, text in texts.items() for ch in INVISIBLE if ch in text)
+    check("J10 the page's source: no call that builds markup from a string in the reader's three files and the desk's "
+          "four (desk.html, desk-page.mjs, desk.mjs, page.mjs), no literal bidirectional or zero-width character in "
+          "any of them; each page one script element and that one external, no inline handler, and a policy allowing "
+          "scripts of its own origin only; the desk's policy is the reader's, word for word",
+          not found and not hidden and html.count("<script") == 1 and '<script type="module" src="reader-page.mjs"></script>' in html
+          and desk_html.count("<script") == 1 and '<script type="module" src="desk-page.mjs"></script>' in desk_html
+          and all(re.search(r"<[^>]*\son[a-z]+\s*=", h, re.I) is None for h in (html, desk_html))
           and "script-src 'self'" in html and "default-src 'none'" in html and "'unsafe-inline'" not in html
-          and "'unsafe-eval'" not in html, found)
+          and "'unsafe-eval'" not in html and len(csp(html)) == 1 and csp(desk_html) == csp(html)
+          and "connect-src 'self' https:" in csp(html)[0], (found, hidden, csp(html), csp(desk_html)))
 
 
 def _serve_counting(directory, failing=None):
@@ -1762,6 +1774,260 @@ def browser_changes_cases():
     finally:
         for srv in srvs:
             srv.shutdown()
+
+
+def _desk(*args):
+    """(exit status, the desk's JSON answer) of `node site/desk.mjs ...`."""
+    p = subprocess.run([NODE, str(DESK), *args], capture_output=True, check=False, timeout=600)
+    try:
+        return p.returncode, json.loads(p.stdout)
+    except ValueError:
+        return p.returncode, {"crash": p.stderr.decode(errors="replace")[-300:]}
+
+
+def _desk_expected(root):
+    """What a desk block must say of the store at `root`, from the Python engine under the store's own rules: records,
+    rejected, lineages, reliance counts (ELIGIBLE on an effective version an attest names files or a commit of reads
+    PINS_NOT_CHECKED, as J10) and the lineages with a counted challenge that stands."""
+    doc = json.loads((Path(root) / ".warrant" / "v3.json").read_text())
+    view = E.View(ST.Store(Path(root) / ".warrant").snapshot(), doc["trust"], doc["profile"], None)
+    rep = view.report()
+    speaks = {r["body"]["target"] for r in view.recs.values() if r["kind"] == "attest" and ("files" in r["body"] or "commit" in r["body"])}
+    reliance = {}
+    for x in rep["lineages"].values():
+        w = "PINS_NOT_CHECKED" if x["reliance"] == "ELIGIBLE" and x["effective"] in speaks else x["reliance"]
+        reliance[w] = reliance.get(w, 0) + 1
+    standing = {L for L, x in rep["lineages"].items() if any(rep["versions"][v]["challenged_by"] for v in x["versions"])}
+    return {"records": len(view.snap.lines), "rejected": len(rep["rejected"]), "lineages": len(rep["lineages"]),
+            "reliance": dict(sorted(reliance.items())), "challenged": len(standing)}
+
+
+def browser_desk_cases():
+    """The desk (site/desk.mjs, drawn by site/desk-page.mjs): several stores read at once, one block each, with what
+    changed for the reader since each store's own mark (the reader's mark: reader.mjs makeMark and changes(); the CLI
+    keeps one file per store, named by the SHA-256 of its address, where the page keeps localStorage under one key per
+    address and rules). Held through node to the Python engine and to the reader's own CLI; no case drives a browser."""
+    from world import KEYS
+    hostile = "<img src=x onerror=alert(1)><script>alert(2)</script> \u202e&amp; \u200b"
+    one, two, three = Repo(name="one/store"), Repo(name="two/store"), Repo(name="three/store")
+    o1 = one.entity("alice", "obligation@1", {"state": "open", "statement": "accepted", "serves": []})
+    one.attest("bob", one.entity("alice", "obligation@1", {"state": "done", "statement": "accepted", "serves": []}, lineage=o1))
+    p1 = one.entity("alice", "obligation@1", {"state": "open", "statement": "accepted at a commit", "serves": []})
+    one.attest("bob", one.entity("alice", "obligation@1", {"state": "done", "statement": "accepted at a commit", "serves": []}, lineage=p1), commit="c" * 40)
+    c1 = one.entity("alice", "obligation@1", {"state": "open", "statement": "challenged", "serves": []})
+    c2 = one.entity("alice", "obligation@1", {"state": "done", "statement": "challenged", "serves": []}, lineage=c1)
+    one.attest("bob", c2)
+    one.put("bob", "challenge", {"target": c2, "statement": "counted, and it stands"}, refs=[c2])
+    one.store.append(R.record("challenge", "bob", one.t + 1, {"target": c2, "statement": "not bob's key"}, refs=[c2]), KEYS["dave"], one.trust)
+    two.entity("alice", "obligation@1", {"state": "open", "statement": "the other store's task", "serves": []})
+    three.entity("alice", "obligation@1", {"state": "open", "statement": "never read whole", "serves": []})
+    srvs, (b1, b2) = _serve_many(one.root, two.root)
+    fsrv, b3 = _serve_failing(three.root, "records.jsonl")
+    srvs.append(fsrv)
+    gone = "http://127.0.0.1:9/"                                 # the discard port: nothing answers
+    marks = one.home / "desk-marks"
+    marks.mkdir()
+    blocks = lambda out: {x["base"]: x for x in (out.get("desk") or {}).get("stores", [])}
+    lines = lambda out: {b: x.get("changes", {}).get("line") for b, x in blocks(out).items()}
+    listed = lambda out, b: [x["lineage"] for x in blocks(out).get(b, {}).get("changes", {}).get("listed", [])]
+    stores = ("--store", b1, "--store", b2, "--store", gone, "--store", b3, "--marks", str(marks))
+    no_mark = "no mark yet: nothing is compared until you mark this store as seen"
+    try:
+        rc0, d0 = _desk(*stores)
+        x0 = blocks(d0)
+        e1, e2 = _desk_expected(one.root), _desk_expected(two.root)
+        got = lambda b: {k: x0.get(b, {}).get(k) for k in e1}
+        check("J14 several stores read at once: each read store's block gives the Python engine's records, rejected (a "
+              "line under bob's name with another's key), lineages, reliance (never ELIGIBLE on pins not compared) and "
+              "lineages with a standing counted challenge, under the "
+              "publisher's rules, in the order given; with no mark yet each says so and lists nothing",
+              rc0 == 0 and [x["base"] for x in d0.get("desk", {}).get("stores", [])] == [b1, b2, gone, b3]
+              and got(b1) == e1 and got(b2) == e2 and e1["challenged"] == 1 and e1["reliance"].get("PINS_NOT_CHECKED") == 1 and e1["rejected"] == 1
+              and x0.get(b1, {}).get("rules") == "publisher" and x0.get(b1, {}).get("repository") == "one/store"
+              and lines(d0).get(b1) == lines(d0).get(b2) == no_mark and not listed(d0, b1) and not listed(d0, b2),
+              (rc0, d0.get("crash"), got(b1), e1, got(b2), e2))
+        check("J14 a store that cannot be read is named with its reason and the others still answer: nothing answers at "
+              "one address (not fetched), another answers its records with HTTP 500; each block is the refusal alone, "
+              "nothing partial (no count, no change, no wait in it)",
+              x0.get(gone, {}).get("read") is False and "not fetched" in x0.get(gone, {}).get("why", "")
+              and x0.get(b3, {}).get("read") is False and "HTTP 500" in x0.get(b3, {}).get("why", "")
+              and all(set(x0.get(b, {})) == {"name", "base", "read", "why"} for b in (gone, b3))
+              and x0.get(b1, {}).get("read") is True and x0.get(b2, {}).get("read") is True, (x0.get(gone), x0.get(b3)))
+
+        rc1, d1 = _desk(*stores, "--write-mark", b1)
+        rc1b, d1b = _desk(*stores)
+        name1 = hashlib.sha256(b1.encode()).hexdigest() + ".json"
+        files = sorted(x.name for x in marks.iterdir())
+        rm = one.home / "reader-mark.json"
+        _reader(b1, "--write-mark", str(rm))
+        dm, rmj = json.loads((marks / name1).read_text()) if (marks / name1).exists() else {}, json.loads(rm.read_text())
+        check("J14 marks are per store: marking one writes one file, named by the SHA-256 of its address; then that "
+              "store has nothing new since its mark and the other still has no mark; the file is the reader's own mark "
+              "(the same JSON reader.mjs --write-mark writes for that store, but for its time)",
+              rc1 == rc1b == 0 and files == [name1] and lines(d1b).get(b1) == "no new records since the mark"
+              and lines(d1b).get(b2) == no_mark and {k: v for k, v in dm.items() if k != "at"} == {k: v for k, v in rmj.items() if k != "at"},
+              (files, lines(d1b), sorted(dm), sorted(rmj)))
+
+        _desk(*stores, "--write-mark", b2)
+        L = two.entity("alice", "obligation@1", {"state": "open", "statement": hostile, "serves": []})
+        rc2, d2 = _desk(*stores)
+        x2 = blocks(d2).get(b2, {}).get("changes", {})
+        _, via_reader = _reader(b2, "--mark", str(marks / (hashlib.sha256(b2.encode()).hexdigest() + ".json")))
+        check("J14 a change in one store is listed in its block only: a new lineage in the second store is listed there "
+              "(as new, its statement unchanged as data) and the first store's block says nothing new; the reader's own "
+              "CLI, given the desk's mark file, lists the same lineages with the same sentence",
+              rc2 == 0 and listed(d2, b2) == [L] and x2.get("listed", [{}])[0].get("new") is True
+              and x2.get("listed", [{}])[0].get("title") == hostile
+              and x2.get("line") == "1 lineage(s) changed for you · 0 other new record(s) changed nothing you see"
+              and lines(d2).get(b1) == "no new records since the mark" and listed(d2, b1) == []
+              and [x["lineage"] for x in (via_reader.get("changes") or {}).get("listed", [])] == [L]
+              and (via_reader.get("changes") or {}).get("line") == x2.get("line"), (x2, lines(d2), via_reader.get("changes")))
+
+        one.entity("alice", "obligation@1", {"state": "open", "statement": "a new one in the first store", "serves": []})
+        rc3, d3 = _desk(*stores)
+        rc4, _ = _desk(*stores, "--write-marks")
+        rc5, d5 = _desk(*stores)
+        check("J14 mark all: before it each store lists its own change; after it nothing changed anywhere, every read "
+              "store says so, and a store that cannot be read is still named, not marked",
+              rc3 == rc4 == rc5 == 0 and len(listed(d3, b1)) == 1 and listed(d3, b2) == [L]
+              and lines(d5).get(b1) == lines(d5).get(b2) == "no new records since the mark"
+              and not listed(d5, b1) and not listed(d5, b2) and blocks(d5).get(gone, {}).get("read") is False
+              and len(list(marks.iterdir())) == 2, (lines(d3), lines(d5), sorted(x.name for x in marks.iterdir())))
+
+        hostile_list = one.home / "hostile-list.json"
+        hostile_list.write_text(json.dumps([{"name": hostile, "base": b1}]))
+        _, dh = _desk("--list", str(hostile_list))
+        check("J14 what a list or a record says reaches the desk's data unchanged, as text: a store named with markup, a "
+              "direction override and a zero-width space keeps that name, a statement holding them keeps its text",
+              [x.get("name") for x in (dh.get("desk") or {}).get("stores", [])] == [hostile] and x2.get("listed", [{}])[0].get("title") == hostile, dh)
+    finally:
+        for x in srvs:
+            x.shutdown()
+
+    default = json.loads((ROOT / "site" / "stores.json").read_text())
+    _, plan0 = _desk("--plan")
+    _, plan_a = _desk("--plan", "--store", "https://example.org/a", "--store", "https://example.org/a/", "--store", "ftp://example.org/b")
+    _, plan_bad = _desk("--plan", "--store", "javascript:alert(1)")
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        (tmp / "kept.json").write_text(json.dumps([{"name": "mine", "base": "https://example.org/mine"}, {"name": "again", "base": "https://example.org/mine/"}]))
+        (tmp / "kept-bad.json").write_text(json.dumps([{"name": "mine", "base": "file:///etc/"}]))
+        (tmp / "kept-empty.json").write_text("[]")
+        (tmp / "list-bad.json").write_text(json.dumps({"name": "not a list"}))
+        _, plan_k = _desk("--plan", "--kept", str(tmp / "kept.json"))
+        _, plan_kb = _desk("--plan", "--kept", str(tmp / "kept-bad.json"))
+        _, plan_ke = _desk("--plan", "--kept", str(tmp / "kept-empty.json"))
+        _, plan_ka = _desk("--plan", "--kept", str(tmp / "kept.json"), "--store", "https://example.org/a")
+        _, plan_lb = _desk("--plan", "--list", str(tmp / "list-bad.json"))
+    finally:
+        shutil.rmtree(tmp)
+    want = [{"base": "https://raw.githubusercontent.com/s0fractal/warrant/master/", "name": "s0fractal/warrant"},
+            {"base": "https://raw.githubusercontent.com/s0fractal/minds/main/", "name": "s0fractal/minds"}]
+    check("J14 the default list: site/stores.json is a plain list of {name, base} holding this repository's store and "
+          "minds', and it is what the desk reads when no store= is given and none is kept (no network: the selection "
+          "alone)", [dict(sorted(x.items())) for x in default] == want and plan0 == {"from": "list", "stores": want, "why": []}, (default, plan0))
+    check("J14 the selection rule: store= addresses first (each read once, named by its address; one that is not "
+          "http(s) is named and skipped), then the list kept in the browser (an address listed twice is read once, under "
+          "its first name), then stores.json; a kept list that is "
+          "empty or names a non-http(s) address is not used and the desk says why; a stores.json that is no list "
+          "reads nothing and says why; an address that is no http(s) reads nothing it names",
+          plan_a.get("from") == "address" and plan_a.get("stores") == [{"base": "https://example.org/a/", "name": "https://example.org/a/"}]
+          and len(plan_a.get("why", [])) == 1 and "not http(s)" in plan_a["why"][0]
+          and plan_k == {"from": "kept", "stores": [{"base": "https://example.org/mine/", "name": "mine"}], "why": []}
+          and plan_ka.get("from") == "address"
+          and plan_kb.get("from") == "list" and plan_kb.get("stores") == want and "not used" in " ".join(plan_kb.get("why", []))
+          and plan_ke.get("from") == "list" and "empty" in " ".join(plan_ke.get("why", []))
+          and plan_lb.get("from") == "none" and plan_lb.get("stores") == [] and "not a list" in " ".join(plan_lb.get("why", []))
+          and plan_bad.get("from") == "list" and "not http(s)" in " ".join(plan_bad.get("why", [])),
+          (plan_a, plan_k, plan_kb, plan_ke, plan_ka, plan_lb, plan_bad))
+
+
+def _frontier_py(root, actor):
+    """warrant.graph.frontier of the store at `root` under its own rules, for `actor`."""
+    from warrant import graph as G
+    doc = json.loads((Path(root) / ".warrant" / "v3.json").read_text())
+    rep = E.View(ST.Store(Path(root) / ".warrant").snapshot(), doc["trust"], doc["profile"], None).report()
+    return G.frontier(rep, doc["profile"], actor)
+
+
+def browser_frontier_cases():
+    """What waits for whom (site/reader.mjs frontier, drawn by the reader and counted by the desk): differential against
+    warrant.graph.frontier, on a fixture that reaches each branch of its rule and on this repository's own store."""
+    from world import KEYS
+    f = Repo()
+    def closure(actor, statement, **kw):
+        o = f.entity(actor, "obligation@1", {"state": "open", "statement": statement, "serves": []})
+        return o, f.entity(actor, "obligation@1", {"state": "done", "statement": statement, "serves": []}, lineage=o, **kw)
+    w_root, waits = closure("alice", "waits for an acceptor")
+    s_root, seen = closure("alice", "attested by bob, short of the match")
+    f.attest("bob", seen, verdict="seen")
+    c_root, chal = closure("alice", "challenged by bob")
+    f.put("bob", "challenge", {"target": chal, "statement": "a counterexample"}, refs=[chal])
+    goal = f.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "still open"})
+    r_root, needs = closure("alice", "requires an open lineage", requires=[goal])
+    b_root, bobs = closure("bob", "bob's own closure")
+    claim = {"id": "C1", "source": "docs/V3.md", "section": "1", "text": "a claim", "witnesses": [], "mutants": []}
+    cl = f.entity("bob", "claim@1", dict(claim, state="unbacked"))
+    backed = f.entity("bob", "claim@1", dict(claim, state="backed"), lineage=cl)
+    pr = f.entity("dave", "pr-head@1", {"state": "open", "title": "a head"})
+    head = f.entity("dave", "pr-head@1", {"state": "head", "title": "a head"}, lineage=pr)
+    a_root, accepted = closure("alice", "accepted, then challenged by its acceptor")
+    f.attest("bob", accepted)
+    f.put("bob", "challenge", {"target": accepted, "statement": "it does not hold"}, refs=[accepted])
+    e_root, eves = closure("eve", "eve holds no role")
+    x_root, replaced = closure("alice", "replaced while pending")
+    newer = f.entity("alice", "obligation@1", {"state": "open", "statement": "reopened", "serves": []}, lineage=replaced)
+    k_root = f.entity("alice", "obligation@1", {"state": "open", "statement": "forked", "serves": []})
+    f.entity("alice", "obligation@1", {"state": "done", "statement": "forked one way", "serves": []}, lineage=k_root)
+    f.entity("alice", "obligation@1", {"state": "done", "statement": "forked another", "serves": []}, lineage=k_root)
+    forged = f.store.append(R.record("challenge", "bob", f.t + 1, {"target": waits, "statement": "not bob's key"}, refs=[waits]), KEYS["dave"], f.trust)
+    actors = ["alice", "bob", "carol", "dave", "eve", "nobody", "bo"]       # "bo": a prefix of a role holder, no holder
+    srvs, (bf,) = _serve_many(f.root)
+    try:
+        js = {a: _reader(bf, "--actor", a)[1].get("frontier") for a in actors}
+        _, plain = _reader(bf)
+        _, d_bob = _desk("--store", bf, "--actor", "bob")
+        _, d_none = _desk("--store", bf)
+    finally:
+        for x in srvs:
+            x.shutdown()
+    py = {a: _frontier_py(f.root, a) for a in actors}
+    bob = py["bob"]
+    may = [x["version"] for x in bob["attest"]]
+    check("J15 the fixture reaches each branch of warrant.graph.frontier: bob may attest the closure that waits and the "
+          "pull request head and eve's closure (roles he holds), not one he attested short of the match, not one he "
+          "challenged while it waits, not one that requires an open lineage, not his own (pending instead), not a "
+          "version replaced while pending, not a fork; a line under his name with another's key is no act of his; "
+          "carol may attest bob's claim; alice's lineage whose acceptor challenged it is listed as challenged; eve "
+          "holds no role and has her own pending closure",
+          sorted(may) == sorted([waits, head, eves]) and sorted(bob["pending"]) == sorted([bobs, backed]) and bob["challenged"] == []
+          and [x["version"] for x in py["carol"]["attest"]] == [backed] and py["alice"]["challenged"] == [a_root]
+          and chal in py["alice"]["pending"] and needs in py["alice"]["pending"] and seen in py["alice"]["pending"]
+          and py["dave"]["pending"] == [head] and forged in f.report()["rejected"]
+          and py["eve"]["roles"] == [] and py["eve"]["pending"] == [eves] and py["eve"]["attest"] == []
+          and replaced not in may and newer not in py["alice"]["pending"] and py["nobody"]["roles"] == []
+          and forged not in json.dumps(bob), py)
+    check("J15 differential: the reader's frontier (reader.mjs --actor) equals warrant.graph.frontier for every actor of "
+          "the fixture, an actor with no role, a name no profile holds and a prefix of a role holder's name included, "
+          "member for member",
+          all(js[a] == py[a] for a in actors), {a: (js[a], py[a]) for a in actors if js[a] != py[a]})
+    w = ((d_bob.get("desk") or {}).get("stores") or [{}])[0].get("waits") or {}
+    check("J15 the desk counts what waits for the actor named, per store, as the frontier has it (may attest, own "
+          "pending, own challenged, and their sum); with no actor named neither the desk nor the reader shows any",
+          w == {"actor": "bob", "roles": bob["roles"], "count": len(bob["attest"]) + len(bob["pending"]) + len(bob["challenged"]),
+                "attest": len(bob["attest"]), "pending": len(bob["pending"]), "challenged": len(bob["challenged"])}
+          and "waits" not in (((d_none.get("desk") or {}).get("stores") or [{}])[0]) and "frontier" not in plain, (w, d_none))
+
+    srv, base = _serve(ROOT)
+    try:
+        own = {a: _reader(base, "--actor", a)[1].get("frontier") for a in ("codex", "claude")}
+    finally:
+        srv.shutdown()
+    py_own = {a: _frontier_py(ROOT, a) for a in own}
+    check("J15 differential on this repository's own store, served over HTTP: the reader's frontier for codex and for "
+          "claude equals warrant.graph.frontier under the store's own rules",
+          all(own[a] == py_own[a] and own[a] is not None for a in own),
+          {a: (len((own[a] or {}).get("attest", [])), len(py_own[a]["attest"]), len((own[a] or {}).get("pending", [])), len(py_own[a]["pending"])) for a in own})
 
 
 def _report(root):

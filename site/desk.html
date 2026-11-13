@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https:; base-uri 'none'; form-action 'none'">
+<meta name="description" content="Several Warrant 3 stores on one screen: what changed for you in each since your mark, and what waits for whom.">
+<title>Warrant desk</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="mark" href="./">warrant</a>
+  <nav>
+    <a href="desk.html">Desk</a>
+    <a href="reader.html">Reader</a>
+    <a href="https://github.com/s0fractal/warrant/blob/master/docs/VERIFY.md">Verify</a>
+    <a href="https://github.com/s0fractal/warrant">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<section id="desk-head">
+  <h1 class="reader-title">The desk</h1>
+  <p class="small">Each store below is fetched from its address and assessed here, in this browser, under its
+  publisher's own rules, as the reader does. What changed is counted since your mark of that store, the same mark the
+  reader keeps.</p>
+  <output id="status" class="status"></output>
+</section>
+<section id="desk-tools" hidden></section>
+<section id="stores" hidden></section>
+<section id="desk-edit" hidden></section>
+</main>
+
+<footer>
+  <p>This page runs scripts of its own origin and no other. Record text is drawn as text, never as markup.</p>
+</footer>
+<script type="module" src="desk-page.mjs"></script>
+</body>
+</html>
