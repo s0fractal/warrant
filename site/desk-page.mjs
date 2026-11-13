@@ -66,6 +66,8 @@ function watchBlock(b) {
   const word = { touched: `touched ${w.touched.length}`, silent: "silent", "not established": "not established" }[w.outcome] ?? w.outcome;
   return el("div", { class: "desk-watch" },
     el("p", {}, el("strong", { text: `Watched (${w.watch.length}): ${word}` }), " · ", el("span", { text: w.line })),
+    w.toward ? el("p", { class: "small" }, el("a", { href: readerHref(b.base, {}), text: `toward it: ${w.toward.lineages} lineage(s) moved` }),
+      " · ", el("span", { text: w.toward.line })) : null,
     w.touched.length ? el("ul", { class: "rows" }, w.touched.map((x) => el("li", {},
       el("a", { class: "row-title", href: readerHref(b.base, { l: x.lineage, changes: "1" }), text: x.title || "(no statement)" }),
       el("div", { class: "row-meta", text: `${x.schema} · ${x.said}` })))) : null);

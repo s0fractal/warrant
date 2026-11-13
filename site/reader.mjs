@@ -13,6 +13,9 @@
 //        [--watch ID[,ID…]]...                 the answer for the lineages watched (watched()): exit 0 silent, 3 touched,
 //                                              4 not established; with --write-mark, the mark records their floors
 //        [--frame ID[,ID…]]                    the frame of those lineages (frame())
+//        [--toward-exit]                       with --watch: exit 5 when silent with a lineage toward what is watched
+//        [--resolve ID[,ID…]]...               where the bytes of each id are (resolved()): PRESENT, RESOLVED, MISSING,
+//                                              NOT_FETCHED; completeness UNATTESTED
 //
 // Two ways to read a store's blobs:
 //   quick (the default)   only the blobs the assessment itself reads: the map of each migration (docs/V3.md §9).
@@ -39,7 +42,10 @@
 // What changed for me (`--mark FILE`, changes()): the lineages whose view differs since the reader marked the store as
 // seen (makeMark: the page keeps the mark in localStorage, the CLI in a file), the rest of the new records counted.
 // With a watch list (`--watch`, watched()), the same is said of the watched lineages alone: touched with its witness,
-// silent with its numbers, or not established with its reasons.
+// silent with its numbers, or not established with its reasons; and, beside that answer, the lineages that reach the
+// watched ones and moved (toward: the cone, for attention, never for the outcome).
+//
+// Where the bytes of a cited id are (resolved(), `--resolve`): here, in a store read beside, missing, or not fetched.
 import { assessPrepared, canon, canonStr, cmp, codeIdentity, hex64, loadsLenient, prepare, Refused, utf16 } from "./warrant.mjs";
 
 
@@ -114,7 +120,7 @@ export async function fetchStore(base, backend, { full = false, fetcher = global
     if (hashes[k] !== wanted[k]) throw new Refused(`the transport altered blob ${wanted[k]}: its bytes do not hash to its name`);
     blobs.set(wanted[k], got[k]);
   }
-  return { lines, blobs, doc, missing, mode: full ? "full" : "quick", asked: wanted.length };
+  return { lines, blobs, doc, missing, mode: full ? "full" : "quick", asked: wanted.length, base: root };
 }
 
 // The receiver's rules: the reader's own {trust, profile} when given, else the publisher's own (its v3.json).
@@ -473,6 +479,7 @@ export function summary(r) {
     ...(r.compared ? { pins: pinsSummary(r.compared) } : {}),       // only when asked: without it the summary is as it was
     ...(r.others ? { others: othersSummary(r) } : {}),
     ...(r.overlay ? { overlay: overlaySummary(r.overlay) } : {}),
+    cited: citedCounts(r),                                        // resolved(): where the bytes of every cited id are
   };
 }
 
@@ -1113,6 +1120,7 @@ export function watched(r, s, values) {
   }
   out.outcome = reasons.length ? "not established" : out.touched.length ? "touched" : "silent";
   out.line = watchLine(out);
+  if (out.outcome !== "not established") out.toward = toward(r, s, roots);     // after the outcome: it never decides it
   return out;
 }
 
@@ -1130,6 +1138,221 @@ export function watchLine(w) {
   }
   return `${w.new} new record(s) at ${whereRead(w.addresses)}; none is in the frame of the ${k} lineage(s) you watch (${w.frame} of ${w.records} records)`
     + " · completeness UNATTESTED: only the records served there now are read";
+}
+
+// ---------------------------------------------------------------- toward what you watch: the cone, and the work in it
+//
+// The frame says whether a reader's RELIANCE on a lineage was touched: what it rests on, and what was said on that.
+// A goal's frame is a few records, so a reader who watches goals hears silence while the obligations and pull-request
+// heads that cite them open, close and are accepted. That silence is true; toward says the rest, for attention: it
+// never changes the outcome (touched, silent, not established), and it is said only when the comparison was made.
+//
+// THE CONE of the lineages `roots` (cone()): the record ids from which a watched lineage is reachable. The closure,
+// starting from every version of each root lineage, under
+//   (a) the in-edges of the report's graph whose relation is in WALK (lineage, requires, ref, attest, challenge);
+//   (b) every version of the lineage of any member;
+// its members are graph nodes only. With other stores read (r.others): a record of another store with an out-edge of
+// that store's own graph (any WALK relation) to a member, unless the main store holds it too, is in the cone, named
+// with its store's address; the closure does not go on from it.
+//
+// TOWARD (watched().toward): for each watched lineage, the lineages of this store with a version in its cone, except
+// the watched lineages and every lineage with a version in a watched frame (reported once, as the frame's: never a
+// witness twice), that are new since the mark or whose floor moved (floorOf: state, reliance as shown, standing
+// challenges, leaf); each with its distance and a shortest chain from its nearest version (as a witness's chain), its
+// (state, reliance) before and after, and the new records of this store touching it (a version of it, an attest or a
+// challenge on one). The other stores' records of the cone are not listed there: their lineages are not this store's.
+
+export const TOWARD_EXIT = 5;               // the CLI's exit status with --toward-exit for "silent, something toward"
+
+// {id: [[rel, from]]} of the WALK relations, by the record they point to: the in-edges (a), built once per read.
+function intoIndex(r) {
+  if (r._into) return r._into;
+  const into = new Map();
+  for (const [a, rel, b] of r.rep.graph.edges) {
+    if (!WALK.includes(rel)) continue;
+    if (!into.has(b)) into.set(b, []);
+    into.get(b).push([rel, a]);
+  }
+  r._into = into;
+  return into;
+}
+
+// The closure of (a)-(b) from the versions of `roots`, breadth first: {id: the step it was reached by, [from, rel, to]
+// as the graph's edge reads (SAME for (b)), or null for a version of a root}; chainOf() gives a shortest chain back.
+function coneClosure(r, roots) {
+  const up = intoIndex(r), { rootOf, nodes } = graphIndex(r), via = new Map(), todo = [];
+  const reach = (id, step) => { if (nodes.has(id) && !via.has(id)) { via.set(id, step); todo.push(id); } };
+  for (const L of roots) for (const v of r.rep.lineages[L]?.versions ?? []) reach(v, null);
+  for (let k = 0; k < todo.length; k++) {
+    const cur = todo[k];
+    for (const [rel, a] of up.get(cur) ?? []) reach(a, [a, rel, cur]);                       // (a)
+    const M = rootOf.get(cur);
+    if (M !== undefined) for (const v of r.rep.lineages[M].versions) reach(v, [v, SAME, cur]);  // (b)
+  }
+  return via;
+}
+
+// [{address, id, rel, target}] of the other stores' records with an edge (WALK) to a member of `via`, the main store
+// holding none of them; one entry a record (its first such edge in its graph's order).
+function outsideCone(r, via) {
+  const out = [], seen = new Set(), read = (r.others ?? []).filter((o) => o.r);
+  for (const o of read) {
+    for (const [x, rel, t] of o.r.rep.graph.edges) {
+      const key = `${o.address} ${x}`;
+      if (!WALK.includes(rel) || !via.has(t) || r.recs.has(x) || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ address: o.address, id: x, rel, target: t });
+    }
+  }
+  return out.sort((a, b) => utf16(a.address, b.address) || utf16(a.id, b.id));
+}
+
+// The cone of `roots` (lineage roots of `r`): {roots, ids: the records of this store in it, sorted; outside}.
+export function cone(r, roots) {
+  const via = coneClosure(r, roots);
+  return { roots: [...roots], ids: [...via.keys()].sort(utf16), outside: outsideCone(r, via) };
+}
+
+// {lineage: {ids, at}}: the records of this store new since the comparison `s`, by the lineage each touches (a version
+// of it, or an attest or a challenge on one), with the latest time among them.
+function freshByLineage(r, s) {
+  const { rootOf } = graphIndex(r), out = new Map();
+  for (const [id, rec] of r.recs) {
+    if (s.past.recs.has(id)) continue;
+    const L = rootOf.get(rec.kind === "attest" || rec.kind === "challenge" ? rec.body?.target : id);
+    if (L === undefined) continue;
+    if (!out.has(L)) out.set(L, { ids: [], at: null });
+    const t = out.get(L);
+    t.ids.push(id);
+    if (Number.isInteger(rec.at) && (t.at === null || rec.at > t.at)) t.at = rec.at;
+  }
+  return out;
+}
+
+// The lineages with a version in the frame of any of `roots`, and `roots` themselves: what toward never lists.
+function framed(r, roots) {
+  const { rootOf } = graphIndex(r), out = new Set(roots);
+  for (const L of roots) for (const id of closure(r, [L]).keys()) if (rootOf.has(id)) out.add(rootOf.get(id));
+  return out;
+}
+
+// {lineage: its nearest version} of the lineages of the cone `via` not in `skip`: the first version the breadth-first
+// closure reached (its chain is a shortest one).
+function nearestVersions(r, via, skip) {
+  const { rootOf } = graphIndex(r), out = new Map();
+  for (const id of via.keys()) {
+    const M = rootOf.get(id);
+    if (M !== undefined && !skip.has(M) && !out.has(M)) out.set(M, id);
+  }
+  return out;
+}
+
+const relied = (f) => (f ? { state: f.state, reliance: f.reliance } : null);
+const FLOOR_KEYS = ["state", "reliance", "standing", "leaf"];
+
+// One lineage `M` of the cone of watched `L`, reached first at version `v`: its toward item, or null when it is not new
+// and its floor did not move.
+function towardItem(r, s, L, M, v, via, fresh) {
+  const before = floorOf(s.past, M), after = floorOf(r, M);
+  if (before && FLOOR_KEYS.every((k) => canonStr(before[k]) === canonStr(after[k]))) return null;
+  const lin = r.rep.lineages[M], chain = chainOf(via, v), mine = fresh.get(M);
+  return { watched: L, lineage: M, schema: lin.schema, title: title(r.recs.get(lin.effective || lin.leaf || M)) || title(r.recs.get(M)),
+           distance: chain.length, chain, new: !before, before: relied(before), after: relied(after),
+           records: mine ? [...mine.ids].sort(utf16) : [], at: mine ? mine.at : null };
+}
+
+// watched().toward of the comparison `s` for the watched `roots`: {lineages: newest first, counts: {lineages,
+// records} (each lineage and record once, however many watched cones hold it), line}.
+function toward(r, s, roots) {
+  const skip = framed(r, roots), fresh = freshByLineage(r, s), items = [];
+  for (const L of roots) {
+    const via = coneClosure(r, [L]);
+    for (const [M, v] of nearestVersions(r, via, skip)) {
+      const item = towardItem(r, s, L, M, v, via, fresh);
+      if (item) items.push(item);
+    }
+  }
+  items.sort((a, b) => (b.at ?? 0) - (a.at ?? 0) || utf16(a.watched, b.watched) || utf16(a.lineage, b.lineage));
+  const by = new Map(items.map((x) => [x.lineage, x.schema]));
+  const counts = { lineages: by.size, records: new Set(items.flatMap((x) => x.records)).size };
+  return { lineages: items, counts, line: towardLine(counts, by, s.root) };
+}
+
+// Toward's one sentence: a second sentence beside the watched one, about attention; it says nothing of reliance.
+function towardLine(counts, by, root) {
+  if (!counts.lineages) return `toward what you watch: no lineage that reaches it moved at ${whereRead([root])}`;
+  const schemas = {};
+  for (const schema of by.values()) count(schemas, schema);
+  const named = Object.entries(sorted(schemas)).map(([k, n]) => `${n} ${k}`).join(", ");
+  return `toward what you watch: ${counts.lineages} lineage(s) that reach it moved at ${whereRead([root])} (${named}) through ${counts.records} new record(s)`;
+}
+
+// The CLI's exit status for a watched answer `w`: WATCH_EXIT, and with `towardExit` TOWARD_EXIT for silence with a
+// lineage toward it (an agent that wants to be woken by work, not only by risk).
+export function watchExit(w, towardExit) {
+  return towardExit && w.outcome === "silent" && w.toward?.counts.lineages ? TOWARD_EXIT : WATCH_EXIT[w.outcome];
+}
+
+// ---------------------------------------------------------------- where the bytes of a cited id are
+//
+// The resolver's states (warrant/resolve.py), as far as this reader can say them over what it read:
+//   PRESENT      a record of this store, or a blob of it fetched and hashed to its name;
+//   RESOLVED     not here, but a record of a store read beside this one (`with=`; each line's id is recomputed from its
+//                bytes when it is read) or a blob that store fetched and hashed to its name: `where` names that address;
+//   MISSING      neither, on a full read (every blob a record names was asked for);
+//   NOT_FETCHED  the reader's own word: neither, on a quick read, where no blob of this store was asked for, so it may
+//                be one: never PRESENT on bytes not hashed, never MISSING on a question not asked.
+// There is no LOCATED here: the reader fetches whole stores, and has no place that names an id without holding it.
+// A store beside this one that could not be read is named (`unread`) on an answer that did not find the bytes.
+
+export const NOT_FETCHED = "NOT_FETCHED";
+
+function resolveIndex(r) {
+  if (r._resolve) return r._resolve;
+  const others = (r.others ?? []).filter((o) => o.r).map((o) => ({ address: o.address, r: o.r }));
+  r._resolve = { others, unread: (r.others ?? []).filter((o) => !o.r).map((o) => o.address) };
+  return r._resolve;
+}
+
+// {id, state, where, lineage[, unread]} of the id `id`: where its bytes are among the stores read.
+export function resolved(r, id) {
+  const here = r.store.base ?? null;
+  if (r.recs.has(id)) return { id, state: "PRESENT", where: here, lineage: graphIndex(r).rootOf.get(id) ?? null };
+  if (r.store.blobs.has(id)) return { id, state: "PRESENT", where: here, lineage: null };
+  const { others, unread } = resolveIndex(r);
+  for (const o of others) {
+    if (o.r.recs.has(id)) return { id, state: "RESOLVED", where: o.address, lineage: graphIndex(o.r).rootOf.get(id) ?? null };
+    if (o.r.store.blobs.has(id)) return { id, state: "RESOLVED", where: o.address, lineage: null };
+  }
+  const asked = r.store.mode === "full" || r.store.missing.includes(id);
+  return asked ? { id, state: "MISSING", where: null, lineage: null, unread } : { id, state: NOT_FETCHED, where: here, lineage: null, unread };
+}
+
+// {from: [[rel, to]]} of every edge of the report's graph (prev too: a version cites what it says it follows).
+function citesIndex(r) {
+  if (r._cites) return r._cites;
+  const out = new Map();
+  for (const [a, rel, b] of r.rep.graph.edges) {
+    if (!out.has(a)) out.set(a, []);
+    out.get(a).push([rel, b]);
+  }
+  r._cites = out;
+  return out;
+}
+
+// What each version of lineage `root` cites, newest version first: [{version, cites: [{rel, ...resolved()}]}].
+export function citations(r, root) {
+  const lin = r.rep.lineages[root];
+  if (!lin) return null;
+  const idx = citesIndex(r);
+  return [...lin.versions].reverse().map((v) => ({ version: v, cites: (idx.get(v) ?? []).map(([rel, b]) => ({ rel, ...resolved(r, b) })) }));
+}
+
+// {MISSING, NOT_FETCHED, PRESENT, RESOLVED}: how many distinct ids the graph's edges point to, by resolved()'s word.
+function citedCounts(r) {
+  const out = { MISSING: 0, NOT_FETCHED: 0, PRESENT: 0, RESOLVED: 0 };
+  for (const b of new Set(r.rep.graph.edges.map((e) => e[2]))) out[resolved(r, b).state]++;
+  return out;
 }
 
 // ---------------------------------------------------------------- what waits for whom: the frontier of an actor
@@ -1184,15 +1407,23 @@ export function waitsFor(r, actor) {
 export const markKey = (base, rules) => `warrant-${MARK} ${norm(base)} ${rules}`;
 
 const USAGE = "usage: reader.mjs --base URL [--full] [--pins] [--with URL]... [--config RULES.json] [--lineage ID] [--mark FILE] [--write-mark FILE] [--actor NAME]\n"
-  + "                  [--watch ID[,ID...]]... [--frame ID[,ID...]]\n"
+  + "                  [--watch ID[,ID...]]... [--frame ID[,ID...]] [--toward-exit] [--resolve ID[,ID...]]...\n"
   + "  --watch: the answer for the lineages watched (`watch`); with it the exit status is a gate: 0 silent (established),\n"
-  + "  3 touched, 4 not established (2: a refused read or no --base). --write-mark with --watch records their floors.\n";
+  + "  3 touched, 4 not established (2: a refused read or no --base). --write-mark with --watch records their floors.\n"
+  + "  --toward-exit: with --watch, 5 for silent with a lineage toward what is watched (watch.toward); the others as above.\n"
+  + "  --resolve: where the bytes of each id are (`resolve`); a value that is no record id is refused by name.\n";
 
 // The CLI's options: the value after `name`, every value after a repeated `name`, whether a flag is given.
 function options(argv) {
   const opt = (name) => { const k = argv.indexOf(name); return k >= 0 ? argv[k + 1] : undefined; };
   const all = (name) => argv.flatMap((a, k) => (a === name && k + 1 < argv.length ? [argv[k + 1]] : []));
   return { opt, all, has: (name) => argv.includes(name) };
+}
+
+// The CLI's `resolve`: {ids: resolved() of each id asked, refused: [{value, why}] (parseWatch's rule), completeness}.
+function resolveAll(r, values) {
+  const { ids, refused } = parseWatch(values);
+  return { ids: ids.map((id) => resolved(r, id)), refused, completeness: "UNATTESTED" };
 }
 
 // A mark file as the CLI reads it: a missing file is no mark yet; one that is not JSON, no mark (changes() says so).
@@ -1232,10 +1463,11 @@ async function main(argv) {
       : { summary: summary(r), rows: rows(r), ...(changed ? { changes: { ...changed, line: changesLine(changed) } } : {}) };
     if (o.opt("--actor") !== undefined) out.frontier = frontier(r, o.opt("--actor"));     // only when asked: else as it was
     if (o.has("--frame")) { const f = parseWatch(o.all("--frame")); out.frame = { ...frame(r, f.ids.filter((L) => r.rep.lineages[L])), refused: f.refused }; }
+    if (o.has("--resolve")) out.resolve = resolveAll(r, o.all("--resolve"));
     const w = watch ? watched(r, s, watch) : null;
     if (w) out.watch = w;
     process.stdout.write(canonStr(out) + "\n");
-    return w ? WATCH_EXIT[w.outcome] : 0;
+    return w ? watchExit(w, o.has("--toward-exit")) : 0;
   } catch (e) {
     if (e instanceof Refused) { process.stdout.write(canonStr({ refused: e.message }) + "\n"); return 2; }
     throw e;

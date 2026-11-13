@@ -130,6 +130,7 @@ function drawFloor() {
       fact("schemas", s.schemas.join(", ") || "none", s.schemas_pending.length ? ` (pending: ${s.schemas_pending.length})` : null),
       fact("writers' forks", s.chain_forks.join(", ") || "none"),
       fact("problems", s.problems.length ? s.problems.map((p) => p[0]).join(", ") : "none"),
+      s.cited ? fact("cited ids", `${counts(s.cited)}: where the bytes of each id a record points to are`) : [],
       fact("assessed", "in this browser, by warrant.mjs ", short(s.code), ` · assessment `, short(s.assessment)),
     ),
     el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: "Schema" }), el("th", { text: "Lineages by state" }))),
@@ -182,6 +183,8 @@ function drawLineage() {
   // the door beside the effective version and the leaf (voice.mjs targets: built from their ids alone); none when
   // voice.mjs is of an earlier release, cached apart from this script
   const doors = new Map((typeof voice.targets === "function" ? voice.targets(d) : []).map((t) => [t.version, t]));
+  // what each version cites, and where its bytes are; none when reader.mjs is of an earlier release
+  const cites = new Map((typeof reader.citations === "function" ? reader.citations(current.r, p.l) ?? [] : []).map((c) => [c.version, c.cites]));
   fill(box,
     el("p", { class: "small" }, link("← all lineages", { l: null })),
     el("h2", { class: "statement-title", text: d.versions.at(-1).title || d.versions[0].title || "(no statement)" }),
@@ -210,10 +213,44 @@ function drawLineage() {
         s.kind === "challenge" ? fate(s) : null,
         s.statement ? el("div", { class: "statement", text: s.statement }) : null,
         s.kind === "challenge" && s.why ? el("div", { class: "small", text: s.why }) : null))) : null,
+      citesBlock(cites.get(v.id)),
       objectBlock(doors.get(v.id)))),
   );
   box.hidden = false;
   box.scrollIntoView({ block: "start" });
+}
+
+// ---------------------------------------------------------------- what a version cites, and where its bytes are
+//
+// reader.mjs resolved(): PRESENT here (a link to its lineage when it is a version of one), RESOLVED in a store read
+// beside (a link to the reader at that address), MISSING, or NOT_FETCHED on a quick read (no blob was asked for).
+
+const citeWhy = {
+  RESOLVED: (c) => ` at ${c.where}`,
+  MISSING: (c) => (c.unread?.length ? ` · not read: ${c.unread.join(", ")}` : " · in no store read"),
+  NOT_FETCHED: () => " · a quick read fetches no blob: fetch every blob to know",
+};
+
+function citeTarget(c) {
+  if (c.state === "PRESENT" && c.lineage) return link(c.id.slice(0, 12), { l: c.lineage });
+  if (c.state === "RESOLVED" && c.lineage) {
+    const q = new URLSearchParams({ base: c.where, l: c.lineage });
+    return el("a", { href: "?" + q.toString(), text: c.id.slice(0, 12), title: c.id });
+  }
+  return short(c.id);
+}
+
+function citesBlock(cs) {
+  if (!cs?.length) return null;
+  return el("details", { class: "cites" }, el("summary", { text: `Cites (${cs.length}): ${counts(citeCounts(cs))}` }),
+    el("ul", { class: "said" }, cs.map((c) => el("li", { class: "small" }, `${c.rel} `, citeTarget(c), ` · ${c.state}`,
+      Object.hasOwn(citeWhy, c.state) ? citeWhy[c.state](c) : null))));
+}
+
+function citeCounts(cs) {
+  const out = {};
+  for (const c of cs) out[c.state] = (out[c.state] || 0) + 1;
+  return out;
 }
 
 // ---------------------------------------------------------------- the door: object to this version
@@ -353,6 +390,36 @@ function drawWatched(w) {
       t.witness.length ? el("ul", {}, t.witness.slice(0, STEPS_SHOWN).map((x) => witnessItem(x, current.since?.root)),
         t.witness.length > STEPS_SHOWN ? el("li", { class: "small", text: `and ${t.witness.length - STEPS_SHOWN} more` }) : null) : null))) : null,
     el("p", { class: "small", text: "The frame of a lineage: its versions, what they rest on (lineage, requires, ref, attest, challenge), what was said on any of these, the other versions of their lineages, and what the other stores read say on them. Completeness UNATTESTED." }),
+    towardBlock(w.toward),
+  ];
+}
+
+// ---------------------------------------------------------------- toward what you watch
+//
+// Beside the watched answer (reader.mjs watched().toward, absent when the comparison could not be made or reader.mjs
+// is of an earlier release): the lineages from which a watched one is reached that are new or moved since the mark.
+// It is about attention, not reliance: it never makes what you watch touched.
+
+const TOWARD_SHOWN = 12;                                  // lineages drawn; the rest are counted
+
+function towardItem(x) {
+  const was = x.new ? "new lineage" : `${x.before?.state || "none"} → ${x.after.state || "none"}`
+    + (x.before?.reliance === x.after.reliance ? "" : ` · ${x.before?.reliance} → ${x.after.reliance}`);
+  return el("li", {},
+    link(x.title || "(no statement)", { l: x.lineage }, { class: "row-title" }),
+    el("div", { class: "row-meta" }, pill(x.after.reliance), ` ${x.schema} · ${was} · ${x.records.length} new record(s)`),
+    el("div", { class: "small" }, `${x.distance} step(s) to what you watch: `, el("span", { text: x.chain.map(stepText).join(" · ") })));
+}
+
+function towardBlock(t) {
+  if (!t || !Array.isArray(t.lineages)) return null;
+  const rest = t.lineages.length - TOWARD_SHOWN;
+  return [
+    el("h3", { text: `Toward what you watch (${t.counts?.lineages ?? t.lineages.length})` }),
+    el("p", { text: t.line }),
+    t.lineages.length ? el("ul", { class: "rows" }, t.lineages.slice(0, TOWARD_SHOWN).map(towardItem),
+      rest > 0 ? el("li", { class: "small", text: `and ${rest} more` }) : null) : null,
+    el("p", { class: "small", text: "Toward: the lineages from which what you watch is reached (through lineage, requires, ref, attest or challenge, and the other versions of their lineages), outside what it rests on, that are new or whose state, reliance, standing challenges or leaf moved since your mark. About attention, not reliance: it never makes what you watch touched. Completeness UNATTESTED." }),
   ];
 }
 
