@@ -6,6 +6,16 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The browser reader says what changed for its reader (`warrant_agent/changes.py` without lenses). «Mark all as seen»
+  keeps the ids of every record of the stores read, per store address and rules identity (`localStorage`; the CLI's
+  `--write-mark FILE`, `--mark FILE`), as 8 bytes of each id and a SHA-256 of every 16 (exact: a record is seen only
+  when its group hashes to its digest; a group that does not verify counts as new). The past is the marked subset
+  assessed by the same engine under the same rules; a lineage is listed when its view (`viewOf`: floor, versions,
+  guards, attests and challenges, voices from outside) differs, with what appeared, vanished and moved; the new records
+  that change nothing are counted; no mark, or a mark under other rules, compares nothing and says so; `&changes=1`
+  shows only that. Not established: the page and its storage in a browser (no case drives one); the overlay and pin
+  rows are outside the view. docs/VERIFY.md; impl_js_test J13 (one case against `warrant.engine` on the marked
+  subset); no mutant (R-JS-MUTANTS): twenty-four mutations run by hand, not held by CI.
 - The browser reader reads beyond the one store. Pins on request (`--pins`, a checkbox, `&pins=1`; off by default):
   each file a claims checker's acceptance names is fetched at its path under the store's address and hashed as a Git
   blob, and each claim the freshness gate covers reads ELIGIBLE or STALE by the gate's rule (`warrant.drift`: the

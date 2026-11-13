@@ -215,6 +215,27 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
   (the overlay is honest, not complete); the rows are (state, reliance) of the engine, not the lens-drawn difference
   `/overlay` in `warrant_agent/serve.py` shows (`view.delta`); and the main store's view and the pin comparison stay
   under the rules the reader chose, as before.
+- **What changed for me (a mark, `--mark FILE`, `&changes=1`).** «Mark all as seen» keeps, in the browser's
+  `localStorage`, one mark per store address and rules identity (the digest of `{trust, profile}`, whoever gave them):
+  the ids of every record the main store and each other store read hold. `--write-mark FILE` writes the same JSON,
+  `--mark FILE` reads it. With a mark, the past is the marked subset of each store's lines assessed again by the same
+  engine (the main store under the same rules, each other store under its own; with `--pins`, compared with the tree
+  served now), as `warrant_agent/changes.py` does. A lineage is listed when its view differs (`viewOf` in
+  `site/reader.mjs` is the definition: the floor's state, reliance as shown, standing counted challenges, forks,
+  effective version and number of versions, named as moved; and the versions, their guards, acceptors and waits, the
+  attests and challenges on them with a challenge's counted and stands, the voices from outside, named as appeared or
+  vanished), new lineages as new; the new records that change no lineage's view are counted, not listed, and silence
+  is said: «N new record(s) changed nothing you see». Without a mark nothing is compared and the page offers one; a
+  mark under other rules is not used. `&changes=1` shows that section and the changed lineages alone. The mark keeps 8
+  bytes of each sorted id and a SHA-256 of every 16 full ids (10 bytes an id; 1.33 M characters for 100 000 records,
+  where whole ids in base64 are 4.3 M, near the ~5 M a browser keeps per origin); a record is seen only when its group
+  is found whole and hashes to its digest, so no new record is called seen unless SHA-256 collides. A group that does
+  not verify (a marked record no longer served, a new record sharing a prefix) counts its present records as new: more
+  is listed, nothing hidden; gone and unverified records are counted and said. Where it differs from `/changes`: no
+  lens (the view is the reader's own lineage view, so an attest by anyone on a version is a change, as under the
+  built-in lens), no `grounded` member, no default past without a mark (it says there is none instead of using the
+  last day), no overlay and no pin rows in the view, and an other store absent from the mark counts as wholly new.
+  Not established: that the stores served are all that was said; storage that the browser drops loses the mark.
 - **A transport that fails is a refusal.** Only HTTP 404 reads as absent; any other failure refuses the read whole, and
   a blob whose bytes do not hash to its name refuses it too. Nothing partial is drawn.
 - **Record text is text.** The page builds no markup from a string, runs one script of its own origin and allows no
@@ -222,7 +243,10 @@ ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one 
 
 impl_js_test J10 holds the data the page draws to the Python engine, through node, by the functions the page runs; J11
 holds the pin comparison to `warrant.drift.gate` at HEAD; J12 holds the voices and the overlay to
-`warrant_agent.overlay` on the same three stores and the same reader rules. No case drives a browser, and the layout
-is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS), so CI does not hold the tests to
-their mutants: eleven mutations of the reader were run by hand for J10, and thirty-five more for J11 and J12, each
-failing a case of its own on its assertion; the list is in the pull request that added them.
+`warrant_agent.overlay` on the same three stores and the same reader rules; J13 holds what changed for me on a store
+built in steps (one mark a step) and, from the first mark, the lineages whose (state, reliance, standing) it lists as
+moved to the Python assessments of the marked subset and of the whole store. No case drives a browser (neither
+`localStorage` nor the page's button is exercised), and the layout is checked by eye. No mutant targets these files
+(docs/V3.md §12 R-JS-MUTANTS), so CI does not hold the tests to their mutants: eleven mutations of the reader were run
+by hand for J10, thirty-five more for J11 and J12, and twenty-four for J13, each failing a case of its own on its
+assertion; the list is in the pull request that added them.
