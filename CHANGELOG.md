@@ -140,6 +140,14 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   them (the merge observation says `how`: solo, accepted, verdicts or hand; E56, E61–E66, MR1; V3-14-6, -9, -33, -38, -42, -43 new versions; V3-14-44..46). The engine still lets an actor
   release its own obligation: an obligation (G10) asks for `obligation@2`.
 
+- The brake after the merge (owner, 2026-11-13: «ми багато не зробимо, якщо по 72 години будемо чекати»). While the
+  owner is present (`presence`: a merge of his on GitHub within 14 days), a watched or constitutional change merges with
+  no window once its checks are green; its merge commit carries a brake as long as the window would have been, the
+  gate comments once naming him, and his `hold` label or challenge within it makes the gate open and merge the exact
+  revert (records kept; `gate/revert/`, merged as `how: revert`). Away, the windows come before the merge as before.
+  No release is published while a brake in its history is open (release.yml, `warrant.gate brakes`). E67–E73;
+  mutants G71–G84; V3-14-41, -42 new versions, V3-14-47..50.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by

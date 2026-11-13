@@ -67,11 +67,11 @@ class PR:
             self.r.attest("bob", self.head_v)
         self.head = self.r.commit("verdict")
 
-    def assess(self, labels=(), checks=None, head=None, now=None, **pr):
+    def assess(self, labels=(), checks=None, head=None, now=None, present=False, **pr):
         head = head or self.r.commit("tail") if pr.pop("recommit", False) else head or git(self.r.root, "rev-parse", "HEAD")
         facts = dict({"number": 7, "state": "open", "draft": False, "base": "master", "head": head, "labels": list(labels),
                       "branch": "feature", "head_repo": REPO}, **pr)
-        return GT.assess(self.r.root, self.base, facts, checks or green(head), now=now)
+        return GT.assess(self.r.root, self.base, facts, checks or green(head), now=now, present=present)
 
 
 def codes(a):
@@ -745,6 +745,160 @@ def constitution_cases():
           and "`AGENTS.md`" in text and "`hold`" in text and at[73].facts["notice"]["version"] in text
           and len(forged.posted) == 1 and quiet == [], (first, again, gh.posted, forged.posted, quiet))
 
+PRES = dict(CONST, presence={"login": "owner-login", "days": 14, "since": NOW - 30 * 86400})
+
+
+def brake_cases():
+    """The owner present (2026-11-13: «72 hours of waiting» stays only for when he is away): no window before a tier's
+    merge, the brake after it: his `hold` label or challenge within the window the merge would have waited, and the
+    gate reverts it; a release waits until every brake in its history has closed."""
+    def acceptors(*who):
+        def f(s):
+            s.r.profile["roles"]["pr/acceptor"] = sorted(who)
+            s.r.write_config()
+        return f
+
+    def rules(s):
+        (s.r.root / "AGENTS.md").write_text("rules, amended\n")
+    one = PR(merge=PRES, before_x=rules, accept=False, before_base=acceptors("bob", "alice"))
+    oh = git(one.r.root, "rev-parse", "HEAD")
+    here = one.assess(checks=green(oh, completed=NOW - 60), now=NOW, present=True)
+    away = one.assess(checks=green(oh, completed=NOW - 60), now=NOW, present=False)
+    pending = one.assess(checks=green(oh), now=NOW, present=True)
+    two = PR(merge=PRES, before_x=rules, before_base=acceptors("bob", "alice"))
+    both = two.assess(checks=green(git(two.r.root, "rev-parse", "HEAD"), completed=NOW - 60), now=NOW, present=True)
+    check("E67 the owner present, a constitutional change merges with no window before it once the checks are green, its "
+          "brake as long as its window would have been (168 h for one family, 72 h for two); away, the windows apply; "
+          "checks not completed, nothing merges",
+          here.eligible and here.facts.get("brake_hours") == 168 and not away.eligible and "WATCHED_FAMILIES" in codes(away)
+          and not pending.eligible and both.eligible and both.facts.get("brake_hours") == 72,
+          (here.reasons, here.facts.get("brake_hours"), away.reasons, pending.reasons, both.reasons, both.facts.get("brake_hours")))
+
+    class GH:
+        def __init__(self, commits=None, labels=()):
+            self.commits, self.labels, self.calls, self.merges, self.comments_ = commits or {}, list(labels), [], [], []
+
+        def commit(self, sha):
+            return self.commits.get(sha, {"author": {"login": "github-actions[bot]"}, "committer": {"login": "web-flow"}})
+
+        def pull(self, n):
+            return dict(here.pr, head=oh, labels=self.labels)
+
+        def tip(self, b):
+            return one.base
+
+        def merge(self, n, sha, title, msg):
+            self.merges.append(msg)
+            return {"merged": True, "sha": "c" * 40}
+
+        def parents(self, sha):
+            return [one.base, oh]
+
+        def dispatch(self, w, b):
+            self.calls.append(("dispatch", w, b))
+
+        def comment(self, n, body):
+            self.comments_.append(body)
+
+        def api(self, path, method="GET", body=None, pages=False):
+            self.calls.append((path, method, body))
+            return {"sha": "d" * 40}
+    b = GT.Base(one.r.root, one.base)
+    gh = GH()
+    m = GT.merge_one(b, here, gh)
+    line = next((ln for ln in gh.merges[0].splitlines() if ln.startswith("warrant-gate brake until")), "") if gh.merges else ""
+    check("E68 a merge with the owner present carries its brake in the merge commit (until when, the pull request, the head "
+          "version) and the gate comments once, naming the owner, how long the brake acts and how to pull it",
+          m["merged"] and m.get("brake_until", 0) > time.time() + 167 * 3600 and GT.BRAKE.match(line) and here.accept[1] in line
+          and len(gh.comments_) == 1 and "@owner-login" in gh.comments_[0] and "`hold`" in gh.comments_[0],
+          (m, line, gh.comments_))
+
+    # a base whose history holds a braked merge of AGENTS.md (and a record line), then an unrelated commit
+    r = Repo(git_init=False)
+    (r.dot / "merge.json").write_text(json.dumps(PRES))
+    (r.root / "AGENTS.md").write_text("rules\n")
+    (r.root / "code.py").write_text("x = 1\n")
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("base")
+    git(r.root, "checkout", "-q", "-b", "feature")
+    (r.root / "AGENTS.md").write_text("rules, weakened\n")
+    v = r.entity("alice", "pr-head@1", {"state": "open", "repository": REPO, "pr": 7, "title": "t"})
+    r.commit("the change and its record")
+    git(r.root, "checkout", "-q", "master")
+    until = NOW + 3600
+    git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {until}: #7 head version {v}")
+    merge = git(r.root, "rev-parse", "HEAD")
+    (r.root / "code.py").write_text("x = 2\n")
+    base = r.commit("an unrelated change after it")
+    rb = GT.Base(r.root, base)
+    k = GT.brakes(r.root, base, now=NOW)
+    plan, err = GT.revert_plan(r.root, base, merge)
+    quiet, held = GH(), GH(labels=["hold"])
+    snap, _ = GT.store_at(r.root, base)
+    rep = GT.assess_snapshot(rb, snap)
+    none_ = GT.vetoed(rb, rep, quiet, k[0]) if k else "no brake"
+    held_why = GT.vetoed(rb, rep, held, k[0]) if k else None
+    opened = GT.open_revert(r.root, rb, held, k[0], held_why) if k else ""
+    tree = next((c[2] for c in held.calls if c[0] == "git/trees"), {})
+    after = GT.brakes(r.root, base, now=until + 1)
+    check("E69 a merge whose brake is open and that the owner's hold label vetoes is reverted: the gate opens a pull request "
+          "from gate/revert/ whose one commit takes back exactly the merge's change, the store's records kept, and starts "
+          "CI on it; with no veto nothing is done, and after its window the brake is closed",
+          [x["pr"] for x in k] == [7] and err is None and [e["path"] for e in plan] == ["AGENTS.md"] and none_ is None
+          and held_why is not None and "hold" in held_why
+          and opened.startswith("revert of #7 opened") and [e["path"] for e in tree.get("tree", [])] == ["AGENTS.md"]
+          and any(c[0] == "dispatch" for c in held.calls) and after == [],
+          (k, plan, err, none_, opened, tree, after))
+    (r.root / "AGENTS.md").write_text("rules, changed again\n")
+    moved = r.commit("the reverted file changes again")
+    _, conflict = GT.revert_plan(r.root, moved, merge)
+    git(r.root, "reset", "-q", "--hard", base)
+    git(r.root, "checkout", "-q", "-b", f"gate/revert/7-{merge[:12]}")
+    (r.root / "AGENTS.md").write_text("rules\n")
+    r.commit(f"Revert #7\n\nwarrant-gate revert of {merge}")
+    rh = git(r.root, "rev-parse", "HEAD")
+    pr = {"number": 8, "state": "open", "draft": False, "base": "master", "head": rh, "labels": [],
+          "branch": f"gate/revert/7-{merge[:12]}", "head_repo": REPO, "author": "github-actions[bot]"}
+    ok = GT.assess(r.root, base, pr, green(rh))
+    forged = GT.assess(r.root, base, dict(pr, author="mallory"), green(rh))
+    git(r.root, "reset", "-q", "--hard", base)
+    (r.root / "AGENTS.md").write_text("rules\n")
+    (r.root / "code.py").write_text("x = 99\n")
+    r.commit(f"Revert #7, and more\n\nwarrant-gate revert of {merge}")
+    more = git(r.root, "rev-parse", "HEAD")
+    wider = GT.assess(r.root, base, dict(pr, head=more), green(more))
+    check("E70 the gate's revert is merged as such once its checks are green: the exact revert of a braked merge of the base, "
+          "opened by the workflow's bot; one opened by anyone else, or that changes more, is not; a path changed again "
+          "since the merge makes no revert",
+          ok.eligible and ok.facts.get("revert") == merge and not forged.eligible and "REVERT_NOT_EXACT" in codes(forged)
+          and not wider.eligible and "REVERT_NOT_EXACT" in codes(wider) and conflict is not None,
+          (ok.reasons, forged.reasons, wider.reasons, conflict))
+    rc_open = GT.main(["--root", str(r.root), "brakes", "--at", base]) if until > time.time() else None
+    later = GT.brakes(r.root, base, now=until + 1)
+    check("E71 a release waits for its brakes: `brakes --at C` fails while a merge in C's history may still be vetoed, and "
+          "lists none once every window has passed",
+          rc_open == 1 and later == [], (rc_open, later))
+    owner = {"author": {"login": "owner-login"}, "committer": {"login": "web-flow"}}
+    hand = {"author": {"login": "owner-login"}, "committer": {"login": "owner-login"}}
+    rb_old = GT.Base(r.root, base)
+    def at(cfg_since, commits, days=14, now=NOW):
+        rb_old.gate = dict(rb_old.gate, presence={"login": "owner-login", "days": days, "since": cfg_since})
+        return GT.present(r.root, rb_old, GH(commits=commits), now=now)
+    when = GT._commit(r.root, merge)[1]
+    check("E72 the owner is present when a merge into the base on GitHub is his (his login the author, GitHub's web-flow the "
+          "committer) since `since` and within `days`; a bot's merge, one he did not make on GitHub, one before `since` "
+          "or older than `days` is no presence",
+          at(when - 10, {merge: owner}, now=when + 60) and not at(when - 10, {}, now=when + 60)
+          and not at(when - 10, {merge: hand}, now=when + 60) and not at(when + 10, {merge: owner}, now=when + 60)
+          and not at(when - 10, {merge: owner}, days=1, now=when + 2 * 86400),
+          when)
+    p = PRES["presence"]
+    bad = [{k: v for k, v in PRES.items() if k not in ("watched", "constitutional")},
+           dict(PRES, presence=dict(p, days=0)), dict(PRES, presence=dict(p, login="@x")), dict(PRES, presence=dict(p, extra=1))]
+    refused = [codes(PR(merge=m).assess()) for m in bad]
+    check("E73 a presence rule without a watched tier, with no days, a login that is not one or an unknown member refuses the "
+          "base's configuration", all(x == {"BASE_CONFIG"} for x in refused), refused)
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -761,4 +915,5 @@ if __name__ == "__main__":
     merge_cases()
     watched_cases()
     constitution_cases()
+    brake_cases()
     sys.exit(finish())

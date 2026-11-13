@@ -167,6 +167,15 @@ gate's (the workflow's bot), never an agent's `gh pr merge` under the owner's lo
 | watched | the modules the gate imports (engine, store, records, keys, jcs, shapes, `__init__`) | after 24 h | after 72 h |
 | everything else | | at once, when accepted | `solo`: once the checks are green (`window_hours` 0), its author a `pr/acceptor` |
 
+The table's windows apply while the owner is away. While he is present (`presence`: a merge of his made on GitHub,
+author his login and committer GitHub's web-flow, within 14 days and since #350's merge, when agents stopped merging
+under his login), a watched or constitutional change merges as soon as its checks are green, and its merge commit
+carries its brake (`warrant-gate brake until T: #N head version V`) for the window it would have waited. Within it, his
+`hold` label on the merged pull request or his challenge on its head version makes the gate open the merge's exact
+revert from `gate/revert/` (the store's records kept), which it merges once its checks are green. A path changed again
+since makes no automatic revert: the gate says so in its summary. No release is published while a brake in the tagged
+commit's history is open (release.yml, `python -m warrant.gate brakes --at C`).
+
 A window counts from when the required checks completed at the head; no `hold` label and no challenge by
 `pr/owner` on the head version may stand. When a constitutional window opens the gate comments once on the pull
 request, naming `@s0fractal` (`constitutional.notify`), with the paths, the end of each window and how to stop it.
