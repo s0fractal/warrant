@@ -17,7 +17,7 @@ Queries, none assuming a repository's schemas beyond the two names INTENTS gives
     actor {actor, schema?}  the records each store admits as that actor's, under that store's keys for the name
     open {schema?}          the lineages of a goal or an obligation a store reads as open; a store that counts neither
                             schema says so (no_schema), never zero
-    challenges {schema?}    the challenges standing in some store
+    challenges {schema?}    the challenges standing in some store, and the voices no store counts (`uncounted`)
     rests {target, schema?} what rests on a hash, its edges (graph.WALK) followed by hash through every store
 
 A reference some store holding the citing record does not hold reads ELSEWHERE (with the stores that do) or UNAVAILABLE
@@ -214,7 +214,12 @@ def _open(readings, schema, stores):
 
 
 def _standing(readings, schema):
-    return _recent({c for x in readings for c, v in x.rep["challenges"].items() if v["stands"]}, readings, schema)
+    """The challenges standing in some store, and the voices no store counts (a stranger's thesis under its own key,
+    W4): an uncounted voice is listed, marked `uncounted` on its node, never dropped."""
+    standing = {c for x in readings for c, v in x.rep["challenges"].items() if v["stands"]}
+    counted = {c for x in readings for c, v in x.rep["challenges"].items() if v["counted"]}
+    voices = {c for x in readings for c in x.rep["challenges"]} - counted
+    return _recent(standing | voices, readings, schema)
 
 
 def _target(readings, t):
@@ -328,6 +333,8 @@ def answer(readings, q, budget=BUDGET, adapter=None):
     text = q["query"] in ("open", "challenges")
     while pos < len(ids):
         row = node(ids[pos], read, text)
+        if q["query"] == "challenges" and not any(r.get("counted") for r in row.get("in", [])):
+            row["uncounted"] = True
         row.update({"depth": depth[ids[pos]]} if depth else {})
         size = _dumped(row) + 2
         if used + size > budget:

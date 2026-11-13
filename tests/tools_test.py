@@ -32,6 +32,7 @@ from warrant import records as R
 from warrant import repo as RP
 from warrant import review as RV
 from warrant import roadmap as RM
+from warrant.store import Store
 
 SPEC = "## 3. Lineage\n\nA record whose `lineage` is L **succeeds** L.\n\nFORK is a core verdict.\n"
 TEST = '''def check(name, ok):
@@ -443,7 +444,7 @@ def drift_cases():
           "in claims view and in the agent's context, until the claims checker accepts it again (G14 obligation 055751e2); the "
           "acceptance names the files it ran on", set(pin or {}) == {"lib/code.py", "tests/q_test.py"}
           and d0.get("verdict") == "UNCHANGED" and rel0 == "ELIGIBLE" and d1.get("verdict") == "CHANGED" and rel1 == D.STALE
-          and seen == D.STALE and f"; {D.STALE})" in shown and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE",
+          and seen == D.STALE and f"; {D.STALE}; leaf `{rep['lineages'][L]['leaf'] or L}`)" in shown and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE",
           (pin, d0, rel0, d1, rel1, seen, d2, rel2))
     check("DR16 `across` reads a stale claim STALE as context does, through Home and through the agent, and its lens binds the "
           "tree it read: the same store answers differently at two heads", far == (D.STALE, D.STALE) and lens0 != lens1, (far, lens0, lens1))
@@ -1591,6 +1592,35 @@ def grounded_cases():
     check("GR3 the version asked about must be its lineage's effective version", G.grounded(r.report(), c0)["failing"][:1] == [[c0, "NOT_EFFECTIVE"]],
           G.grounded(r.report(), c0))
 
+def voices_cases():
+    """W4's stranger path in the core command: `warrant init --voices` and `warrant say`, with nothing but the package."""
+    from warrant import commons as CM
+    r = Repo()
+    d = r.home / "my voices"
+    d.mkdir()
+    keep = CM.SEEDS
+    CM.SEEDS = r.home / "seeds"
+    try:
+        code_init, out_init = cli(d, "init", "--voices")
+        doc = json.loads((d / ".warrant" / "v3.json").read_text()) if (d / ".warrant" / "v3.json").exists() else {}
+        target = "ab" * 32
+        code_say, out_say = cli(d, "say", target, "the claim ignores the cold start", "--as", "stranger-1")
+        said = json.loads(out_say or "{}")
+        snap = Store(d / ".warrant").snapshot()
+        rec = next((e[0]["record"] for e in snap.lines.values()), {})
+        before = r.store.lines()
+        code_proj, _ = cli(r.root, "say", target, "into a project's store", "--as", "stranger-1")
+        code_proj_init, _ = cli(r.root, "init", "--voices")
+    finally:
+        CM.SEEDS = keep
+    check("VS1 `warrant init --voices` makes a store of voices (it trusts nobody, gives nobody a role) and `warrant say` files "
+          "a challenge into it under the agent's own key, `key:<public>`, with the package alone; pointed at a project's store, "
+          "both refuse and nothing is appended (W4: the published package had no such command)",
+          code_init == 0 and CM.is_commons(doc) and doc.get("repository") == "voices/my-voices" and code_say == 0
+          and said.get("actor", "").startswith("key:") and rec.get("kind") == "challenge" and rec.get("actor") == said.get("actor")
+          and rec.get("body", {}).get("target") == target and code_proj == 1 and code_proj_init != 0 and r.store.lines() == before,
+          (code_init, doc, code_say, out_say, rec, code_proj, code_proj_init))
+
 def merged_cases():
     """The observation of a merge says how it came about: a solo merge says that no second family reviewed it."""
     import argparse
@@ -1834,5 +1864,6 @@ if __name__ == "__main__":
     grounded_cases()
     observer_cases()
     merged_cases()
+    voices_cases()
     board_cases()
     sys.exit(finish())

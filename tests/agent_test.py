@@ -779,8 +779,10 @@ def across_cases():
     by = _by_id(out)
     one, two = _row(by.get(stands), "one"), _row(by.get(stands), "two")
     check("X10 standing challenges: one that stands in one store and is a thesis in another is listed once with each store's "
-          "reading; a thesis standing nowhere, and a counted challenge of a replaced version, are not listed",
-          one.get("stands") is True and two.get("stands") is False and two.get("counted") is False and only not in by
+          "reading; a voice no store counts (a thesis standing nowhere) is listed, marked uncounted (W4: a stranger's "
+          "challenge was invisible here); a counted challenge of a replaced version is not listed",
+          one.get("stands") is True and two.get("stands") is False and two.get("counted") is False
+          and (by.get(only) or {}).get("uncounted") is True and not (by.get(stands) or {}).get("uncounted")
           and past not in by and (by.get(stands) or {}).get("text") == "counted in one", by)
 
     # X11-X13: references between stores
@@ -1782,7 +1784,7 @@ def overlay_cases():
 def commons_cases():
     """The commons (warrant_agent/commons.py): an agent with no key any store binds, no role and no part in a record
     says «фе» to it; every page shows the voice, no store's rules count it, a reader's rules may."""
-    from warrant_agent import commons as CM
+    from warrant import commons as CM          # the core holds the commons (warrant say); warrant_agent.commons wraps it
     from warrant_agent import overlay as OV
     from warrant_agent import serve as SV
     r = Repo()

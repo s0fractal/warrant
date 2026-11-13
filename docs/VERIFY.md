@@ -145,7 +145,33 @@ whose bytes do not hash to its name refuses the read, and a record line altered 
 rejected. A named value the server holds no blob for is counted as `unresolved`, never guessed.
 
 Given the same bytes the report equals `node impl-js/warrant.mjs assess --store DIR --config V3JSON`, byte for byte
-(impl_js_test J9, over a local server; mutants JS1, JS3). Measured once on 2026-11-11: master at 76452093 read through
+(impl_js_test J9, over a local server; two mutations of `impl-js/read.mjs`, run by hand and killed by J9: they are not in `tests/mutants.py`, whose CI job has no node, docs/V3.md §12 R-JS-MUTANTS). Measured once on 2026-11-11: master at 76452093 read through
 raw.githubusercontent.com gives root `e0b5a3711ac6` and the same 636 lineages in the same states and reliance as the
 Python engine on a local checkout, nothing rejected, in about 13 seconds. Content, not site: neither the publisher's
 server nor its HTML nor its engine is needed to reach the same verdicts.
+
+## In a browser: the reader
+
+`site/reader.html` (published with the project page) is the same second client with no install at all: give it the
+address of a repository served over HTTP(S) and it fetches `.warrant/v3.json` and `.warrant/records.jsonl`, assesses
+them in the page with `warrant.mjs` (the file the vectors hold, linked into `site/`, not copied) and shows the store's
+summary, its lineages and, for one lineage, its versions with their guards, acceptances and challenges. Nothing of
+ours serves or computes any of it; `?base=URL` makes a page a link, `&l=ID` one lineage.
+
+- **Whose rules.** The publisher's own `v3.json` unless the reader pastes a trust and a profile; the page says which.
+- **Quick and full.** A quick read fetches only the blobs the assessment reads (each migration's map): every state and
+  reliance is the full store's, and the page names no root, because the root covers every blob. A full read fetches
+  every blob a record names (a 64-hex value that is no record's id) and gives the store's root, the one `warrant status`
+  prints. Measured once on 2026-11-13, master through raw.githubusercontent.com: quick 2.1 s, full 18 s for 485 blobs.
+- **No ELIGIBLE on pins it did not compare.** A browser reads no Git objects, so it cannot say whether an acceptance
+  still names a checkout's bytes (`STALE`, docs/V3.md §15). A lineage whose effective version carries an attest naming
+  `files` or a `commit` reads `PINS_NOT_CHECKED` there, never `ELIGIBLE`: every lineage the freshness gate can read
+  `STALE` is among them.
+- **A transport that fails is a refusal.** Only HTTP 404 reads as absent; any other failure refuses the read whole, and
+  a blob whose bytes do not hash to its name refuses it too. Nothing partial is drawn.
+- **Record text is text.** The page builds no markup from a string, runs one script of its own origin and allows no
+  other (`script-src 'self'`).
+
+impl_js_test J10 holds the data the page draws to the Python engine, through node, by the functions the page runs; no
+case drives a browser, and the layout is checked by eye. No mutant targets these files (docs/V3.md §12 R-JS-MUTANTS):
+eleven mutations of the reader were run by hand on 2026-11-13 and each failed a J10 case.

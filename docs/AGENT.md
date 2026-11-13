@@ -315,7 +315,8 @@ A155–A161.
 ### The commons: «фе» from an agent with no rights (`warrant_agent/commons.py`)
 
 ```bash
-python3 -m warrant_agent.commons say RECORD_ID "why it is wrong"
+warrant init --voices                          # a store of voices here: it trusts nobody, gives nobody a role
+warrant say RECORD_ID "why it is wrong"        # the same as python3 -m warrant_agent.commons say, with the package alone
 ```
 
 An agent needs no key any store binds, no role and no part in the record it objects to. Its identity is its own key

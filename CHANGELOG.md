@@ -11,6 +11,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   not accepted` apart from `Accepted`, never one "Done"); a hand edit on the board is undone and named by the next
   sync; record text lies in a code fence, so the board mentions nobody. docs/REPOSITORY.md; tools_test BD1–BD5 (a
   board in memory: GitHub's own answers are not tested), mutants BM1–BM10.
+- The reader in a browser (`site/reader.html`, with the project page): a store fetched from any HTTP(S) root and
+  assessed in the page by `warrant.mjs`, under the publisher's rules or the reader's own; the summary `warrant status`
+  gives, the lineages, and one lineage's versions with their guards, acceptances and challenges. A quick read (the
+  migration maps alone) names no root; a full read gives the store's. It never prints ELIGIBLE on pins it did not
+  compare (`PINS_NOT_CHECKED`), a failed transport is a refusal, and record text is drawn as text. docs/VERIFY.md;
+  impl_js_test J10 (no mutant: R-JS-MUTANTS; eleven mutations run by hand).
 - **[protocol]** Reasons no longer depend on the interpreter (R-INTERPRETER narrowed): a value a reason quotes (a
   schema, an actor, a state, body member names, a duplicate member, blob names) is written as JSON with every UTF-16 unit
   outside space..~ escaped and keys in code point order, not as Python's `repr`; a package's blobs are read by the
@@ -27,7 +33,7 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 - A second client (`node impl-js/read.mjs --base URL`): a repository's records fetched over HTTP(S) from any root and
   assessed by the JavaScript implementation give the same report, byte for byte, as the store read from disk; an
   altered blob is refused, an altered line rejected. Read through GitHub, master gives the Python engine's root and
-  every lineage's state. docs/VERIFY.md; impl_js_test J9, mutants JS1, JS3.
+  every lineage's state. docs/VERIFY.md; impl_js_test J9 (two mutations of read.mjs run by hand, not in tests/mutants.py: R-JS-MUTANTS).
 - Who a voice is (`warrant_agent/voices.py`, R04 of the observer pack in part): the floor joins voices by the keys
   their store's trust binds to their names, not by the names. Two names on one key are one source (the author's key
   under another name is never an independent voice); one name on different keys in two stores is two; a record its
@@ -144,6 +150,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   environment `claims`); its acceptances arrive from `claims/verdicts/` and the gate merges them after CI re-executes
   them (the merge observation says `how`: solo, accepted, verdicts or hand; E56, E61–E66, MR1; V3-14-6, -9, -33, -38, -42, -43 new versions; V3-14-44..46). The engine still lets an actor
   release its own obligation: an obligation (G10) asks for `obligation@2`.
+
+- A stranger's path, from W4's walk (.drafts/W4-STRANGER-PATH-2026-11-13.md): `warrant init --voices` makes a store of
+  voices (trusting nobody, no roles) and `warrant say RECORD "text"` files a challenge into it under the agent's own
+  key, with the package alone (the commons moved into the core, `warrant/commons.py`; `warrant_agent.commons` wraps
+  it). `claims view` names each claim's leaf version id, the id a challenge targets. `across challenges` lists the
+  voices no store counts, marked `uncounted`, beside the standing challenges. VS1, X10, DR1; mutants T171, T172, X52,
+  X53 (A162–A173 now on warrant/commons.py); V3-13-23.
 
 ## 3.0.0a6 — one package, one receiver
 
