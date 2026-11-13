@@ -85,7 +85,7 @@ async function drawReleases(plan, list, id) {
   const box = section("desk-releases");
   const entries = typeof desk.releasesOf === "function" ? desk.releasesOf(plan, list) : [];
   if (!entries.length) { fill(box); box.hidden = true; return; }
-  const head = [el("h2", { text: "Published releases" }), el("p", { class: "small", text: "Read from where they are published; not verified here." })];
+  const head = [el("h2", { text: "Published releases" }), el("p", { class: "small", text: "Read from where they are published; not verified here. Each is the release its publisher's index names, as of the time it gives: a newer release may exist on the chain and not be published yet." })];
   fill(box, head, entries.map((e) => el("article", { class: "desk-store" }, el("h2", { text: e.name }), el("p", { class: "small", text: "reading …" }))));
   box.hidden = false;
   const fetcher = (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
