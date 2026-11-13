@@ -6,6 +6,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The reader in a browser (`site/reader.html`, with the project page): a store fetched from any HTTP(S) root and
+  assessed in the page by `warrant.mjs`, under the publisher's rules or the reader's own; the summary `warrant status`
+  gives, the lineages, and one lineage's versions with their guards, acceptances and challenges. A quick read (the
+  migration maps alone) names no root; a full read gives the store's. It never prints ELIGIBLE on pins it did not
+  compare (`PINS_NOT_CHECKED`), a failed transport is a refusal, and record text is drawn as text. docs/VERIFY.md;
+  impl_js_test J10 (no mutant: R-JS-MUTANTS; eleven mutations run by hand).
 - **[protocol]** Reasons no longer depend on the interpreter (R-INTERPRETER narrowed): a value a reason quotes (a
   schema, an actor, a state, body member names, a duplicate member, blob names) is written as JSON with every UTF-16 unit
   outside space..~ escaped and keys in code point order, not as Python's `repr`; a package's blobs are read by the

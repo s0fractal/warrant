@@ -968,6 +968,7 @@ def main():
     tally = Tally()
     repo = repo_cases(tally, a)
     second_client_cases()
+    browser_reader_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -1075,6 +1076,171 @@ def second_client_cases():
     check("J9 a transport that alters a blob is refused (its bytes do not hash to its name); one that alters a record line "
           "has that line rejected by its signature", cited is not None and "transport altered blob" in refused.get("refused", "")
           and rejected.get("rejected", 0) >= 1, (cited, refused, rejected.get("rejected")))
+
+
+READER = ROOT / "site" / "reader.mjs"
+PAGE_FILES = [ROOT / "site" / "reader.html", ROOT / "site" / "reader-page.mjs", ROOT / "site" / "reader.mjs"]
+MARKUP_FROM_TEXT = ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "srcdoc", "eval(",
+                    "new Function", "setAttribute(\"on", "javascript:")
+
+
+def _reader(base, *args):
+    """(exit status, the reader's JSON answer) of `node site/reader.mjs --base BASE ...`."""
+    p = subprocess.run([NODE, str(READER), "--base", base, *args], capture_output=True, check=False, timeout=600)
+    try:
+        return p.returncode, json.loads(p.stdout)
+    except ValueError:
+        return p.returncode, {"crash": p.stderr.decode(errors="replace")[-300:]}
+
+
+def _serve_failing(directory, failing):
+    """As _serve, but a path ending in `failing` answers 500: a transport that failed, not a file that is absent."""
+    import functools
+    import http.server
+    import threading
+    class Failing(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def do_GET(self):
+            if self.path.endswith(failing):
+                self.send_error(500)
+            else:
+                super().do_GET()
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Failing, directory=str(directory)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}/"
+
+
+def browser_reader_cases():
+    """The reader in a browser (site/reader.mjs, drawn by site/reader-page.mjs): what the page shows of a store is held
+    to the Python engine here, through node, by the functions the page runs. J10 is about the data the page draws and
+    about its source text; no case here drives a browser."""
+    import re
+    from warrant import claims as CL
+    link = ROOT / "site" / "warrant.mjs"
+    check("J10 the page runs the engine the vectors hold: site/warrant.mjs is a link to impl-js/warrant.mjs, not a copy",
+          link.is_symlink() and os.readlink(link) == "../impl-js/warrant.mjs", link)
+
+    doc = json.loads((ROOT / ".warrant" / "v3.json").read_text())
+    view = E.View(ST.Store(ROOT / ".warrant").snapshot(), doc["trust"], doc["profile"], None)
+    py = view.report()
+    speaks = {r["body"]["target"] for r in view.recs.values() if r["kind"] == "attest" and ("files" in r["body"] or "commit" in r["body"])}
+    want = {L: ("PINS_NOT_CHECKED" if x["reliance"] == "ELIGIBLE" and x["effective"] in speaks else x["reliance"])
+            for L, x in py["lineages"].items()}
+    by_state = {}
+    for x in py["lineages"].values():
+        by_state.setdefault(x["schema"], {}).setdefault(x["state"] or "none", 0)
+        by_state[x["schema"]][x["state"] or "none"] += 1
+    srv, base = _serve(ROOT)
+    try:
+        rc, quick = _reader(base)
+        rc_full, full = _reader(base, "--full")
+    finally:
+        srv.shutdown()
+    rows = {x["id"]: x for x in quick.get("rows", [])}
+    summ = quick.get("summary", {})
+    check("J10 the repository read by the browser's reader: every lineage's state is the Python engine's, its reliance the "
+          "engine's except PINS_NOT_CHECKED where an attest on its effective version names files or a commit, and the "
+          "counts by schema and state are the engine's",
+          rc == 0 and {L: x["state"] for L, x in rows.items()} == {L: x["state"] for L, x in py["lineages"].items()}
+          and {L: x["reliance"] for L, x in rows.items()} == want and summ.get("lineages") == by_state
+          and summ.get("records") == len(view.snap.lines) and summ.get("rejected") == len(py["rejected"]),
+          (rc, quick.get("refused") or quick.get("crash"), len(rows), len(py["lineages"])))
+    py["_recs"], py["_basis"] = view.recs, view.basis
+    gated = {L for L in CL.live(py) if CL.acceptances(py).get(py["lineages"][L]["effective"])}
+    check("J10 no lineage the freshness gate can read STALE (a live claim whose effective version the claims checker "
+          "accepted, warrant.drift) reads ELIGIBLE in the browser's reader, which compares no checkout",
+          rc == 0 and len(gated) > 0 and all(rows.get(L, {}).get("reliance") != "ELIGIBLE" for L in gated),
+          (len(gated), sorted(L[:12] for L in gated if rows.get(L, {}).get("reliance") == "ELIGIBLE")[:5]))
+    check("J10 a quick read (the migration maps alone) names no root; a full read (every blob a record names that is no "
+          "record's id, each checked against its name) gives the store's root, the Python snapshot digest",
+          summ.get("root") is None and summ.get("blobs", {}).get("mode") == "quick"
+          and rc_full == 0 and full.get("summary", {}).get("root") == py["snapshot"],
+          (summ.get("root"), full.get("summary", {}).get("root"), full.get("refused")))
+
+    hostile = "<img src=x onerror=alert(1)><script>alert(2)</script> \u202e&amp;"
+    r = Repo()
+    goal = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a goal"})
+    plain = r.entity("alice", "obligation@1", {"state": "open", "statement": hostile, "serves": [goal]})
+    done = r.entity("alice", "obligation@1", {"state": "done", "statement": hostile, "serves": [goal]}, lineage=plain)
+    r.attest("bob", done)
+    pinned = r.entity("alice", "obligation@1", {"state": "open", "statement": "accepted on files", "serves": [goal]})
+    pinned_done = r.entity("alice", "obligation@1", {"state": "done", "statement": "accepted on files", "serves": [goal]}, lineage=pinned)
+    r.attest("bob", pinned_done, commit="c" * 40, files={"a.py": "0" * 40})
+    at_commit = r.entity("alice", "obligation@1", {"state": "open", "statement": "accepted at a commit", "serves": [goal]})
+    at_commit_done = r.entity("alice", "obligation@1", {"state": "done", "statement": "accepted at a commit", "serves": [goal]}, lineage=at_commit)
+    r.attest("bob", at_commit_done, commit="c" * 40)
+    stranger = dict(json.loads((r.dot / "v3.json").read_text()))
+    stranger["profile"] = dict(stranger["profile"], roles=dict(stranger["profile"]["roles"], **{"roadmap/acceptor": ["carol"]}))
+    mine = r.home / "mine.json"
+    mine.write_text(json.dumps(stranger))
+    srv, base = _serve(r.root)
+    try:
+        _, theirs = _reader(base)
+        _, opened = _reader(base, "--lineage", plain)
+        _, own = _reader(base, "--config", str(mine))
+    finally:
+        srv.shutdown()
+    t = {x["id"]: x for x in theirs.get("rows", [])}
+    o = {x["id"]: x for x in own.get("rows", [])}
+    lin = opened.get("lineage") or {}
+    check("J10 what a record says reaches the page's data unchanged, as text: a statement holding markup, a script and a "
+          "direction override is the same string in the list and in the opened lineage",
+          t.get(plain, {}).get("title") == hostile and [v.get("title") for v in lin.get("versions", [])] == [hostile, hostile],
+          (t.get(plain), lin.get("versions")))
+    check("J10 an acceptance that names files, or a commit alone: the lineage reads PINS_NOT_CHECKED, never ELIGIBLE; one "
+          "that names neither reads ELIGIBLE",
+          t.get(pinned, {}).get("reliance") == "PINS_NOT_CHECKED" and t.get(at_commit, {}).get("reliance") == "PINS_NOT_CHECKED"
+          and t.get(plain, {}).get("reliance") == "ELIGIBLE"
+          and theirs.get("summary", {}).get("reliance") == {"ELIGIBLE": 2, "PINS_NOT_CHECKED": 2}, theirs.get("summary", {}).get("reliance"))
+    check("J10 the reader's own rules decide: under the publisher's profile the closure is accepted (state done, rules "
+          "publisher); under a profile where its acceptor holds no role the same bytes read state open (rules reader)",
+          t.get(plain, {}).get("state") == "done" and theirs.get("summary", {}).get("rules") == "publisher"
+          and o.get(plain, {}).get("state") == "open" and own.get("summary", {}).get("rules") == "reader",
+          (t.get(plain, {}).get("state"), o.get(plain, {}).get("state"), own.get("summary", {}).get("rules"), own.get("refused")))
+
+    srv, base = _serve_failing(r.root, "records.jsonl")
+    try:
+        rc_500, failed = _reader(base)
+    finally:
+        srv.shutdown()
+    (r.dot / "v3.json").unlink()
+    srv, base = _serve(r.root)
+    try:
+        rc_none, absent = _reader(base)
+    finally:
+        srv.shutdown()
+    check("J10 a transport that fails is a refusal, never an empty store: records answered with HTTP 500 refuse the read, "
+          "and so does a root with no .warrant/v3.json",
+          rc_500 == 2 and "HTTP 500" in failed.get("refused", "") and rc_none == 2 and "no .warrant/v3.json" in absent.get("refused", ""),
+          (rc_500, failed, rc_none, absent))
+
+    maps = sorted({x["body"]["target"] for x in view.recs.values() if x["kind"] == "attest" and x["schema"] == R.MIGRATION})
+    with tempfile.TemporaryDirectory() as d:
+        copy_root = Path(d) / "repo"
+        (copy_root / ".warrant" / "blobs").mkdir(parents=True)
+        shutil.copy(ROOT / ".warrant" / "v3.json", copy_root / ".warrant" / "v3.json")
+        shutil.copy(ROOT / ".warrant" / "records.jsonl", copy_root / ".warrant" / "records.jsonl")
+        for m in maps:
+            (copy_root / ".warrant" / "blobs" / m).write_bytes(b"altered on the way")
+        srv, base = _serve(copy_root)
+        try:
+            rc_blob, altered = _reader(base)
+        finally:
+            srv.shutdown()
+    check("J10 a transport that alters a blob the quick read asks for (a migration's map) refuses the read: its bytes do "
+          "not hash to its name", len(maps) > 0 and rc_blob == 2 and "transport altered blob" in altered.get("refused", ""),
+          (maps, rc_blob, altered))
+
+    texts = {p.name: p.read_text() for p in PAGE_FILES}
+    html = texts["reader.html"]
+    found = sorted((name, word) for name, text in texts.items() for word in MARKUP_FROM_TEXT if word in text)
+    check("J10 the page's source: no call that builds markup from a string in its three files, one script element and "
+          "that one external, no inline handler, and a policy allowing scripts of its own origin only",
+          not found and html.count("<script") == 1 and '<script type="module" src="reader-page.mjs"></script>' in html
+          and re.search(r"<[^>]*\son[a-z]+\s*=", html, re.I) is None
+          and "script-src 'self'" in html and "default-src 'none'" in html and "'unsafe-inline'" not in html
+          and "'unsafe-eval'" not in html, found)
 
 
 if __name__ == "__main__":
