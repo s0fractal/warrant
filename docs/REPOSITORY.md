@@ -283,7 +283,13 @@ the file is absent (the owner runs it).
 ## The review loop in another repository
 
 Another repository runs the same loop on its own records with the installed package, pinned to an
-exact version (and hashes), from a checkout of that repository:
+exact version (and hashes), from a checkout of that repository. `warrant init` in it starts the store and leaves
+what the next agent reads (`warrant/entry.py`): `.warrant/v3.json` with an empty trust and profile, the block of
+`warrant/entry.py` in `AGENTS.md` between `<!-- warrant:begin -->` and `<!-- warrant:end -->` (a file of the
+repository's own keeps every byte outside them) and `@AGENTS.md` in `CLAUDE.md`; with `--mcp`, a read-only
+`.warrant/agent.json` and the server `warrant` in `.mcp.json`; `--no-entry` leaves the two markdown files alone. The
+block is the one the adoption experiment measured (experiments/adoption, #385: 0 of 18 agents used the records without
+it, 18 of 18 with it and the server), and it changes only with a new measurement.
 
 - `.warrant/v3.json`: `{"warrant": "repository/3", "repository": "owner/name", "trust", "profile"}`;
   the profile names its `pr/acceptor`, `replayer` and, for claims, `claim/verifier`. Its store holds

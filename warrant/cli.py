@@ -139,6 +139,10 @@ def _parser():
             g.add_argument("--store")
             g.add_argument("--repo", help="a repository registered in Home (warrant home)")
     cmds["init"].add_argument("--store")
+    cmds["init"].add_argument("--no-entry", action="store_true",
+                              help="a repository's store without the AGENTS.md block and CLAUDE.md import (warrant.entry)")
+    cmds["init"].add_argument("--mcp", action="store_true",
+                              help="also .warrant/agent.json and the MCP server `warrant` in .mcp.json (warrant.entry)")
     cmds["init"].add_argument("--voices", action="store_true",
                               help="a store of voices: it trusts nobody and gives nobody a role (warrant say files into it)")
     x = sub.add_parser("across", help="one read over every repository registered in Home (docs/HOME.md); output is JSON")
@@ -395,6 +399,11 @@ def main(argv=None):
             store = store_dir(a)
             Store(store).init()
             out = {"store": a.store if a.store is not None else store}     # as named, else where it went
+            if Path(store).name == ".warrant":                             # a repository's store: what the next agent reads
+                from . import entry as EN
+                root = Path(store).parent
+                wrote = EN.receiver(root) + ([] if a.no_entry else EN.agents(root)) + (EN.mcp(root) if a.mcp else [])
+                out["wrote"] = wrote
         elif a.cmd == "key":
             k = K.Key.generate()
             fd = os.open(home(a.out), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
