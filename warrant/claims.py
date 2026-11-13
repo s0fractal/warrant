@@ -436,14 +436,16 @@ def replay(repo, key):
     return repo.file(CHECKER, key, recs)
 
 
-def verify(repo, base):
+def verify(repo, base, done=frozenset(), verified=None):
     """Re-execute every acceptance the claims checker signed since commit `base`, in a temporary worktree of the
     commit it names: its `code` must be the checker's code at that commit (CODE_DIFFERS), its witnesses and mutants
     those of the version it accepts, the claims check must pass there and that version be the leaf of a live
     `backed` claim there, as replay requires before it signs (CLAIM_PREFLIGHT), and every witness must pass and
     every mutant be killed there again (CLAIM_REPLAY_DIFFERS), and the `files` it names, when it names them, be what
     that commit's checkout lists for the claim (warrant.drift reads them). Acceptances by a person (codex) are trust
-    decisions, not re-executed."""
+    decisions, not re-executed. An acceptance in `done` (ids a run on this branch re-executed and found holding: its
+    result at the commit it names cannot change) is checked but not run again; `verified`, when given, receives every
+    acceptance that held, so a later run of the same pull request after its base moved re-executes only what is new."""
     old, _ = GT.store_at(repo.root, base)
     rep = repo.report()
     recs, bad, by_commit = rep["_recs"], [], {}
@@ -459,11 +461,15 @@ def verify(repo, base):
             bad.append(f"{i[:12]}: {why}")
         else:
             by_commit.setdefault(b["commit"], []).append((i, b["target"], v["body"]))
+    held = [i for rows in by_commit.values() for i, _, _ in rows if i in done]
+    by_commit = {x: kept for x, rows in by_commit.items() if (kept := [row for row in rows if row[0] not in done])}
     pins = {i: recs[i]["body"].get("files") for rows in by_commit.values() for i, _, _ in rows}
     for x, rows in sorted(by_commit.items()):
         bad += _reexecuted(repo, x, rows, pins)
     if bad:
         raise Failed("CLAIM_REPLAY_DIFFERS", "; ".join(bad))
+    if verified is not None:
+        verified.extend(held + [i for rows in by_commit.values() for i, _, _ in rows])
     return sum(len(rows) for rows in by_commit.values())
 
 
@@ -509,13 +515,20 @@ def run(argv=None):
     r.add_argument("--key", required=True)
     vf = sub.add_parser("verify")
     vf.add_argument("--base", required=True)
+    vf.add_argument("--done", help="a file of acceptance ids already re-executed and held on this branch; updated on success")
     a = ap.parse_args(argv)
     repo = Repo(root)
     if a.cmd == "identity":
         dump({"actor": CHECKER, **identity(root)})
         return 0
     if a.cmd == "verify":
-        print(f"claims checker acceptances new since {a.base[:12]}: {verify(repo, a.base)} re-executed, all held")
+        path = Path(a.done) if a.done else None
+        done = frozenset(path.read_text().split()) if path and path.is_file() else frozenset()
+        held = []
+        n = verify(repo, a.base, done, held)
+        if path:
+            path.write_text("".join(f"{i}\n" for i in sorted(set(held) | done)))
+        print(f"claims checker acceptances new since {a.base[:12]}: {n} re-executed, {len(set(held) & done)} held before, all held")
         return 0
     if a.cmd == "check":
         rep, out = check(repo)

@@ -205,6 +205,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   first-parent history is read in one batch; modes and types are compared; signs are read back to twice `days`.
   E80–E82 (Codex's cases); mutants G93–G95.
 
+- `claims verify --done FILE` skips the acceptances a run of the same branch re-executed and found holding, and records
+  what held; CI keeps that file per branch (actions/cache), so after the gate merges a moved base into a branch of
+  verdicts only, its next run re-executes only what is new. On a branch run by dispatch CI's base is now the merge base
+  with master, never the branch's previous head (which would have verified nothing after such a merge). claims-replay
+  opens no second pull request of acceptances while one is open. C20; mutant T173.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by

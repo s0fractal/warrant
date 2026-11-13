@@ -53,6 +53,7 @@ jobs:
         id: replay
         env:
           SEED: ${{ secrets.WARRANT_CLAIMS_SEED }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tip=$(git rev-parse HEAD)
@@ -73,6 +74,14 @@ jobs:
           print("yes" if pub in keys else pub)')
           if [ "$bound" != "yes" ]; then
             echo "the runner key $bound is not yet bound to claims-checker in .warrant/v3.json at ${tip:0:12}: nothing replayed" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "changed=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # one pull request of acceptances at a time: a second at a newer tip, before the first merged, would accept
+          # the same versions again
+          open_=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq '[.[] | select(.head.ref | startswith("claims/verdicts/")) | .number] | length')
+          if [ "$open_" != "0" ]; then
+            echo "a pull request of acceptances is open: nothing replayed until it merges" | tee -a "$GITHUB_STEP_SUMMARY"
             echo "changed=" >> "$GITHUB_OUTPUT"
             exit 0
           fi

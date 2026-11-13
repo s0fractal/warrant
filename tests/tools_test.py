@@ -331,6 +331,12 @@ def checker_cases():
           and a["tree"] == git(r.root, "rev-parse", f"{base}^{{tree}}") and a.get("code") == RP.checker_code(base, r.root)
           and set(a.get("env", {})) == {"python", "cryptography"} and again == [], (first, a, again))
     ok = CL.verify(rp, base)
+    held = []
+    once = CL.verify(rp, base, frozenset(), held)
+    skipped = CL.verify(rp, base, frozenset(held))
+    check("C20 an acceptance a run of the same branch re-executed and found holding is not run again (its result at its "
+          "commit cannot change), and a run names what held, so a pull request whose base moved re-executes only what is new "
+          "(#364: 136 acceptances, 40 minutes each time)", once == 1 and held == first and skipped == 0, (once, held, skipped))
     put_as(r, CL.CHECKER, dict(a, code="0" * 64), [L])
     r.commit("an acceptance naming other code")
     why = refused_code(CL.verify, rp, x1)
