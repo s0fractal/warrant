@@ -575,5 +575,24 @@ def main():
     return 1 if FAILS else 0
 
 
+def unicode_cases():
+    """minds #94 (2026-11-13): whether an actor id is in NFC, and of an allowed category, follows the interpreter's
+    Unicode tables ("\U00016D67\U00016D67" is an actor under Unicode 14 and 15, not under 16 and 17), so a verdict could
+    differ between two receivers whose engine code was the same digest."""
+    import unicodedata
+    keep, kept = unicodedata.unidata_version, list(E._CODE)
+    try:
+        E._CODE.clear()
+        here = E.code_identity()
+        unicodedata.unidata_version = "0.0.0"
+        E._CODE.clear()
+        other = E.code_identity()
+    finally:
+        unicodedata.unidata_version = keep
+        E._CODE[:] = kept
+    check("UC1 the engine's `code` names the version of the Unicode tables that decide an actor id: another version, "
+          "another code", here != other, (here, other))
+
 if __name__ == "__main__":
+    unicode_cases()
     sys.exit(main())

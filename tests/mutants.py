@@ -273,6 +273,7 @@ MUTANTS = [
     ("T180", "warrant/resolve.py", '        got = p.in_git(i)\n        if got:\n            return got', '        got = None\n        if got:\n            return got', TOOLS, ["RV1"]),
     ("T181", "warrant/resolve.py", '        got = p.bytes_of(i)\n        if got:\n            return "RESOLVED", got[1]', '        got = None\n        if got:\n            return "RESOLVED", got[1]', TOOLS, ["RV1"]),
     ("T182", "warrant/resolve.py", '    if home is not None and home.holds(i):', '    if False:', TOOLS, ["RV1"]),
+    ("V106", E, ', "unicode": unicodedata.unidata_version}))', '}))', CORE, ["UC1"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
     ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),

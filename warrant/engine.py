@@ -3,6 +3,7 @@ profile. Authentication, actor chains, schemas, lineages with FORK, guards, chal
 and the graph come out of the same View."""
 import json
 import hashlib
+import unicodedata
 from pathlib import Path
 
 from warrant import jcs as C
@@ -26,12 +27,15 @@ _CODE = []
 
 def code_identity():
     """The digest of every file that decides a verdict: this package, whole (the core imports nothing
-    outside it but the standard library and the signature library), with that library's version."""
+    outside it but the standard library and the signature library), with that library's version and the version of
+    the interpreter's Unicode tables, which decide whether an actor id is in NFC and of an allowed category (minds #94,
+    2026-11-13: "\U00016D67\U00016D67" is an actor under Unicode 14 and 15, not under 16 and 17, so a schema counted
+    under one interpreter was not under another with the same digest of files)."""
     if not _CODE:
         import cryptography
         files = sorted(Path(__file__).resolve().parent.glob("*.py"))
         h = {f"warrant/{p.name}": hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
-        _CODE.append(C.doc_id({"files": h, "cryptography": cryptography.__version__}))
+        _CODE.append(C.doc_id({"files": h, "cryptography": cryptography.__version__, "unicode": unicodedata.unidata_version}))
     return _CODE[0]
 
 

@@ -37,7 +37,7 @@ DIGESTS = {
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
     "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
-    "warrant/engine.py": "647ecaeb64b471dc92202d4f56bc68126cf4554a76cddb6d05faa2108d7ff2a7",
+    "warrant/engine.py": "0ca80c4045dca431b48ef53ec340b69957ea314f0cfbc772cf3b27a36682d490",
     "warrant/verify.py": "3a54828b3474195712ae021ad6105eaab29326a28fb63ff791832b81b9487fdb",
 }
 ORDER = ('jcs', 'graph', 'shapes', 'keys', 'pins', 'records', 'store', 'engine', 'verify')
@@ -1070,6 +1070,7 @@ profile. Authentication, actor chains, schemas, lineages with FORK, guards, chal
 and the graph come out of the same View."""
 import json
 import hashlib
+import unicodedata
 from pathlib import Path
 
 from warrant import jcs as C
@@ -1093,12 +1094,15 @@ _CODE = []
 
 def code_identity():
     """The digest of every file that decides a verdict: this package, whole (the core imports nothing
-    outside it but the standard library and the signature library), with that library's version."""
+    outside it but the standard library and the signature library), with that library's version and the version of
+    the interpreter's Unicode tables, which decide whether an actor id is in NFC and of an allowed category (minds #94,
+    2026-11-13: "\U00016D67\U00016D67" is an actor under Unicode 14 and 15, not under 16 and 17, so a schema counted
+    under one interpreter was not under another with the same digest of files)."""
     if not _CODE:
         import cryptography
         files = sorted(Path(__file__).resolve().parent.glob("*.py"))
         h = {f"warrant/{p.name}": hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
-        _CODE.append(C.doc_id({"files": h, "cryptography": cryptography.__version__}))
+        _CODE.append(C.doc_id({"files": h, "cryptography": cryptography.__version__, "unicode": unicodedata.unidata_version}))
     return _CODE[0]
 
 

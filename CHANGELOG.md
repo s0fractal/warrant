@@ -287,6 +287,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   LOCATED or MISSING; bytes that do not hash to their name are refused. Over this Home: 4198 present, 3 resolved (minds
   cells), 2 missing. RV1, RV2; mutants T179–T182.
 
+- The engine's `code` names the version of the interpreter's Unicode tables (minds #94: `"\U00016D67\U00016D67"` is
+  an actor id under Unicode 14 and 15, not under 16 and 17, so Python 3.11 and 3.15 gave different verdicts under one
+  `code`). Every report's `code` and `assessment` change once. R-INTERPRETER names the class; an obligation asks for a
+  Unicode version in the format. UC1; mutant V106.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by
