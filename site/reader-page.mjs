@@ -546,7 +546,7 @@ function draw() {
 
 function say(text, bad) {
   const s = $("status");
-  s.textContent = text;
+  s.textContent = typeof page.plain === "function" ? page.plain(text) : text;   // an older cached page.mjs has none
   s.className = "status" + (bad ? " bad" : "");
 }
 

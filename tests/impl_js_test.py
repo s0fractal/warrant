@@ -3039,6 +3039,24 @@ def browser_toward_cases():
     check("J18 hostile text in a cited version's statement reaches no resolve answer: ids, words and addresses only",
           len((runs["full with"][1].get("resolve") or {}).get("ids", [])) == 5
           and not any(x in json.dumps(runs["full with"][1].get("resolve"), ensure_ascii=False) for x in bad), runs["full with"][1].get("resolve"))
+    # What the page draws of a record: its invisible direction and width controls shown, not obeyed. Driven through
+    # page.mjs's own el() over a document that only records what it is given (no browser).
+    js = ("globalThis.document = {createElement: () => ({kids: [], set textContent(v) { this.t = v; }, append(k) { this.kids.push(k); },"
+          " setAttribute(k, v) { (this.a ??= {})[k] = v; }})};"
+          " const p = await import(%s); const h = process.argv[1];"
+          " const n = p.el('p', {text: h, title: h}, h, ' tail');"
+          " console.log(JSON.stringify({t: n.t, kids: n.kids, title: n.a.title, plain: typeof p.plain === 'function' ? p.plain('ok \\u2067x') : null}))"
+          ) % json.dumps((ROOT / "site" / "page.mjs").as_uri())
+    p = subprocess.run([NODE, "--input-type=module", "-e", js, hostile], capture_output=True, text=True, check=False, timeout=60)
+    drawn = json.loads(p.stdout) if p.returncode == 0 else {"error": p.stderr[-300:]}
+    controls = re.compile("[\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+    check("J18 the page shows a record's direction and width controls instead of obeying them: text and string children "
+          "drawn through el() carry \u27e8U+202E\u27e9 and \u27e8U+200B\u27e9 for the characters (a right-to-left override would "
+          "redraw the rest of a statement backwards), every other character as it was; an attribute keeps the bytes",
+          "error" not in drawn and not controls.search(drawn["t"]) and not controls.search("".join(drawn["kids"]))
+          and "\u27e8U+202E\u27e9\u27e8U+200B\u27e9" in drawn["t"] and drawn["kids"][0] == drawn["t"] and drawn["kids"][1] == " tail"
+          and drawn["t"].replace("\u27e8U+202E\u27e9", "\u202e").replace("\u27e8U+200B\u27e9", "\u200b") == hostile
+          and drawn["title"] == hostile and drawn["plain"] == "ok \u27e8U+2067\u27e9x", drawn)
 
 
 if __name__ == "__main__":

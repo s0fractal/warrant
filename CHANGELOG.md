@@ -6,6 +6,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The reader's pages show a record's invisible direction and width controls (U+200B to U+200F, U+202A to U+202E,
+  U+2066 to U+2069) as their code points in angle brackets instead of obeying them (`plain` in `site/page.mjs`,
+  through `el()` and `fill()`): a right-to-left override in a statement redrew the rest of its title backwards.
+  Attributes and the CLI's JSON keep the bytes.
 - The browser reader says what moves toward what you watch, and where the bytes of a cited id are. Beside the watched
   answer, when the comparison was made, `watch.toward` lists the lineages of each watched lineage's cone (`cone` in
   `site/reader.mjs`: the closure, from every version, under the graph's in-edges in `warrant.graph.WALK` and every

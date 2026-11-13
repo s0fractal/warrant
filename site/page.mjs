@@ -8,21 +8,28 @@ import { MARK } from "./reader.mjs";
 
 export const $ = (id) => document.getElementById(id);
 
+// Text as the page draws it: the invisible direction and width controls of a record's text shown as their code points,
+// not obeyed (a right-to-left override would redraw the rest of a statement backwards: it is data, and it must look
+// like data). Every other character is as it was; an attribute (a title, an address) keeps the bytes.
+const CONTROLS = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g;
+export const plain = (s) => String(s).replace(CONTROLS, (c) => `\u27e8U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}\u27e9`);
+const drawn = (k) => (typeof k === "string" ? plain(k) : k);
+
 export function el(tag, attrs, ...kids) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs ?? {})) {
     if (v === null || v === undefined || v === false) continue;
-    if (k === "text") n.textContent = String(v);
+    if (k === "text") n.textContent = plain(v);
     else if (k === "class") n.className = v;
     else n.setAttribute(k, v === true ? "" : String(v));
   }
-  for (const k of kids.flat()) if (k !== null && k !== undefined && k !== false) n.append(k);
+  for (const k of kids.flat()) if (k !== null && k !== undefined && k !== false) n.append(drawn(k));
   return n;
 }
 
 // Put `kids` (nodes, strings, arrays of them; nothing for null or false) in place of what `box` held.
 export function fill(box, ...kids) {
-  box.replaceChildren(...kids.flat(3).filter((k) => k !== null && k !== undefined && k !== false));
+  box.replaceChildren(...kids.flat(3).filter((k) => k !== null && k !== undefined && k !== false).map(drawn));
 }
 
 export const short = (id) => el("code", { text: String(id).slice(0, 12), title: id });
