@@ -79,8 +79,9 @@ jobs:
             exit 0
           fi
           # one pull request of acceptances at a time: a second at a newer tip, before the first merged, would accept
-          # the same versions again
-          open_=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq '[.[] | select(.head.ref | startswith("claims/verdicts/")) | .number] | length')
+          # the same versions again. Only a branch of this repository counts: a fork's pull request named
+          # claims/verdicts/* must not stop the checker (Codex on #367)
+          open_=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq "[.[] | select(.head.ref | startswith(\"claims/verdicts/\")) | select(.head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number] | length")
           if [ "$open_" != "0" ]; then
             echo "a pull request of acceptances is open: nothing replayed until it merges" | tee -a "$GITHUB_STEP_SUMMARY"
             unchanged

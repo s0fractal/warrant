@@ -222,7 +222,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   what held; CI keeps that file per branch (actions/cache), so after the gate merges a moved base into a branch of
   verdicts only, its next run re-executes only what is new. On a branch run by dispatch CI's base is now the merge base
   with master, never the branch's previous head (which would have verified nothing after such a merge). claims-replay
-  opens no second pull request of acceptances while one is open. C20; mutant T173.
+  opens no second pull request of acceptances while one is open. C20; mutant T173. After Codex's review of #367: the
+  done file is refused when Git tracks it (a pull request could have committed it and skipped a replay), each entry
+  counts only for the checker code that wrote it, and the open-PR guard counts only branches of this repository (a
+  fork's claims/verdicts/* would have stopped the checker). C21; mutants T176, T177.
 - A pull request of verdicts only that conflicts with the base only in its records (GitHub applies no merge=union,
   R-UNION-ON-FORGE) gets the base merged into its branch by the gate: the union of both stores in canonical order, the
   head's blobs kept, a merge commit made through GitHub's API, CI started on it. The claims checker's acceptances

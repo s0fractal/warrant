@@ -339,6 +339,24 @@ def checker_cases():
           "commit cannot change), and a run names what held, so a pull request whose base moved re-executes only what is new "
           "(#364: 136 acceptances, 40 minutes each time); the file it keeps is one of the checkout, as every path a tool "
           "writes", once == 1 and held == first and skipped == 0 and (outside or "").startswith("PATH"), (once, held, skipped, outside))
+    ids_file = r.root / "build" / "claims-done" / "ids"
+    ids_file.parent.mkdir(parents=True, exist_ok=True)
+    code = RP.identity(r.root)["code"]
+    def verify_with(text):
+        ids_file.write_text(text)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            CL.run(["--root", str(r.root), "verify", "--base", base, "--done", str(ids_file)])
+        return buf.getvalue()
+    same, other = verify_with(f"{first[0]} {code}\n"), verify_with(f"{first[0]} {'0' * 64}\n")
+    ids_file.write_text(f"{first[0]} {code}\n")
+    git(r.root, "add", "-f", "build/claims-done/ids")
+    tracked = refused_code(CL.run, ["--root", str(r.root), "verify", "--base", base, "--done", str(ids_file)])
+    git(r.root, "rm", "-q", "--cached", "build/claims-done/ids")
+    check("C21 a done file counts only as the runner's own: one the tree holds is refused (Codex on #367: a committed "
+          "done file skipped the replay of what it named), and an entry counts only for the checker code that wrote it",
+          "0 re-executed, 1 held before" in same and "1 re-executed" in other and (tracked or "").startswith("PATH"),
+          (same, other, tracked))
     put_as(r, CL.CHECKER, dict(a, code="0" * 64), [L])
     r.commit("an acceptance naming other code")
     why = refused_code(CL.verify, rp, x1)

@@ -559,15 +559,34 @@ def _parser():
     return ap
 
 
+def _done_file(path, root, code):
+    """The acceptance ids FILE says held under this checker `code`, or a refusal: FILE is a file of the checkout
+    (inside) that Git does not track, so no pull request can hand it in (Codex on #367: a committed done file skipped
+    the replay of acceptances it named), and an entry counts only for the checker code that wrote it."""
+    if path.is_symlink():
+        raise Failed("PATH", f"{path}: the done file is a file, not a link")
+    try:
+        P.git(root, "ls-files", "--error-unmatch", "--", os.path.relpath(path, Path(root).resolve()))
+        tracked = True
+    except subprocess.CalledProcessError:
+        tracked = False
+    if tracked:
+        raise Failed("PATH", f"{path}: the done file is the runner's own, never a file the tree holds")
+    rows = [ln.split() for ln in path.read_text().splitlines()] if path.is_file() else []
+    return frozenset(r[0] for r in rows if len(r) == 2 and r[1] == code)
+
+
 def _verify_cmd(repo, a, root):
-    """`verify --base M [--done FILE]`: FILE is a file of the checkout (inside), as every path a tool reads or writes."""
+    """`verify --base M [--done FILE]`: FILE is a file of the checkout (inside), as every path a tool reads or writes,
+    that Git does not track; each line `<acceptance id> <checker code>`."""
     path = inside(a.done, root) if a.done else None
-    done = frozenset(path.read_text().split()) if path and path.is_file() else frozenset()
+    code = identity(root)["code"] if path else None
+    done = _done_file(path, root, code) if path else frozenset()
     held = []
     n = verify(repo, a.base, done, held)
     if path:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("".join(f"{i}\n" for i in sorted(set(held) | done)))
+        path.write_text("".join(f"{i} {code}\n" for i in sorted(set(held) | done)))
     print(f"claims checker acceptances new since {a.base[:12]}: {n} re-executed, {len(set(held) & done)} held before, all held")
     return 0
 
