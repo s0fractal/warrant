@@ -959,7 +959,8 @@ def _verdicts_only(a, root, b, pr, head, rep):
     loose = _uncited(rep, added, blobs)
     if loose:
         out.append(("TAIL_BLOB_UNCITED", f"{len(loose)} blob(s) cited by no verdict: " + ", ".join(o[:12] for o in loose[:8])))
-    a.facts.update(verdicts=sorted(added), x=mb)
+    a.facts.update(verdicts=sorted(added), x=mb,
+                   made_at=sorted({str(x["body"].get("commit")) for x in recs if isinstance(x["body"].get("commit"), str)}))
     a.verdict = True
     a.accept = (recs[0]["actor"], min(added), mb)
     return out
@@ -1582,11 +1583,25 @@ def merge_one(b, a, gh):
     return out
 
 
+def code_tree(root, commit):
+    """The tree of `commit` without `.warrant/` (what CI's suites and mutants test), or None when Git cannot say."""
+    try:
+        rows = git(root, "ls-tree", "-z", commit).decode().split("\0")
+    except (subprocess.CalledProcessError, UnicodeDecodeError):
+        return None
+    return sorted(r for r in rows if r and r.split("\t", 1)[-1] != ".warrant")
+
+
 def after_merge(b, a):
-    """The `after_merge` workflows a merge of `a` starts: none after verdicts only (a merge of the claims checker's
-    acceptances must not start the checker again); one with `paths` when the change touched one of them."""
+    """The `after_merge` workflows a merge of `a` starts: one with `paths` when the change touched one of them. After
+    verdicts only, the ones with no `paths` (the claims checker) only when the code moved since a commit the verdicts
+    were made at: a merge of acceptances made at the base's code must not start the checker again, but ones made at
+    older code are stale on arrival and nothing else would start it (the analysis session, #389 at 45f73a63: merged
+    after #386 and #387 had changed the code, 75 claims read STALE). A commit Git cannot read counts as moved."""
     if a.facts.get("verdicts"):
-        return []
+        base = code_tree(b.root, b.commit)
+        moved = base is None or any(code_tree(b.root, c) != base for c in a.facts.get("made_at") or [])
+        return [x["workflow"] for x in b.gate.get(AFTER, []) if "paths" not in x] if moved else []
     changed = a.facts.get("changed")
     return [x["workflow"] for x in b.gate.get(AFTER, [])
             if "paths" not in x or changed is None or any(_listed(x["paths"], p) for p in changed)]

@@ -1350,11 +1350,18 @@ def after_merge_cases():
         def dispatch(self, w, br):
             self.dispatched.append(w)
 
-    def merged(before_x=None, verdicts=False):
+    def merged(before_x=None, verdicts=False, made_at=None):
         p = PR(merge=AFTER_, before_x=before_x)
         a = p.assess()
         if verdicts:
             a.facts["verdicts"] = ["x"]
+            if "records" in (made_at or []):                 # the base with a change under .warrant/ only
+                git(p.r.root, "checkout", "-q", "--detach", p.base)
+                (p.r.dot / "note.txt").write_text("records only\n")
+                git(p.r.root, "add", "-A")
+                git(p.r.root, "commit", "-q", "-m", "records only")
+            only = git(p.r.root, "rev-parse", "HEAD").strip() if "records" in (made_at or []) else None
+            a.facts["made_at"] = [{"base": p.base, "head": a.pr["head"], "records": only}.get(c, c) for c in (made_at or [])]
         gh = GH(a, p)
         GT.merge_one(GT.Base(p.r.root, p.base), a, gh)
         return sorted(gh.dispatched)
@@ -1375,6 +1382,17 @@ def after_merge_cases():
     refused = [codes(PR(merge=m).assess()) for m in bad]
     check("E86 an after_merge list naming no workflow file, empty paths, a workflow twice or an unknown member refuses the "
           "base's configuration", all(x == {"BASE_CONFIG"} for x in refused), refused)
+    same, older, unread = merged(verdicts=True, made_at=["base"]), merged(verdicts=True, made_at=["head"]), merged(verdicts=True, made_at=["0" * 40])
+    records_only = merged(verdicts=True, made_at=["records"])
+    p0 = PR(merge=AFTER_)
+    tree = lambda c: sorted(x for x in git(p0.r.root, "ls-tree", c).splitlines() if not x.endswith("\t.warrant"))
+    differs = tree(p0.base) != tree(p0.assess().pr["head"])
+    check("E94 after a merge of verdicts the gate starts the claims checker when the code moved since a commit they were "
+          "made at (another tree outside .warrant/, or one Git cannot read), and not when they were made at the base's "
+          "code, .warrant/ aside (the analysis session: #389's acceptances, made at 45f73a63, merged after #386 and #387 changed the code, "
+          "and nothing started the checker: 75 claims STALE)",
+          differs and same == [ci] and records_only == [ci] and older == [ci, replay] and unread == [ci, replay],
+          (differs, same, records_only, older, unread))
 
 def prerelease_cases():
     """The owner, 2026-11-13 (relayed): «в нас нема клієнтів — ми обслуговуємо своє майбутнє»: a pre-release (PEP 440

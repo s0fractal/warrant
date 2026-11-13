@@ -26,6 +26,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   request waited for a person to dispatch the gate (#379).
   It does so after a green pull_request run of a branch of this repository too: a run approved after GitHub held it
   woke nothing either (#389).
+- After a merge of verdicts only, the gate starts the claims checker when the code moved since a commit they were made at
+  (its tree outside `.warrant/` differs from the base's, or Git cannot read it): #389's acceptances, made at 45f73a63,
+  merged after #386 and #387 had changed the code, and nothing started the checker (75 claims read STALE). Acceptances
+  made at the base's code start nothing, so there is no loop. E94; mutants G127–G129.
 - `warrant --help` lists `say`.
 - The gate approves a run GitHub holds for approval (action_required) at the head of a pull request it assessed as
   verdicts only (a branch of this repository, refused for nothing but its checks, its head still the one assessed),
