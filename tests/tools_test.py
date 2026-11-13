@@ -522,7 +522,8 @@ def drift_cases():
         L = claim(r)
         base = r.commit("a claim")
         put_as(r, CL.CHECKER, {"target": L, "verdict": "accept", "commit": base, "tree": git(r.root, "rev-parse", f"{base}^{{tree}}"),
-                               **RP.identity(r.root), "witnesses": ["q_test:Q1"], "mutants": ["Z1"], **named}, [L])
+                               **RP.identity(r.root), "witnesses": ["q_test:Q1"], "mutants": ["Z1"],
+                               "closure": CL.CLOSURE, **named}, [L])          # named by the rule: the read reaches pins
         (r.root / "lib" / "code.py").write_text("X = 2\\n")
         r.commit("an acceptance, and the file changes")
         return (r, L, *gated(r, L))
@@ -544,7 +545,7 @@ def drift_cases():
     (r.root / "lib" / "code.py").write_text("X = 3\\n")
     r.commit("the file changes")
     put_as(r, CL.CHECKER, {"target": L, "verdict": "accept", "commit": f"--output={out}", "witnesses": ["q_test:Q1"], "mutants": ["Z1"],
-                           "files": {"lib/code.py": "0" * 40}}, [L])
+                           "files": {"lib/code.py": "0" * 40}, "closure": CL.CLOSURE}, [L])
     r.commit("an acceptance whose commit is an option")
     d, rel = gated(r, L)
     check("DR10 a commit named by a record reaches Git only as a commit id: one shaped as an option writes nothing",
@@ -673,6 +674,103 @@ new file mode 100644
 +print("FAIL F2 always")
 +print("ok   F3 always")
 '''
+
+
+SHARED_TEST = '''import helper
+
+
+def check(name, ok):
+    print(("ok   " if ok else "FAIL ") + name)
+
+
+check("%s1 a case", helper.ONE == 1)
+'''
+SHARED_HARNESS = '''import json, sys
+M = {"Z1": ["mutated.py", "tests/q_test.py", ["Q1"]], "Y1": ["mutated.py", "tests/p_test.py", ["P1"]],
+     "X1": ["other.py", "tests/s_test.py", ["S1"]]}
+if "--matrix" not in sys.argv:
+    print(json.dumps(M))
+else:
+    ids = sys.argv[1:sys.argv.index("--matrix")]
+    open(sys.argv[sys.argv.index("--matrix") + 1], "w").write(json.dumps({"rows": [{"id": i, "outcome": "KILLED"} for i in ids]}))
+'''
+
+
+def shared_repo():
+    """Three claims accepted by the claims checker: two whose witnesses import one helper (tests/helper.py), one whose
+    witness imports nothing of the repository (Codex's counterexample on G14, 2026-11-13)."""
+    r = checker_repo()
+    (r.root / "other.py").write_text("Y = 0\n")
+    (r.root / "tests" / "helper.py").write_text("ONE = 1\n")
+    (r.root / "tests" / "q_test.py").write_text(SHARED_TEST % "Q")
+    (r.root / "tests" / "p_test.py").write_text(SHARED_TEST % "P")
+    (r.root / "tests" / "s_test.py").write_text(TEST.replace("Q1", "S1").replace("Q2", "S2"))
+    (r.root / "tests" / "mutants.py").write_text(SHARED_HARNESS)
+    Ls = {"q": claim(r, id="V3-3-1"), "p": claim(r, id="V3-3-2", witnesses=["p_test:P1"], mutants=["Y1"]),
+          "s": claim(r, id="V3-3-3", witnesses=["s_test:S1"], mutants=["X1"])}
+    r.commit("three claims")
+    CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    r.commit("their acceptances")
+    return r, Ls
+
+
+def freshness_cases():
+    r, Ls = shared_repo()
+    before = {k: gated(r, L) for k, L in Ls.items()}
+    (r.root / "tests" / "helper.py").write_text("ONE = 1  # the shared helper changes\n")
+    r.commit("the helper both witnesses import changes")
+    after = {k: gated(r, L) for k, L in Ls.items()}
+    _, out = cli(r.root, "status", "--json")
+    counted = json.loads(out or "{}").get("reliance", {})
+
+    def changed(k):
+        return [f["path"] for f in after[k][0].get("files", []) if f["verdict"] == "CHANGED"]
+    check("CF1 a claim's acceptance names every file its witnesses load, not only its test and mutated files: a change "
+          "to a helper two claims' witnesses import makes both STALE, and the claim whose witness does not import it stays "
+          "ELIGIBLE (Codex's counterexample on G14, 2026-11-13)",
+          [before[k][1] for k in "qps"] == ["ELIGIBLE"] * 3 and [after[k][1] for k in "qps"] == [D.STALE, D.STALE, "ELIGIBLE"]
+          and changed("q") == changed("p") == ["tests/helper.py"], (before, after))
+    check("CF5 `warrant status` in a checkout counts those claims STALE as G14 reads them, not ELIGIBLE (observed on master "
+          "9e183284: status said ELIGIBLE 612 while 96 claims read STALE)", counted.get(D.STALE) == 2, counted)
+    leaves = {k: RP.Repo(r.root).report()["lineages"][L]["leaf"] for k, L in Ls.items()}
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        filed = CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    recs = RP.Repo(r.root).report()["_recs"]
+    check("CF2 the checker runs again only the claims whose files changed: both claims resting on the helper are accepted "
+          "again, the third keeps its acceptance and is not run",
+          sorted(recs[i]["body"]["target"] for i in filed) == sorted([leaves["q"], leaves["p"]])
+          and "2 of 3 backed claims run" in out.getvalue(), (filed, out.getvalue()))
+    r, Ls = shared_repo()
+    rep = RP.Repo(r.root).report()
+    leaf = rep["lineages"][Ls["q"]]["leaf"]
+    body = next(x["body"] for x in rep["_recs"].values() if x["kind"] == "attest" and x["body"].get("target") == leaf)
+    r2 = checker_repo()
+    for f in ("other.py", "tests/helper.py", "tests/q_test.py", "tests/p_test.py", "tests/s_test.py", "tests/mutants.py"):
+        shutil.copy(r.root / f, r2.root / f)
+    L2 = claim(r2, id="V3-3-1")
+    x = r2.commit("a claim")
+    put_as(r2, CL.CHECKER, {**{k: v for k, v in body.items() if k != "closure"}, "target": L2, "commit": x,
+                            "tree": git(r2.root, "rev-parse", f"{x}^{{tree}}")}, [L2])
+    r2.commit("an acceptance whose files carry no closure rule")
+    d, rel = gated(r2, L2)
+    with contextlib.redirect_stdout(io.StringIO()):
+        again = CL.replay(RP.Repo(r2.root), CHECKER_KEY)
+    check("CF3 an acceptance that does not say its files are the import closure (one signed before the rule) reads "
+          "UNKNOWN and its claim STALE, though every file it names is unchanged: it may omit a module its witness ran; "
+          "the checker runs that claim again",
+          body.get("closure") == CL.CLOSURE and d.get("verdict") == "UNKNOWN" and rel == D.STALE and len(again) == 1,
+          (body.get("closure"), d, rel, again))
+    r = checker_repo()
+    (r.root / ".gitignore").write_text("/build/\n/tests/ignored.py\n")
+    (r.root / "tests" / "ignored.py").write_text("ONE = 1\n")
+    (r.root / "tests" / "q_test.py").write_text("import ignored\n" + TEST)
+    claim(r)
+    r.commit("a witness importing a file the tree does not hold")
+    with contextlib.redirect_stdout(io.StringIO()):
+        named = CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    check("CF4 a module a witness imports that the commit does not hold (an ignored file) cannot be named, so the checker "
+          "accepts nothing on that witness", named == [], named)
 
 
 def drift_impact_cases():
@@ -1550,6 +1648,7 @@ if __name__ == "__main__":
     claims_cases()
     preflight_cases()
     drift_cases()
+    freshness_cases()
     drift_impact_cases()
     review_cases()
     roadmap_cases()

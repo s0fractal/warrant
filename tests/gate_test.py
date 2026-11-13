@@ -4,7 +4,6 @@ the exact set of refusal codes (a mutant that removes one rule is seen even wher
 
     python3 tests/gate_test.py
 """
-import ast
 import importlib
 import importlib.machinery
 import importlib.util
@@ -16,11 +15,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from world import KEYS, Repo, check, finish, git
 
 from warrant import gate as GT
+from warrant import imports as IM
 from warrant import records as R
 
 REPO = "s0fractal/warrant"
@@ -318,65 +318,9 @@ def merge_cases():
 
 
 def imported_modules(root, start, searched=("", "tools")):
-    """The files of the repository at `root` that running `start` loads through import statements, wherever in a file
-    they stand: each name is resolved by the import system itself (importlib's finders over the `searched` directories
-    of the repository, as the workflow starts the gate, then this interpreter's own path), so a same-name package or
-    an extension module the interpreter would load is what the walk names, not the .py file of that name (Codex
-    challenge of dda3ad65: the walk followed warrant/{name}.py). A directory without __init__ is named with a trailing
-    slash. Nothing of `root` is imported or run."""
-    importlib.invalidate_caches()
-    root = Path(os.path.realpath(root))
-    here = [str(root / d) for d in searched]
-    outside = [q for q in sys.path if q and ROOT not in (Path(os.path.realpath(q)), *Path(os.path.realpath(q)).parents)]
-
-    def find(name, where):
-        """(repository file, the directories its submodules are searched in or None) of module `name` searched in
-        `where` (None: a top-level name); (None, None) when the interpreter finds it outside `root`, or nowhere."""
-        if where is None and (name in sys.builtin_module_names or importlib.machinery.FrozenImporter.find_spec(name)):
-            return None, None
-        spec = importlib.machinery.PathFinder.find_spec(name, here + outside if where is None else where)
-        if spec is None:
-            return None, None
-        inner = list(spec.submodule_search_locations or []) or None
-        at = Path(spec.origin if spec.has_location else inner[0])
-        if root not in at.parents:
-            return None, None
-        return at.relative_to(root).as_posix() + ("" if spec.has_location else "/"), inner
-
-    seen, todo = set(), [(start, PurePosixPath(start).parent.parts)]
-
-    def load(parts):
-        """Follow a dotted name from the top, queueing each repository file on the way; the directories the last
-        one's submodules are searched in (None: it is a module, or outside)."""
-        where = None
-        for n, name in enumerate(parts):
-            f, where = find(name, where)
-            if f is None:
-                return None
-            todo.append((f, tuple(parts[:n + 1] if where else parts[:n])))
-            if where is None:
-                return None
-        return where
-
-    while todo:
-        f, package = todo.pop()
-        if f in seen:
-            continue
-        seen.add(f)
-        if not f.endswith(".py"):
-            continue
-        for n in ast.walk(ast.parse((root / f).read_text())):
-            if isinstance(n, ast.Import):
-                for a in n.names:
-                    load(a.name.split("."))
-            elif isinstance(n, ast.ImportFrom):
-                up = list(package[:len(package) - n.level + 1]) if n.level else []
-                where = load(up + (n.module.split(".") if n.module else []))
-                for a in n.names if where else []:
-                    sub, inner = find(a.name, where)
-                    if sub:
-                        todo.append((sub, tuple(up + (n.module.split(".") if n.module else []) + ([a.name] if inner else []))))
-    return seen
+    """The files of the repository at `root` that running `start` loads (warrant.imports, the walk the claims checker
+    names an acceptance's files by), searched as the workflow starts the gate: the checkout, then tools/."""
+    return IM.closure(root, start, searched)
 
 
 def listed_by(policy, f):
@@ -408,6 +352,24 @@ def closure_cases():
     check("E46 ... and it names what the interpreter loads: a same-name package in place of the module's file, and the "
           "file still where the directory of its name has no __init__",
           shadowed == {f"warrant/{x}.py" for x in ("__init__", "a", "b", "c", "d", "f")} | {"warrant/g/__init__.py"}, sorted(shadowed))
+    with tempfile.TemporaryDirectory() as d:
+        for name, text in {"t.py": 'run([sys.executable, "-m", "p"])\nrun(("python", "-m", "q.r"))\n'
+                                   'run(["python", "-c", "import s; from u import v"])\nrun(["git", "-c", "a=b", "commit", "-m", "x.y"])\n',
+                           "p/__init__.py": "", "p/__main__.py": "import w\n", "q/__init__.py": "", "q/r.py": "", "s.py": "",
+                           "u.py": "", "w.py": "", "x.py": "", "bad.py": "def (\n", "uses_bad.py": "import bad\n"}.items():
+            (Path(d) / name).parent.mkdir(parents=True, exist_ok=True)
+            (Path(d) / name).write_text(text)
+        programs = IM.closure(Path(d), "t.py")
+        try:
+            IM.closure(Path(d), "uses_bad.py")
+            unreadable = None
+        except IM.Unreadable as e:
+            unreadable = str(e)
+    check("E60 ... and it follows the programs a file starts by name: `-m` a module (a package's __main__ too) and the "
+          "imports of `-c` code (a string after `-m` that names a module of the repository is followed whatever the program: "
+          "naming more is the safe side); a file of the closure that does not parse is no closure (Unreadable), never a partial one",
+          programs == {"t.py", "p/__init__.py", "p/__main__.py", "w.py", "q/__init__.py", "q/r.py", "s.py", "u.py", "x.py"}
+          and unreadable is not None and unreadable.startswith("bad.py"), (sorted(programs), unreadable))
     probe = ("import json, os, runpy, sys\nsys.argv = ['tools/gate.py', 'gate', '--help']\nsys.path.insert(0, os.path.abspath('tools'))\n"
              "sys.stdout = open(os.devnull, 'w')\ntry:\n    runpy.run_path('tools/gate.py', run_name='__main__')\nexcept SystemExit:\n    pass\n"
              "here = os.path.realpath('.') + os.sep\nfrom_ = lambda m: getattr(m, '__file__', None) or ''.join(list(getattr(m, '__path__', []))[:1])\n"
