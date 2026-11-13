@@ -6,6 +6,19 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The browser reader gains a desk and a frontier. `site/desk.html` (`node site/desk.mjs`) reads a list of stores
+  (`store=URL`, else the list kept on the page, else `site/stores.json`: this repository's store and minds') three at
+  a time and shows one block each: counts as the reader shows them, lineages with a standing counted challenge, what
+  changed since that store's own mark (the reader's mark: same key, same JSON, same `changes()`), mark one, mark all;
+  one that cannot be read is named and the others answer. `actor=NAME` (reader and desk; remembered) shows what waits
+  for that actor under the store's rules: `warrant.graph.frontier` mirrored in `site/reader.mjs` (may attest, own
+  pending, own challenged). Sonar's findings on the reader fixed with no change of output (`storage()` touches
+  `length` in a statement with an effect; `unmark`, `changes` and the CLI's `main` split into named helpers; drawing
+  helpers shared in `site/page.mjs`). Not established: either page in a browser (no case drives one: storage,
+  buttons, layout at 375 px), the stores' completeness, and the gate's `due_for` filters (schemas, verdict OK), which
+  the frontier does not apply. docs/VERIFY.md; impl_js_test J14 (against the engine and the reader's CLI), J15
+  (differential against `warrant.graph.frontier`, on a fixture and on this store for codex and claude); no mutant
+  (R-JS-MUTANTS): thirty-three mutations run by hand, each failing a J14, J15 or J10 case on its assertion, not held by CI.
 - The browser reader says what changed for its reader (`warrant_agent/changes.py` without lenses). «Mark all as seen»
   keeps the ids of every record of the stores read, per store address and rules identity (`localStorage`; the CLI's
   `--write-mark FILE`, `--mark FILE`), as 8 bytes of each id and a SHA-256 of every 16 (exact: a record is seen only
@@ -204,6 +217,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   (7a84e332, P1); an expired presence returned no deadline, so its end was never announced (cd8d1a0b, P2). The whole
   first-parent history is read in one batch; modes and types are compared; signs are read back to twice `days`.
   E80–E82 (Codex's cases); mutants G93–G95.
+
+- Codex 8caa1ce8 (P1, reproduced at 58e3cc74 and 3a0e18f8): `enforce_brakes` held back a vetoed merge's revert when
+  any open pull request sat on a branch named `gate/revert/<pr>-*`, a fork's refused one by anyone included. A revert
+  now counts as pending only when the gate assessed an open pull request as that merge's exact revert, and an exact
+  revert must come from a branch of this repository. E83, E70; mutants G96, G97.
 
 ## 3.0.0a6 — one package, one receiver
 

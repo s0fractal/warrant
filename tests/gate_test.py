@@ -863,6 +863,7 @@ def brake_cases():
           "branch": f"gate/revert/7-{merge[:12]}", "head_repo": REPO, "author": "github-actions[bot]"}
     ok = GT.assess(r.root, base, pr, green(rh))
     forged = GT.assess(r.root, base, dict(pr, author="mallory"), green(rh))
+    fork = GT.assess(r.root, base, dict(pr, head_repo="mallory/warrant"), green(rh))
     git(r.root, "reset", "-q", "--hard", base)
     (r.root / "AGENTS.md").write_text("rules\n")
     (r.root / "code.py").write_text("x = 99\n")
@@ -873,6 +874,7 @@ def brake_cases():
           "opened by the workflow's bot; one opened by anyone else, or that changes more, is not; a path changed again "
           "since the merge makes no revert",
           ok.eligible and ok.facts.get("revert") == merge and not forged.eligible and "REVERT_NOT_EXACT" in codes(forged)
+          and not fork.eligible and not fork.facts.get("revert")
           and not wider.eligible and "REVERT_NOT_EXACT" in codes(wider) and conflict is not None,
           (ok.reasons, forged.reasons, wider.reasons, conflict))
     rc_open = GT.main(["--root", str(r.root), "brakes", "--at", base]) if until > time.time() else None
@@ -1089,6 +1091,55 @@ def codex_356_cases():
           before == expires and after == expires and notice == "away noticed" and len(gh.posted) == 1,
           (before, after, notice, gh.posted))
 
+def revert_pending_cases():
+    """Codex 8caa1ce8 (on the #350 review closure, reproduced at 58e3cc74 and 3a0e18f8): enforce_brakes counted any open
+    pull request on a branch gate/revert/<pr>-* as the pending revert, a fork's refused one by anyone included, so a
+    stranger's branch gate/revert/7-blocker kept the owner's vetoed #7 from being reverted."""
+    r = Repo(git_init=False)
+    (r.dot / "merge.json").write_text(json.dumps(PRES))
+    (r.root / "AGENTS.md").write_text("rules\n")
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("base")
+    git(r.root, "checkout", "-q", "-b", "feature")
+    (r.root / "AGENTS.md").write_text("rules, weakened\n")
+    v = r.entity("alice", "pr-head@1", {"state": "open", "repository": REPO, "pr": 7, "title": "t"})
+    r.commit("the change")
+    git(r.root, "checkout", "-q", "master")
+    until = NOW + 3600
+    git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {until}: #7 head version {v}")
+    base = git(r.root, "rev-parse", "HEAD")
+    b = GT.Base(r.root, base)
+
+    class GH:
+        def __init__(self):
+            self.calls = []
+
+        def pull(self, n):
+            return {"labels": ["hold"]}
+
+        def dispatch(self, w, br):
+            self.calls.append(("dispatch", w, br))
+
+        def api(self, path, method="GET", body=None, pages=False):
+            self.calls.append((path, method))
+            return {"sha": "d" * 40}
+
+    def pending(branch, author, repo, facts=None):
+        x = GT.Assessment({"number": 9, "branch": branch, "author": author, "head_repo": repo}, base)
+        x.facts.update(facts or {})
+        return x
+    blocker = pending("gate/revert/7-blocker", "mallory", "mallory/warrant")
+    gh = GH()
+    out = GT.enforce_brakes(r.root, b, gh, [blocker], now=NOW)
+    real = pending(f"gate/revert/7-{base[:12]}", "github-actions[bot]", REPO, {"revert": base})
+    quiet = GH()
+    held = GT.enforce_brakes(r.root, b, quiet, [real], now=NOW)
+    check("E83 a revert counts as pending only when the gate assessed an open pull request as the exact revert of that "
+          "merge: a fork's branch named gate/revert/7-blocker does not hold back the revert of the vetoed #7, the gate's own "
+          "pending revert does (Codex 8caa1ce8)",
+          [n for n, _ in out] == [7] and out[0][1].startswith("revert of #7 opened") and held == [] and not quiet.calls,
+          (out, held, quiet.calls))
+
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
@@ -1110,4 +1161,5 @@ if __name__ == "__main__":
     presence_cases()
     notice_owner_cases()
     codex_356_cases()
+    revert_pending_cases()
     sys.exit(finish())

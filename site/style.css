@@ -68,3 +68,12 @@ button:disabled { opacity: 0.5; cursor: default; }
 .said li { margin: 0.4rem 0; }
 .glyph { font-weight: 700; }
 .statement-title { font-size: 1.1rem; line-height: 1.45; font-weight: 600; overflow-wrap: anywhere; }
+
+/* The actor's form (reader and desk) and the desk's blocks (desk.html): one store a block, phone first. */
+.who { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0 0 0.8rem; font-size: 0.95rem; }
+.who input { flex: 1 1 9rem; min-width: 0; padding: 0.45rem 0.6rem; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.desk-store { padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.desk-store h2 { font-size: 1.15rem; margin: 0 0 0.3rem; overflow-wrap: anywhere; }
+.desk-store p { margin: 0.3rem 0; overflow-wrap: anywhere; }
+#desk-edit textarea { width: 100%; font: 0.9em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem; }
+.desk-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }

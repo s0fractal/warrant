@@ -1,42 +1,20 @@
-// The page of the browser reader: it draws what reader.mjs computed. Everything a record says reaches the document
-// through textContent (the `text` of el() below) or an attribute set by name: no markup is ever built from a string,
-// and the page's policy allows no script but this origin's (reader.html).
+// The page of the browser reader: it draws what reader.mjs computed, as text only (page.mjs el(): no markup is ever
+// built from a string), and the page's policy allows no script but this origin's (reader.html).
 import { utf16, webBackend } from "./warrant.mjs";
-import { changes, changesLine, comparePins, fetchStore, lineage, makeMark, MARK, memoFetch, overlay, PINS_NOT_CHECKED, read, readOthers,
+import * as reader from "./reader.mjs";
+import { changes, changesLine, comparePins, fetchStore, lineage, makeMark, memoFetch, overlay, PINS_NOT_CHECKED, read, readOthers,
          receiver, rows, rulesId, STALE, summary } from "./reader.mjs";
+import { $, counts, el, fill, keepActor, keptActor, loadMark, markKey, pill, saveMark, section, short, when } from "./page.mjs";
 
 const DEFAULT_BASE = "https://raw.githubusercontent.com/s0fractal/warrant/master/";
 const PAGE = 150;                                         // rows drawn at once; the rest is named and asked for
-const $ = (id) => document.getElementById(id);
-
-function el(tag, attrs, ...kids) {
-  const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs ?? {})) {
-    if (v === null || v === undefined || v === false) continue;
-    if (k === "text") n.textContent = String(v);
-    else if (k === "class") n.className = v;
-    else n.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const k of kids.flat()) if (k !== null && k !== undefined && k !== false) n.append(k);
-  return n;
-}
-
-// Put `kids` (nodes, strings, arrays of them; nothing for null or false) in place of what `box` held.
-function fill(box, ...kids) {
-  box.replaceChildren(...kids.flat(3).filter((k) => k !== null && k !== undefined && k !== false));
-}
-
-const short = (id) => el("code", { text: String(id).slice(0, 12), title: id });
-const when = (at) => (Number.isInteger(at) ? new Date(at * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "");
-const pill = (word) => el("span", { class: "pill pill-" + String(word || "none").toLowerCase().replace(/[^a-z]/g, "-"), text: word || "none" });
-const counts = (o) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(" · ") || "none";
 
 let current = null;                                       // {r, base, full, pins, with, changes, ...}: the store read last
 let shownRows = PAGE;
 
 function params() {
   const p = new URLSearchParams(location.search);
-  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: p.getAll("with").filter(Boolean), l: p.get("l"), changes: p.get("changes") === "1", schema: p.get("schema") || "", reliance: p.get("reliance") || "" };
+  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: p.getAll("with").filter(Boolean), l: p.get("l"), changes: p.get("changes") === "1", schema: p.get("schema") || "", reliance: p.get("reliance") || "", actor: (p.get("actor") || "").trim() };
 }
 
 function href(over) {
@@ -50,6 +28,7 @@ function href(over) {
   if (v.changes) q.set("changes", "1");
   if (v.schema) q.set("schema", v.schema);
   if (v.reliance) q.set("reliance", v.reliance);
+  if (v.actor) q.set("actor", v.actor);
   return "?" + q.toString();
 }
 
@@ -231,34 +210,9 @@ function drawLineage() {
 
 // ---------------------------------------------------------------- what changed for me
 //
-// The mark lives in this browser's localStorage, one entry per store address and rules identity (reader.mjs makeMark:
-// compact and exact). Storage can be absent or refuse (a private window, a quota): the page still draws, and says the
-// mark could not be kept; nothing is then presented as changed.
-
-const markKey = (base, rules) => `warrant-${MARK} ${base.endsWith("/") ? base : base + "/"} ${rules}`;
-
-function storage() {
-  try { const s = globalThis.localStorage; s.length; return s; } catch { return null; }   // a getter that throws, too
-}
-
-const NO_STORAGE = "this browser keeps no storage for this page (a private window, or storage blocked): no mark can be kept";
-
-// {mark, why}: the mark kept for `key`, null when there is none; `why` when storage cannot be read at all.
-function loadMark(key) {
-  const s = storage();
-  if (!s) return { mark: null, why: NO_STORAGE };
-  try {
-    const t = s.getItem(key);
-    return { mark: t === null ? null : JSON.parse(t), why: null };
-  } catch (e) { return { mark: {}, why: null }; }     // not JSON: changes() names it a mark it cannot read
-}
-
-function saveMark(key, mark) {                            // null, or why the mark was not kept
-  const s = storage();
-  if (!s) return NO_STORAGE;
-  try { s.setItem(key, JSON.stringify(mark)); return null; }
-  catch (e) { return `the mark could not be kept (${e?.name || e}): this browser's storage refused it`; }
-}
+// The mark lives in this browser's localStorage, one entry per store address and rules identity (page.mjs markKey,
+// shared with the desk; reader.mjs makeMark: compact and exact). Storage can be absent or refuse: the page still draws,
+// and says the mark could not be kept; nothing is then presented as changed.
 
 async function markSeen() {
   const c = current;
@@ -303,6 +257,66 @@ function drawChanges() {
   box.hidden = false;
 }
 
+// ---------------------------------------------------------------- what waits for whom
+//
+// The actor is named by the address (`actor=NAME`) or by the form drawn here (remembered for both pages, page.mjs
+// keepActor); the address wins. The observer mostly asks it of the agents, so the actor is never assumed to be the
+// reader. With no actor named, nothing is computed: the section holds the form alone.
+
+const actorOf = (p) => p.actor || keptActor();
+
+// The form that names the actor, made by this script (no page of any release has to hold it).
+function actorForm(name) {
+  const input = el("input", { id: "actor", type: "text", value: name, autocomplete: "off", spellcheck: "false", placeholder: "an actor, e.g. codex", "aria-label": "actor" });
+  const form = el("form", { class: "who" }, el("label", { for: "actor", text: "What waits for" }), input, el("button", { type: "submit", text: "Show" }));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const why = keepActor(input.value);
+    if (why) say(`The name is not remembered: ${why}`, true);
+    go({ actor: input.value.trim() });
+  });
+  return form;
+}
+
+// One item of the frontier: its lineage's one-line name as a link, and what it is.
+function waitItem(x, meta) {
+  return el("li", {}, link(x.title || "(no statement)", { l: x.lineage }, { class: "row-title" }),
+    el("div", { class: "row-meta" }, `${x.schema} · `, short(x.version ?? x.lineage), meta ? ` · ${meta}` : null));
+}
+
+const WAITS_SHOWN = 25;                                   // items drawn a list: a phone's screen, not the whole frontier
+let waitsAll = false;                                     // until the reader asks for every item
+
+function waitList(heading, xs, meta) {
+  if (!xs.length) return null;
+  const rest = waitsAll ? 0 : xs.length - WAITS_SHOWN;
+  const more = rest > 0 ? el("button", { type: "button", text: `Show ${rest} more` }) : null;
+  if (more) more.addEventListener("click", () => { waitsAll = true; drawWaits(); });
+  return [el("h3", { text: `${heading} (${xs.length})` }), el("ul", { class: "rows" }, xs.slice(0, rest > 0 ? WAITS_SHOWN : xs.length).map((x) => waitItem(x, meta?.(x)))), more];
+}
+
+function drawWaits() {
+  const box = section("waits"), name = actorOf(params());
+  if (!name) { fill(box, actorForm("")); box.hidden = false; return; }
+  if (typeof reader.waitsFor !== "function") {           // reader.mjs of an earlier release, cached apart from this script
+    fill(box, actorForm(name), el("p", { class: "small", text: "This page's scripts are of two releases: reload it to see what waits." }));
+    box.hidden = false;
+    return;
+  }
+  const w = reader.waitsFor(current.r, name), rules = current.r.whose === "reader" ? "your rules" : "the publisher's rules";
+  fill(box,
+    actorForm(name),
+    el("h2", { text: `What waits for ${name}` }),
+    el("p", { class: "small", text: w.roles.length ? `${name} holds ${w.roles.join(", ")} under ${rules}` : `${name} holds no role under ${rules}` }),
+    w.count ? null : el("p", { text: `Nothing waits for ${name} in this store.` }),
+    waitList("May attest", w.attest, (x) => `waits for: ${x.waiting.join("; ")}`),
+    waitList("Own versions pending", w.pending, () => "its guard waits"),
+    waitList("Own lineages challenged", w.challenged, () => "a counted challenge holds it"),
+    el("p", { class: "small", text: "warrant.graph frontier: the leaf of each lineage whose guard waits only for a role the actor holds and that it has not attested or challenged; its own pending leaves; its challenged lineages. Completeness UNATTESTED." }),
+  );
+  box.hidden = false;
+}
+
 // The form's section, when the page has one by that name: a cached page of an earlier release has none, and this
 // script must still draw there (the two files are fetched apart and a host may cache them apart).
 function showForm(yes) {
@@ -313,6 +327,7 @@ function showForm(yes) {
 function draw() {
   if (!current) return;
   drawChanges();
+  drawWaits();
   const onlyChanges = Boolean(params().changes && current.changes?.mark);
   showForm(!onlyChanges);                                 // changes=1 on a phone: what changed comes first, not the form
   if (onlyChanges) $("floor").hidden = true; else drawFloor();
@@ -365,6 +380,7 @@ async function run() {
   } catch (e) {
     current = null;
     for (const id of ["changes", "floor", "lineage", "list"]) $(id).hidden = true;
+    section("waits").hidden = true;
     showForm(true);                                         // a refusal is said beside the form that can ask again
     say(`Refused: ${e?.message ?? e}`, true);                    // a refusal is shown whole; nothing partial is drawn
   } finally {
