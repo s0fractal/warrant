@@ -2,7 +2,8 @@
 // through textContent (the `text` of el() below) or an attribute set by name: no markup is ever built from a string,
 // and the page's policy allows no script but this origin's (reader.html).
 import { utf16, webBackend } from "./warrant.mjs";
-import { comparePins, fetchStore, lineage, overlay, PINS_NOT_CHECKED, read, readOthers, receiver, rows, STALE, summary } from "./reader.mjs";
+import { changes, changesLine, comparePins, fetchStore, lineage, makeMark, MARK, memoFetch, overlay, PINS_NOT_CHECKED, read, readOthers,
+         receiver, rows, rulesId, STALE, summary } from "./reader.mjs";
 
 const DEFAULT_BASE = "https://raw.githubusercontent.com/s0fractal/warrant/master/";
 const PAGE = 150;                                         // rows drawn at once; the rest is named and asked for
@@ -30,12 +31,12 @@ const when = (at) => (Number.isInteger(at) ? new Date(at * 1000).toISOString().s
 const pill = (word) => el("span", { class: "pill pill-" + String(word || "none").toLowerCase().replace(/[^a-z]/g, "-"), text: word || "none" });
 const counts = (o) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(" · ") || "none";
 
-let current = null;                                       // {r, base, full, pins, with}: the store read last
+let current = null;                                       // {r, base, full, pins, with, changes, ...}: the store read last
 let shownRows = PAGE;
 
 function params() {
   const p = new URLSearchParams(location.search);
-  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: p.getAll("with").filter(Boolean), l: p.get("l"), schema: p.get("schema") || "", reliance: p.get("reliance") || "" };
+  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: p.getAll("with").filter(Boolean), l: p.get("l"), changes: p.get("changes") === "1", schema: p.get("schema") || "", reliance: p.get("reliance") || "" };
 }
 
 function href(over) {
@@ -46,6 +47,7 @@ function href(over) {
   if (v.pins) q.set("pins", "1");
   for (const w of v.with ?? []) q.append("with", w);
   if (v.l) q.set("l", v.l);
+  if (v.changes) q.set("changes", "1");
   if (v.schema) q.set("schema", v.schema);
   if (v.reliance) q.set("reliance", v.reliance);
   return "?" + q.toString();
@@ -158,7 +160,8 @@ function drawFloor() {
 function drawList() {
   const p = params(), all = rows(current.r), box = $("list");
   const schemas = [...new Set(all.map((x) => x.schema))].sort(utf16), words = [...new Set(all.map((x) => x.reliance))].sort(utf16);
-  const kept = all.filter((x) => (!p.schema || x.schema === p.schema) && (!p.reliance || x.reliance === p.reliance));
+  const only = p.changes && current.changes?.mark ? new Set(current.changes.listed.map((x) => x.lineage)) : null;   // changes=1
+  const kept = all.filter((x) => (!p.schema || x.schema === p.schema) && (!p.reliance || x.reliance === p.reliance) && (!only || only.has(x.id)));
   const select = (id, label, values, now) => {
     const sel = el("select", { id, "aria-label": label }, el("option", { value: "", text: `${label}: all` }),
                    values.map((v) => el("option", { value: v, text: v, selected: v === now })));
@@ -168,7 +171,7 @@ function drawList() {
   const more = kept.length > shownRows ? el("button", { type: "button", text: `Show ${Math.min(PAGE, kept.length - shownRows)} more of ${kept.length - shownRows}` }) : null;
   if (more) more.addEventListener("click", () => { shownRows += PAGE; drawList(); });
   fill(box,
-    el("h2", { text: `Lineages (${kept.length}${kept.length === all.length ? "" : " of " + all.length})` }),
+    el("h2", { text: `${only ? "Changed lineages" : "Lineages"} (${kept.length}${kept.length === all.length ? "" : " of " + all.length})` }),
     el("div", { class: "filters" }, select("schema", "schema", schemas, p.schema), select("reliance", "reliance", words, p.reliance)),
     el("ul", { class: "rows" }, kept.slice(0, shownRows).map((x) =>
       el("li", {},
@@ -226,9 +229,84 @@ function drawLineage() {
   box.scrollIntoView({ block: "start" });
 }
 
+// ---------------------------------------------------------------- what changed for me
+//
+// The mark lives in this browser's localStorage, one entry per store address and rules identity (reader.mjs makeMark:
+// compact and exact). Storage can be absent or refuse (a private window, a quota): the page still draws, and says the
+// mark could not be kept; nothing is then presented as changed.
+
+const markKey = (base, rules) => `warrant-${MARK} ${base.endsWith("/") ? base : base + "/"} ${rules}`;
+
+function storage() {
+  try { const s = globalThis.localStorage; s.length; return s; } catch { return null; }   // a getter that throws, too
+}
+
+const NO_STORAGE = "this browser keeps no storage for this page (a private window, or storage blocked): no mark can be kept";
+
+// {mark, why}: the mark kept for `key`, null when there is none; `why` when storage cannot be read at all.
+function loadMark(key) {
+  const s = storage();
+  if (!s) return { mark: null, why: NO_STORAGE };
+  try {
+    const t = s.getItem(key);
+    return { mark: t === null ? null : JSON.parse(t), why: null };
+  } catch (e) { return { mark: {}, why: null }; }     // not JSON: changes() names it a mark it cannot read
+}
+
+function saveMark(key, mark) {                            // null, or why the mark was not kept
+  const s = storage();
+  if (!s) return NO_STORAGE;
+  try { s.setItem(key, JSON.stringify(mark)); return null; }
+  catch (e) { return `the mark could not be kept (${e?.name || e}): this browser's storage refused it`; }
+}
+
+async function markSeen() {
+  const c = current;
+  const mark = await makeMark(c.r, c.base, c.backend);
+  const why = saveMark(c.key, mark);
+  if (why) { say(why, true); return; }
+  c.changes = await changes(c.r, mark, c.backend, c.source, { base: c.base, fetcher: c.tree });
+  say("Marked: what this store holds now is what you have seen.");
+  draw();
+}
+
+const was = (v) => (v === null ? "none" : Array.isArray(v) ? `${v.length}` : String(v));
+function movedText(moved) {
+  return Object.entries(moved).map(([k, [a, b]]) =>
+    k === "standing" ? `standing challenges ${a.length} → ${b.length}` : k === "effective" ? "another version is effective"
+      : `${k} ${was(a)} → ${was(b)}`).join(" · ");
+}
+
+function drawChanges() {
+  const box = $("changes"), c = current.changes, button = el("button", { type: "button", text: "Mark all as seen" });
+  button.addEventListener("click", () => { button.disabled = true; markSeen().catch((e) => say(`Failed: ${e?.message ?? e}`, true)).finally(() => { button.disabled = false; }); });
+  const p = params();
+  if (!c.mark) {
+    fill(box, el("h2", { text: "What changed for you" }), el("p", { class: "small", text: current.storeWhy || changesLine(c) }),
+      current.storeWhy ? null : button);
+    box.hidden = false;
+    return;
+  }
+  fill(box,
+    el("h2", { text: "What changed for you" }),
+    el("p", {}, `Since your mark of ${when(c.mark.at)}: ${changesLine(c)}.`),
+    c.listed.length ? el("ul", { class: "rows" }, c.listed.map((x) => el("li", {},
+      link(x.title || "(no statement)", { l: x.lineage }, { class: "row-title" }),
+      el("div", { class: "row-meta" }, pill(x.after.reliance),
+        ` ${x.schema} · `, x.new ? el("strong", { text: "new lineage" }) : movedText(x.moved) || "its floor did not move",
+        x.appeared.length ? ` · appeared: ${x.appeared.map(([i, m]) => `${i.slice(0, 8)} ${m}`).join("; ")}` : null,
+        x.vanished.length ? ` · vanished: ${x.vanished.map(([i, m]) => `${i.slice(0, 8)} ${m}`).join("; ")}` : null)))) : null,
+    el("p", { class: "small" }, p.changes ? link("show everything", { changes: false }) : link("show only what changed", { changes: true, l: null }),
+      " · the past is the records you marked, assessed again here under the same rules; completeness UNATTESTED"),
+    button,
+  );
+  box.hidden = false;
+}
+
 function draw() {
   if (!current) return;
-  drawFloor();
+  drawChanges();
+  if (params().changes && current.changes?.mark) $("floor").hidden = true; else drawFloor();
   drawLineage();
   drawList();
 }
@@ -254,26 +332,30 @@ async function run() {
     const backend = webBackend();
     const started = performance.now();
     const fetcher = (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+    const tree = memoFetch(fetcher);                     // pins of now and of the past: one fetch each
     const store = await fetchStore(base, backend, { full: p.full, fetcher });
     say(`Assessing ${store.lines.length} lines …`);
     const source = new Uint8Array(await (await fetch(new URL("./warrant.mjs", import.meta.url))).arrayBuffer());
     const r = await read(store, receiver(store.doc, mine), backend, source);
     if (p.pins) {
       say(`Comparing pins with the tree at ${base} …`);
-      await comparePins(r, base, { fetcher });
+      await comparePins(r, base, { fetcher: tree });
     }
     if (p.with.length) {
       say(`Reading ${p.with.length} other store(s) …`);
       r.others = await readOthers(p.with, backend, source, { fetcher });
       await overlay(r, base, backend, source);
     }
-    current = { r, base, full: p.full, pins: p.pins, with: p.with };
+    const key = markKey(base, await rulesId(r, backend)), kept = loadMark(key);
+    say("Comparing with your mark …");
+    const changed = await changes(r, kept.mark, backend, source, { base, fetcher: tree });
+    current = { r, base, full: p.full, pins: p.pins, with: p.with, backend, source, tree, key, changes: changed, storeWhy: kept.why };
     shownRows = PAGE;
     say(`Read and assessed in ${((performance.now() - started) / 1000).toFixed(1)} s.`);
     draw();
   } catch (e) {
     current = null;
-    for (const id of ["floor", "lineage", "list"]) $(id).hidden = true;
+    for (const id of ["changes", "floor", "lineage", "list"]) $(id).hidden = true;
     say(`Refused: ${e?.message ?? e}`, true);                    // a refusal is shown whole; nothing partial is drawn
   } finally {
     $("go").disabled = false;

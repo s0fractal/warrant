@@ -971,6 +971,7 @@ def main():
     browser_reader_cases()
     browser_pins_cases()
     browser_others_cases()
+    browser_changes_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -1580,6 +1581,187 @@ def browser_others_cases():
           "warrant_agent.overlay says; a binding the sources disagree on (eve) is held too",
           ("bob", "role") in held6 and ("eve", "disagree") in held6 and jheld6 == held6 and js6 == py6 and e not in js6
           and "rows" in (impost.get("summary", {}).get("overlay") or {}), (held6, jheld6, py6, js6, impost.get("summary", {}).get("overlay")))
+
+
+def _floor_py(rep):
+    """{lineage: (state, reliance, the sorted counted challenges that stand against a version)} of a Python report."""
+    return {L: (x["state"], x["reliance"], sorted(c for c, y in rep["challenges"].items()
+                                                  if y["target"] in x["versions"] and y.get("counted") and y.get("stands")))
+            for L, x in rep["lineages"].items()}
+
+
+def browser_changes_cases():
+    """What changed for me in the browser reader (site/reader.mjs makeMark, changes): the reader marks a store as seen
+    (`--write-mark FILE`, the JSON the page keeps in localStorage), records are added, and the reader compares
+    (`--mark FILE`). The past is the marked subset assessed again by the same engine; a lineage is listed when its view
+    (viewOf) differs, with what appeared, vanished and moved; new records that change no view are counted. Each step
+    marks afresh, so each case sees one step's records. One server per store for the whole run: a mark names its
+    store's address."""
+    import base64 as B64
+    from warrant_agent import changes as CH
+    pub, other = Repo(), Repo()
+    a1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the closure", "serves": []})
+    a2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the closure", "serves": []}, lineage=a1)
+    b1 = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the accepted one", "serves": []})
+    b2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the accepted one", "serves": []}, lineage=b1)
+    acc_b = pub.attest("bob", b2)
+    stranger = dict(json.loads((pub.dot / "v3.json").read_text()))
+    stranger["profile"] = dict(stranger["profile"], roles=dict(stranger["profile"]["roles"], **{"roadmap/acceptor": ["carol"]}))
+    (pub.home / "other-rules.json").write_text(json.dumps(stranger))
+    (pub.home / "same-rules.json").write_text(json.dumps({"trust": pub.trust, "profile": pub.profile}))
+    srvs, (b_pub, b_oth) = _serve_many(pub.root, other.root)
+    n = iter(range(100))
+    def mark(*args):
+        path = pub.home / f"mark-{next(n)}.json"
+        rc, out = _reader(b_pub, "--write-mark", str(path), *args)
+        return path if rc == 0 and path.exists() else out
+    def changed(path, *args):
+        rc, out = _reader(b_pub, "--mark", str(path), *args)
+        return out.get("changes") or {"rc": rc, "out": out}
+    listed = lambda c: [x["lineage"] for x in c.get("listed", [])]
+    try:
+        m0, m0w = mark(), mark("--with", b_oth)
+        keep0 = set(pub.store.snapshot().lines)
+        c0, c0w = changed(m0), changed(m0w, "--with", b_oth)
+        doc = json.loads(m0.read_text())
+        e = doc["stores"].get(b_pub, {})
+        text = m0.read_text()
+        check("J13 (a) nothing added since the mark: nothing listed, no new record, and the reader says so; with other "
+              "stores read the mark holds each of them, and still nothing is listed",
+              listed(c0) == [] and c0.get("new") == 0 and c0.get("quiet") == 0 and c0.get("line") == "no new records since the mark"
+              and listed(c0w) == [] and c0w.get("new") == 0 and sorted(json.loads(m0w.read_text())["stores"]) == sorted([b_pub, b_oth]), (c0, c0w))
+        check("J13 the mark is compact and names no whole id: 8 bytes of each record id and one 32-byte digest per 16 ids, "
+              "as canonical base64, under the store's address and the rules' identity",
+              e.get("n") == len(keep0) and len(B64.b64decode(e.get("ids", ""))) == 8 * len(keep0)
+              and len(B64.b64decode(e.get("groups", ""))) == 32 * -(-len(keep0) // 16) and not any(i in text for i in keep0)
+              and doc.get("base") == b_pub and doc.get("rules") == C.doc_id({"trust": pub.trust, "profile": pub.profile}), (doc, len(keep0)))
+
+        sid = pub.schemas["obligation@1"]
+        pub.put("eve", "attest", {"target": sid, "verdict": "seen"}, refs=[sid])                 # on a schema: no lineage
+        pub.put("dave", "attest", {"target": acc_b, "verdict": "react", "agree": 30}, refs=[acc_b])   # on an attest
+        c1 = changed(m0)
+        check("J13 (b) records that change no lineage's view (a `seen` on a schema record, a `react` on an attest: neither "
+              "targets a version) are counted as new, not listed, and the reader says they changed nothing you see",
+              listed(c1) == [] and c1.get("new") == 2 and c1.get("quiet") == 2 and c1.get("line") == "2 new record(s) changed nothing you see", c1)
+
+        m2 = mark()
+        by_eve = pub.attest("eve", b2)
+        c2 = changed(m2)
+        x = (c2.get("listed") or [{}])[0]
+        check("J13 (b') an attest by an actor with no role on a version moves no floor but is drawn among the version's "
+              "attests: listed with that attest as what appeared and nothing moved (agent_test CH2 under the built-in lens)",
+              listed(c2) == [b1] and x.get("appeared") == [[by_eve, "attest"]] and x.get("moved") == {} and x.get("vanished") == []
+              and c2.get("quiet") == 0, c2)
+
+        m3 = mark()
+        acc_a = pub.attest("bob", a2, commit="c" * 40)
+        c3 = changed(m3)
+        x = (c3.get("listed") or [{}])[0]
+        check("J13 (c) a closure accepted (at a commit): its lineage is listed with its state and reliance then and now, "
+              "the reliance as shown (PINS_NOT_CHECKED, never ELIGIBLE on pins not compared), the acceptance appeared",
+              listed(c3) == [a1] and x.get("moved", {}).get("state") == ["open", "done"]
+              and x.get("moved", {}).get("reliance") == ["ELIGIBLE", "PINS_NOT_CHECKED"] and x.get("moved", {}).get("effective") == [a1, a2]
+              and [acc_a, "attest"] in x.get("appeared", []) and [a2, "accepted by bob"] in x.get("appeared", [])
+              and [a2, "guard MET"] in x.get("appeared", []) and [a2, "guard PENDING"] in x.get("vanished", []) and x.get("new") is False, c3)
+
+        m4 = mark()
+        ch_b = pub.put("bob", "challenge", {"target": b2, "statement": "counted, and it stands"}, refs=[b2])
+        c4 = changed(m4)
+        x = (c4.get("listed") or [{}])[0]
+        check("J13 (d) a counted challenge filed: the lineage is listed, the challenge named as what appeared (counted, "
+              "standing) and the standing challenges and reliance moved",
+              listed(c4) == [b1] and x.get("moved", {}).get("standing") == [[], [ch_b]]
+              and x.get("moved", {}).get("reliance", [None])[0] == "ELIGIBLE" and x.get("moved", {}).get("reliance", [None, None])[1] != "ELIGIBLE"
+              and all([ch_b, m] in x.get("appeared", []) for m in ("challenge", "counted", "stands")), c4)
+
+        m5 = mark()
+        c_new = pub.entity("alice", "obligation@1", {"state": "open", "statement": "a new task", "serves": []})
+        c5 = changed(m5)
+        x = (c5.get("listed") or [{}])[0]
+        check("J13 (e) a new lineage is listed as new: no view before, moved names it new",
+              listed(c5) == [c_new] and x.get("new") is True and x.get("before") is None and x.get("moved") == {"new": [None, True]}
+              and x.get("title") == "a new task", c5)
+
+        m6, m6w = mark(), mark("--with", b_oth)
+        voice = other.put("carol", "challenge", {"target": a2, "statement": "from elsewhere"}, refs=[a2])
+        c6w, c6 = changed(m6w, "--with", b_oth), changed(m6)
+        x = (c6w.get("listed") or [{}])[0]
+        check("J13 (f) a voice from outside appearing in another store: listed when that store is read (`--with`), the "
+              "voice as what appeared and nothing moved (it is not counted here); without `--with` nothing is listed and "
+              "nothing is new in the store read",
+              listed(c6w) == [a1] and x.get("appeared") == [[voice, f"voice from {b_oth}"]] and x.get("moved") == {}
+              and c6w.get("new") == 1 and c6w.get("quiet") == 0 and listed(c6) == [] and c6.get("new") == 0, (c6w, c6))
+
+        c7, c7s = changed(m6, "--config", str(pub.home / "other-rules.json")), changed(m6, "--config", str(pub.home / "same-rules.json"))
+        check("J13 (g) a mark belongs to its rules' identity: under other rules it is not used (no listing, and the "
+              "reason); under the same trust and profile pasted by the reader it is",
+              c7.get("mark") is None and "other rules" in (c7.get("why") or "") and "listed" not in c7
+              and c7s.get("mark") is not None and listed(c7s) == [], (c7, c7s))
+
+        rest = changed(m0)
+        past, now = CH.report_of(pub.root, CH.subset(pub.store.snapshot(), keep0)), CH.report_of(pub.root, pub.store.snapshot())
+        fp, fn = _floor_py(past), _floor_py(now)
+        py = {L for L in fn if L not in fp or fp[L] != fn[L]}
+        js = {x["lineage"] for x in rest.get("listed", []) if x["new"] or {"state", "reliance", "standing"} & set(x["moved"])}
+        check("J13 (i) differential: from the first mark, the lineages whose (state, reliance, standing challenges) the "
+              "reader lists as moved, or as new, are exactly those whose Python assessments of the marked subset "
+              "(warrant_agent.changes.subset) and of the whole store differ",
+              js == py == {a1, b1, c_new}, (sorted(js), sorted(py)))
+
+        for k in range(40):                                  # enough records for groups of 16 to split
+            pub.put("eve", "attest", {"target": sid, "verdict": "seen", "n": k}, refs=[sid])
+        mh = mark()
+        marked = sorted(set(pub.store.snapshot().lines))
+        lines_path = pub.dot / "records.jsonl"
+        whole = lines_path.read_bytes()
+        try:
+            lines_path.write_bytes(b"".join(l for l in whole.splitlines(keepends=True) if b"a new task" not in l))     # the only line of that lineage
+            ch_h = changed(mh)
+        finally:
+            lines_path.write_bytes(whole)
+        k = marked.index(c_new) // 16
+        doubt = len(marked[16 * k:16 * k + 16]) - 1
+        st = ((ch_h.get("mark") or {}).get("stores") or [{}])[0]
+        check("J13 (h) a mark naming a record the store no longer serves: no crash, one counted gone and said so, its "
+              "lineage not listed (its bytes are not held, so neither state has it), and the rest of its group of 16 "
+              "counted as new (unverified, said), never as seen",
+              st.get("gone") == 1 and st.get("unverified") == doubt == st.get("new") and 0 < doubt < len(marked) - 1
+              and c_new not in listed(ch_h) and "1 marked record(s) no longer served" in ch_h.get("line", "")
+              and f"{doubt} record(s) whose mark could not be verified" in ch_h.get("line", ""), (ch_h, doubt))
+
+        bad = json.loads(mh.read_text())
+        g = bytearray(B64.b64decode(bad["stores"][b_pub]["groups"]))
+        g[0] ^= 1
+        bad["stores"][b_pub]["groups"] = B64.b64encode(bytes(g)).decode()
+        mj = pub.home / "mark-tampered.json"
+        mj.write_text(json.dumps(bad))
+        ch_j = changed(mj)
+        st = ((ch_j.get("mark") or {}).get("stores") or [{}])[0]
+        check("J13 (j) a group whose digest does not verify is not trusted: its 16 records are counted as new "
+              "(unverified), none of them is called seen; the other groups are",
+              st.get("unverified") == 16 and st.get("new") == 16 and ch_j.get("new") == 16 and st.get("gone") == 0
+              and len(marked) > 32, ch_j)
+        good = json.loads(mh.read_text())["stores"][b_pub]
+        spaced = json.loads(mh.read_text())
+        spaced["stores"][b_pub]["ids"] = good["ids"][:4] + " " + good["ids"][4:]            # atob would skip the space
+        miscount = json.loads(mh.read_text())
+        miscount["stores"][b_pub]["n"] = good["n"] + 1                                      # a count its bytes do not hold
+        ch_k = []
+        for k, m in enumerate((spaced, miscount)):
+            (pub.home / f"mark-malformed-{k}.json").write_text(json.dumps(m))
+            ch_k.append(changed(pub.home / f"mark-malformed-{k}.json"))
+        (pub.home / "mark-text.json").write_text("not json")
+        ch_t = changed(pub.home / "mark-text.json")
+        ch_n = changed(pub.home / "no-such-mark.json")
+        check("J13 (k) a mark that is not the one form makeMark writes (base64 with a space that atob skips, a count its "
+              "bytes do not hold), or not JSON, cannot be read and is said so; a missing file is no mark yet; none of "
+              "them presents anything as changed",
+              all(c.get("mark") is None and "cannot be read" in c.get("why", "") for c in ch_k + [ch_t])
+              and ch_n.get("mark") is None and ch_n.get("why", "").startswith("no mark yet")
+              and not any("listed" in c for c in ch_k + [ch_t, ch_n]), (ch_k, ch_t, ch_n))
+    finally:
+        for srv in srvs:
+            srv.shutdown()
 
 
 def _report(root):
