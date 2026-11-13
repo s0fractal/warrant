@@ -794,7 +794,7 @@ MUTANTS = [
     ("BM15", "warrant/board.py", '        todo["update"][rid] = [name for name, _, _ in FIELDS] + [THEIRS]', '        todo["update"][rid] = [name for name, _, _ in FIELDS]', TOOLS, ["BD4"]),
     ("BM13", "warrant/board.py", "    if other:                                           # a field of ours' name", "    if False:                                           # a field of ours' name", TOOLS, ["BD7"]),
     ("BM12", "warrant/board.py", "        for k in ([kind] if kind else OWNERS):", "        for k in OWNERS:", TOOLS, ["BD6"]),
-    ("BM10", "warrant/board.py", 'if todo["create"] or todo["update"] or todo["archive"] or todo["fields"]:', "if True:", TOOLS, ["BD4"]),
+    ("BM10", "warrant/board.py", '    if todo["describe"]:', "    if True:", TOOLS, ["BD4"]),
 ]
 
 

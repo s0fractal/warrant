@@ -1,9 +1,11 @@
 """The board: a roadmap's goals and obligations as rows of a public project board (GitHub Projects), one way.
 
 The records stay the source; the board decides nothing. Each row is one lineage (a goal@1 or an obligation@1) as its
-store's own assessment reads it, under that store's own trust and profile, and the board carries the identity of what
-it was drawn from (each store's snapshot and assessment). A hand edit on the board is no record: the next sync puts
-the row back and counts it.
+store's own assessment reads it, under that store's own trust and profile. The board's description carries the
+identity of what it was drawn from (each store's snapshot and assessment); a row carries only its own lineage and
+version, so a row changes when its lineage does and not with every record filed elsewhere (the first real sync wrote
+the assessment into each row, and a change of the engine's code then made all 112 rows differ). A hand edit on the
+board is no record: the next sync puts the row back and counts it.
 
     python3 -m warrant.board manifest [--root DIR ...] [--reader URL]            # the rows, canonical JSON; no network
     python3 -m warrant.board plan --owner LOGIN --project N [--root DIR ...]     # what a sync would change; changes nothing
@@ -57,7 +59,7 @@ THEIRS = "Status"
 FIELDS = [("Warrant status", "SINGLE_SELECT", "status"), ("Kind", "TEXT", "kind"), ("Store", "TEXT", "repository"),
           ("Goal", "TEXT", "goal"), ("Filed by", "TEXT", "filed_by"), ("Accepted by", "TEXT", "accepted_by"),
           ("Waits for", "TEXT", "waits_for"), ("Standing challenges", "NUMBER", "challenges"), ("Reliance", "TEXT", "reliance"),
-          ("Assessment", "TEXT", "assessment"), (ID, "TEXT", "id")]
+          (ID, "TEXT", "id")]
 
 
 def status(rep, lin):
@@ -118,7 +120,7 @@ def body(row, rec, leaf, reader):
     other = [r for r in (lb.get("refs") or []) if not (isinstance(r, str) and PR_REF.match(r))]
     if other:
         parts += ["", "Other references, as recorded:", "", fenced("\n".join(str(x) for x in other))]
-    parts += ["", f"Lineage `{row['id']}` · version shown `{row['version']}` · assessment `{row['assessment']}`"]
+    parts += ["", f"Lineage `{row['id']}` · version shown `{row['version']}`"]
     return "\n".join(parts) + "\n"
 
 
@@ -140,7 +142,7 @@ def rows(rep, repository, base=None, reader=None):
                "accepted_by": ", ".join(rep["versions"][lin["effective"]]["accepted_by"]) if lin["effective"] else "",
                "waits_for": "; ".join(rep["versions"][lin["leaf"]]["waiting"]) if lin["leaf"] else "",
                "challenges": sum(len(rep["versions"][v]["challenged_by"]) for v in lin["versions"]),
-               "version": shown, "assessment": rep["assessment"][:12], "base": base or ""}
+               "version": shown, "base": base or ""}
         row["body"] = body(row, rec, leaf, reader)
         out.append(row)
     return out
@@ -195,7 +197,7 @@ def gh(query, variables):
 
 # A project belongs to an organization or to a user; the same selection under either root (OWNER is replaced).
 PROJECT = """query($owner: String!, $number: Int!, $after: String) { OWNER(login: $owner) { projectV2(number: $number) {
-  id title public
+  id title public readme
   fields(first: 100) { nodes { ... on ProjectV2FieldCommon { id name dataType }
                                ... on ProjectV2SingleSelectField { options { id name } } } }
   items(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { id isArchived
@@ -248,7 +250,8 @@ def read_board(call, owner, number):
         if not proj["items"]["pageInfo"]["hasNextPage"]:
             break
         after = proj["items"]["pageInfo"]["endCursor"]
-    return {"id": proj["id"], "fields": {f["name"]: f for f in proj["fields"]["nodes"] if f.get("name")}, "items": items}
+    return {"id": proj["id"], "readme": proj.get("readme") or "",
+            "fields": {f["name"]: f for f in proj["fields"]["nodes"] if f.get("name")}, "items": items}
 
 
 def _same(dtype, on_board, wanted):
@@ -281,7 +284,8 @@ def plan(man, board, today):
             update[rid] = diff
     return {"fields": missing, "create": sorted(set(want) - set(ours)), "update": update,
             "archive": sorted(set(ours) - set(want)),
-            "foreign": sum(1 for i in board["items"] if not i["values"].get(ID)), "today": today, "manifest": man["digest"]}
+            "foreign": sum(1 for i in board["items"] if not i["values"].get(ID)), "today": today, "manifest": man["digest"],
+            "describe": man["digest"][:12] not in board.get("readme", "")}      # the description names another manifest, or none
 
 
 def _value(field, member, row):
@@ -326,7 +330,7 @@ def sync(man, board, call, today):
         call(SET_FIELD, {"project": board["id"], "item": item["item"], "field": board["fields"][SYNCED]["id"], "value": {"date": today}})
     for rid in todo["archive"]:
         call(ARCHIVE, {"project": board["id"], "item": ours[rid]["item"]})
-    if todo["create"] or todo["update"] or todo["archive"] or todo["fields"]:
+    if todo["describe"]:
         call(DESCRIBE, {"project": board["id"], "readme": readme(man, today),
                         "short": f"A projection of signed records (Warrant 3); it decides nothing. Manifest {man['digest'][:12]}, synced {today}."})
     return todo

@@ -1696,7 +1696,7 @@ class FakeBoard:
             def values(it):
                 kind = {"TEXT": "text", "NUMBER": "number", "DATE": "date", "SINGLE_SELECT": "name"}
                 return [{kind[self.fields[n]["dataType"]]: x, "field": {"name": n}} for n, x in it["values"].items()]
-            return {asked: {"projectV2": {"id": "P", "title": "t", "public": False,
+            return {asked: {"projectV2": {"id": "P", "title": "t", "public": False, "readme": self.readme,
                     "fields": {"nodes": list(self.fields.values())},
                     "items": {"pageInfo": {"hasNextPage": start + 2 < len(self.items), "endCursor": str(start + 2)},
                               "nodes": [{"id": it["id"], "isArchived": it["archived"],
@@ -1808,6 +1808,7 @@ def board_cases():
                   and made[i]["values"][BD.SYNCED] == "2026-11-13" and made[i]["values"].get("Standing challenges", 0) == by[i]["challenges"]
                   and "Status" not in made[i]["values"]
                   for i in by)
+          and first_plan["describe"] is True and second["describe"] is False
           and second["create"] == [] and second["update"] == {} and second["archive"] == [] and fb.mutations == []
           and man["digest"][:12] in (fb.readme or ""), (sorted(did["create"])[:2], second, len(fb.mutations)))
     org, refusal = FakeBoard("organization"), None

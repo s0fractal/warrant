@@ -118,7 +118,8 @@ reads: the leaves waiting only for that actor's attest.
 
 `python3 -m warrant.board` shows goals and obligations on a GitHub Project, one way. The records stay the source and
 the board decides nothing: a row is one lineage as its store's own assessment reads it, and the board's description
-names the snapshot and assessment of every store it was drawn from.
+names the snapshot and assessment of every store it was drawn from. A row carries only its own lineage and version,
+so it changes when its lineage does, not with every record filed elsewhere.
 
 ```bash
 python3 -m warrant.board manifest --root . --root ../minds --reader https://s0fractal.github.io/warrant/reader.html
