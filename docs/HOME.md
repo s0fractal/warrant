@@ -74,7 +74,7 @@ repository. Output is JSON, within a byte budget, with no document generated.
 warrant across                   # stores: each store's lineages by schema and state
 warrant across actor claude      # its records everywhere, under each store's keys for the name
 warrant across open              # goals and obligations a store reads as open
-warrant across challenges        # challenges standing in some store
+warrant across challenges        # challenges standing in some store, and the voices no store counts (uncounted)
 warrant across rests HASH        # what rests on a hash, across stores (an id, a prefix of 8+, or a citation)
 ```
 

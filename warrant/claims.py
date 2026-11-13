@@ -323,7 +323,7 @@ def view(rep, root):
         if done.get(lin["leaf"]):
             xs = done[lin["leaf"]]
             state += ", checked at this tree" if at_tree(root, xs, here) else f", checked at {', '.join(str(x)[:12] for x in xs)}, not this tree"
-        lines += [f"- **{cid}** ({where}§{section}; {state}; {lin['reliance']}) {b['text']}",
+        lines += [f"- **{cid}** ({where}§{section}; {state}; {lin['reliance']}; leaf `{lin['leaf'] or L}`) {b['text']}",
                   f"  witnesses: {', '.join(b['witnesses']) or 'none'}; mutants: {', '.join(b['mutants']) or 'none'}"
                   + (f"; why unbacked: {b['reason']}" if b.get("reason") else "")]
     for old in cfg["retired"]:
