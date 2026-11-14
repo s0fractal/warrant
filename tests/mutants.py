@@ -778,8 +778,8 @@ MUTANTS = [
      '        if not (rec and rec.get("kind") == "attest" and rec.get("actor") == actor and b.get("verdict") in REPLAY_VERDICTS):',
      "        if not rec:", WAKER, ["W7"]),
     ("P3", "integrations/warrant-review/waker/waker.py",
-     '        if rec["actor"] != actor or rec["kind"] not in VERDICTS or not binds(rec, {"closure": req["closure"], "asked": req.get("asked")}):',
-     "        if False:", WAKER, ["W3"]),
+     '        if rec["actor"] != actor or rec["kind"] not in VERDICTS or not (\n',
+     "        if False and not (\n", WAKER, ["W3"]),
     ("P4", "integrations/warrant-review/waker/waker.py", "    if set(got_lines) != set(lines):", "    if False:", WAKER, ["W4"]),
     ("P5", "integrations/warrant-review/waker/waker.py",
      '        if not (path.startswith(BLOBS) and HEX.match(path[len(BLOBS):]) and status == "A" and new_mode == REGULAR):',
@@ -821,6 +821,7 @@ MUTANTS = [
      "            if not (isinstance(branch, str) and PR_BRANCH.match(branch)):\n                raise Unpublished(f\"{str(branch)[:40]!r} is not a pull request branch to push to\")\n            if not (isinstance(version, str)", WAKER, ["W20"]),
     ("P40", "integrations/warrant-review/waker/waker.py", ' or (c.get("asked") and isinstance(b.get("verdict"), str))', '', WAKER, ["W23"]),
     ("P41", "integrations/warrant-review/waker/waker.py", '    if c.get("asked"):                   # a question addressed to Codex', '    if False:                   # a question addressed to Codex', WAKER, ["W23"]),
+    ("P42", "integrations/warrant-review/waker/waker.py", '                or (t in asked and binds(rec, {"closure": t, "asked": True}))):\n', '                or False):\n', WAKER, ["W24"]),
     ("P13", "integrations/warrant-review/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
     # warrant verify (warrant/verify.py, docs/VERIFY.md): a package assessed alone; the one-file verifier and its build
     ("UM01", VF, '"rely": bool(roots) and all(r["rely"] for r in roots.values())',

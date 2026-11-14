@@ -11,8 +11,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   challenged by it (minds Q1 81d731d3, a question to codex that no guard waits on and nothing showed him). The agent's
   frontier (MCP `warrant_graph op=frontier`) and `warrant status --actor` have it; `gate.due_for` and `roadmap due`
   mark such a version `asked`, so the review waker wakes Codex on it, puts it to him as a question, and publishes an
-  attest of any verdict or a challenge on it as his answer (`binds`), which the gate merges as verdicts only. FA1–FA3,
-  W23; mutants T250–T254, P40, P41.
+  attest of any verdict or a challenge on it as his answer (`binds`), which the gate merges as verdicts only. A review
+  wake carries, beside Codex's verdict on the pull request or alone, his answer to a version that asks him (`asked`
+  at the base, `asked_at`), checked as his verdict is; one on a version that asks him nothing still refuses the carry
+  (the minds session: an answer given while reviewing was refused and took the verdict with it). FA1–FA3, W23, W24;
+  mutants T250–T254, P40–P42. Not tested: that `carry` passes `asked_too` (W24 calls the check itself).
 
 - `.warrant/merge.json` watches what a receiver's `rely` rests on and the norm: `docs/V3.md`, `warrant/verify.py`, the
   single-file `warrant_verify.py`, `warrant/graph.py`, `warrant/pins.py`, `warrant/merkle.py`, `warrant/snapshot.py`.

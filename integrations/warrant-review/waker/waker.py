@@ -339,6 +339,23 @@ def blob_problem(digest, blobs, cited):
     return None
 
 
+def asked_at(code, actor):
+    """{version}: what the base tree `code`'s store asks of `actor` (warrant.graph.frontier's `asked`, under the base's
+    own trust and profile, by the base's package or the one installed); none from a package that has no `asked`. A
+    review wake carries an answer to one of these beside its verdict on the pull request (the minds session on #401:
+    Codex answering a question while he reviewed lost the answer and, with it, his verdict)."""
+    from warrant import engine as E
+    from warrant import graph as G
+    from warrant.store import Store
+    cfg = receiver(code)
+    view = E.View(Store(code / WARRANT).snapshot(), cfg["trust"], cfg["profile"])
+    try:
+        f = G.frontier(view.report(), cfg["profile"], actor, view.recs)
+    except TypeError:                                   # a package from before `asked`
+        return set()
+    return {x["version"] for x in f.get("asked", [])}
+
+
 def receiver(tree):
     """The receiver configuration of a tree: its .warrant/v3.json."""
     return json.loads((tree / WARRANT / "v3.json").read_text())
@@ -385,10 +402,15 @@ def verify_verdicts(req):
     recs, basis, bad, _ = E._authentic(snap, {"warrant": "trust/3", "keys": {actor: keys}}, None)
     if bad or len(recs) != len(lines) or any(b != "SIGNED" for b in basis.values()):
         return f"a line is not {actor}'s under the base's keys: {sorted(bad.values())[:1] or 'unsigned'}"
+    asked = asked_at(code, actor) if req.get("asked_too") else set()
     cited = set()
     for rid, rec in sorted(recs.items()):
-        if rec["actor"] != actor or rec["kind"] not in VERDICTS or not binds(rec, {"closure": req["closure"], "asked": req.get("asked")}):
-            return f"record {rid[:12]} is not a verdict of {actor} on version {req['closure'][:12]}"
+        t = (rec.get("body") or {}).get("target")
+        if rec["actor"] != actor or rec["kind"] not in VERDICTS or not (
+                binds(rec, {"closure": req["closure"], "asked": req.get("asked")})
+                or (t in asked and binds(rec, {"closure": t, "asked": True}))):
+            return f"record {rid[:12]} is not a verdict of {actor} on version {req['closure'][:12]}" + (
+                ", nor an answer to a version that asks it" if req.get("asked_too") else "")
         cited.update(rec["refs"])
     why = blob_problem(C.digest, blobs, cited)
     if why:
@@ -826,7 +848,7 @@ class Waker:
                 raise Unpublished(f"no new record of {actor} in the worktree's store")
             if size + sum(map(len, lines)) > MAX_PREPARED:
                 raise Unpublished(f"the records and blobs exceed {MAX_PREPARED} bytes")
-            why = self.verify(self.tree(a["base"]), {"closure": version}, lines, blobs, actor)
+            why = self.verify(self.tree(a["base"]), {"closure": version, "asked_too": True}, lines, blobs, actor)
             if why:
                 raise Unpublished(why)
             paths = [RECORDS, *[f"{BLOBS}{b}" for b in sorted(blobs)]]
@@ -1047,6 +1069,7 @@ class Waker:
         """verify_verdicts on these bytes, in a process of its own with the base tree `code` first on PYTHONPATH:
         the base's package checks the signatures under the base's keys, as `actor`'s (default ACCEPTOR)."""
         req = {"code": str(code), "actor": actor or ACCEPTOR, "closure": c["closure"], "asked": bool(c.get("asked")),
+               "asked_too": bool(c.get("asked_too")),
                "lines": [base64.b64encode(x).decode() for x in lines],
                "blobs": {k: base64.b64encode(v).decode() for k, v in blobs.items()}}
         env = {"PATH": os.environ.get("PATH", DEFAULT_PATH), "HOME": str(Path.home()), "PYTHONPATH": str(code),
