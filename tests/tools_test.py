@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1831,6 +1832,182 @@ def voices_cases():
           and rec.get("body", {}).get("target") == target and code_proj == 1 and code_proj_init != 0 and r.store.lines() == before,
           (code_init, doc, code_say, out_say, rec, code_proj, code_proj_init))
 
+def _issue(body, number=7, login="octocat", uid=583231, kind="User", action="opened", **issue):
+    """An `issues` event as GitHub delivers it, with what the bridge reads and members it must ignore."""
+    return {"action": action, "repository": {"full_name": "acme/widget", "html_url": "https://evil.example/r"},
+            "issue": dict({"number": number, "title": "MARKER-title", "html_url": "https://evil.example/issue",
+                           "user": {"login": login, "id": uid, "type": kind}, "body": body}, **issue)}
+
+
+def _form(target, stance, statement):
+    return f"### Record\n\n{target}\n\n### Stance\n\n{stance}\n\n### Statement\n\n{statement}"
+
+
+def bridge_cases():
+    """The bridge (warrant/bridge.py): an issue opened through the form becomes one record in a store that trusts the
+    bridge's key alone; everything else is refused in words of the bridge's own, and nothing is filed."""
+    from warrant import bridge as BR
+    from warrant import commons as CM
+    from warrant import shapes as SH
+    r = Repo()
+    key, other_key = K.Key.from_seed_hex("0b" * 32), K.Key.from_seed_hex("0c" * 32)
+    d = r.home / "voices"
+    target, second = "ab" * 32, "cd" * 32
+    said = "the claim ignores the cold start\r\n\r\n### Stance\r\n\r\nsupport\r\n\r\n### Record\r\n\r\n" + second
+    raw = _form(target, "objection", said).replace("\n\n", "\r\n\r\n")
+    first = BR.file(d, _issue(raw), key, at=1_900_000_000)
+    again = BR.file(d, _issue(raw), key, at=1_900_000_005)
+    support = BR.file(d, _issue(_form(second, "support", "  we rely on this  "), number=8, login="dependabot[bot]", uid=49699333, kind="Bot"),
+                      key, at=1_900_000_010)
+    dot = d / ".warrant"
+    doc = json.loads((dot / "v3.json").read_text())
+    snap = Store(dot).snapshot()
+    recs = {i: e[0]["record"] for i, e in snap.lines.items()}
+    a, b = recs.get(first.get("filed"), {}), recs.get(support.get("filed"), {})
+    rep = E.assess(snap, doc["trust"], doc["profile"])
+    nodes = {n[0]: n[1:] for n in rep["graph"]["nodes"]}
+    check("BR1 an issue opened through the form becomes one record in the bridge's store, which trusts the one name "
+          "github-bridge bound to the bridge's key and gives nobody a role: an objection is a challenge, a support an attest "
+          "with stance support and no verdict member; each names the record id of the form, the statement as text (a "
+          "statement that imitates the form's other fields stays the statement), and what the bridge states of GitHub: "
+          "login, id, kind of account, repository, issue number, the issue's address built from those two (the event's own "
+          "address is not copied) and the SHA-256 of the body as delivered; the store's own assessment admits both as signed",
+          BR.is_bridge_store(doc, key.public) and doc["profile"]["roles"] == {} and list(doc["trust"]["keys"]) == ["github-bridge"]
+          and (a.get("kind"), a.get("actor"), a.get("refs")) == ("challenge", "github-bridge", [target])
+          and a.get("body") == {"target": target, "stance": "objection", "statement": said.replace("\r\n", "\n"),
+                                "github": {"login": "octocat", "id": 583231, "account": "User", "repository": "acme/widget", "issue": 7,
+                                           "url": "https://github.com/acme/widget/issues/7",
+                                           "body_sha256": hashlib.sha256(raw.encode()).hexdigest()}}
+          and (b.get("kind"), b.get("refs")) == ("attest", [second]) and b.get("body", {}).get("stance") == "support"
+          and "verdict" not in b.get("body", {"verdict": 1}) and b.get("body", {}).get("statement") == "we rely on this"
+          and b.get("body", {}).get("github", {}).get("login") == "dependabot[bot]"
+          and [nodes.get(x, [None] * 5)[4] for x in (first.get("filed"), support.get("filed"))] == ["SIGNED", "SIGNED"],
+          (doc, a, b, nodes))
+    check("BR2 one record per issue: the same issue filed again adds no line and answers with the first record, marked as "
+          "already filed", first.get("already") is False and again == dict(first, already=True) and len(recs) == 2, (first, again, len(recs)))
+    lines = Store(dot).lines()
+    marker = "MARKER-7f3a"
+    bad = {
+        "an edit": _issue(_form(target, "objection", marker), number=20, action="edited"),
+        "a pull request": _issue(_form(target, "objection", marker), number=21, pull_request={"url": "x"}),
+        "no form": _issue(marker, number=22),
+        "text before the form": _issue(marker + "\n\n" + _form(target, "objection", "x"), number=23),
+        "an id in upper case": _issue(_form("AB" * 32, "objection", marker), number=24),
+        "an id of 63 digits": _issue(_form("a" * 63, "objection", marker), number=25),
+        "an id and a newline": _issue(_form(target + "\n", "objection", marker), number=26),
+        "a stance of accept": _issue(_form(target, "accept", marker), number=27),
+        "an empty statement": _issue(_form(target, "objection", "  \n "), number=28),
+        "a statement too long": _issue(_form(target, "objection", "x" * (BR.STATEMENT_MAX + 1)), number=29),
+        "the form's empty answer": _issue(_form(target, "objection", "_No response_"), number=30),
+        "a login with a space": _issue(_form(target, "objection", marker), number=31, login="octo cat " + marker),
+        "a login and a newline": _issue(_form(target, "objection", marker), number=32, login="octocat\n"),
+        "an id that is true": _issue(_form(target, "objection", marker), number=33, uid=True),
+        "an organization": _issue(_form(target, "objection", marker), number=34, kind="Organization"),
+        "a number of zero": _issue(_form(target, "objection", marker), number=0),
+        "a body that is no text": _issue(None, number=35),
+    }
+    bad["a repository of another shape"] = dict(_issue(_form(target, "objection", marker), number=36), repository={"full_name": "acme/widget/" + marker})
+    got = {}
+    for name, ev in bad.items():
+        try:
+            got[name] = ("FILED", BR.file(d, ev, key, at=1_900_000_020))
+        except BR.Refused as e:
+            got[name] = ("REFUSED", BR.comment(why=str(e)))
+        except Exception as e:                                  # anything else is the bridge breaking on an issue's text
+            got[name] = (type(e).__name__, str(e))
+    check("BR3 anything but the form as opened is refused and nothing is filed: an edit, a pull request, text that is not "
+          "the form or stands before it, a record id in upper case, of 63 digits or with a newline after it, a stance the "
+          "form does not offer, a statement that is empty, the form's own empty answer or longer than the limit, an author "
+          "whose login, id or kind of account is not a GitHub account's, an issue number of zero, a repository name of "
+          "another shape; the answer for the issue is in the bridge's words and repeats no text of the issue",
+          all(k == "REFUSED" and marker not in v and "MARKER" not in v for k, v in got.values()) and Store(dot).lines() == lines,
+          {n: v for n, v in got.items() if v[0] != "REFUSED" or "MARKER" in v[1]})
+    ok_ev = _issue(_form(target, "objection", "into another's store"), number=40)
+    commons = r.home / "commons"
+    CM.init(commons)
+    foreign = r.home / "foreign"
+    BR.init(foreign, other_key)
+    roles = r.home / "roles"
+    (roles / ".warrant").mkdir(parents=True)
+    (roles / ".warrant" / "v3.json").write_text(json.dumps(dict(BR.doc_for(key.public), profile={"warrant": "profile/3", "roles": {"pr/acceptor": ["github-bridge"]}})))
+    shared = r.home / "shared"
+    (shared / ".warrant").mkdir(parents=True)
+    two = BR.doc_for(key.public)
+    two["trust"]["keys"]["mallory"] = [other_key.public]
+    (shared / ".warrant" / "v3.json").write_text(json.dumps(two))
+    before = {str(x): (Store(x / ".warrant").lines() if (x / ".warrant" / "records.jsonl").exists() else None, r.store.lines())
+              for x in (commons, foreign, roles, shared)}
+    broke = []
+    for x in (r.root, commons, foreign, roles, shared):
+        try:
+            BR.file(x, ok_ev, key, at=1_900_000_030)
+            broke.append("FILED")
+        except BR.Broken:
+            broke.append("BROKEN")
+        except BR.Refused:
+            broke.append("REFUSED")
+    after = {str(x): (Store(x / ".warrant").lines() if (x / ".warrant" / "records.jsonl").exists() else None, r.store.lines())
+             for x in (commons, foreign, roles, shared)}
+    check("BR4 the bridge writes into its own store alone: a project's store, a commons, a bridge's store bound to another "
+          "key, a store of its shape that gives github-bridge a role and one that trusts a second name are each the "
+          "bridge's failure (Broken, never an answer on the issue) and no line is appended to any of them",
+          broke == ["BROKEN"] * 5 and before == after, (broke, before == after))
+    ev_file, out = r.home / "event.json", io.StringIO()
+    ev_file.write_text(json.dumps(ok_ev))
+    keep = os.environ.pop(BR.SEED_ENV, None)
+    try:
+        codes, outs = [], []
+        for seed, argv in ((None, ["file", "--event", str(ev_file), "--store", str(d)]),
+                           ("0b" * 32, ["file", "--event", str(ev_file), "--store", str(d), "--reader", "https://example.test/reader.html",
+                                         "--voices", "https://example.test/v/?a=1&b=2"]),
+                           ("0b" * 32, ["file", "--event", str(r.home / "missing.json"), "--store", str(d)]),
+                           ("0b" * 32, ["public"])):
+            os.environ.pop(BR.SEED_ENV, None)
+            if seed:
+                os.environ[BR.SEED_ENV] = seed
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                codes.append(BR.main(argv))
+            outs.append(out.getvalue().strip())
+        ev_file.write_text(json.dumps(bad["a stance of accept"]))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            codes.append(BR.main(["file", "--event", str(ev_file), "--store", str(d)]))
+        outs.append(out.getvalue().strip())
+    finally:
+        os.environ.pop(BR.SEED_ENV, None)
+        if keep is not None:
+            os.environ[BR.SEED_ENV] = keep
+    done, refused = json.loads(outs[1] or "{}"), json.loads(outs[4] or "{}")
+    check("BR5 the command a workflow runs: without the seed in the environment it files nothing (status 2); with it, the "
+          "issue's voice is filed (status 0) and the answer for the issue names the record's id, the target and the reader's "
+          "address with the bridge's store beside it (its address as one query value), and says the account signed nothing; an event file that cannot be read is status 2; a refused "
+          "issue is status 3 with its answer; `public` prints the key the store binds, and the seed is in no output; the "
+          "record is filed although the chain's last record is ahead of this machine's clock, at that record's time",
+          codes == [2, 0, 2, 0, 3] and Store(dot).snapshot().lines.get(done.get("filed"), [{}])[0].get("record", {}).get("at") == 1_900_000_010 and SH.hex64(done.get("filed")) and done["filed"] in done.get("comment", "")
+          and "https://example.test/reader.html?with=https%3A%2F%2Fexample.test%2Fv%2F%3Fa%3D1%26b%3D2 " in done.get("comment", "") and "not the account's signature" in done.get("comment", "")
+          and outs[3] == key.public and "Nothing was filed" in refused.get("comment", "") and not any("0b" * 32 in o for o in outs),
+          (codes, outs))
+
+    form = (ROOT / ".github" / "ISSUE_TEMPLATE" / "voice.yml").read_text()
+    fields = re.findall(r"^  - type: (\w+)\n    id: (\w+)\n    attributes:\n      label: (.+)$", form, re.M)
+    options = re.findall(r"^        - (.+)$", form, re.M)
+    required = form.count("    validations:\n      required: true\n")
+    delivered = "\n\n".join(f"### {label}\n\n{value}" for (_, _, label), value in zip(fields, (target, options[0] if options else "", "as the form delivers it")))
+    try:
+        through = BR.voice(_issue(delivered, number=50))
+    except BR.Refused as e:
+        through = str(e)
+    check("BR6 the form on disk is the form the bridge reads: its fields are an input `record`, a dropdown `stance` and a "
+          "textarea `statement`, labelled Record, Stance and Statement in that order, each required, the stances offered "
+          "are objection and support and nothing else, and a body built from those labels as GitHub delivers a form's "
+          "answers is filed",
+          fields == [("input", "record", "Record"), ("dropdown", "stance", "Stance"), ("textarea", "statement", "Statement")]
+          and options == ["objection", "support"] == list(BR.STANCES) and required == 3
+          and isinstance(through, tuple) and through[0] == "challenge" and through[1]["statement"] == "as the form delivers it",
+          (fields, options, required, through))
+
+
 def merged_cases():
     """The observation of a merge says how it came about: a solo merge says that no second family reviewed it."""
     import argparse
@@ -2179,6 +2356,7 @@ if __name__ == "__main__":
     observer_cases()
     merged_cases()
     voices_cases()
+    bridge_cases()
     board_cases()
     narrow_cases()
     resolve_cases()

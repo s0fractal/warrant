@@ -978,6 +978,7 @@ def main():
     browser_door_cases()
     browser_watch_cases()
     browser_toward_cases()
+    browser_bridge_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -1633,6 +1634,84 @@ def browser_others_cases():
           "warrant_agent.overlay says; a binding the sources disagree on (eve) is held too",
           ("bob", "role") in held6 and ("eve", "disagree") in held6 and jheld6 == held6 and js6 == py6 and e not in js6
           and "rows" in (impost.get("summary", {}).get("overlay") or {}), (held6, jheld6, py6, js6, impost.get("summary", {}).get("overlay")))
+
+
+# ---------------------------------------------------------------- J19: a bridge's voices (warrant/bridge.py)
+def browser_bridge_cases():
+    """What the reader shows of a bridge's store read beside a publisher's: each voice with the GitHub account the store
+    states (login, id, the issue's address) and its stance, uncounted like any voice from outside. The account is shown
+    only in its shape: a statement of it that does not point at an issue on github.com is shown without one."""
+    from warrant import bridge as BR
+    from warrant import commons as CM
+    pub = Repo()
+    o = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the claim", "serves": []})
+    d = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the claim", "serves": []}, lineage=o)
+    pub.attest("bob", d)
+    key = K.Key.from_seed_hex("0b" * 32)
+    voices = pub.home / "bridge"
+
+    def event(n, stance, text, login="octocat", uid=583231, kind="User"):
+        body = f"### Record\n\n{d}\n\n### Stance\n\n{stance}\n\n### Statement\n\n{text}"
+        return {"action": "opened", "repository": {"full_name": "acme/widget"},
+                "issue": {"number": n, "user": {"login": login, "id": uid, "type": kind}, "body": body}}
+    hostile = "<img src=x onerror=alert(1)> the claim ignores the cold start"
+    obj = BR.file(voices, event(7, "objection", hostile), key, at=1_900_000_000)["filed"]
+    sup = BR.file(voices, event(8, "support", "we rely on it", "dependabot[bot]", 49699333, "Bot"), key, at=1_900_000_001)["filed"]
+    commons = pub.home / "commons"
+    stranger = CM.seed(pub.home / "stranger.seed")
+    CM.init(commons)
+    shapes = [{"login": "octocat", "id": 583231, "url": "https://github.com.evil.example/acme/widget/issues/7"},
+              {"login": "octocat", "id": 583231, "url": "https://github.com/acme/widget/issues/7?x=1"},
+              {"login": "octocat", "id": 583231, "url": "https://github.com/acme/widget/pull/7"},
+              {"login": "octo cat", "id": 583231, "url": "https://github.com/acme/widget/issues/7"},
+              {"login": "octocat", "id": -1, "url": "https://github.com/acme/widget/issues/7"},
+              {"login": "octocat", "id": "583231", "url": "https://github.com/acme/widget/issues/7"},
+              {"login": "octocat", "url": "https://github.com/acme/widget/issues/7"},
+              ["octocat", 583231, "https://github.com/acme/widget/issues/7"], "octocat"]
+    forged = []
+    for i, g in enumerate(shapes):
+        rec = R.record("challenge", "key:" + stranger.public, 1_900_000_010 + i, {"target": d, "statement": f"shape {i}", "github": g}, refs=[d])
+        forged += ST.Store(commons / ".warrant").extend([rec], stranger, CM.DOC["trust"])
+    srvs, (b_pub, b_br, b_com) = _serve_many(pub.root, voices, commons)
+    try:
+        _, opened = _reader(b_pub, "--with", b_br, "--with", b_com, "--lineage", o)
+        _, plain = _reader(b_pub, "--lineage", o)
+    finally:
+        for x in srvs:
+            x.shutdown()
+    floor = (opened.get("lineage") or {}).get("floor", {})
+    vs = {v["id"]: v for v in (floor.get("outside") or {}).get("voices", [])}
+    a, b = vs.get(obj, {}), vs.get(sup, {})
+    check("J19 a bridge's store read beside a publisher's: its objection and its support are voices from outside on the "
+          "lineage of the record they name, each with its stance and the GitHub account that store states (login, id, the "
+          "issue's address), the statement as text, under the actor github-bridge as that store names it, and uncounted: "
+          "the lineage reads as it does without them",
+          (a.get("kind"), a.get("stance"), a.get("actor"), a.get("counted"), a.get("statement")) == ("challenge", "objection", "github-bridge", False, hostile)
+          and a.get("github") == {"login": "octocat", "id": 583231, "url": "https://github.com/acme/widget/issues/7"}
+          and (b.get("kind"), b.get("stance"), b.get("verdict"), b.get("counted")) == ("attest", "support", None, False)
+          and b.get("github") == {"login": "dependabot[bot]", "id": 49699333, "url": "https://github.com/acme/widget/issues/8"}
+          and floor.get("reliance") == "ELIGIBLE" == (plain.get("lineage") or {}).get("floor", {}).get("reliance")
+          and floor.get("state") == (plain.get("lineage") or {}).get("floor", {}).get("state"), (a, b, floor.get("reliance")))
+    form = (ROOT / ".github" / "ISSUE_TEMPLATE" / "voice.yml").read_text()
+    ids = [x for x in ("record", "stance", "statement") if f"\n    id: {x}\n" in form]
+    door = _node_json(VOICE, "--bridge", d)[1]
+    bad = [_node_json(VOICE, "--bridge", x)[1].get("links") for x in (d.upper(), d[:63], d + "&stance=support", "")]
+    block = (ROOT / "site" / "reader-page.mjs").read_text()
+    page = (ROOT / "site" / "object.html").read_text()
+    check("J19 the second door: the reader's block links the issue form with the version's id and a stance filled in under "
+          "the form's own field ids (record, stance), for an objection and for a support and for nothing else; an id that "
+          "is not 64 lowercase hex digits makes no link; object.html names the same form and the same store of voices, "
+          "and the block's line is drawn from voice.mjs",
+          ids == ["record", "stance", "statement"]
+          and door.get("links") == [f"https://github.com/s0fractal/warrant/issues/new?template=voice.yml&record={d}&stance={x}" for x in ("objection", "support")]
+          and door.get("bad") is None and bad == [[None, None]] * 4
+          and door.get("bridge", {}).get("form", "") + '"' in page and "<code>" + door.get("bridge", {}).get("store", "?") + "</code>" in page
+          and "bridgeLine(t)," in block and 'voice.bridgeLink(t.version, x)' in block, (door, bad, ids))
+    check("J19 an account is shown only in its shape: a voice whose `github` names another host, an address that is not an "
+          "issue's (a query after it, a pull request), a login with a space, an id that is negative, text or missing, or that "
+          "is a list or a string, is still a voice and is shown with no account (" + str(len(shapes)) + " shapes)",
+          len(forged) == len(shapes) and all(x in vs and vs[x].get("github") is None and vs[x].get("stance") is None for x in forged),
+          {x[:8]: vs.get(x, {}).get("github") for x in forged})
 
 
 def _floor_py(rep):

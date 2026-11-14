@@ -6,6 +6,20 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The bridge (`warrant/bridge.py`, `python -m warrant.bridge file|public`): a voice from someone with a GitHub account
+  and nothing else. An issue opened through the form (a record id, a stance, a statement) becomes one record in a store
+  of voices of the bridge's own: an objection a `challenge`, a support an `attest` with `stance: "support"` and no
+  verdict, each naming the account as the bridge states it (login, id, the issue's address, the SHA-256 of the body as
+  delivered). It is the bridge's statement, not the account's signature; the store gives nobody a role and no rule
+  counts it. Anything but the form as opened is refused in the bridge's own words, one record per issue, and the bridge
+  writes into no store but its own. The reader shows such a voice with its stance and the account, linked to the issue
+  (`githubOf` in `site/reader.mjs`: shown only in its shape), and the block «Object to this version» and
+  `site/object.html` have the second door. In this repository: `.github/ISSUE_TEMPLATE/voice.yml`,
+  `.github/workflows/voice-bridge.yml` (the branch `voices`) and `bridge-key.yml` (the environment `bridge`).
+  BR1–BR6, J19; mutants T203–T220.
+- The reader on a phone: a paragraph or list item wraps a name with no space in it (`site/style.css`). A lineage accepted
+  by an actor named by a hash (`checker sha256:…`) made the page 610 px wide at 375; measured 375 after.
+
 - A pull request of verdicts only that conflicts with the base is carried by a new one: the gate merges the base into
   its head (records only, the union of the stores) on a new branch under the same prefix, opens it as a pull request,
   starts CI, closes the old one with a comment naming the new one and deletes its branch. It no longer moves the old

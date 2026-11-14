@@ -10,6 +10,7 @@
 //
 //   node site/voice.mjs --steps                      the steps, with their placeholders     # canonical JSON
 //   node site/voice.mjs --version ID                 the commands for one version
+//   node site/voice.mjs --bridge ID                  the second door: the issue form's address for one version, per stance
 //   node site/voice.mjs --base URL --lineage ID      the blocks of that lineage's effective version and leaf
 //   node site/voice.mjs --with URL... --add TEXT     the `with=` list after the page's field adds TEXT
 import { canonStr } from "./warrant.mjs";
@@ -50,6 +51,22 @@ export function voiceCommands(version) {
   return STEPS.filter((s) => s.step !== "read").flatMap((s) => s.lines.map((l) => l.replaceAll(VERSION, version)));
 }
 
+// The second door, for a reader with a GitHub account and nothing else: an issue through this repository's form
+// (.github/ISSUE_TEMPLATE/voice.yml), which the bridge files as one record in its own store of voices (warrant/bridge.py,
+// .github/workflows/voice-bridge.yml). That record says that GitHub delivered the issue, opened by that account: the
+// bridge's statement, not the account's signature. `form` is the form's address, `store` where the bridge's store is
+// published (the branch `voices`).
+export const BRIDGE = { form: "https://github.com/s0fractal/warrant/issues/new?template=voice.yml",
+                        store: "https://raw.githubusercontent.com/s0fractal/warrant/voices/" };
+export const STANCES = ["objection", "support"];
+
+// The form's address with one version's id and a stance filled in (GitHub fills a form's fields from the query, by
+// their ids), or null: nothing but a 64-hex id and one of the two stances is ever put into it.
+export function bridgeLink(version, stance) {
+  if (typeof version !== "string" || !ID.test(version) || !STANCES.includes(stance)) return null;
+  return `${BRIDGE.form}&record=${version}&stance=${stance}`;
+}
+
 // The blocks of one opened lineage (reader.mjs lineage(): its versions, newest first): the effective version's and
 // the leaf's, one block when they are one version. Built from each version's id and its two flags alone, so nothing a
 // record says can reach a command.
@@ -83,6 +100,7 @@ async function main(argv) {
   const all = (name) => argv.flatMap((a, k) => (a === name && k + 1 < argv.length ? [argv[k + 1]] : []));
   let out;
   if (argv.includes("--steps")) out = { steps: STEPS, clone: CLONE, package: PACKAGE, meaning: MEANING };
+  else if (opt("--bridge") !== undefined) out = { bridge: BRIDGE, links: STANCES.map((x) => bridgeLink(opt("--bridge"), x)), bad: bridgeLink(opt("--bridge"), "accept") };
   else if (opt("--version") !== undefined) out = { commands: voiceCommands(opt("--version")) };
   else if (opt("--add") !== undefined) out = withAdded(all("--with"), opt("--add"));
   else if (opt("--base") !== undefined && opt("--lineage") !== undefined) {
@@ -95,7 +113,7 @@ async function main(argv) {
     const r = await reader.read(store, reader.receiver(store.doc, null), backend, source);
     out = { targets: targets(reader.lineage(r, opt("--lineage"))) };
   } else {
-    process.stderr.write("usage: voice.mjs --steps | --version ID | --base URL --lineage ID | [--with URL]... --add TEXT\n");
+    process.stderr.write("usage: voice.mjs --steps | --version ID | --bridge ID | --base URL --lineage ID | [--with URL]... --add TEXT\n");
     return 2;
   }
   process.stdout.write(canonStr(out) + "\n");
