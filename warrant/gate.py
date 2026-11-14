@@ -99,6 +99,7 @@ MARKS = ("<!-- warrant-gate constitutional window ", "<!-- warrant-gate brake --
 ROLE = re.compile(r"[a-z][a-z0-9-]{0,39}/[a-z][a-z0-9-]{0,39}\Z")
 REPOSITORY_DOC = "repository/3"
 RECORDS, BLOBS = ".warrant/records.jsonl", ".warrant/blobs/"
+RULES_FILE = ".warrant/v3.json"             # the publisher's rules, the projection of its rules@1 lineage
 REGULAR = "100644"
 FILE_MODES = (REGULAR, "100755", "000000")      # a regular file, an executable one, none (deleted): never a link or a submodule
 # Every ending a module's file can have: this interpreter's own list (FileFinder tries extension modules first, then
@@ -488,7 +489,7 @@ class Base:
     """What the base commit says: the gate's configuration (.warrant/merge.json) and the receiver's
     (.warrant/v3.json: the repository, the trust and the profile every head is assessed under)."""
 
-    FILES = (".warrant/merge.json", ".warrant/v3.json")
+    FILES = (".warrant/merge.json", RULES_FILE)
 
     def __init__(self, root, commit):
         self.root, self.commit = root, commit
@@ -503,11 +504,11 @@ class Base:
             except (KeyError, ValueError) as e:
                 raise Refused(f"{p} at the base {commit[:12]}: {type(e).__name__} {e}", "BASE_CONFIG") from None
         self.gate = gate_config(docs[".warrant/merge.json"])
-        v3 = docs[".warrant/v3.json"]
+        v3 = docs[RULES_FILE]
         if not (isinstance(v3, dict) and set(v3) == {"warrant", "repository", "trust", "profile"} and v3["warrant"] == REPOSITORY_DOC
                 and isinstance(v3["repository"], str) and REPO_NAME.match(v3["repository"])
                 and E.trust_problem(v3["trust"]) is None and E.profile_problem(v3["profile"]) is None):
-            raise Refused(f".warrant/v3.json at the base is not a {REPOSITORY_DOC} document", "BASE_CONFIG")
+            raise Refused(f"{RULES_FILE} at the base is not a {REPOSITORY_DOC} document", "BASE_CONFIG")
         self.repository, self.trust, self.profile, self.v3 = v3["repository"], v3["trust"], v3["profile"], v3
 
     def holders(self, role):
@@ -698,7 +699,7 @@ def _shared(a, root, b, pr, checks, now=None):
 
 # The publisher's rules as records (docs/V3.md §14, stage 2a): `rules@1` versions, whose body less its `state` is
 # .warrant/v3.json, the file being their projection. The engine still reads the file.
-RULES, RULES_FILE = "rules@1", ".warrant/v3.json"
+RULES = "rules@1"
 RULES_SCHEMA = {"name": RULES, "fields": {"state": "str", "warrant": "str", "repository": "str", "trust": "obj",
                                           "profile": "obj"},
                 "states": {"in force": None}, "closed": [], "successors": {"in force": ["pr/acceptor"]}}
@@ -718,6 +719,20 @@ def rules_in_force(rep):
     return lins[0], lin["effective"], None
 
 
+def _genesis(root, b, head, rep, now, why):
+    """[(code, detail)] of a head that brings the first rules@1 version to a base that records none: it must record the
+    base's file, and the head's file must be the base's, canonically: the genesis records the rules and changes none."""
+    try:
+        same = C.canon(json.loads(files_at(root, head, [RULES_FILE])[RULES_FILE])) == C.canon(b.v3)
+    except (KeyError, ValueError):
+        same = False
+    body = {k: v for k, v in rep["_recs"][now]["body"].items() if k != "state"} if now else None
+    if why or now is None or not same or body is None or C.canon(body) != C.canon(b.v3):
+        return [why or ("RULES_GENESIS", f"the first {RULES} version is the base's {RULES_FILE} unchanged, in a pull "
+                        "request that changes nothing else of the rules (the analysis session on #400)")]
+    return []
+
+
 def rules_reasons(root, b, head, rep):
     """[(code, detail)]: what keeps the head's rules from being the base's or their recorded successor. Once the base
     holds a rules@1 version in force, the head's version in force (its records read under the BASE's trust and
@@ -731,17 +746,7 @@ def rules_reasons(root, b, head, rep):
         return [why]
     L, now, why = rules_in_force(rep)
     if before is None:                              # no rules recorded at the base: v3.json is governed as before,
-        if L is None:                               # unless the head brings the first version (the genesis), which
-            return []                               # records the base's rules and changes nothing
-        try:
-            same = C.canon(json.loads(files_at(root, head, [RULES_FILE])[RULES_FILE])) == C.canon(b.v3)
-        except (KeyError, ValueError):
-            same = False
-        body = {k: v for k, v in rep["_recs"][now]["body"].items() if k != "state"} if now else None
-        if why or now is None or not same or body is None or C.canon(body) != C.canon(b.v3):
-            return [why or ("RULES_GENESIS", f"the first {RULES} version is the base's {RULES_FILE} unchanged, in a "
-                            "pull request that changes nothing else of the rules (the analysis session on #400)")]
-        return []
+        return [] if L is None else _genesis(root, b, head, rep, now, why)       # unless the head brings the first
     if why or now is None:
         return [why or ("RULES_UNRECORDED", f"no {RULES} version is in force at the head under the base's rules")]
     try:
