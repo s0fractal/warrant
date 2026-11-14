@@ -954,6 +954,31 @@ def vectors_current(tally):
           p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "", p.stdout[-600:] + p.stderr[-600:])
 
 
+def frame_parity_cases():
+    """J19: warrant.graph.frame (the frame the verifier's `absence` proves over, stage 3) is site/reader.mjs frame(),
+    one predicate: on this repository's store, for a lineage of each schema and the widest ones, the reader's --frame
+    ids equal the Python ones."""
+    from warrant import graph as G
+    from warrant import repo as RP
+    rep = RP.Repo(ROOT).report()
+    by = {}
+    for L, lin in sorted(rep["lineages"].items()):
+        by.setdefault(lin["schema"], []).append(L)
+    picks = sorted({ls[0] for ls in by.values()} | {ls[-1] for ls in by.values()})
+    srv, base = _serve(ROOT)
+    bad = []
+    try:
+        for L in picks:
+            _, out = _reader(base, "--frame", L)
+            js = (out.get("frame") or {}).get("ids")
+            if js != G.frame(rep, [L]):
+                bad.append((L[:12], len(js or []), len(G.frame(rep, [L]))))
+    finally:
+        srv.shutdown()
+    check("J19 graph.frame is the reader's frame(): the same sorted ids for a first and a last lineage of every schema "
+          f"of this store ({len(picks)} lineages)", picks and not bad, bad)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=3)
@@ -978,6 +1003,7 @@ def main():
     browser_door_cases()
     browser_watch_cases()
     browser_toward_cases()
+    frame_parity_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()

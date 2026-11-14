@@ -20,7 +20,6 @@ store that has no witness is unchanged.
     python -m warrant.snapshot prove --use SNAPSHOT --roots ID ...   # a witness/1 for warrant verify --witness
     python -m warrant.snapshot show [--json]                  # the store's roots now, and each witness's leaf"""
 import argparse
-import json
 import subprocess
 import sys
 
