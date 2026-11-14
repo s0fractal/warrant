@@ -13,8 +13,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   and a mutant whose case no clean run printed is NO_SECTION, never a full run. Test files without sections (core,
   shapes, the plugin's) run whole; CI's suites still run every file whole. Measured on 80 mutants (40 of tools_test,
   40 of agent_test, one laptop, 4 jobs): 496 s before, 36 s after, the map included, 80 of 80 killed both ways. CI runs
-  of one pull request cancel the older one; runs on master and dispatched runs are never cancelled. HM1–HM3; mutants
-  T198–T202 (the harness and `tests/world.py` themselves).
+  of one pull request cancel the older one; runs on master and dispatched runs are never cancelled. Each set of two or
+  more sections some mutant runs together is run so, unmutated, first (Codex on #391: two sections that pass alone
+  failed together and credited a kill); a clean run past the timeout refuses as a red one does; the temporary places
+  are emptied at the start (a killed run ends at os._exit). Not seen: a later section's state that would hide a kill in
+  a whole run; `--whole` runs every mutant against its whole file. In CI on this pull request the mutant parts took 3 to
+  4 minutes (12 to 28 before) and the whole run 7. HM1–HM5; mutants T199–T205 (the harness and `tests/world.py`
+  themselves).
 
 - A pull request of verdicts only that conflicts with the base is carried by a new one: the gate merges the base into
   its head (records only, the union of the stores) on a new branch under the same prefix, opens it as a pull request,

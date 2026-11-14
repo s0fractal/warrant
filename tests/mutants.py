@@ -13,7 +13,7 @@ caused by its isolation as a kill). A test file without sections runs whole, onc
 case no clean run printed is NO_SECTION, never a full run that might find it. The test files still run whole in CI's
 suites.
 
-    python3 tests/mutants.py [IDS ...] [--shard K/N] [--matrix OUT.json]
+    python3 tests/mutants.py [IDS ...] [--shard K/N] [--matrix OUT.json] [--whole]
     python3 tests/mutants.py --merge OUT.json PART.json ...     # the union is every id once, each KILLED
     python3 tests/mutants.py --list                             # {id: [file, test, cases]} as JSON
 
@@ -287,11 +287,13 @@ MUTANTS = [
     ("T181", "warrant/resolve.py", '        got = p.bytes_of(i)\n        if got:\n            return "RESOLVED", got[1]', '        got = None\n        if got:\n            return "RESOLVED", got[1]', TOOLS, ["RV1"]),
     ("T182", "warrant/resolve.py", '    if home is not None and home.holds(i):', '    if False:', TOOLS, ["RV1"]),
     # the harness itself (tests/mutants.py, tests/world.py): what every KILLED above rests on
-    ("T198", "tests/mutants.py", '            if rc:\n                refused.append', '            if False:\n                refused.append', TOOLS, ["HM1"]),
     ("T199", "tests/mutants.py", '    if not cases or not all(homes):\n        return None', '    if not cases or not all(homes):\n        return ["main"]', TOOLS, ["HM2"]),
     ("T200", "tests/world.py", '            sys.stdout.flush()\n            os._exit(1)\n', '            pass\n', TOOLS, ["HM3"]),
     ("T201", "tests/world.py", '    if unknown:\n        print(f"NO_SUCH_SECTION {unknown}", flush=True)\n        return 2\n', '', TOOLS, ["HM3"]),
     ("T202", "tests/mutants.py", 'add("main" if not sec or where == "main" else where)\n', 'add("main")\n', TOOLS, ["HM1"]),
+    ("T203", "tests/mutants.py", '        refused += combinations(rows, ids, where, places)\n', '', TOOLS, ["HM4"]),
+    ("T204", "tests/mutants.py", '\n            if rc != 0:                      # red, or past the timeout', '\n            if rc:                      # red, or past the timeout', TOOLS, ["HM1", "HM5"]),
+    ("T205", "tests/mutants.py", 'if s and len(s) > 1})\n', 'if s and len(s) > 2})\n', TOOLS, ["HM4"]),
     ("T184", "warrant/drift.py", 'if r["kind"] != "attest" or rep["_basis"].get(i) != "SIGNED" or b.get("verdict") != "accept":', 'if r["kind"] != "attest" or b.get("verdict") != "accept":', TOOLS, ["DR31"]),
     ("T185", "warrant/drift.py", '        elif isinstance(b.get("files"), dict) and counted(rep, r):', '        elif False:', TOOLS, ["DR30"]),
     ("T186", "warrant/cli.py", '    if a.as_of is None and Path(store).name == ".warrant":\n        from . import drift as D\n        view = E.View(', '    if False:\n        from . import drift as D\n        view = E.View(', TOOLS, ["DR30"]),
@@ -962,8 +964,8 @@ def case_map(tests, places):
         finally:
             free.put((copy, tmp))
         with lock:
-            if rc:
-                refused.append(f"{t} {sec or '(whole)'}\n{text[-1500:]}")
+            if rc != 0:                      # red, or past the timeout (None): no case it printed may be credited
+                refused.append(f"{t} {sec or '(whole)'}{' TIMEOUT' if rc is None else ''}\n{text[-1500:]}")
             for case, where in rows:
                 out[t].setdefault(case, set()).add("main" if not sec or where == "main" else where)
     with ThreadPoolExecutor(len(places)) as pool:
@@ -981,6 +983,27 @@ def home_sections(cases_of, cases):
     return ["main"] if "main" in secs else sorted(secs)
 
 
+def combinations(rows, ids, where, places):
+    """[refusal]: each set of two or more sections some mutant of `ids` runs together, run so, unmutated. Each section
+    passing alone does not make them pass together: one may leave the state another reads (Codex on #391 at 52e05290:
+    a and c, with b between them clearing it, failed together and credited a kill to a mutant of an unused file)."""
+    combos = sorted({(rows[i][4], tuple(s)) for i in ids
+                     for s in [home_sections(where.get(rows[i][4], {}), rows[i][5])] if s and len(s) > 1})
+    copy, tmp = places[0]
+    out = []
+    for test, secs in combos:
+        rc, text = run(test, copy, tmp, {"WARRANT_SECTION": ",".join(secs)})
+        if rc != 0:
+            out.append(f"{test} {','.join(secs)}{' TIMEOUT' if rc is None else ''}\n{text[-1500:]}")
+    return out
+
+
+# --whole: every mutant runs its whole test file, as before sections (no map, no stop). The default runs sections only,
+# so a mutant killed alone is not also run against the whole file; a later section's state hiding the kill in a whole
+# run is the residual (docs/REPOSITORY.md). --whole is for when time does not press.
+WHOLE = False
+
+
 def shard(ids, k, n):
     return [i for j, i in enumerate(ids) if j % n == k - 1]
 
@@ -992,11 +1015,21 @@ def run_mutants(ids):
     places = [(COPY, TMP)] + [(COPY.with_name(f"mutants-{w}"), TMP.with_name(f"mutants-tmp-{w}")) for w in range(1, workers)]
     for d, t in places:
         copy_tree(d)
+        shutil.rmtree(t, ignore_errors=True)     # a killed run ends at os._exit: its temporary directories stay behind
         t.mkdir(parents=True, exist_ok=True)
     rows = {m[0]: m for m in MUTANTS}
-    where, refused = case_map({rows[i][4] for i in ids}, places)
+    if WHOLE:
+        where, refused = {}, []
+        for test in sorted({rows[i][4] for i in ids}):
+            rc, out = run(test, COPY)
+            if rc != 0:
+                refused.append(f"{test} (whole)\n{out[-1500:]}")
+    else:
+        where, refused = case_map({rows[i][4] for i in ids}, places)
+        refused += combinations(rows, ids, where, places)
     if refused:
-        print("BASELINE_RED (a section does not pass alone, unmutated)\n" + "\n".join(refused))
+        print("BASELINE_RED (a section, a set of sections a mutant runs, or a file does not pass unmutated)\n"
+              + "\n".join(refused))
         return None
     free, lock = queue.Queue(), threading.Lock()
     for p in places:
@@ -1010,7 +1043,7 @@ def run_mutants(ids):
             f = copy / path
             src = f.read_text()
             stale = [o for o, _ in pairs if src.count(o) != 1]
-            secs = home_sections(where.get(test, {}), cases)
+            secs = ["main"] if WHOLE else home_sections(where.get(test, {}), cases)
             if stale:
                 r = {"id": i, "outcome": "STALE", "detail": f"a find text does not occur once in {path}: {stale[0][:60]!r}"}
             elif secs is None:
@@ -1021,7 +1054,7 @@ def run_mutants(ids):
                 for o, n in pairs:
                     mutated = mutated.replace(o, n)
                 f.write_text(mutated)
-                env = {"WARRANT_STOP": ",".join(cases), **({} if secs == ["main"] else {"WARRANT_SECTION": ",".join(secs)})}
+                env = ({} if WHOLE else {"WARRANT_STOP": ",".join(cases)}) | ({} if secs == ["main"] else {"WARRANT_SECTION": ",".join(secs)})
                 try:
                     rc, out = run(test, copy, tmp, env)
                 finally:
@@ -1075,10 +1108,13 @@ def main(argv):
         Path(out).write_text(json.dumps({"definition": definition(), "rows": sorted(rows, key=lambda r: r["id"])}, indent=1))
         print(f"merged {len(rows)} rows of {len(want)} mutants; missing or repeated: {bad or 'none'}; not killed: {notkilled or 'none'}")
         return 1 if bad or notkilled else 0
+    global WHOLE
     matrix, k, n, ids = None, 1, 1, []
     it = iter(argv)
     for a in it:
-        if a == "--matrix":
+        if a == "--whole":
+            WHOLE = True
+        elif a == "--matrix":
             matrix = next(it)
         elif a == "--shard":
             k, n = map(int, next(it).split("/"))

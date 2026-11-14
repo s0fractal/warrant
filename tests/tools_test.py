@@ -2227,6 +2227,35 @@ def harness_cases():
           and bad.returncode == 2 and "NO_SUCH_SECTION" in bad.stdout
           and whole.returncode == 0 and all(f"ok   {c}" in whole.stdout for c in ("H1", "H2", "H3", "H4")),
           (out.returncode, out.stdout[-200:], bad.returncode, bad.stdout[-100:], whole.stdout[-200:]))
+    combo = Path(tempfile.mkdtemp())
+    shutil.copytree(ROOT / "warrant", combo / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
+    (combo / "tests").mkdir()
+    shutil.copy2(ROOT / "tests" / "world.py", combo / "tests" / "world.py")
+    (combo / "tests" / "fake_test.py").write_text(
+        "import sys\nfrom world import check, run_sections\nSTATE = []\n\n\ndef a_cases():\n    STATE.append(1)\n"
+        "    check(\"H1\", True)\n\n\ndef b_cases():\n    STATE.clear()\n    check(\"H2\", True)\n\n\ndef c_cases():\n"
+        "    check(\"H3\", not STATE)\n\n\nif __name__ == \"__main__\":\n    sys.exit(run_sections([a_cases, b_cases, c_cases]))\n")
+    (combo / "unused.py").write_text("UNUSED = 0\n")
+    keep = (MU.COPY, MU.TMP, MU.jobs, MU.MUTANTS, MU.copy_tree)
+    MU.COPY, MU.TMP = combo.parent / (combo.name + "-copy"), combo.parent / (combo.name + "-tmp")
+    MU.jobs, MU.copy_tree = (lambda: 1), (lambda dest: shutil.copytree(combo, dest, dirs_exist_ok=True))
+    MU.MUTANTS = [("PROBE", "unused.py", "UNUSED = 0", "UNUSED = 1", "tests/fake_test.py", ["H1", "H3"])]
+    with contextlib.redirect_stdout(io.StringIO()) as said:
+        rows = MU.run_mutants(["PROBE"]) if case_map else [{"outcome": "KILLED"}]
+    real_run = MU.run
+    MU.run = lambda test, cwd, tmp=MU.TMP, extra=None: (None, "ok   H2 printed before it hung\n") \
+        if (extra or {}).get("WARRANT_SECTION") == "b_cases" else real_run(test, cwd, tmp, extra)
+    MU.MUTANTS = [("PROBE2", "unused.py", "UNUSED = 0", "UNUSED = 1", "tests/fake_test.py", ["H2"])]
+    with contextlib.redirect_stdout(io.StringIO()) as said2:
+        rows2 = MU.run_mutants(["PROBE2"]) if case_map else [{"outcome": "KILLED"}]
+    MU.run = real_run
+    MU.COPY, MU.TMP, MU.jobs, MU.MUTANTS, MU.copy_tree = keep
+    check("HM4 the sections a mutant runs together are run together unmutated first: a and c pass alone and fail together "
+          "(b clears what a leaves), so no mutant of theirs is credited a kill, the whole run refused (BASELINE_RED; "
+          "Codex on #391 at 52e05290, its F1)", rows is None and "BASELINE_RED" in said.getvalue(), (rows, said.getvalue()[-300:]))
+    check("HM5 a section that runs past the timeout unmutated refuses the run as a red one does: the cases it printed "
+          "before it hung credit no kill (the analysis session on #391)", rows2 is None and "TIMEOUT" in said2.getvalue(),
+          (rows2, said2.getvalue()[-300:]))
 
 
 if __name__ == "__main__":
