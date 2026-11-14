@@ -6,6 +6,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The reader says when the publisher's rules change (stage 2a, docs/V3.md §14): the summary names the store's `rules@1`
+  lineage and its version in force (`publisher_rules`, only for a store that records its rules), a mark keeps the
+  version it was set under (`rules_version`), and a mark set under rules the publisher has since changed is refused
+  naming the change, old version to new; the page says it once per store address beside its status (the version last
+  read, kept in this browser). A store with no `rules@1` lineage, and a mark from before, read as before. J21.
+
 - What was asked of an actor: `graph.frontier` has a fourth list, `asked`: each lineage's latest version whose body
   names the actor in `opened.for` (a string; any schema, a guard or none), not its own and not yet attested or
   challenged by it (minds Q1 81d731d3, a question to codex that no guard waits on and nothing showed him). The agent's
