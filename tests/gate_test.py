@@ -21,7 +21,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from world import KEYS, Repo, check, git, run_sections
+from world import KEYS, ROLES, Repo, check, git, run_sections
 
 from warrant import gate as GT
 from warrant.store import _line_id
@@ -243,6 +243,30 @@ def verdict_cases():
     check("E23 verdicts only from a branch outside codex/verdicts/ are refused", codes(setup(branch="feature")) == {"VERDICTS_BRANCH"})
     check("E18 a verdict the base holds already is refused", "VERDICT_NOT_NEW" in codes(setup(again=True)))
     check("E19 a verdict on a version the base does not hold due for its actor is refused", codes(setup(due=False)) == {"VERDICT_NOT_DUE"})
+    def schema_pr(author=True):
+        roles = dict(ROLES, **{"schema/author": ["alice", "bob"] if author else ["alice"]})
+        r = Repo(roles=roles)
+        r.profile["quorum"] = {"schema/author": 2}
+        r.write_config()
+        (r.dot / "merge.json").write_text(json.dumps(MERGE))
+        for s in r.schemas.values():                     # the bootstrap schemas at their quorum, as in a live store
+            r.attest("bob", s)
+        sch = r.put("alice", "schema", {"name": "thing@1", "fields": {"state": "str"}, "states": {"open": None},
+                                        "closed": [], "successors": {}})
+        git(r.root, "init", "-q", "-b", "master")
+        base = r.commit("base")
+        git(r.root, "checkout", "-q", "-b", "verdict")
+        r.attest("bob", sch)
+        head = r.commit("bob backs the schema")
+        facts = {"number": 9, "state": "open", "draft": False, "base": "master", "head": head, "labels": [],
+                 "branch": "codex/verdicts/x", "head_repo": REPO}
+        return GT.assess(r.root, base, facts, green(head))
+    backed, stranger = schema_pr(), schema_pr(author=False)
+    check("E96 a pull request of verdicts only that backs a schema short of its quorum, by a roadmap/acceptor holding "
+          "schema/author, is due and eligible (rules@1 e8aacad8 waited for Codex with no duty naming him); by one who holds "
+          "no schema/author it is not due", backed.eligible and backed.facts.get("verdicts") and codes(stranger) == {"VERDICT_NOT_DUE"},
+          (backed.reasons, stranger.reasons))
+
     def claims_pr(branch="claims/verdicts/x", state="backed", verifier=True):
         r = Repo()
         r.trust["keys"]["claims-checker"] = [KEYS["dave"].public]

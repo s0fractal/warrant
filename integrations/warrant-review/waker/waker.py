@@ -29,7 +29,9 @@ each with its own base branch, bare mirror, state directory (below, HOME is that
 
   5. then the roadmap versions due for Codex's verdict: the base tree's `warrant.roadmap due --actor
      codex` on the base's own records (the leaf of a goal or obligation lineage whose guard waits only for an
-     attest by a role codex holds, nothing it requires open, neither accepted nor challenged by codex). At most one is woken per run, and none while an open pull request from a branch of this
+     attest by a role codex holds, nothing it requires open, neither accepted nor challenged by codex; a version
+     whose body asks codex, `opened.for`; and a schema record short of its schema/author quorum that codex may
+     back, schema `schema` in the entry, woken with its own prompt). At most one is woken per run, and none while an open pull request from a branch of this
      repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet: a limit of one verdict pull
      request at a time; until G11 two of them rendered the same generated views from different bases: the gate's
      survey says which are open, or, when `due` refused the base, e.g. one without .warrant/merge.json, `gh pr list`). Its memo is HOME/accepts/<closure>-<item>.json, its
@@ -1179,6 +1181,18 @@ def accept_prompt(w, c, base, path, rev=None):
     plugin = w.plugin
     def ids(xs):
         return "; ".join(str(x)[:200] for x in xs[:20]) or "none"
+    if c.get("schema") == "schema":      # a schema short of its schema/author quorum, which Codex may back
+        return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on a roadmap version\"; {who(rev)}. "
+                f"On {w.repository} {w.branch} M {base}, the schema record T {c['closure']} is short of its schema/author "
+                f"quorum, and you hold schema/author: {json.dumps(c['statement'])}. T's references: {ids(c['refs'])}. "
+                f"Your worktree is {path}, detached at M (its remote origin is the repository). The plugin's stdio MCP "
+                f"client is {plugin / CLIENT}. Read T's body (its fields, states, closed states and successors) against "
+                f"docs/V3.md §4 and the code that files and reads records of it; then back it (an attest with no schema, "
+                f"{{\"verdict\": \"accept\"}}, targeting T: only that counts toward the quorum), or challenge T, "
+                f"through MCP, into this worktree's store. Leave there only that record and the blobs it cites; do not "
+                f"commit, push or open a pull request: the waker checks them under the base's keys for {ACCEPTOR} and "
+                f"publishes them on {VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}. These facts come from "
+                f"`warrant.roadmap due --actor {ACCEPTOR}` at M; check them yourself before you rely on them.")
     if c.get("asked"):                   # a question addressed to Codex (opened.for), which no guard waits on
         return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on a roadmap version\"; {who(rev)}. "
                 f"On {w.repository} {w.branch} M {base}, the version T {c['closure']} of the {c.get('schema')} lineage D "
@@ -1331,7 +1345,7 @@ def acceptance_lines(w, base, found, dry, held):
         woken, line = w.accept(c, base, why_not)
         if woken:
             why_not = "next run: one verdict at a time"
-        out.append(f"  ACCEPT {c['closure'][:12]} of {c.get('goal')} duty {c['duty'][:12]}: {line}")
+        out.append(f"  ACCEPT {c['closure'][:12]} of {c.get('goal') or c.get('schema')} duty {c['duty'][:12]}: {line}")
     return out
 
 

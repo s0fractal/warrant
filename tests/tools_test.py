@@ -2593,6 +2593,44 @@ def asked_cases():
           "verdict: no guard waits on it)", after_attest == [] and after_challenge == [], (after_attest, after_challenge))
 
 
+def schemas_due_cases():
+    """A schema short of its schema/author quorum is due for each holder who may back it (gate.schemas_due, `roadmap
+    due`, the review waker's queue): rules@1 (e8aacad8, #400) waited for Codex with no duty naming him."""
+    from warrant import gate as GT
+    from warrant import roadmap as RM
+
+    def repo():
+        r = Repo(roles={"schema/author": ["alice", "bob"]})
+        r.profile["quorum"] = {"schema/author": 2}
+        r.write_config()
+        return r
+    body = {"name": "thing@1", "fields": {"state": "str"}, "states": {"open": None}, "closed": [], "successors": {}}
+    r = repo()
+    sch = r.put("alice", "schema", body)
+
+    def rep(x=r):
+        return RP.Repo(x.root).report()
+
+    def due(actor, x=r):                          # the bootstrap schemas wait for a second author here too: thing@1 alone
+        return [(d["closure"], d["schema"], d["asked"]) for d in RM.due(rep(x), x.profile, actor)
+                if d["schema"] == "schema" and rep(x)["_recs"][d["closure"]]["body"]["name"] == "thing@1"]
+    before = rep()
+    bob, alice, carol = due("bob"), due("alice"), due("carol")
+    check("SD1 a schema short of its quorum is due for a schema/author who may back it (asked: any verdict answers), not "
+          "for its filer and not for an actor without the role; the gate's due set holds it as `roadmap due` does",
+          sch in before["schemas_pending"] and bob == [(sch, "schema", True)] and alice == [] and carol == []
+          and sch in [d["version"] for d in GT.schemas_due(before, r.profile, "bob")]
+          and sch not in [d["version"] for d in GT.schemas_due(before, r.profile, "alice")], (bob, alice, carol))
+    r.attest("bob", sch)
+    after = rep()
+    r2 = repo()
+    s2 = r2.put("alice", "schema", body)
+    r2.put("bob", "challenge", {"target": s2, "statement": "states name no closed state"}, refs=[s2])
+    check("SD2 bob's acceptance counts the schema (no longer pending, so due for no one), and a challenge by him also "
+          "answers it", "thing@1" in after["schemas"] and sch not in after["schemas_pending"] and due("bob") == []
+          and due("bob", r2) == [], (after["schemas"], due("bob"), due("bob", r2)))
+
+
 if __name__ == "__main__":
     sys.exit(run_sections([
         claims_cases,
@@ -2604,6 +2642,7 @@ if __name__ == "__main__":
         drift_impact_cases,
         review_cases,
         roadmap_cases,
+        schemas_due_cases,
         cli_cases,
         chain_join_cases,
         home_cases,

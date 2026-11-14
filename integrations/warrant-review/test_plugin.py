@@ -733,6 +733,13 @@ def asking():
           and not WAKER.binds(answer, closure) and WAKER.binds({"kind": "challenge", "body": {"target": q}}, asked),
           "a question asked of Codex is put to him as a question (not a closure awaiting acceptance), and an attest of "
           "any verdict on it is a publishable answer; on a closure only an acceptance or a challenge is", say[:200])
+    schema = dict(asked, schema="schema", statement="the schema rules@1, filed by claude, is short of its quorum")
+    told = WAKER.accept_prompt(W(), schema, "cd" * 20, Path("/tmp/x"))
+    backing = {"kind": "attest", "schema": None, "body": {"target": q, "verdict": "accept"}}
+    check("W25", "schema record T" in told and "attest with no schema" in told and "only that counts toward the quorum" in told
+          and "opened.for" not in told and WAKER.binds(backing, schema),
+          "a schema short of its schema/author quorum (`roadmap due`, schema `schema`) is put to Codex as a schema to back "
+          "or challenge, not as a question, and his acceptance of it is publishable", told[:200])
 
 
 def carrying_answers():

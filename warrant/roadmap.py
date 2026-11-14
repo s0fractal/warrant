@@ -19,7 +19,7 @@ import re
 import sys
 
 from . import records as R
-from .gate import due_for
+from .gate import due_for, schemas_due
 from .repo import Failed, Repo, dump, emit, env_root, load_key, main
 
 GOAL, OBLIGATION = "goal@1", "obligation@1"
@@ -42,6 +42,12 @@ def due(rep, profile, actor):
                     "goal": keys.get(b.get("answers")) or b.get("key"), "statement": b.get("statement") or b.get("text"),
                     "evidence": sorted(b.get("evidence") or []), "refs": list(b.get("refs") or []),
                     "subject": b.get("subject"), "requires": g.get("requires", []), "asked": bool(d.get("asked"))})
+    for d in schemas_due(rep, profile, actor):      # a schema short of its quorum that the actor may back
+        s = recs[d["version"]]
+        out.append({"closure": d["version"], "item": 0, "duty": d["version"], "schema": "schema", "goal": None,
+                    "statement": f"the schema {d['name']}, filed by {s['actor']}, is short of its schema/author quorum: back "
+                                 "it (an attest without a schema, verdict accept, targeting it) or challenge it",
+                    "evidence": [], "refs": list(s.get("refs") or []), "subject": None, "requires": [], "asked": True})
     return out
 
 
