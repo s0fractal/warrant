@@ -6,6 +6,16 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- Witnessed roots (docs/V3.md §16; stage 3 of the plan): `warrant/merkle.py` gives a store two Merkle roots, its record
+  ids and its reverse index (target → every attest and challenge on it), with proofs a reader checks against a root
+  alone; `snapshot@1` (`warrant snapshot schema / witness / prove / show`) is a witness's lineage of what it saw, and
+  a witness refuses a store that lost a record it witnessed. `warrant verify --witness FILE` answers `absence`: against
+  the witnessed index root, every attest and challenge on the roots' frame is in the package, or what is missing (and
+  the root is not relied on); the witness must be one the receiver's profile names `witness`; two snapshots after the
+  same one are equivocation, exit 4; `--extends HELD` refuses a rollback. `completeness` stays UNATTESTED.
+  `warrant/graph.py` `frame` is the reader's `frame()` (J19). Measured on this store: a frame's proof 4.3 KB median
+  as JSON, 1.29 times the frame (68 of 99 over 1); 0.56 in raw bytes (none over 1). WT1–WT6; mutants WM1, WM3–WM14.
+
 - A mutant runs only the sections of its test file that hold its cases (a test file's `*_cases` functions,
   `tests/world.py` `run_sections`), and its run ends at the first `FAIL` of one of its cases; the verdict is the same
   printed `FAIL <case>` line. Which section holds a case is read from clean runs of each section alone, unmutated, in

@@ -800,13 +800,16 @@ def merkle_cases():
     rec_in, rec_out = M.check(M.prove_record(snap, d), roots["records"]), M.check(M.prove_record(snap, "f" * 64), roots["records"])
     forged = dict(M.prove_said(snap, d), **{"in": None, "before": None, "after": M.prove_said(snap, d)["in"]})
     other = M.check(M.prove_said(snap, d), "0" * 64)
+    lied = M.prove_said(snap, d)
+    lied["in"]["said"] = [x for x in lied["in"]["said"] if x[1] != c]   # the leaf's bytes kept, its list edited
     check("WT2 the reverse index's leaf for a version says every attest and challenge against it; a version nothing "
           "targets is proved absent by its neighbours; a record is proved in or out of the records tree; a leaf passed "
-          "off as a neighbour of itself, neighbours that skip its leaf (not adjacent), two on the same side of it, or a proof "
-          "against another root, proves nothing",
+          "off as a neighbour of itself, neighbours that skip its leaf (not adjacent), two on the same side of it, a list that is not the "
+          "one the leaf's digest names, or a proof against another root, proves nothing",
           said == (True, sorted([["attest", a], ["challenge", c]])) and none == (True, []) and rec_in == (True, True)
           and rec_out == (True, False) and M.check(forged, roots["index"])[0] is False and other[0] is False
-          and 0 < p < len(keys) - 1 and M.check(skip, roots["index"])[0] is False and M.check(above, roots["index"])[0] is False,
+          and 0 < p < len(keys) - 1 and M.check(skip, roots["index"])[0] is False and M.check(above, roots["index"])[0] is False
+          and M.check(lied, roots["index"])[0] is False,
           (said, none, rec_in, rec_out, other, p, len(keys)))
 
 
@@ -861,19 +864,13 @@ def witness_cases():
           full["absence"]["holds"] and full["absence"]["in"] == rep["_recs"][s2]["body"]["index"]
           and omit["absence"]["missing"] == [c] and not omit["rely"] and not nobody["absence"]["holds"]
           and full["completeness"]["attested"] == "UNATTESTED", (full["absence"], omit["absence"], nobody["absence"]))
-    resized, passing = json.loads(json.dumps(w)), []
-    for i, x in resized["said"].items():
-        for grow in (1, 2, 3):
-            y = dict(x, size=x["size"] + grow)
-            if M.check(y)[0]:                            # a left leaf's path holds at a larger size too
-                resized["said"][i] = y
-                passing.append(i)
-                break
-    other_size = V.verify(package_of(r, [d]), T, Pf, witness=resized)
-    check("WT6 a proof is read at the size of the index the witness signed: one at another size that its own root and "
-          "path accept still proves nothing (RFC 9162 binds the size through the root, not through a leaf's path)",
-          passing and not other_size["absence"]["holds"] and set(passing) <= set(other_size["absence"]["unproved"]),
-          (passing, other_size["absence"]))
+    hidden = json.loads(json.dumps(w))
+    leaf = hidden["said"]["proofs"][d]["in"]
+    leaf["said"] = [x for x in leaf["said"] if x[1] != c]                # the challenge taken out of d's leaf
+    edited = V.verify(package_of(r, [d], drop={c}), T, Pf, witness=hidden)
+    check("WT6 the proofs are read at the root and size the witness signed: a leaf edited to drop a challenge (so that "
+          "a package leaving it out would pass) proves nothing, and the package is not relied on",
+          d in edited["absence"]["unproved"] and not edited["absence"]["holds"] and not edited["rely"], edited["absence"])
     back = V.verify(package_of(r, [d]), T, Pf, witness=SN.prove(rp, s1, [d]), extends=s2)
     ahead = V.verify(package_of(r, [d]), T, Pf, witness=w, extends=s1)
     b = rep["_recs"][s2]["body"]

@@ -248,11 +248,11 @@ def absence(doc, snap, rep, roots, trust, profile, extends=None):
     out["frame"] = len(ids)
     size = (b.get("size") or {}).get("index")
     for i in ids:
-        proof = doc["said"].get(i) or {}
-        holds, said = M.check(proof, b["index"])
-        # the size is the witness's, as signed: RFC 9162 binds it through the root, not through a leaf's path, and the
-        # neighbours of an absence are adjacent only in a tree of that size
-        if not holds or proof.get("tree") != "index" or proof.get("size") != size or proof.get("key") != i:
+        # read at the witness's root and size, as signed: RFC 9162 binds the size through the root, not through a
+        # leaf's path, and the neighbours of an absence are adjacent only in a tree of that size
+        proof = M.unpack(doc["said"], i, b["index"], size) if isinstance(size, int) else None
+        holds, said = M.check(proof, b["index"]) if proof else (False, None)
+        if not holds:
             out["unproved"].append(i)
             continue
         out["missing"] += [x for _, x in said if x not in snap.lines]

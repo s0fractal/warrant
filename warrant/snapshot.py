@@ -123,7 +123,7 @@ def prove(repo, use, roots):
     ids = sorted(set(G.frame(rep, sorted({root_of.get(i, i) for i in roots}))) | {i for i in roots if i in then.lines})
     lines = [envs[0] for i, envs in sorted(snap.lines.items()) if envs[0]["record"]["actor"] == r["actor"]
              and envs[0]["record"].get("schema") == NAME and envs[0]["record"]["kind"] == "entity"]
-    return {"warrant": "witness/1", "lines": lines, "use": use, "said": {i: M.prove_said(then, i) for i in ids}}
+    return {"warrant": "witness/1", "lines": lines, "use": use, "said": M.pack({i: M.prove_said(then, i) for i in ids})}
 
 
 def roots_now(repo):

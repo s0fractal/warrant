@@ -298,7 +298,8 @@ MUTANTS = [
     ("WM10", "warrant/verify.py", '        if extends not in chain:\n', '        if False:\n', VERIFY, ["WT5"]),
     ("WM11", "warrant/verify.py", '    if (ans.get("absence") or {}).get("equivocation"):\n        return 4\n', '', VERIFY, ["WT5"]),
     ("WM12", "warrant/verify.py", '        ans["rely"] = ans["rely"] and ans["absence"]["holds"]\n', '', VERIFY, ["WT4"]),
-    ("WM13", "warrant/verify.py", 'proof.get("tree") != "index" or proof.get("size") != size or proof.get("key") != i:\n', 'proof.get("tree") != "index" or proof.get("key") != i:\n', VERIFY, ["WT6"]),
+    ("WM13", "warrant/verify.py", '        proof = M.unpack(doc["said"], i, b["index"], size) if isinstance(size, int) else None\n', '        proof = M.unpack(doc["said"], i, b["index"], size + 1) if isinstance(size, int) else None\n', VERIFY, ["WT4"]),
+    ("WM14", "warrant/merkle.py", '            if not (isinstance(said, list) and hashlib.sha256(C.canon(said)).digest() == data[32:]\n', '            if not (isinstance(said, list)\n', VERIFY, ["WT2"]),
     # the harness itself (tests/mutants.py, tests/world.py): what every KILLED above rests on
     ("T199", "tests/mutants.py", '    if not cases or not all(homes):\n        return None', '    if not cases or not all(homes):\n        return ["main"]', TOOLS, ["HM2"]),
     ("T200", "tests/world.py", '            sys.stdout.flush()\n            os._exit(1)\n', '            pass\n', TOOLS, ["HM3"]),
