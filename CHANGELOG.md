@@ -31,11 +31,28 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   not be deleted leaves the carry done (the analysis session on #383). Nothing is retired on a name: before the old
   pull request is closed, the carry on the branch must be the head and the base merged with the stores' union as its
   tree, and CI must have started on it (dispatched again when its dispatch failed); otherwise the old one stays open
-  (Codex on #383). E84, E89, E90, E91; mutants G109–G118.
+  (Codex on #383). The carry is of the head assessed: a source whose head moved since is not carried, one that
+  moves while it is carried is left open (Codex on #383 at f1da8d88: a verdict pushed after the survey was lost with
+  the branch), and the source's branch is no longer deleted: GitHub deletes a ref with no expected head, so a verdict
+  pushed between a read of its tip and the delete would go with it (Codex on #388 at e42e6695). The gate closes the
+  old pull request, which can be undone, and deletes nothing of a branch it did not make. E84, E89, E90–E92; mutants G109–G113, G115–G120, G126.
 - A dispatched CI run whose `test` passed dispatches the gate (`wake-gate` in ci.yml, nothing checked out): a run the
   workflow token starts wakes no workflow_run, and GitHub mostly skips the gate's schedule, so a green verdicts pull
   request waited for a person to dispatch the gate (#379).
+  It does so after a green pull_request run of a branch of this repository too: a run approved after GitHub held it
+  woke nothing either (#389).
+- After a merge of verdicts only, the gate starts the claims checker when the code moved since a commit they were made at
+  (its tree outside `.warrant/` differs from the base's, or Git cannot read it): #389's acceptances, made at 45f73a63,
+  merged after #386 and #387 had changed the code, and nothing started the checker (75 claims read STALE). Acceptances
+  made at the base's code start nothing, so there is no loop. E94; mutants G127–G129.
 - `warrant --help` lists `say`.
+- The gate approves a run GitHub holds for approval (action_required) at the head of a pull request it assessed as
+  verdicts only (a branch of this repository, refused for nothing but its checks, its head still the one assessed),
+  of a required workflow only: GitHub held such runs for the claims checker's pull requests when they were opened too
+  (#389), and the owner approved each by hand. Whether GitHub lets the workflow's token approve is learnt from the
+  first try: the job summary says what it answered. E93; mutants G122–G125.
+- CI runs the mutants in six parts, not four: a part ran 22 to 28 minutes of its 30 (#385, #386), and every mutant
+  added eats the margin; the wall time does not grow.
 - The door's commands use the released package instead of a checkout (`site/voice.mjs`, `site/object.html`, the
   reader's block): a venv in the objector's empty directory, `pip install "warrant-graph>=3.0.0a7"` (the first release
   with `warrant say`), the venv's `warrant say --store voices ID "…"`. No clone is needed to object; the clone remains

@@ -10,7 +10,7 @@ name: ci
 #   suites    lint, the core, the agent interface (stdio MCP included), the merge gate, the tools,
 #             the shapes and primitives, the public surface and the executable
 #             QUICKSTART.md, the Codex plugin and its waker, the Claude Code plugin bridge;
-#   mutants   tests/mutants.py in four parts (--shard K/4), each checking its targets' baseline first;
+#   mutants   tests/mutants.py in six parts (--shard K/6), each checking its targets' baseline first;
 #   replay    tools/review.py verify and tools/claims.py verify: the review replays and the claims
 #             checker's acceptances new since the base, re-executed at their commits, each refused when
 #             its `code` is not the checker's code there (needs the history);
@@ -194,8 +194,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3, 4]
-    name: mutants (${{ matrix.part }}/4)
+        part: [1, 2, 3, 4, 5, 6]     # six: four parts ran 22-28 minutes of the 30 (2026-11-13), and each mutant adds
+    name: mutants (${{ matrix.part }}/6)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -206,7 +206,7 @@ jobs:
           digest: ${{ needs.wheels.outputs.digest }}
 
       - name: Mutants, one part (each must fail its own case)
-        run: python tests/mutants.py --shard ${{ matrix.part }}/4 --matrix "$RUNNER_TEMP/mutants-${{ matrix.part }}.json"
+        run: python tests/mutants.py --shard ${{ matrix.part }}/6 --matrix "$RUNNER_TEMP/mutants-${{ matrix.part }}.json"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -291,12 +291,16 @@ jobs:
           key: ci-code-pass-${{ needs.code.outputs.tree }}
 
   # A run dispatched with GITHUB_TOKEN (the gate's after a merge or on a verdicts pull request it opened, claims-replay's
-  # on its pull request) wakes no workflow_run, and GitHub mostly skips the gate's schedule: the gate slept until a
+  # on its pull request), and a held pull_request run once approved, wake no workflow_run, and GitHub mostly skips the gate's schedule: the gate slept until a
   # person dispatched it (#379, 2026-11-13). After `test` passed in a dispatched run, this job dispatches the gate on
   # the default branch. It checks out nothing and runs no code of the branch tested.
   wake-gate:
     needs: [test]
-    if: github.event_name == 'workflow_dispatch' && needs.test.result == 'success'
+    # also a pull_request run of a branch of this repository: a run the owner approved (action_required) wakes no
+    # workflow_run either (#389, 2026-11-13). A fork's pull request gets a read-only token and is left out.
+    if: >-
+      needs.test.result == 'success' && (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
