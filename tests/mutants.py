@@ -2,10 +2,18 @@
 """Mutants: each is one exact find/replace (or a list of them) in one file and the cases it must fail. A mutant is KILLED only
 when its run prints `FAIL <case>` for one of those cases: an import error, a crash before the case, or a
 FAIL of another case proves nothing. The run happens in a copy of the tree under build/mutants/, one
-mutant at a time with no bytecode cache, the file restored after each. Before any mutant, each targeted
-test file runs once unmutated in the same copy and must pass (BASELINE_RED refuses the whole run).
+mutant at a time with no bytecode cache, the file restored after each.
 
-    python3 tests/mutants.py [IDS ...] [--shard K/N] [--matrix OUT.json]
+A run is of the sections that hold the mutant's cases, not of the whole test file (tests/world.py run_sections:
+a test file's *_cases functions), and it ends at the first `FAIL` of one of its cases. Which section holds a case is
+read, not written down: before any mutant, each section of each targeted test file runs alone, unmutated, in the same
+copy, and every check it prints is mapped to it (WARRANT_CASE_MAP). That run is also the check that each section
+passes alone (BASELINE_RED refuses the whole run otherwise: a section leaning on another's state would read a FAIL
+caused by its isolation as a kill). A test file without sections runs whole, once unmutated as before. A mutant whose
+case no clean run printed is NO_SECTION, never a full run that might find it. The test files still run whole in CI's
+suites.
+
+    python3 tests/mutants.py [IDS ...] [--shard K/N] [--matrix OUT.json] [--whole]
     python3 tests/mutants.py --merge OUT.json PART.json ...     # the union is every id once, each KILLED
     python3 tests/mutants.py --list                             # {id: [file, test, cases]} as JSON
 
@@ -278,6 +286,28 @@ MUTANTS = [
     ("T180", "warrant/resolve.py", '        got = p.in_git(i)\n        if got:\n            return got', '        got = None\n        if got:\n            return got', TOOLS, ["RV1"]),
     ("T181", "warrant/resolve.py", '        got = p.bytes_of(i)\n        if got:\n            return "RESOLVED", got[1]', '        got = None\n        if got:\n            return "RESOLVED", got[1]', TOOLS, ["RV1"]),
     ("T182", "warrant/resolve.py", '    if home is not None and home.holds(i):', '    if False:', TOOLS, ["RV1"]),
+    # the harness itself (tests/mutants.py, tests/world.py): what every KILLED above rests on
+    ("T199", "tests/mutants.py", '    if not cases or not all(homes):\n        return None', '    if not cases or not all(homes):\n        return ["main"]', TOOLS, ["HM2"]),
+    ("T200", "tests/world.py", '            sys.stdout.flush()\n            os._exit(1)\n', '            pass\n', TOOLS, ["HM3"]),
+    ("T201", "tests/world.py", '    if unknown:\n        print(f"NO_SUCH_SECTION {unknown}", flush=True)\n        return 2\n', '', TOOLS, ["HM3"]),
+    ("T202", "tests/mutants.py", 'add("main" if not sec or where == "main" else where)\n', 'add("main")\n', TOOLS, ["HM1"]),
+    ("T203", "tests/mutants.py", '        refused += combinations(rows, ids, where, places)\n', '', TOOLS, ["HM4"]),
+    ("T204", "tests/mutants.py", '\n            if rc != 0:                      # red, or past the timeout', '\n            if rc:                      # red, or past the timeout', TOOLS, ["HM1", "HM5"]),
+    ("T205", "tests/mutants.py", 'if s and len(s) > 1})\n', 'if s and len(s) > 2})\n', TOOLS, ["HM4"]),
+    ("T184", "warrant/drift.py", 'if r["kind"] != "attest" or rep["_basis"].get(i) != "SIGNED" or b.get("verdict") != "accept":', 'if r["kind"] != "attest" or b.get("verdict") != "accept":', TOOLS, ["DR31"]),
+    ("T185", "warrant/drift.py", '        elif isinstance(b.get("files"), dict) and counted(rep, r):', '        elif False:', TOOLS, ["DR30"]),
+    ("T186", "warrant/cli.py", '    if a.as_of is None and Path(store).name == ".warrant":\n        from . import drift as D\n        view = E.View(', '    if False:\n        from . import drift as D\n        view = E.View(', TOOLS, ["DR30"]),
+    ("T187", "warrant/cli.py", '    if a.as_of is None and Path(store).name == ".warrant":\n        from . import drift as D\n        rep["_recs"]', '    if a.as_of is None and Path(store).name == ".warrant" and (root / ".warrant" / "claims.json").is_file():\n        from . import drift as D\n        rep["_recs"]', TOOLS, ["DR30"]),
+    ("T188", "warrant/drift.py", '        if not done.get(eff) or (lin["schema"] == C.CLAIM and L not in live):', '        if not done.get(eff) or L not in live:', TOOLS, ["DR30"]),
+    ("T194", "warrant/drift.py", '        elif isinstance(b.get("files"), dict) and counted(rep, r):', '        elif isinstance(b.get("files"), dict):', TOOLS, ["DR32"]),
+    ("T195", "warrant/drift.py", 'and r["actor"] in v.get("accepted_by", [])\n', 'and True\n', TOOLS, ["DR32"]),
+    ("T189", "warrant/entry.py", '        elif found.group(0) != marked().rstrip("\\n"):', '        elif False:', TOOLS, ["IN2"]),
+    ("T190", "warrant/entry.py", '    if "warrant" not in doc.get("mcpServers", {}):', '    if True:', TOOLS, ["IN3"]),
+    ("T191", "warrant/entry.py", '    if f.exists() or f.is_symlink():\n        return []\n', '', TOOLS, ["IN1"]),
+    ("T192", "warrant/entry.py", '        if not any(line.strip() == IMPORT for line in text.splitlines()):', '        if True:', TOOLS, ["IN1"]),
+    ("T193", "warrant/cli.py", '            if Path(store).name == ".warrant":                             # a repository', '            if True:                             # a repository', TOOLS, ["IN3"]),
+    ("T196", "warrant/cli.py", '([] if a.no_mcp else EN.mcp(root))', '(EN.mcp(root) if a.no_mcp else [])', TOOLS, ["IN1", "IN3"]),
+    ("T197", "warrant/cli.py", '                         if any(st["roles"].values()) else', '                         if True else', TOOLS, ["IN1"]),
     ("V106", E, ', "unicode": unicodedata.unidata_version}))', '}))', CORE, ["UC1"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
@@ -460,10 +490,10 @@ MUTANTS = [
     ("G94", "warrant/gate.py", '    want = {e["path"]: (e["mode"], e["type"], e["sha"]) if e["sha"] else None for e in plan}\n    got = {p: (m, t, o) for m, t, o, p in entries(root, head, ".")}\n    was = {p: (m, t, o) for m, t, o, p in entries(root, parent, ".")}',
      '    want = {e["path"]: e["sha"] for e in plan}\n    got = {p: o for _, _, o, p in entries(root, head, ".")}\n    was = {p: o for _, _, o, p in entries(root, parent, ".")}', GATE, ["E81"]),
     ("G95", "warrant/gate.py", 'max(p["since"], now - 2 * p["days"] * 86400), 0, []', 'max(p["since"], now - p["days"] * 86400), 0, []', GATE, ["E82"]),
-    ("G98", "warrant/gate.py", '            if gh.api(f"pulls/{_number(n)}").get("mergeable_state") != "dirty":\n                continue', '            if False:\n                continue', GATE, ["E84"]),
+    ("G98", "warrant/gate.py", '            if p.get("mergeable_state") != "dirty":\n                continue', '            if False:\n                continue', GATE, ["E84"]),
     ("G99", "warrant/gate.py", '    union = b"".join(sorted(set(lines_of(files[base]) + lines_of(files[head])), key=_line_id))', '    union = b"".join(sorted(set(lines_of(files[base]) + lines_of(files[head]))))', GATE, ["E84"]),
     ("G100", "warrant/gate.py", '        if not a.facts.get("verdicts") or {c for c, _ in a.shared}', '        if {c for c, _ in a.shared}', GATE, ["E84"]),
-    ("G101", "warrant/gate.py", '    if a.facts.get("verdicts"):\n        return []', '    if False:\n        return []', GATE, ["E85"]),
+    ("G101", "warrant/gate.py", '    if a.facts.get("verdicts"):\n        base = code_tree(b.root, b.commit)', '    if False:\n        base = code_tree(b.root, b.commit)', GATE, ["E85"]),
     ("G102", "warrant/gate.py", 'if "paths" not in x or changed is None or any(_listed(x["paths"], p) for p in changed)]', 'if True]', GATE, ["E85"]),
     ("G103", "warrant/gate.py", '    if why is None and AFTER in doc:\n        why = after_problem(doc[AFTER])', '    if False:\n        why = after_problem(doc[AFTER])', GATE, ["E86"]),
     ("G104", "warrant/gate.py", '            return 1 if open_ and not pre else 0', '            return 1 if open_ else 0', GATE, ["E87"]),
@@ -476,11 +506,20 @@ MUTANTS = [
     ("G111", "warrant/gate.py", '                gh.api("git/refs", "POST", {"ref": f"refs/heads/{fresh}", "sha": commit})', '                gh.api(f"git/refs/heads/{_branch(branch)}", "PATCH", {"sha": commit, "force": False})', GATE, ["E84", "E89"]),
     ("G112", "warrant/gate.py", '            open_ = next((x.pr for x in found if x.pr.get("branch") == fresh', '            open_ = next((x.pr for x in found if False', GATE, ["E90"]),
     ("G113", "warrant/gate.py", '            tip = open_["head"] if open_ else _branch_tip(gh, fresh)', '            tip = open_["head"] if open_ else None', GATE, ["E90"]),
-    ("G114", "warrant/gate.py", '            done += f"; its branch {branch} NOT deleted: {e}"', '            done = f"refresh FAILED: {e}"', GATE, ["E90"]),
     ("G115", "warrant/gate.py", '                if parents != [head, b.commit] or (c.get("tree") or {}).get("sha") != tree:', '                if (c.get("tree") or {}).get("sha") != tree:', GATE, ["E91"]),
     ("G116", "warrant/gate.py", '                if parents != [head, b.commit] or (c.get("tree") or {}).get("sha") != tree:', '                if parents != [head, b.commit]:', GATE, ["E91"]),
     ("G117", "warrant/gate.py", "            for w in sorted({c[\"workflow\"] for c in b.gate[\"required\"]} - ran):", "            for w in sorted({c[\"workflow\"] for c in b.gate[\"required\"]} - ran if open_ is None and commit is not None else ()):", GATE, ["E91"]),
     ("G118", "warrant/gate.py", "            for w in sorted({c[\"workflow\"] for c in b.gate[\"required\"]} - ran):", "            for w in sorted({c[\"workflow\"] for c in b.gate[\"required\"]}):", GATE, ["E91"]),
+    ("G119", "warrant/gate.py", '            if (p.get("head") or {}).get("sha") != head:', '            if False:', GATE, ["E92"]),
+    ("G120", "warrant/gate.py", '            if (gh.api(f"pulls/{_number(n)}").get("head") or {}).get("sha") != head:', '            if False:', GATE, ["E92"]),
+    ("G122", "warrant/gate.py", '                if w.get("conclusion") == "action_required" and w.get("path") in required and w.get("head_sha") == head:', '                if w.get("conclusion") == "action_required" and w.get("head_sha") == head:', GATE, ["E93"]),
+    ("G123", "warrant/gate.py", '        if {c for c, _ in a.reasons + a.shared} - HELD:\n            continue\n', '', GATE, ["E93"]),
+    ("G124", "warrant/gate.py", '            if p.get("state") != "open" or (p.get("head") or {}).get("sha") != head:\n                continue                                              # closed, or moved', '            if False:\n                continue                                              # closed, or moved', GATE, ["E93"]),
+    ("G125", "warrant/gate.py", '        if not a.facts.get("verdicts") or a.pr.get("head_repo") != b.repository:\n            continue\n        if {c for c, _ in a.reasons', '        if a.pr.get("head_repo") != b.repository:\n            continue\n        if {c for c, _ in a.reasons', GATE, ["E93"]),
+    ("G126", "warrant/gate.py", '        out.append((n, done))\n    return out', '        gh.api(f"git/refs/heads/{_branch(branch)}", "DELETE")\n        out.append((n, done))\n    return out', GATE, ["E84", "E92"]),
+    ("G127", "warrant/gate.py", '        moved = base is None or any(code_tree(b.root, c) != base for c in a.facts.get("made_at") or [])', '        moved = base is None', GATE, ["E94"]),
+    ("G128", "warrant/gate.py", '        moved = base is None or any(code_tree(b.root, c) != base for c in a.facts.get("made_at") or [])', '        moved = True', GATE, ["E94"]),
+    ("G129", "warrant/gate.py", '    return sorted(r for r in rows if r and r.split("\\t", 1)[-1] != ".warrant")', '    return sorted(r for r in rows if r)', GATE, ["E94"]),
     ("G43", "warrant/gate.py", "    except UnicodeDecodeError:              # Git holds", "    except ZeroDivisionError:              # Git holds", GATE, ["E51"]),
     ("G32", "warrant/gate.py", 'or (status == "A" and "/" not in deeper and _module_file(deeper, "__init__"))):', 'or False):', GATE, ["E41"]),
     ("G33", "warrant/gate.py", 'if not deeper and (mode not in FILE_MODES or (status == "A"', 'if not deeper and ((status == "A"', GATE, ["E42"]),
@@ -639,7 +678,7 @@ MUTANTS = [
     ("T131", DR, '    if not isinstance(rev, str) or not rev or rev.startswith("-"):', "    if not isinstance(rev, str) or not rev:", TOOLS, ["DR21"]),
     ("T132", DR, '        head = "impact: 0 affected"', '        head = "impact: 0 stale claim(s)"', TOOLS, ["DR18"]),
     ("T133", DR, '    gate(rep, root, head)\n    now = drift(rep, root, head)', '    gate(rep, root)\n    now = drift(rep, root)', TOOLS, ["DR24"]),
-    ("T110", DR, "    done = C.acceptances(rep)\n", "    done = C.acceptances(rep)\n    C.harness(root)\n", TOOLS, ["DR5"]),
+    ("T110", DR, "    done = pinned(rep)\n", "    done = pinned(rep)\n    if (Path(root) / '.warrant' / 'claims.json').is_file():\n        C.harness(root)\n", TOOLS, ["DR5"]),
     ("T111", "warrant/claims.py", "        starts.update(known.get(m, [])[:2])", "        pass", TOOLS, ["DR1"]),
     ("T114", "warrant/claims.py", "    while (base / chain[-1]).is_symlink():", "    while False:", TOOLS, ["DR11"]),
     ("T115", "warrant/claims.py", "        ok = held(b, ran, killed) and files is not None", "        ok = held(b, ran, killed)", TOOLS, ["DR12"]),
@@ -874,13 +913,14 @@ def jobs():
     return max(1, n or min(os.cpu_count() or 1, 4))
 
 
-def run(test, cwd, tmp=TMP):
-    """(exit status, output); a run past the timeout is status None with what it printed (TIMEOUT, never a kill)."""
+def run(test, cwd, tmp=TMP, extra=None):
+    """(exit status, output); a run past the timeout is status None with what it printed (TIMEOUT, never a kill).
+    `extra`: the WARRANT_SECTION / WARRANT_STOP / WARRANT_CASE_MAP / WARRANT_LIST_SECTIONS of tests/world.py."""
     tmp.mkdir(parents=True, exist_ok=True)
     try:
         r = subprocess.run([sys.executable, "-B", test], cwd=cwd, capture_output=True, text=True, timeout=900,
                            env={"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "PYTHONDONTWRITEBYTECODE": "1",
-                                "HOME": str(Path.home()), "TMPDIR": str(tmp)})
+                                "HOME": str(Path.home()), "TMPDIR": str(tmp), **(extra or {})})
     except subprocess.TimeoutExpired as e:
         return None, (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode(errors="replace")
     return r.returncode, r.stdout + r.stderr
@@ -904,6 +944,76 @@ def copy_tree(dest=COPY):
             shutil.copy2(src, dest / f, follow_symlinks=False)
 
 
+def sections_of(test, cwd, tmp=TMP):
+    """The sections of a test file, in order, or [] for one without (it runs whole)."""
+    rc, out = run(test, cwd, tmp, {"WARRANT_LIST_SECTIONS": "1"})
+    line = next((x for x in out.splitlines() if x.startswith("SECTIONS ")), None)
+    return line.split()[1:] if rc == 0 and line else []
+
+
+def case_map(tests, places):
+    """({test: {case: {section, ...}}}, [refusal]): every section of each test file run alone and unmutated (the
+    whole file when it has none), each check it prints mapped to the section that printed it. A run that is not green
+    is a refusal: the section does not pass alone."""
+    runs = [(t, sec) for t in sorted(tests) for sec in (sections_of(t, places[0][0], places[0][1]) or [None])]
+    free, out, refused, lock = queue.Queue(), {t: {} for t in tests}, [], threading.Lock()
+    for p in places:
+        free.put(p)
+
+    def one(job):
+        t, sec = job
+        copy, tmp = free.get()
+        try:
+            m = tmp / f"case-map-{os.getpid()}-{threading.get_ident()}.tsv"
+            m.unlink(missing_ok=True)
+            rc, text = run(t, copy, tmp, {"WARRANT_CASE_MAP": str(m), **({"WARRANT_SECTION": sec} if sec else {})})
+            rows = [x.split("\t") for x in m.read_text().splitlines()] if m.exists() and sec else []
+            if not sec:          # a file without sections, with a check of its own: the cases it printed (ok/FAIL lines)
+                rows = [(x[5:].split()[0], "main") for x in text.splitlines() if x[:5] in ("ok   ", "FAIL ") and x[5:].split()]
+            m.unlink(missing_ok=True)
+        finally:
+            free.put((copy, tmp))
+        with lock:
+            if rc != 0:                      # red, or past the timeout (None): no case it printed may be credited
+                refused.append(f"{t} {sec or '(whole)'}{' TIMEOUT' if rc is None else ''}\n{text[-1500:]}")
+            for case, where in rows:
+                out[t].setdefault(case, set()).add("main" if not sec or where == "main" else where)
+    with ThreadPoolExecutor(len(places)) as pool:
+        list(pool.map(one, runs))
+    return out, refused
+
+
+def home_sections(cases_of, cases):
+    """The sections to run for `cases` ({case: {section}} of one test file), sorted; ["main"] means the whole file;
+    None when a case is in no section (NO_SECTION: never a full run that might find it)."""
+    homes = [cases_of.get(c) for c in cases]
+    if not cases or not all(homes):
+        return None
+    secs = set().union(*homes)
+    return ["main"] if "main" in secs else sorted(secs)
+
+
+def combinations(rows, ids, where, places):
+    """[refusal]: each set of two or more sections some mutant of `ids` runs together, run so, unmutated. Each section
+    passing alone does not make them pass together: one may leave the state another reads (Codex on #391 at 52e05290:
+    a and c, with b between them clearing it, failed together and credited a kill to a mutant of an unused file)."""
+    combos = sorted({(rows[i][4], tuple(s)) for i in ids
+                     for s in [home_sections(where.get(rows[i][4], {}), rows[i][5])] if s and len(s) > 1})
+    copy, tmp = places[0]
+    out = []
+    for test, secs in combos:
+        rc, text = run(test, copy, tmp, {"WARRANT_SECTION": ",".join(secs)})
+        if rc != 0:
+            out.append(f"{test} {','.join(secs)}{' TIMEOUT' if rc is None else ''}\n{text[-1500:]}")
+    return out
+
+
+# --whole: every mutant runs its whole test file, as before sections (no map, no stop). The default runs sections only,
+# so a mutant killed alone is not also run against the whole file; a later section's state hiding the kill in a whole
+# run is the residual (docs/REPOSITORY.md). --whole is for when time does not press.
+WHOLE = False
+
+
 def shard(ids, k, n):
     return [i for j, i in enumerate(ids) if j % n == k - 1]
 
@@ -915,13 +1025,22 @@ def run_mutants(ids):
     places = [(COPY, TMP)] + [(COPY.with_name(f"mutants-{w}"), TMP.with_name(f"mutants-tmp-{w}")) for w in range(1, workers)]
     for d, t in places:
         copy_tree(d)
+        shutil.rmtree(t, ignore_errors=True)     # a killed run ends at os._exit: its temporary directories stay behind
         t.mkdir(parents=True, exist_ok=True)
     rows = {m[0]: m for m in MUTANTS}
-    for test in sorted({rows[i][4] for i in ids}):
-        rc, out = run(test, COPY)
-        if rc:
-            print(f"BASELINE_RED {test}\n{out[-2000:]}")
-            return None
+    if WHOLE:
+        where, refused = {}, []
+        for test in sorted({rows[i][4] for i in ids}):
+            rc, out = run(test, COPY)
+            if rc != 0:
+                refused.append(f"{test} (whole)\n{out[-1500:]}")
+    else:
+        where, refused = case_map({rows[i][4] for i in ids}, places)
+        refused += combinations(rows, ids, where, places)
+    if refused:
+        print("BASELINE_RED (a section, a set of sections a mutant runs, or a file does not pass unmutated)\n"
+              + "\n".join(refused))
+        return None
     free, lock = queue.Queue(), threading.Lock()
     for p in places:
         free.put(p)
@@ -934,20 +1053,25 @@ def run_mutants(ids):
             f = copy / path
             src = f.read_text()
             stale = [o for o, _ in pairs if src.count(o) != 1]
+            secs = ["main"] if WHOLE else home_sections(where.get(test, {}), cases)
             if stale:
                 r = {"id": i, "outcome": "STALE", "detail": f"a find text does not occur once in {path}: {stale[0][:60]!r}"}
+            elif secs is None:
+                r = {"id": i, "outcome": "NO_SECTION", "detail": f"no clean run of {test} printed the case(s) "
+                     f"{[c for c in cases if c not in where.get(test, {})]}"}
             else:
                 mutated = src
                 for o, n in pairs:
                     mutated = mutated.replace(o, n)
                 f.write_text(mutated)
+                env = ({} if WHOLE else {"WARRANT_STOP": ",".join(cases)}) | ({} if secs == ["main"] else {"WARRANT_SECTION": ",".join(secs)})
                 try:
-                    rc, out = run(test, copy, tmp)
+                    rc, out = run(test, copy, tmp, env)
                 finally:
                     f.write_text(src)
                 hit = failed(out, cases) if rc is not None else []
                 r = {"id": i, "outcome": "KILLED" if hit else "SURVIVED" if rc is not None else "TIMEOUT", "failed": hit,
-                     "rc": rc, "detail": "" if hit else out[-600:]}
+                     "rc": rc, "sections": secs, "detail": "" if hit else out[-600:]}
         finally:
             free.put((copy, tmp))
         with lock:
@@ -994,10 +1118,13 @@ def main(argv):
         Path(out).write_text(json.dumps({"definition": definition(), "rows": sorted(rows, key=lambda r: r["id"])}, indent=1))
         print(f"merged {len(rows)} rows of {len(want)} mutants; missing or repeated: {bad or 'none'}; not killed: {notkilled or 'none'}")
         return 1 if bad or notkilled else 0
+    global WHOLE
     matrix, k, n, ids = None, 1, 1, []
     it = iter(argv)
     for a in it:
-        if a == "--matrix":
+        if a == "--whole":
+            WHOLE = True
+        elif a == "--matrix":
             matrix = next(it)
         elif a == "--shard":
             k, n = map(int, next(it).split("/"))

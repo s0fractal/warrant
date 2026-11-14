@@ -9,6 +9,21 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 - The roadmap view names every goal whatever its key (`warrant/roadmap.py`): `G<number>` keys in the order of their
   numbers, then the others by their text. A goal keyed otherwise (EXP-ADOPT-1, the adoption experiment's registration)
   ended `tools/graph.py views` in `int()`.
+- A mutant runs only the sections of its test file that hold its cases (a test file's `*_cases` functions,
+  `tests/world.py` `run_sections`), and its run ends at the first `FAIL` of one of its cases; the verdict is the same
+  printed `FAIL <case>` line. Which section holds a case is read from clean runs of each section alone, unmutated, in
+  the same copy, before any mutant: that is also the check that every section passes alone (BASELINE_RED otherwise),
+  and a mutant whose case no clean run printed is NO_SECTION, never a full run. Test files without sections (core,
+  shapes, the plugin's) run whole; CI's suites still run every file whole. Measured on 80 mutants (40 of tools_test,
+  40 of agent_test, one laptop, 4 jobs): 496 s before, 36 s after, the map included, 80 of 80 killed both ways. CI runs
+  of one pull request cancel the older one; runs on master and dispatched runs are never cancelled. Each set of two or
+  more sections some mutant runs together is run so, unmutated, first (Codex on #391: two sections that pass alone
+  failed together and credited a kill); a clean run past the timeout refuses as a red one does; the temporary places
+  are emptied at the start (a killed run ends at os._exit). Not seen: a later section's state that would hide a kill in
+  a whole run; `--whole` runs every mutant against its whole file. In CI on this pull request the mutant parts took 3 to
+  4 minutes (12 to 28 before) and the whole run 7. HM1–HM5; mutants T199–T205 (the harness and `tests/world.py`
+  themselves).
+
 - A pull request of verdicts only that conflicts with the base is carried by a new one: the gate merges the base into
   its head (records only, the union of the stores) on a new branch under the same prefix, opens it as a pull request,
   starts CI, closes the old one with a comment naming the new one and deletes its branch. It no longer moves the old
@@ -19,16 +34,58 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   not be deleted leaves the carry done (the analysis session on #383). Nothing is retired on a name: before the old
   pull request is closed, the carry on the branch must be the head and the base merged with the stores' union as its
   tree, and CI must have started on it (dispatched again when its dispatch failed); otherwise the old one stays open
-  (Codex on #383). E84, E89, E90, E91; mutants G109–G118.
+  (Codex on #383). The carry is of the head assessed: a source whose head moved since is not carried, one that
+  moves while it is carried is left open (Codex on #383 at f1da8d88: a verdict pushed after the survey was lost with
+  the branch), and the source's branch is no longer deleted: GitHub deletes a ref with no expected head, so a verdict
+  pushed between a read of its tip and the delete would go with it (Codex on #388 at e42e6695). The gate closes the
+  old pull request, which can be undone, and deletes nothing of a branch it did not make. E84, E89, E90–E92; mutants G109–G113, G115–G120, G126.
 - A dispatched CI run whose `test` passed dispatches the gate (`wake-gate` in ci.yml, nothing checked out): a run the
   workflow token starts wakes no workflow_run, and GitHub mostly skips the gate's schedule, so a green verdicts pull
   request waited for a person to dispatch the gate (#379).
+  It does so after a green pull_request run of a branch of this repository too: a run approved after GitHub held it
+  woke nothing either (#389).
+- After a merge of verdicts only, the gate starts the claims checker when the code moved since a commit they were made at
+  (its tree outside `.warrant/` differs from the base's, or Git cannot read it): #389's acceptances, made at 45f73a63,
+  merged after #386 and #387 had changed the code, and nothing started the checker (75 claims read STALE). Acceptances
+  made at the base's code start nothing, so there is no loop. E94; mutants G127–G129.
 - `warrant --help` lists `say`.
+- The gate approves a run GitHub holds for approval (action_required) at the head of a pull request it assessed as
+  verdicts only (a branch of this repository, refused for nothing but its checks, its head still the one assessed),
+  of a required workflow only: GitHub held such runs for the claims checker's pull requests when they were opened too
+  (#389), and the owner approved each by hand. Whether GitHub lets the workflow's token approve is learnt from the
+  first try: the job summary says what it answered. E93; mutants G122–G125.
+- CI runs the mutants in six parts, not four: a part ran 22 to 28 minutes of its 30 (#385, #386), and every mutant
+  added eats the margin; the wall time does not grow.
 - The door's commands use the released package instead of a checkout (`site/voice.mjs`, `site/object.html`, the
   reader's block): a venv in the objector's empty directory, `pip install "warrant-graph>=3.0.0a7"` (the first release
   with `warrant say`), the venv's `warrant say --store voices ID "…"`. No clone is needed to object; the clone remains
   only in the optional last step, reading from a terminal with the reader's own file. Run as shown against PyPI on
   2026-11-13.
+
+- The freshness gate (G14) reads every pinned acceptance: a signed `attest` accepting a version that names `files`,
+  that the version's guard counts (its actor holds a role the guard names; `counted`), whatever the lineage's schema,
+  with or without `.warrant/claims.json` (`warrant/drift.py` `pinned`); a trusted actor with no role there neither
+  refreshes a pin nor makes one stale (the analysis session on this change: such an acceptance of the changed bytes
+  read a stale lineage ELIGIBLE again). Until now it read the claims checker's acceptances of claims alone and only beside `claims.json`, so a
+  lead's acceptance of a goal on a file's bytes stayed ELIGIBLE after the file changed, while the browser reader said
+  PINS_NOT_CHECKED for any attest naming files or a commit (the analysis session, 2026-11-13). The reader now reads the
+  same predicate: an acceptance at a commit alone pins nothing there either, and `--pins` reads no `claims.json`
+  (its summary has no `config` member). DR30–DR32; J10, J11; mutants T184–T188, T194, T195.
+- `warrant assess` applies the freshness gate to a repository's store read now, as `status`, `drift` and the agent's
+  `context` do: it printed ELIGIBLE where they said STALE.
+- `warrant init` in a repository (`.warrant`) leaves what the next agent reads (`warrant/entry.py`): `.warrant/v3.json`
+  naming the repository (GitHub's `origin`, else the directory) with an empty trust and profile, so `warrant status`
+  reads the store it just made (it refused it, W4); the block the adoption experiment measured in `AGENTS.md`, byte for
+  byte between `<!-- warrant:begin -->` and `<!-- warrant:end -->`, and `@AGENTS.md` in `CLAUDE.md`, never over a file's
+  own text and written once; a read-only `.warrant/agent.json` and the server `warrant` in `.mcp.json` beside the
+  others (Claude Code asks the user to approve it the first time: its behaviour, not a defect). `--no-entry` skips the
+  markdown files, `--no-mcp` the server; a store not named `.warrant` is made alone, as before. The experiment (#385,
+  plan 4dd5fdc4, result 4f239352): with the repository as `init` left it 0 of 18 agents used the records, with the
+  block and the server 18 of 18, on both models and every task; its rule R1 said ship it, so the default is the pair it
+  measured. Not measured: the block without the server, the comment marks around it, agents that read no `.mcp.json`.
+  `warrant status` names the receiver: how many actors are trusted and who holds which role, or that no actor holds
+  one, so no acceptance counts yet; and with no schemas, that `warrant bootstrap` files them. IN1–IN3; mutants
+  T189–T193, T196, T197.
 
 ## 3.0.0a7 — the owner as observer; claims on a runner; a stranger's path
 

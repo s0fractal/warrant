@@ -29,7 +29,7 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `.warrant/v3/schema-accepts.jsonl` | Codex's acceptances of the bootstrap schemas, as committed at #218 |
 | `tools/{claims,roadmap,review,gate}.py` | shims: `python3 -m warrant.<name>` with this checkout's package, for CI and these docs; `tools/gate.py` is what the merge workflow runs (constitutional path) |
 | `tools/graph.py` | queries over the record graph (around, path, why, frontier, impact) and the views |
-| `tests/mutants.py` | every mutant, the cases it must fail, shards and their merge |
+| `tests/mutants.py` | every mutant, the cases it must fail, shards and their merge; a mutant runs only the sections (`*_cases` functions, `tests/world.py` `run_sections`) that hold its cases, read from clean runs of each section alone (and of each set of sections a mutant runs together), and stops at its case's `FAIL`; a mutant killed so is not also run against the whole file, and a later section's state that would hide the kill in a whole run is not seen (the residual; `--whole` runs every mutant against its whole file, when time does not press) |
 | `integrations/warrant-review/` | the Codex plugin: the review skill, the MCP launcher, the review waker |
 
 ## Installing from a checkout
@@ -52,7 +52,7 @@ python3 tests/gate_test.py            # the merge gate (§14)
 python3 tests/tools_test.py           # claims, review replay, roadmap (§14)
 python3 tests/boundary_test.py        # the public surface; python3 tests/quickstart_test.py: QUICKSTART.md
 python3 integrations/warrant-review/test_plugin.py
-python3 tests/mutants.py --shard 1/4 --matrix part-1.json    # ... 4/4, then --merge
+python3 tests/mutants.py --shard 1/6 --matrix part-1.json    # ... 6/6, then --merge
 python3 tools/claims.py check && python3 tools/roadmap.py check
 python3 tools/review.py verify --base <base commit>          # replays new since the base, re-executed
 python3 tools/claims.py verify --base <base commit>          # claims checker acceptances new since the base, re-executed
@@ -283,7 +283,16 @@ the file is absent (the owner runs it).
 ## The review loop in another repository
 
 Another repository runs the same loop on its own records with the installed package, pinned to an
-exact version (and hashes), from a checkout of that repository:
+exact version (and hashes), from a checkout of that repository. `warrant init` in it starts the store and leaves
+what the next agent reads (`warrant/entry.py`): `.warrant/v3.json` with an empty trust and profile, the block of
+`warrant/entry.py` in `AGENTS.md` between `<!-- warrant:begin -->` and `<!-- warrant:end -->` (a file of the
+repository's own keeps every byte outside them), `@AGENTS.md` in `CLAUDE.md`, a read-only `.warrant/agent.json` and
+the server `warrant` in `.mcp.json` (Claude Code asks the user to approve a project's server the first time it opens it:
+that is its behaviour, not a defect). `--no-entry` leaves the two markdown files alone, `--no-mcp` the server. The
+block and the server are what the adoption experiment measured, together (experiments/adoption, #385: 0 of 18 agents
+used the records without them, 18 of 18 with them), and the block changes only with a new measurement. Not measured:
+the block without the server, the comment marks around it, and agents that read no `.mcp.json` (they have the block's
+CLI commands only). `warrant status` on such a store says that no actor holds a role, so no acceptance counts yet.
 
 - `.warrant/v3.json`: `{"warrant": "repository/3", "repository": "owner/name", "trust", "profile"}`;
   the profile names its `pr/acceptor`, `replayer` and, for claims, `claim/verifier`. Its store holds

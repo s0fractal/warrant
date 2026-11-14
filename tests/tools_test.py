@@ -12,11 +12,12 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
 
-from world import KEYS, ROOT, Repo, check, finish, git
+from world import KEYS, ROLES, ROOT, Repo, check, git, run_sections
 
 from warrant import across as A
 from warrant import board as BD
@@ -454,6 +455,93 @@ def gated(r, L):
     return d.get(L, {}), rep["lineages"][L]["reliance"]
 
 
+def pinned_by_lead():
+    """A repository with no .warrant/claims.json: bob (roadmap/acceptor) accepts goal G1 met on lib/a.py's bytes at a
+    commit (`files`, `commit`), the analysis session's case of 2026-11-13. Returns (repo, lineage, met version)."""
+    r = Repo(git_init=True)
+    (r.root / "lib").mkdir()
+    (r.root / "lib" / "a.py").write_text("A = 1\n")
+    x = r.commit("the file")
+    goal = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a question"})
+    met = r.entity("alice", "goal@1", {"state": "met", "key": "G1", "text": "a question", "established": ["held"]}, lineage=goal)
+    blob = git(r.root, "rev-parse", f"{x}:lib/a.py")
+    r.attest("bob", met, commit=x, files={"lib/a.py": blob})
+    r.commit("accepted on lib/a.py at its commit")
+    return r, goal, met
+
+
+def assessed(r, L):
+    """(drift verdict, gate reliance, status's reliance counts, assess CLI reliance) of lineage L at r's head."""
+    d, rel = gated(r, L)
+    out = io.StringIO()
+    with contextlib.chdir(r.root):
+        st = CLI.status(CLI._parser().parse_args(["status", "--store", ".warrant"]))
+        with contextlib.redirect_stdout(out):
+            CLI.main(["assess", "--store", ".warrant"])
+    return d.get("verdict"), rel, st["reliance"], json.loads(out.getvalue())["lineages"][L]["reliance"]
+
+
+def pinned_cases():
+    r, L, met = pinned_by_lead()
+    before = assessed(r, L)
+    (r.root / "lib" / "a.py").write_text("A = 2\n")
+    r.commit("the file changes")
+    after = assessed(r, L)
+    check("DR30 any signed acceptance naming files at a commit that the version's guard counts pins the version, whatever "
+          "its schema, with no .warrant/claims.json: a lead's acceptance of a goal on a file reads ELIGIBLE while the file "
+          "holds its bytes and STALE once it changes, in drift, status and assess alike (the analysis session, 2026-11-13: "
+          "STALE needed claims.json and the claims checker's name, and `assess` printed ELIGIBLE where status said STALE)",
+          not (r.dot / "claims.json").exists() and before[:2] == ("UNCHANGED", "ELIGIBLE") and before[3] == "ELIGIBLE"
+          and after[:2] == ("CHANGED", D.STALE) and after[2].get(D.STALE) == 1 and after[3] == D.STALE, (before, after))
+    r2 = Repo(roles=dict(ROLES, migrator=["carol"]), git_init=True)
+    (r2.root / "lib").mkdir()
+    (r2.root / "lib" / "a.py").write_text("A = 1\n")
+    x = r2.commit("the file")
+    L2 = r2.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a question"})
+    met2 = r2.entity("alice", "goal@1", {"state": "met", "key": "G1", "text": "a question", "established": ["held"]}, lineage=L2)
+    r2.attest("bob", met2)                                                # counted, naming no files: not pinned
+    rec = R.record("attest", "eve", r2.t + 1, {"verdict": "accept", "target": met2, "commit": x,
+                                               "files": {"lib/a.py": "1" * 40}}, refs=[met2])
+    r2.store.append(rec, K.Key.from_seed_hex("ab" * 32), r2.trust)        # other bytes, under a key not trusted
+    vouched = R.record("attest", "bob", r2.t + 2, {"verdict": "accept", "target": met2, "commit": x,
+                                                   "files": {"lib/a.py": "2" * 40}}, refs=[met2])
+    vid, line = R.line(vouched, None)                                     # other bytes, unsigned, vouched by a migration
+    with open(r2.dot / "records.jsonl", "ab") as f:
+        f.write(line)
+    m = r2.blob(JCS.canon({"map": [[vid, ["11" * 32], []]]}))
+    r2.put("carol", "attest", {"target": m, "verdict": "migrated"}, R.MIGRATION, refs=[m])
+    r2.commit("an unpinned acceptance, an untrusted pinned attest, a migrated one")
+    d2, rel2 = gated(r2, L2)
+    basis2 = RP.Repo(r2.root).report()["_basis"].get(vid)
+    check("DR31 only a signed acceptance that names files pins: one naming other bytes under a key the receiver does not "
+          "trust, or carried unsigned by a migration (MIGRATED, as claims.acceptances reads only SIGNED), lowers nothing, "
+          "and an acceptance naming no files leaves no drift answer",
+          basis2 == "MIGRATED" and d2 == {} and rel2 == "ELIGIBLE", (basis2, d2, rel2))
+    r3, L3, met3 = pinned_by_lead()
+    (r3.root / "lib" / "a.py").write_text("A = 2\n")
+    c2 = r3.commit("the file changes")
+    stale3 = assessed(r3, L3)
+    r3.attest("eve", met3, commit=c2, files={"lib/a.py": git(r3.root, "rev-parse", f"{c2}:lib/a.py")})   # trusted, no role
+    r3.commit("an acceptance of the new bytes by an actor whose word does not count here")
+    after3 = assessed(r3, L3)
+    r4 = Repo(git_init=True)
+    (r4.root / "lib").mkdir()
+    (r4.root / "lib" / "a.py").write_text("A = 1\n")
+    x4 = r4.commit("the file")
+    L4 = r4.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a question"})
+    met4 = r4.entity("alice", "goal@1", {"state": "met", "key": "G1", "text": "a question", "established": ["held"]}, lineage=L4)
+    r4.attest("bob", met4)
+    r4.attest("eve", met4, commit=x4, files={"lib/a.py": "3" * 40})                                      # other bytes, no role
+    r4.commit("a counted acceptance naming no files, and a word with no role naming other bytes")
+    d4, rel4 = gated(r4, L4)
+    check("DR32 an acceptance the version's guard does not count pins nothing: eve, trusted with no role, accepting the "
+          "changed bytes leaves the stale lineage STALE in drift, status and assess; naming other bytes on a lineage no "
+          "counted acceptance pins, she gives it no drift answer and it stays ELIGIBLE (the analysis session on #386, "
+          "08b2276f)", stale3[:2] == ("CHANGED", D.STALE) and after3[:2] == ("CHANGED", D.STALE)
+          and after3[2].get(D.STALE) == 1 and after3[3] == D.STALE and d4 == {} and rel4 == "ELIGIBLE",
+          (stale3, after3, d4, rel4))
+
+
 def drift_cases():
     from warrant_agent import api
     from warrant_agent.config import Config
@@ -551,7 +639,7 @@ def drift_cases():
     d2, rel2 = gated(r, L)
     bare = Repo()
     check("DR4 an acceptance naming no files compares nothing: UNKNOWN, the claim is not ELIGIBLE, and the checker accepts it again "
-          "though its tree is unchanged; a checkout without claims has no drift answer",
+          "though its tree is unchanged; a store with no pinned acceptance has no drift answer",
           d.get("verdict") == "UNKNOWN" and rel == D.STALE and len(again) == 1 and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE"
           and D.drift(RP.Repo(bare.root).report(), bare.root) == {}, (d, rel, again, d2, rel2))
     def accepted_with(**named):
@@ -1980,25 +2068,229 @@ def board_cases():
           (edited["update"], edited["archive"], edited["foreign"]))
 
 
+# The block the adoption experiment measured (experiments/adoption/entry/AGENTS.block.md at 9bcf1f3386ec, branch
+# exp/adoption, s0fractal/warrant#385): its sha256. `warrant init` writes it byte for byte.
+ENTRY_BLOCK_SHA = "9114d7c650b0fb1a85d41cc39d43d798e37ec0a6fc3f66a18c14eb11138d4fea"
+BEGIN, END = "<!-- warrant:begin -->", "<!-- warrant:end -->"
+
+
+def _init(root, *args):
+    """`warrant init ARGS` run in `root` (a repository's store: .warrant), its JSON answer, or the refusal's code."""
+    out = io.StringIO()
+    with contextlib.chdir(root), contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+        try:
+            rc = CLI.main(["init", *args])
+        except SystemExit as e:                  # a flag this version does not know
+            rc = e.code
+    try:
+        return rc, json.loads(out.getvalue()) if out.getvalue().strip() else {}
+    except ValueError:
+        return rc, {}
+
+
+def _text(p):
+    return p.read_text() if p.exists() else ""
+
+
+def _block(text):
+    """The text between the marks, or None."""
+    if BEGIN not in text or END not in text:
+        return None
+    return text.split(BEGIN + "\n", 1)[1].split(END, 1)[0]
+
+
+def entry_cases():
+    def fresh():
+        d = Path(tempfile.mkdtemp())
+        git(d, "init", "-q", "-b", "master")
+        git(d, "remote", "add", "origin", "https://github.com/acme/widget.git")
+        return d
+    r = fresh()
+    rc, first = _init(r)
+    agents, claude = _text(r / "AGENTS.md"), _text(r / "CLAUDE.md")
+    v3 = json.loads((r / ".warrant" / "v3.json").read_text()) if (r / ".warrant" / "v3.json").exists() else {}
+    try:
+        with contextlib.chdir(r):
+            st = CLI.status(CLI._parser().parse_args(["status"]))
+    except CLI.Refused:
+        st = {}
+    before = {p: _text(r / p) for p in ("AGENTS.md", "CLAUDE.md", ".warrant/v3.json")}
+    rc2, second = _init(r)
+    after = {p: _text(r / p) for p in before}
+    blk = _block(agents)
+    exp = ROOT / "experiments" / "adoption" / "entry" / "AGENTS.block.md"
+    check("IN1 `warrant init` in a repository leaves the next agent what the adoption experiment measured (R1 fired: 0 of "
+          "18 used the records without it, 18 of 18 with it): AGENTS.md holding the block byte for byte between marks, "
+          "CLAUDE.md importing it, and a .warrant/v3.json naming the repository with an empty trust and profile, so "
+          "`warrant status` reads the store; a second init writes nothing and changes no byte",
+          rc == 0 and blk is not None and hashlib.sha256(blk.encode()).hexdigest() == ENTRY_BLOCK_SHA
+          and (not exp.exists() or exp.read_text() == blk) and claude == "@AGENTS.md\n"
+          and v3.get("repository") == "acme/widget" and v3.get("trust", {}).get("keys") == {} and st.get("repository") == "acme/widget"
+          and first.get("wrote") == [".warrant/v3.json", "AGENTS.md", "CLAUDE.md", ".warrant/agent.json", ".mcp.json"]
+          and bool(st) and "no actor holds a role" in CLI.render(st) and second.get("wrote") == [] and before == after,
+          (rc, first, second, blk and hashlib.sha256(blk.encode()).hexdigest(), claude, v3))
+    r = fresh()
+    mine = "# Ours\n\nKeep this.\n"
+    (r / "AGENTS.md").write_text(mine)
+    (r / "CLAUDE.md").write_text("Our rules.")
+    _init(r)
+    a1, c1 = _text(r / "AGENTS.md"), _text(r / "CLAUDE.md")
+    stale = a1.replace("Only `ELIGIBLE` may be relied on.", "Anything may be relied on.") + "Our tail.\n"
+    (r / "AGENTS.md").write_text(stale)
+    _, again = _init(r)
+    a2 = _text(r / "AGENTS.md")
+    check("IN2 an AGENTS.md or CLAUDE.md of the repository's own keeps every byte outside the marks: the block is added at "
+          "its end, the import on a line of its own; a block edited between the marks is put back, the text after them "
+          "kept, and nothing else is written",
+          a1.startswith(mine) and _block(a1) is not None and c1 == "Our rules.\n@AGENTS.md\n"
+          and a2 == a1 + "Our tail.\n" and again.get("wrote") == ["AGENTS.md"],
+          (a1[:60], c1, again))
+    r = fresh()
+    (r / ".mcp.json").write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}}))
+    _, m1 = _init(r, "--no-entry")
+    servers = json.loads((r / ".mcp.json").read_text())["mcpServers"]
+    cfg = json.loads(_text(r / ".warrant" / "agent.json") or '{"workspaces": {"repo": null}}')
+    (r / ".mcp.json").write_text(json.dumps({"mcpServers": {"warrant": {"command": "mine"}}}))
+    _, m2 = _init(r, "--no-entry")
+    r5 = fresh()
+    _, m5 = _init(r5, "--no-mcp")
+    kept = json.loads((r / ".mcp.json").read_text())["mcpServers"]
+    plain = Path(tempfile.mkdtemp())
+    _, q = _init(plain, "--store", "store")
+    check("IN3 init adds the server `warrant` (unless --no-mcp: the experiment measured the block and the server together) (warrant-agent-mcp on .warrant/agent.json: this repository, read only) "
+          "beside the servers .mcp.json names and never replaces one named warrant; `--no-entry` writes no AGENTS.md; a "
+          "store not named .warrant is made alone, as before",
+          servers.get("other") == {"command": "x"} and servers.get("warrant") == {"command": "warrant-agent-mcp", "args": ["--config", ".warrant/agent.json"]}
+          and cfg["workspaces"]["repo"] == {"repo": ".", "operations": ["context", "read", "graph"]} and "signer" not in cfg["workspaces"]["repo"]
+          and not (r / "AGENTS.md").exists() and m1.get("wrote") == [".warrant/v3.json", ".warrant/agent.json", ".mcp.json"]
+          and kept == {"warrant": {"command": "mine"}} and m2.get("wrote") == [] and q == {"store": "store"}
+          and m5.get("wrote") == [".warrant/v3.json", "AGENTS.md", "CLAUDE.md"] and not (r5 / ".mcp.json").exists()
+          and sorted(p.name for p in plain.iterdir()) == ["store"],
+          (m1, m2, servers, kept, q))
+
+
+FAKE_TEST = """import sys
+from world import check, run_sections
+STATE = []
+
+
+def a_cases():
+    STATE.append(1)
+    check("H1", True)
+
+
+def b_cases():
+    check("H2", bool(STATE) or "{lean}" == "no")
+
+
+def c_cases():
+    check("H3", "{fail}" != "H3")
+    check("H4", True)
+
+
 if __name__ == "__main__":
-    claims_cases()
-    preflight_cases()
-    drift_cases()
-    freshness_cases()
-    drift_impact_cases()
-    review_cases()
-    roadmap_cases()
-    cli_cases()
-    chain_join_cases()
-    home_cases()
-    impact_cases()
-    differential_cases()
-    ledger_cases()
-    grounded_cases()
-    observer_cases()
-    merged_cases()
-    voices_cases()
-    board_cases()
-    narrow_cases()
-    resolve_cases()
-    sys.exit(finish())
+    sys.exit(run_sections([a_cases, b_cases, c_cases]))
+"""
+
+
+def harness_cases():
+    """tests/mutants.py, the harness every KILLED rests on: a mutant runs only the sections holding its cases, read
+    from clean runs of each section alone, and stops at its case's FAIL (the analysis session, 2026-11-13: 211 mutants
+    ran all of tools_test.py, 201 all of agent_test.py, for one case each)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("mutants_h", ROOT / "tests" / "mutants.py")
+    MU = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(MU)
+    case_map = getattr(MU, "case_map", None)
+    home = getattr(MU, "home_sections", None)
+
+    def tree(lean, fail=""):
+        d = Path(tempfile.mkdtemp())
+        shutil.copytree(ROOT / "warrant", d / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
+        (d / "tests").mkdir()
+        shutil.copy2(ROOT / "tests" / "world.py", d / "tests" / "world.py")
+        (d / "tests" / "fake_test.py").write_text(FAKE_TEST.replace("{lean}", lean).replace("{fail}", fail))
+        (d / "tmp").mkdir()
+        return d
+    lean, alone = tree("yes"), tree("no")
+    m_lean, r_lean = case_map({"tests/fake_test.py"}, [(lean, lean / "tmp")]) if case_map else ({}, [])
+    m_alone, r_alone = case_map({"tests/fake_test.py"}, [(alone, alone / "tmp")]) if case_map else ({}, [])
+    got = m_alone.get("tests/fake_test.py", {})
+    check("HM1 the harness maps each case to the section that printed it, from each section run alone and unmutated, "
+          "and refuses (BASELINE_RED) when a section does not pass alone: one leaning on another's state would read a "
+          "FAIL its isolation caused as a kill",
+          got == {"H1": {"a_cases"}, "H2": {"b_cases"}, "H3": {"c_cases"}, "H4": {"c_cases"}} and r_alone == []
+          and len(r_lean) == 1 and "b_cases" in r_lean[0], (got, r_alone, r_lean))
+    plan = [home(got, c) for c in (["H3"], ["H1", "H4"], ["H9"], ["H3", "H9"], [])] if home else []
+    check("HM2 a mutant runs the sections holding its cases, and one whose case no clean run printed is NO_SECTION (None), "
+          "never a full run that might find it", plan == [["c_cases"], ["a_cases", "c_cases"], None, None, None], plan)
+    stop = tree("no", fail="H3")
+    env = dict(os.environ, WARRANT_SECTION="c_cases", WARRANT_STOP="H3")
+    out = subprocess.run([sys.executable, "-B", "tests/fake_test.py"], cwd=stop, capture_output=True, text=True, env=env)
+    bad = subprocess.run([sys.executable, "-B", "tests/fake_test.py"], cwd=alone, capture_output=True, text=True,
+                         env=dict(os.environ, WARRANT_SECTION="nope_cases"))
+    whole = subprocess.run([sys.executable, "-B", "tests/fake_test.py"], cwd=alone, capture_output=True, text=True,
+                           env={k: v for k, v in os.environ.items() if not k.startswith("WARRANT_")})
+    check("HM3 WARRANT_SECTION runs only the named sections and WARRANT_STOP ends the run right after its case's FAIL "
+          "line; a section name the file does not have is refused (status 2); unset, the file runs whole as before",
+          out.returncode == 1 and "FAIL H3" in out.stdout and "H4" not in out.stdout and "H1" not in out.stdout
+          and bad.returncode == 2 and "NO_SUCH_SECTION" in bad.stdout
+          and whole.returncode == 0 and all(f"ok   {c}" in whole.stdout for c in ("H1", "H2", "H3", "H4")),
+          (out.returncode, out.stdout[-200:], bad.returncode, bad.stdout[-100:], whole.stdout[-200:]))
+    combo = Path(tempfile.mkdtemp())
+    shutil.copytree(ROOT / "warrant", combo / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
+    (combo / "tests").mkdir()
+    shutil.copy2(ROOT / "tests" / "world.py", combo / "tests" / "world.py")
+    (combo / "tests" / "fake_test.py").write_text(
+        "import sys\nfrom world import check, run_sections\nSTATE = []\n\n\ndef a_cases():\n    STATE.append(1)\n"
+        "    check(\"H1\", True)\n\n\ndef b_cases():\n    STATE.clear()\n    check(\"H2\", True)\n\n\ndef c_cases():\n"
+        "    check(\"H3\", not STATE)\n\n\nif __name__ == \"__main__\":\n    sys.exit(run_sections([a_cases, b_cases, c_cases]))\n")
+    (combo / "unused.py").write_text("UNUSED = 0\n")
+    keep = (MU.COPY, MU.TMP, MU.jobs, MU.MUTANTS, MU.copy_tree)
+    MU.COPY, MU.TMP = combo.parent / (combo.name + "-copy"), combo.parent / (combo.name + "-tmp")
+    MU.jobs, MU.copy_tree = (lambda: 1), (lambda dest: shutil.copytree(combo, dest, dirs_exist_ok=True))
+    MU.MUTANTS = [("PROBE", "unused.py", "UNUSED = 0", "UNUSED = 1", "tests/fake_test.py", ["H1", "H3"])]
+    with contextlib.redirect_stdout(io.StringIO()) as said:
+        rows = MU.run_mutants(["PROBE"]) if case_map else [{"outcome": "KILLED"}]
+    real_run = MU.run
+    MU.run = lambda test, cwd, tmp=MU.TMP, extra=None: (None, "ok   H2 printed before it hung\n") \
+        if (extra or {}).get("WARRANT_SECTION") == "b_cases" else real_run(test, cwd, tmp, extra)
+    MU.MUTANTS = [("PROBE2", "unused.py", "UNUSED = 0", "UNUSED = 1", "tests/fake_test.py", ["H2"])]
+    with contextlib.redirect_stdout(io.StringIO()) as said2:
+        rows2 = MU.run_mutants(["PROBE2"]) if case_map else [{"outcome": "KILLED"}]
+    MU.run = real_run
+    MU.COPY, MU.TMP, MU.jobs, MU.MUTANTS, MU.copy_tree = keep
+    check("HM4 the sections a mutant runs together are run together unmutated first: a and c pass alone and fail together "
+          "(b clears what a leaves), so no mutant of theirs is credited a kill, the whole run refused (BASELINE_RED; "
+          "Codex on #391 at 52e05290, its F1)", rows is None and "BASELINE_RED" in said.getvalue(), (rows, said.getvalue()[-300:]))
+    check("HM5 a section that runs past the timeout unmutated refuses the run as a red one does: the cases it printed "
+          "before it hung credit no kill (the analysis session on #391)", rows2 is None and "TIMEOUT" in said2.getvalue(),
+          (rows2, said2.getvalue()[-300:]))
+
+
+if __name__ == "__main__":
+    sys.exit(run_sections([
+        claims_cases,
+        preflight_cases,
+        drift_cases,
+        pinned_cases,
+        entry_cases,
+        freshness_cases,
+        drift_impact_cases,
+        review_cases,
+        roadmap_cases,
+        cli_cases,
+        chain_join_cases,
+        home_cases,
+        impact_cases,
+        differential_cases,
+        ledger_cases,
+        grounded_cases,
+        observer_cases,
+        merged_cases,
+        voices_cases,
+        board_cases,
+        narrow_cases,
+        resolve_cases,
+        harness_cases,
+    ]))

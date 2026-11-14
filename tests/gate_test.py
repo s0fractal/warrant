@@ -21,7 +21,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from world import KEYS, Repo, check, finish, git
+from world import KEYS, Repo, check, git, run_sections
 
 from warrant import gate as GT
 from warrant.store import _line_id
@@ -1118,14 +1118,17 @@ def refresh_cases():
     a = GT.assess(r.root, base, facts, green(head))
 
     class GH:
-        def __init__(self, state, fail=(), branches=(), carry=None, runs=(), dispatch_fails=False):
+        def __init__(self, state, fail=(), branches=(), carry=None, runs=(), dispatch_fails=False, heads=(), tip=None):
             self.state, self.calls, self.fail, self.branches = state, [], set(fail), set(branches)
             self.carry, self.runs, self.dispatch_fails = carry, list(runs), dispatch_fails
+            self.heads, self.tip = list(heads), tip            # the source's head at each read; its branch's tip
 
         def api(self, path, method="GET", body=None, pages=False):
             self.calls.append((path, method, body))
             if (path, method) in self.fail:
                 raise GT.Refused(f"gh api {method} {path}: HTTP 502", "GITHUB")
+            if path == "git/ref/heads/codex/verdicts/x":
+                return {"object": {"sha": self.tip or head}}
             if path.startswith("git/ref/heads/"):
                 if path[len("git/ref/heads/"):] not in self.branches:
                     raise GT.Refused(f"gh api GET {path}: gh: Not Found (HTTP 404)", "GITHUB")
@@ -1136,7 +1139,9 @@ def refresh_cases():
                 return {"workflow_runs": [{"path": w} for w in self.runs]}
             if path == "pulls" and method == "POST":
                 return {"number": 10}
-            return {"mergeable_state": self.state} if path.startswith("pulls/") else {"sha": "e" * 40}
+            if path.startswith("pulls/"):
+                return {"mergeable_state": self.state, "head": {"sha": self.heads.pop(0) if self.heads else head}}
+            return {"sha": "e" * 40}
 
         def dispatch(self, w, br):
             self.calls.append(("dispatch", w, br))
@@ -1169,7 +1174,7 @@ def refresh_cases():
           and ("dispatch", ".github/workflows/ci.yml", fresh) in dirty.calls
           and any(c[0] == "comment" and c[1] == 9 and "#10" in c[2] for c in dirty.calls)
           and ("pulls/9", "PATCH", {"state": "closed"}) in dirty.calls
-          and ("git/refs/heads/codex/verdicts/x", "DELETE", None) in dirty.calls
+          and not any(c[1] == "DELETE" for c in dirty.calls)
           and [c[0] for c in clean.calls] == ["pulls/9"] and other == [],
           (out, a.reasons, len(union), len(want), commit.get("parents"), [c[:2] for c in dirty.calls],
            [c[0] for c in clean.calls], other))
@@ -1184,21 +1189,16 @@ def refresh_cases():
     second = GT.refresh_verdicts(r.root, b, again, [a, opened_pr])
     orphan = GH("dirty", branches={fresh})
     third = GT.refresh_verdicts(r.root, b, orphan, [a])
-    undeleted = GH("dirty", fail={("git/refs/heads/codex/verdicts/x", "DELETE")})
-    fourth = GT.refresh_verdicts(r.root, b, undeleted, [a])
     posts = lambda g, p: [c for c in g.calls if c[0] == p and c[1] == "POST"]
     check("E90 a refresh that failed part way is resumed with each step made once: the new pull request open, the next "
           "run only closes the old one (no second branch or pull request, no FAILED); the branch made with no pull "
-          "request, it opens one from it; a branch that could not be deleted leaves the carry done (the analysis "
-          "session on #383)",
+          "request, it opens one from it (the analysis session on #383)",
           "FAILED" in first[0][1] and posts(broke, "git/refs") and posts(broke, "pulls")
-          and second == [(9, f"carried by #10 from {fresh} (resumed)")] and not posts(again, "git/refs")
+          and second == [(9, f"carried by #10 from {fresh} (resumed); codex/verdicts/x kept")] and not posts(again, "git/refs")
           and not posts(again, "pulls") and not posts(again, "git/commits")
           and ("pulls/9", "PATCH", {"state": "closed"}) in again.calls
-          and not posts(orphan, "git/refs") and posts(orphan, "pulls") and ("pulls/9", "PATCH", {"state": "closed"}) in orphan.calls
-          and "FAILED" not in fourth[0][1] and "NOT deleted" in fourth[0][1]
-          and ("pulls/9", "PATCH", {"state": "closed"}) in undeleted.calls,
-          (first, second, third, fourth, [c[:2] for c in again.calls], [c[:2] for c in orphan.calls]))
+          and not posts(orphan, "git/refs") and posts(orphan, "pulls") and ("pulls/9", "PATCH", {"state": "closed"}) in orphan.calls,
+          (first, second, third, [c[:2] for c in again.calls], [c[:2] for c in orphan.calls]))
     # E91 (Codex on #383 head version 5be30830): nothing is retired on a name, and never before CI started on the carry
     closed = lambda g: ("pulls/9", "PATCH", {"state": "closed"}) in g.calls
     deleted = lambda g: any(c[0] == "git/refs/heads/codex/verdicts/x" and c[1] == "DELETE" for c in g.calls)
@@ -1222,6 +1222,56 @@ def refresh_cases():
           and ("dispatch", ".github/workflows/ci.yml", fresh) in rerun.calls and closed(rerun) and "FAILED" not in second_d[0][1]
           and not any(c[0] == "dispatch" for c in ran.calls) and closed(ran),
           (got_alien, got_hollow, first_d, second_d, [c[:2] for c in rerun.calls]))
+    # E92 (Codex on #383 at f1da8d88): a source that moves after the survey keeps what the carry did not take
+    moved = "c" * 40
+    before = GH("dirty", heads=[moved])
+    got_before = GT.refresh_verdicts(r.root, b, before, [a])
+    during = GH("dirty", heads=[head, moved])
+    got_during = GT.refresh_verdicts(r.root, b, during, [a])
+    after = GH("dirty", tip=moved)
+    got_after = GT.refresh_verdicts(r.root, b, after, [a])
+    check("E92 the carry is of the head assessed: a source whose head moved since is not carried (nothing made, the next "
+          "run reads it), one that moves while it is carried is left open, and its branch is never deleted: GitHub "
+          "deletes a ref with no expected head, so a verdict pushed between a read and the delete would go with it "
+          "(Codex on #383 at f1da8d88 and on #388 at e42e6695)",
+          "not carried" in got_before[0][1] and not posts(before, "git/refs") and not closed(before) and not deleted(before)
+          and "FAILED" in got_during[0][1] and not closed(during) and not deleted(during)
+          and closed(after) and not deleted(after) and "kept" in got_after[0][1] and "FAILED" not in got_after[0][1],
+          (got_before, got_during, got_after))
+    # E93: a run GitHub holds for approval at a verdicts-only head is approved by the gate, and no other
+    class Held:
+        def __init__(self, live=None, state="open"):
+            self.calls, self.live, self.state = [], live, state
+
+        def api(self, path, method="GET", body=None, pages=False):
+            self.calls.append((path, method))
+            if path.startswith("pulls/"):
+                return {"state": self.state, "head": {"sha": self.live or head}}
+            if path.startswith("actions/runs?"):
+                return {"workflow_runs": [
+                    {"id": 41, "path": ".github/workflows/ci.yml", "conclusion": "action_required", "head_sha": head},
+                    {"id": 42, "path": ".github/workflows/other.yml", "conclusion": "action_required", "head_sha": head},
+                    {"id": 43, "path": ".github/workflows/ci.yml", "conclusion": "success", "head_sha": head}]}
+            return {}
+    approve = lambda g: [c[0] for c in g.calls if c[1] == "POST"]
+    approve_held = getattr(GT, "approve_held", lambda *_: [])           # absent before #389's fix: nothing approved
+    held = Held()
+    got = approve_held(b, held, [a])
+    moved_h, closed_h, plain_h, other_h = Held(live="c" * 40), Held(state="closed"), Held(), Held()
+    approve_held(b, moved_h, [a])
+    approve_held(b, closed_h, [a])
+    approve_held(GT.Base(plain.r.root, plain.base), plain_h, [plain.assess()])
+    refused = types.SimpleNamespace(pr=a.pr, facts=a.facts, shared=a.shared, reasons=[("OWNER_VETO", "x")])
+    approve_held(b, other_h, [refused])
+    code_h = Held()                                                     # code changes, accepted, waiting for its checks only
+    approve_held(b, code_h, [types.SimpleNamespace(pr=a.pr, facts={}, shared=[], reasons=[("CHECK_MISSING", "x")])])
+    check("E93 the gate approves the run GitHub holds for approval (action_required) at the head of a pull request it "
+          "assessed as verdicts only, of a required workflow only, and none for a head that moved, a closed pull "
+          "request, one that is not verdicts only (code waiting for its checks alone included), or one refused for more than its "
+          "checks (#389: held when opened)",
+          approve(held) == ["actions/runs/41/approve"] and got and "41" in got[0][1]
+          and approve(moved_h) == approve(closed_h) == approve(plain_h) == approve(other_h) == approve(code_h) == [],
+          (got, held.calls, moved_h.calls, plain_h.calls, other_h.calls))
 
 
 def revert_pending_cases():
@@ -1300,11 +1350,18 @@ def after_merge_cases():
         def dispatch(self, w, br):
             self.dispatched.append(w)
 
-    def merged(before_x=None, verdicts=False):
+    def merged(before_x=None, verdicts=False, made_at=None):
         p = PR(merge=AFTER_, before_x=before_x)
         a = p.assess()
         if verdicts:
             a.facts["verdicts"] = ["x"]
+            if "records" in (made_at or []):                 # the base with a change under .warrant/ only
+                git(p.r.root, "checkout", "-q", "--detach", p.base)
+                (p.r.dot / "note.txt").write_text("records only\n")
+                git(p.r.root, "add", "-A")
+                git(p.r.root, "commit", "-q", "-m", "records only")
+            only = git(p.r.root, "rev-parse", "HEAD").strip() if "records" in (made_at or []) else None
+            a.facts["made_at"] = [{"base": p.base, "head": a.pr["head"], "records": only}.get(c, c) for c in (made_at or [])]
         gh = GH(a, p)
         GT.merge_one(GT.Base(p.r.root, p.base), a, gh)
         return sorted(gh.dispatched)
@@ -1325,6 +1382,17 @@ def after_merge_cases():
     refused = [codes(PR(merge=m).assess()) for m in bad]
     check("E86 an after_merge list naming no workflow file, empty paths, a workflow twice or an unknown member refuses the "
           "base's configuration", all(x == {"BASE_CONFIG"} for x in refused), refused)
+    same, older, unread = merged(verdicts=True, made_at=["base"]), merged(verdicts=True, made_at=["head"]), merged(verdicts=True, made_at=["0" * 40])
+    records_only = merged(verdicts=True, made_at=["records"])
+    p0 = PR(merge=AFTER_)
+    tree = lambda c: sorted(x for x in git(p0.r.root, "ls-tree", c).splitlines() if not x.endswith("\t.warrant"))
+    differs = tree(p0.base) != tree(p0.assess().pr["head"])
+    check("E94 after a merge of verdicts the gate starts the claims checker when the code moved since a commit they were "
+          "made at (another tree outside .warrant/, or one Git cannot read), and not when they were made at the base's "
+          "code, .warrant/ aside (the analysis session: #389's acceptances, made at 45f73a63, merged after #386 and #387 changed the code, "
+          "and nothing started the checker: 75 claims STALE)",
+          differs and same == [ci] and records_only == [ci] and older == [ci, replay] and unread == [ci, replay],
+          (differs, same, records_only, older, unread))
 
 def prerelease_cases():
     """The owner, 2026-11-13 (relayed): «в нас нема клієнтів — ми обслуговуємо своє майбутнє»: a pre-release (PEP 440
@@ -1371,28 +1439,29 @@ def prerelease_cases():
           held == (["v3.0.0a7"], []) and far == ([], ["v3.0.0a7"]), (held, far))
 
 if __name__ == "__main__":
-    closure_cases()
-    shadow_cases()
-    unreadable_cases()
-    interpreter_cases()
-    eligible_cases()
-    store_cases()
-    schema_cases()
-    tail_cases()
-    catch_up_cases()
-    lineage_cases()
-    verdict_cases()
-    check_cases()
-    merge_cases()
-    watched_cases()
-    constitution_cases()
-    brake_cases()
-    solo_record_cases()
-    presence_cases()
-    notice_owner_cases()
-    codex_356_cases()
-    refresh_cases()
-    after_merge_cases()
-    prerelease_cases()
-    revert_pending_cases()
-    sys.exit(finish())
+    sys.exit(run_sections([
+        closure_cases,
+        shadow_cases,
+        unreadable_cases,
+        interpreter_cases,
+        eligible_cases,
+        store_cases,
+        schema_cases,
+        tail_cases,
+        catch_up_cases,
+        lineage_cases,
+        verdict_cases,
+        check_cases,
+        merge_cases,
+        watched_cases,
+        constitution_cases,
+        brake_cases,
+        solo_record_cases,
+        presence_cases,
+        notice_owner_cases,
+        codex_356_cases,
+        refresh_cases,
+        after_merge_cases,
+        prerelease_cases,
+        revert_pending_cases,
+    ]))

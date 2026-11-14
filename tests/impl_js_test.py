@@ -1202,11 +1202,12 @@ def browser_reader_cases():
           "direction override is the same string in the list and in the opened lineage",
           t.get(plain, {}).get("title") == hostile and [v.get("title") for v in lin.get("versions", [])] == [hostile, hostile],
           (t.get(plain), lin.get("versions")))
-    check("J10 an acceptance that names files, or a commit alone: the lineage reads PINS_NOT_CHECKED, never ELIGIBLE; one "
-          "that names neither reads ELIGIBLE",
-          t.get(pinned, {}).get("reliance") == "PINS_NOT_CHECKED" and t.get(at_commit, {}).get("reliance") == "PINS_NOT_CHECKED"
+    check("J10 an acceptance that names files: the lineage reads PINS_NOT_CHECKED, never ELIGIBLE; one at a commit alone, or "
+          "naming neither, pins no bytes and reads ELIGIBLE, as the freshness gate reads it (warrant/drift.py pinned: until "
+          "3.0.0a7 the reader read a commit alone as pinned and the gate did not)",
+          t.get(pinned, {}).get("reliance") == "PINS_NOT_CHECKED" and t.get(at_commit, {}).get("reliance") == "ELIGIBLE"
           and t.get(plain, {}).get("reliance") == "ELIGIBLE"
-          and theirs.get("summary", {}).get("reliance") == {"ELIGIBLE": 2, "PINS_NOT_CHECKED": 2}, theirs.get("summary", {}).get("reliance"))
+          and theirs.get("summary", {}).get("reliance") == {"ELIGIBLE": 3, "PINS_NOT_CHECKED": 1}, theirs.get("summary", {}).get("reliance"))
     check("J10 the reader's own rules decide: under the publisher's profile the closure is accepted (state done, rules "
           "publisher); under a profile where its acceptor holds no role the same bytes read state open (rules reader)",
           t.get(plain, {}).get("state") == "done" and theirs.get("summary", {}).get("rules") == "publisher"
@@ -1369,17 +1370,41 @@ def browser_pins_cases():
     js, _, _ = _read_served(r.root, "--pins", failing="helper.py")
     check("J11 a file another acceptance names changed decides it though one of its files was not fetched: STALE, as the gate",
           [py[Ls[k]] for k in "qp"] == ["STALE"] * 2 and [js.get(Ls[k]) for k in "qp"] == ["STALE"] * 2, ([py[Ls[k]] for k in "qp"], [js.get(Ls[k]) for k in "qp"]))
-    js_cfg, summ_cfg, _ = _read_served(r.root, "--pins", failing="claims.json")
     (r.root / ".warrant" / "claims.json").unlink()
+    r.commit("no claims configuration")
     py_none, drift_none = _gate(r.root)
     js_none, summ_none, _ = _read_served(r.root, "--pins")
-    check("J11 .warrant/claims.json answered with HTTP 500 compares nothing (the claims read PINS_NOT_CHECKED, the failure "
-          "named); absent, the gate covers nothing (ELIGIBLE there) and the reader, which cannot tell what else compares "
-          "pins, keeps PINS_NOT_CHECKED",
-          all(js_cfg.get(Ls[k]) == "PINS_NOT_CHECKED" for k in "qps") and summ_cfg.get("pins", {}).get("config") == "refused"
-          and drift_none == {} and all(py_none[Ls[k]] == "ELIGIBLE" for k in "qps")
-          and all(js_none.get(Ls[k]) == "PINS_NOT_CHECKED" for k in "qps") and summ_none.get("pins", {}).get("config") == "absent",
-          (js_cfg, summ_cfg.get("pins"), drift_none, js_none, summ_none.get("pins")))
+    check("J11 without .warrant/claims.json the gate covers the same claims and the reader with --pins gives each the "
+          "gate's reliance: no configuration decides what is pinned (until 3.0.0a7 the gate covered nothing there)",
+          drift_none and js_none.get(Ls["q"]) == py_none[Ls["q"]] == "STALE" and all(js_none.get(L) == py_none[L] for L in drift_none)
+          and "config" not in summ_none.get("pins", {}),
+          ({L[:12]: (py_none.get(L), js_none.get(L)) for L in drift_none}, summ_none.get("pins")))
+
+    # (g) a lead's acceptance of a goal on a file's bytes, no claims checker and no claims.json: the same predicate
+    with quiet:
+        r, L, _ = TT.pinned_by_lead()
+    py0, d0 = _gate(r.root)
+    js0, _, _ = _read_served(r.root, "--pins")
+    off0, _, _ = _read_served(r.root)
+    (r.root / "lib" / "a.py").write_text("A = 2\n")
+    r.commit("the file changes")
+    py1, d1 = _gate(r.root)
+    js1, _, _ = _read_served(r.root, "--pins")
+    c2 = wgit(r.root, "rev-parse", "HEAD")
+    met = _report(r.root)["lineages"][L]["effective"]
+    r.attest("eve", met, commit=c2, files={"lib/a.py": wgit(r.root, "rev-parse", f"{c2}:lib/a.py")})   # trusted, no role
+    r.commit("an acceptance of the new bytes whose word does not count")
+    py2, d2 = _gate(r.root)
+    js2, _, _ = _read_served(r.root, "--pins")
+    check("J11 an acceptance the guard does not count pins nothing in the reader as in the gate: eve, with no role, "
+          "accepting the changed bytes leaves the lineage STALE in both (the analysis session on #386)",
+          d2.get(L) == "CHANGED" and py2[L] == js2.get(L) == "STALE", (d2.get(L), py2.get(L), js2.get(L)))
+    check("J11 a lead's acceptance naming a file at a commit pins as the gate reads it: ELIGIBLE in both while the file holds "
+          "its bytes, STALE in both once it changes, and PINS_NOT_CHECKED without --pins (one predicate, warrant/drift.py "
+          "pinned; the analysis session, 2026-11-13)",
+          d0.get(L) == "UNCHANGED" and py0[L] == js0.get(L) == "ELIGIBLE" and off0.get(L) == "PINS_NOT_CHECKED"
+          and d1.get(L) == "CHANGED" and py1[L] == js1.get(L) == "STALE",
+          (d0.get(L), py0.get(L), js0.get(L), off0.get(L), d1.get(L), py1.get(L), js1.get(L)))
 
     # (b) a file changed after acceptance
     with quiet:
@@ -1426,8 +1451,10 @@ def browser_pins_cases():
     TT.put_as(r, CL.CHECKER, {**body, "target": L5, "files": {p: "0" * 40 for p in body["files"]}}, [L5])
     r.t += 1                                                               # the checker's name, another's key: rejected
     r.store.append(RR.record("attest", CL.CHECKER, r.t, {**body, "target": L5}, refs=[L5]), KEYS["alice"], r.trust)
-    r.attest("carol", L5, **{k: v for k, v in body.items() if k not in ("verdict", "target")})   # a verifier, not the checker
     TT.put_as(r, CL.CHECKER, {**body, "target": L5, "verdict": "reject"}, [L5])                  # the checker, not accepting
+    L7 = TT.claim(r, id="V3-3-7")
+    TT.put_as(r, CL.CHECKER, {**body, "target": L7, "files": {p: "0" * 40 for p in body["files"]}}, [L7])
+    r.attest("carol", L7, **{k: v for k, v in body.items() if k not in ("verdict", "target")})   # a verifier, fresh files
     os.symlink("code.py", r.root / "lib" / "alias.py")
     r.commit("a symlink")
     link = wgit(r.root, "rev-parse", "HEAD:lib/alias.py")
@@ -1439,15 +1466,19 @@ def browser_pins_cases():
     r.commit("acceptances of every shape")
     py, drift = _gate(r.root)
     js, _, _ = _read_served(r.root, "--pins")
-    want = {L: "ELIGIBLE", L2: "STALE", L3: "STALE", L4: "ELIGIBLE", L5: "STALE"}
+    want = {L: "ELIGIBLE", L2: "STALE", L3: "STALE", L4: "ELIGIBLE", L5: "STALE", L7: "ELIGIBLE"}
     check("J11 an acceptance without the import-closure rule is not fresh, whatever its files: its claim reads STALE in "
           "the reader as in the gate; a claim with one such acceptance and one fresh is ELIGIBLE (any acceptance decides)",
           {x: py.get(x) for x in want} == want and js.get(L2) == "STALE" and js.get(L) == "ELIGIBLE" and drift.get(L2) == "UNKNOWN",
           ({x[:12]: (py.get(x), js.get(x)) for x in want}, drift))
     check("J11 an acceptance naming no files compares nothing: STALE in the reader as in the gate", js.get(L3) == "STALE" == py.get(L3), (py.get(L3), js.get(L3)))
-    check("J11 only the claims checker's signed acceptances count: a stale claim stays STALE beside fresh files named by a "
-          "line under the checker's name that fails its signature, by a verifier who is not the checker, and by the "
-          "checker's attest that does not accept", js.get(L5) == "STALE" == py.get(L5) and drift.get(L5) == "CHANGED", (py.get(L5), js.get(L5)))
+    check("J11 only signed acceptances count: a stale claim stays STALE beside fresh files named by a line under the "
+          "checker's name that fails its signature and by the checker's attest that does not accept", js.get(L5) == "STALE" == py.get(L5)
+          and drift.get(L5) == "CHANGED", (py.get(L5), js.get(L5)))
+    check("J11 any signed acceptance that names files and that the guard counts pins: a verifier's on the bytes at HEAD keeps the "
+          "claim ELIGIBLE beside the checker's stale one, in the reader as in the gate (warrant/drift.py pinned; until "
+          "3.0.0a7 only the claims checker's counted)", js.get(L7) == "ELIGIBLE" == py.get(L7) and drift.get(L7) == "UNCHANGED",
+          (py.get(L7), js.get(L7), drift.get(L7)))
     check("J11 a symlink's entry (link:<blob>): the gate reads the tree's link and says ELIGIBLE; HTTP serves no link as a "
           "link, so the reader says STALE (the documented difference, in this direction only)",
           py.get(L4) == "ELIGIBLE" and drift.get(L4) == "UNCHANGED" and js.get(L4) == "STALE", (py.get(L4), js.get(L4)))
@@ -1507,7 +1538,7 @@ def browser_others_cases():
     ST.Store(commons / ".warrant").extend([forged], stranger, CM.DOC["trust"])            # claude's name, a stranger's key
     q = pub.entity("alice", "obligation@1", {"state": "open", "statement": "accepted at a commit", "serves": []})
     q2 = pub.entity("alice", "obligation@1", {"state": "done", "statement": "accepted at a commit", "serves": []}, lineage=q)
-    pub.attest("bob", q2, commit="c" * 40)
+    pub.attest("bob", q2, commit="c" * 40, files={"a.py": "0" * 40})
     voice_q = CM.say(commons, q2, "the commit does not hold it", stranger, at=1_900_000_002)
     lab = Repo()
     lab.put("carol", "attest", {"target": voice, "verdict": "reproduces", "on": d}, refs=[voice, d])   # carol: replayer
@@ -1675,7 +1706,7 @@ def browser_changes_cases():
               and c2.get("quiet") == 0, c2)
 
         m3 = mark()
-        acc_a = pub.attest("bob", a2, commit="c" * 40)
+        acc_a = pub.attest("bob", a2, commit="c" * 40, files={"a.py": "0" * 40})
         c3 = changed(m3)
         x = (c3.get("listed") or [{}])[0]
         check("J13 (c) a closure accepted (at a commit): its lineage is listed with its state and reliance then and now, "
@@ -1822,7 +1853,7 @@ def browser_desk_cases():
     o1 = one.entity("alice", "obligation@1", {"state": "open", "statement": "accepted", "serves": []})
     one.attest("bob", one.entity("alice", "obligation@1", {"state": "done", "statement": "accepted", "serves": []}, lineage=o1))
     p1 = one.entity("alice", "obligation@1", {"state": "open", "statement": "accepted at a commit", "serves": []})
-    one.attest("bob", one.entity("alice", "obligation@1", {"state": "done", "statement": "accepted at a commit", "serves": []}, lineage=p1), commit="c" * 40)
+    one.attest("bob", one.entity("alice", "obligation@1", {"state": "done", "statement": "accepted at a commit", "serves": []}, lineage=p1), commit="c" * 40, files={"a.py": "0" * 40})
     c1 = one.entity("alice", "obligation@1", {"state": "open", "statement": "challenged", "serves": []})
     c2 = one.entity("alice", "obligation@1", {"state": "done", "statement": "challenged", "serves": []}, lineage=c1)
     one.attest("bob", c2)
@@ -2295,7 +2326,9 @@ WATCH_EXIT = {"silent": 0, "touched": 3, "not established": 4}
 SILENCE = "none is in the frame"
 # what --mark answers without --watch (the `changes` member) over _changes_golden's fixture, before the watch list
 # existed (site/reader.mjs at f02c7e7a): the sha256 of its canonical text with addresses and mark times made constant
-CHANGES_GOLDEN = "7228e0c021d8318e04c4b997760232a18951a8f3a066794d1519f05d4b59ed8a"
+# Recomputed 2026-11-13 when the acceptance at a commit in the fixture came to name files too (a commit alone pins
+# nothing since warrant/drift.py pinned): the reader at f02c7e7a answers this fixture with this same digest.
+CHANGES_GOLDEN = "eb7d807895ba3ea11ced850959ccc7900323bbe1db77c48f1bacc295338865ba"
 
 
 def _watch_run(base, *args, reader=None):
@@ -2430,7 +2463,7 @@ def _changes_golden(reader):
         outs.append(json.loads(p.stdout).get("changes"))
     try:
         step(lambda: pub.attest("eve", b2))
-        step(lambda: pub.attest("bob", a2, commit="c" * 40))
+        step(lambda: pub.attest("bob", a2, commit="c" * 40, files={"a.py": "0" * 40}))
         step(lambda: pub.put("bob", "challenge", {"target": b2, "statement": "counted, and it stands"}, refs=[b2]))
         step(lambda: pub.entity("alice", "obligation@1", {"state": "open", "statement": "a new task", "serves": []}))
         step(lambda: other.put("carol", "challenge", {"target": a2, "statement": "from elsewhere"}, refs=[a2]), "--with", bo)

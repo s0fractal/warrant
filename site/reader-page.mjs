@@ -55,8 +55,6 @@ function fact(name, ...value) {
 }
 
 function pinsLine(p) {
-  if (p.config !== "present") return p.config === "absent" ? "compared nothing: this address serves no .warrant/claims.json, so no claim is gated"
-    : `compared nothing: .warrant/claims.json was not fetched (${p.refused.join("; ")})`;
   return `${p.claims} gated claim(s): ${counts(p.verdicts)} · files: ${p.files.fetched} fetched of ${p.files.asked} asked for, `
     + `${p.files.absent} not at their path, ${p.files.refused} not fetched · ${p.compared} comparison(s)`
     + (p.refused.length ? ` · not fetched: ${p.refused.join("; ")}` : "");
