@@ -15,6 +15,7 @@ tool shows them, lists what waits for an acceptor, and files obligations and the
 attests by a role the actor holds (nothing it requires is open), not the actor's own, neither attested nor
 challenged by it (warrant.gate due_for, the same rule the merge gate admits a verdict pull request by)."""
 import argparse
+import re
 import sys
 
 from . import records as R
@@ -58,6 +59,15 @@ def check(rep):
     return out
 
 
+_NUMBERED = re.compile(r"G(0|[1-9][0-9]*)")
+
+
+def _goal_order(key):
+    """Where a goal stands in the view: G<number> keys by their number, then every other key by its text. A key is a
+    name its author chose; one that is not G<number> (EXP-ADOPT-1, 2026-11-13) ended the view in int()."""
+    m = _NUMBERED.fullmatch(key) if isinstance(key, str) else None
+    return (0, int(m.group(1)), "") if m else (1, 0, str(key))
+
 def view(rep):
     recs, keys = rep["_recs"], goals(rep)
     lines = ["# Roadmap", "", f"Generated from `.warrant/records.jsonl` (snapshot `{rep['snapshot'][:12]}`, assessment "
@@ -68,7 +78,7 @@ def view(rep):
             leaf = recs[lin["leaf"]]["body"] if lin["leaf"] else recs[L]["body"]
             by_goal.setdefault(keys.get(leaf.get("answers")), []).append((L, lin, leaf))
     for L, lin in sorted(((L, lin) for L, lin in rep["lineages"].items() if lin["schema"] == GOAL),
-                         key=lambda x: int(recs[x[0]]["body"]["key"].lstrip("G") or 0)):
+                         key=lambda x: _goal_order(recs[x[0]]["body"].get("key"))):
         g = recs[lin["effective"] or L]["body"]
         lines += [f"## {g['key']} ({lin['state']}): {g['text']}", ""]
         lines += [_obligation_view(rep, O, olin, b)

@@ -1,0 +1,38 @@
+{
+ "answer": {
+  "SECOND_PASS_SAFE": "NO"
+ },
+ "answered": 1,
+ "arm": "S",
+ "cost_usd": 0.004674960000000001,
+ "duration_s": 18.0,
+ "exit": 0,
+ "is_error": false,
+ "kit_calls": 0,
+ "kit_errors": 0,
+ "leaks": [],
+ "mcp_calls": 0,
+ "mcp_servers": [],
+ "model": "claude-haiku-5-5",
+ "model_alias": "haiku",
+ "ran_tests": 1,
+ "read_notes": 0,
+ "read_store": 1,
+ "run": "T2-S-haiku-3",
+ "stop": "success",
+ "success": 1,
+ "task": "T2",
+ "tool_calls": 4,
+ "tools": [
+  "Bash",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Read",
+  "Write"
+ ],
+ "turns": 5,
+ "used_kit": 0,
+ "wall_s": 18.5,
+ "wrong_credit": 0
+}
