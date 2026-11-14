@@ -1,0 +1,49 @@
+{
+ "answer": {
+  "SECOND_PASS_SAFE": "YES"
+ },
+ "answered": 1,
+ "arm": "A",
+ "cost_usd": 0.0067599800000000005,
+ "duration_s": 26.9,
+ "exit": 0,
+ "is_error": false,
+ "kit_calls": 3,
+ "kit_errors": 0,
+ "leaks": [],
+ "mcp_calls": 3,
+ "mcp_servers": [
+  "warrant"
+ ],
+ "model": "claude-haiku-5-5",
+ "model_alias": "haiku",
+ "ran_tests": 1,
+ "read_notes": 0,
+ "read_store": 0,
+ "run": "T2-A-haiku-2",
+ "stop": "success",
+ "success": 0,
+ "task": "T2",
+ "tool_calls": 9,
+ "tools": [
+  "Bash",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Read",
+  "Write",
+  "mcp__warrant__warrant_across",
+  "mcp__warrant__warrant_commit",
+  "mcp__warrant__warrant_context",
+  "mcp__warrant__warrant_explain",
+  "mcp__warrant__warrant_graph",
+  "mcp__warrant__warrant_handoff",
+  "mcp__warrant__warrant_prepare",
+  "mcp__warrant__warrant_read",
+  "mcp__warrant__warrant_workspace"
+ ],
+ "turns": 10,
+ "used_kit": 1,
+ "wall_s": 28.2,
+ "wrong_credit": 1
+}

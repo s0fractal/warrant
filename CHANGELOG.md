@@ -16,6 +16,9 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   `warrant/graph.py` `frame` is the reader's `frame()` (J19). Measured on this store: a frame's proof 4.3 KB median
   as JSON, 1.29 times the frame (68 of 99 over 1); 0.56 in raw bytes (none over 1). WT1–WT6; mutants WM1, WM3–WM14.
 
+- The roadmap view names every goal whatever its key (`warrant/roadmap.py`): `G<number>` keys in the order of their
+  numbers, then the others by their text. A goal keyed otherwise (EXP-ADOPT-1, the adoption experiment's registration)
+  ended `tools/graph.py views` in `int()`.
 - A mutant runs only the sections of its test file that hold its cases (a test file's `*_cases` functions,
   `tests/world.py` `run_sections`), and its run ends at the first `FAIL` of one of its cases; the verdict is the same
   printed `FAIL <case>` line. Which section holds a case is read from clean runs of each section alone, unmutated, in

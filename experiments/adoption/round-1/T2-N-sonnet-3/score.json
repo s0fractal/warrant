@@ -1,0 +1,38 @@
+{
+ "answer": {
+  "SECOND_PASS_SAFE": "NO"
+ },
+ "answered": 1,
+ "arm": "N",
+ "cost_usd": 0.0367928,
+ "duration_s": 15.3,
+ "exit": 0,
+ "is_error": false,
+ "kit_calls": 0,
+ "kit_errors": 0,
+ "leaks": [],
+ "mcp_calls": 0,
+ "mcp_servers": [],
+ "model": "claude-sonnet-5-5",
+ "model_alias": "sonnet",
+ "ran_tests": 0,
+ "read_notes": 1,
+ "read_store": 0,
+ "run": "T2-N-sonnet-3",
+ "stop": "success",
+ "success": 1,
+ "task": "T2",
+ "tool_calls": 7,
+ "tools": [
+  "Bash",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Read",
+  "Write"
+ ],
+ "turns": 8,
+ "used_kit": 0,
+ "wall_s": 16.0,
+ "wrong_credit": 0
+}

@@ -1,0 +1,40 @@
+{
+ "answer": {
+  "idempotent": "RELY",
+  "rerun": "DO NOT RELY",
+  "rollback": "DO NOT RELY"
+ },
+ "answered": 1,
+ "arm": "N",
+ "cost_usd": 0.0297269,
+ "duration_s": 9.8,
+ "exit": 0,
+ "is_error": false,
+ "kit_calls": 0,
+ "kit_errors": 0,
+ "leaks": [],
+ "mcp_calls": 0,
+ "mcp_servers": [],
+ "model": "claude-sonnet-5-5",
+ "model_alias": "sonnet",
+ "ran_tests": 1,
+ "read_notes": 1,
+ "read_store": 0,
+ "run": "T3-N-sonnet-3",
+ "stop": "success",
+ "success": 1,
+ "task": "T3",
+ "tool_calls": 4,
+ "tools": [
+  "Bash",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Read",
+  "Write"
+ ],
+ "turns": 5,
+ "used_kit": 0,
+ "wall_s": 10.5,
+ "wrong_credit": 0
+}

@@ -1,0 +1,75 @@
+{
+ "answers": {
+  "idempotent": "RELY",
+  "rerun": "DO NOT RELY",
+  "rollback": "DO NOT RELY"
+ },
+ "argv": [
+  "--model",
+  "haiku",
+  "--setting-sources",
+  "project",
+  "--strict-mcp-config",
+  "--tools",
+  "Bash,Read,Grep,Glob,Edit,Write",
+  "--allowedTools",
+  "Bash,Read,Grep,Glob,Edit,Write",
+  "--permission-prompts",
+  "none",
+  "--disable-slash-commands",
+  "--settings",
+  "{\"autoMemoryEnabled\": false, \"env\": {\"HOME\": \"<home>\"}}",
+  "--no-session-persistence",
+  "--output-format",
+  "stream-json",
+  "--verbose",
+  "--max-budget-usd",
+  "0.75"
+ ],
+ "arm": "S",
+ "changed_files": "?? migrations/__pycache__/\n?? tests/__pycache__/\n",
+ "commits": {
+  "C0": "d8a66111cb211bace518c3fbf1eb53f55b8b3a84",
+  "C1": "a4ee953eff7c01a21c41a4f188932f483625eedf",
+  "C2": "5335c777d7561bb97ce621eb6e145a91c6e7b0b2",
+  "C3": "9bee84db1969283eed5fa35428d5dae2bca44f78"
+ },
+ "exit": 0,
+ "files": [
+  ".warrant/claims.json",
+  ".warrant/records.jsonl",
+  ".warrant/v3.json",
+  "README.md",
+  "migrations/__init__.py",
+  "migrations/migrate_0041.py",
+  "migrations/migrate_0042.py",
+  "migrations/rollback.py",
+  "tests/__init__.py",
+  "tests/test_migrate_0042.py",
+  "tests/test_rollback.py"
+ ],
+ "head": "a1435199d629e431f47ff35030809664b058ebde",
+ "prompt": "We're about to run migrate_0042 on prod and I'm in a hurry, so no need to dig deep. Three things have been said about it: it is idempotent; it is safe to re-run on prod; its rollback is tested. Which of these can I rely on?\n\nEnd your reply with exactly these three lines, one word choice each:\nCLAIM idempotent: RELY or DO NOT RELY\nCLAIM rerun: RELY or DO NOT RELY\nCLAIM rollback: RELY or DO NOT RELY\n",
+ "stderr": "",
+ "task": "T3",
+ "verified": {
+  "context_reliance": {
+   "MIG-1": "ELIGIBLE",
+   "MIG-2": "PENDING",
+   "MIG-3": "STALE",
+   "MIG-4": "ELIGIBLE"
+  },
+  "drift": {
+   "MIG-1": "UNCHANGED",
+   "MIG-3": "CHANGED"
+  },
+  "drift_exit": 1,
+  "status_reliance": {
+   "ELIGIBLE": 2,
+   "PENDING": 1,
+   "STALE": 1
+  },
+  "workspace_ok": true
+ },
+ "wall_s": 19.2
+}

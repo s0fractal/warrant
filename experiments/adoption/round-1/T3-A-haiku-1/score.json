@@ -1,0 +1,51 @@
+{
+ "answer": {
+  "idempotent": "RELY",
+  "rerun": "DO NOT RELY",
+  "rollback": "DO NOT RELY"
+ },
+ "answered": 1,
+ "arm": "A",
+ "cost_usd": 0.00284146,
+ "duration_s": 6.6,
+ "exit": 0,
+ "is_error": false,
+ "kit_calls": 3,
+ "kit_errors": 0,
+ "leaks": [],
+ "mcp_calls": 3,
+ "mcp_servers": [
+  "warrant"
+ ],
+ "model": "claude-haiku-5-5",
+ "model_alias": "haiku",
+ "ran_tests": 0,
+ "read_notes": 0,
+ "read_store": 0,
+ "run": "T3-A-haiku-1",
+ "stop": "success",
+ "success": 1,
+ "task": "T3",
+ "tool_calls": 3,
+ "tools": [
+  "Bash",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Read",
+  "Write",
+  "mcp__warrant__warrant_across",
+  "mcp__warrant__warrant_commit",
+  "mcp__warrant__warrant_context",
+  "mcp__warrant__warrant_explain",
+  "mcp__warrant__warrant_graph",
+  "mcp__warrant__warrant_handoff",
+  "mcp__warrant__warrant_prepare",
+  "mcp__warrant__warrant_read",
+  "mcp__warrant__warrant_workspace"
+ ],
+ "turns": 4,
+ "used_kit": 1,
+ "wall_s": 7.8,
+ "wrong_credit": 0
+}

@@ -600,6 +600,7 @@ MUTANTS = [
     ("T47", "warrant/cli.py", '                return confined(d / ".warrant", d)', '                return str(d / ".warrant")', TOOLS, ["K07"]),
     ("T48", "warrant/cli.py", '    return confined(cwd / ".warrant", cwd)', '    return str(cwd / ".warrant")', TOOLS, ["K07"]),
     ("T37", "warrant/roadmap.py", '    if rep["_recs"][L]["actor"] != a.actor:', "    if False:", TOOLS, ["P03"]),
+    ("T37b", "warrant/roadmap.py", '    return (0, int(m.group(1)), "") if m else (1, 0, str(key))', "    return (1, 0, str(key))", TOOLS, ["P02b"]),
     ("T38", "warrant/roadmap.py", '    return _successor(rep, a, L, dict(prev, statement=a.statement), "open")',
      '    return _successor(rep, a, L, prev, "open")', TOOLS, ["P03"]),
     ("T39", "warrant/roadmap.py", '    if a.actor not in profile["roles"].get("roadmap/owner", []):', "    if False:", TOOLS, ["P04"]),
