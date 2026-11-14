@@ -1166,7 +1166,10 @@ def browser_reader_cases():
     doc = json.loads((ROOT / ".warrant" / "v3.json").read_text())
     view = E.View(ST.Store(ROOT / ".warrant").snapshot(), doc["trust"], doc["profile"], None)
     py = view.report()
-    speaks = {r["body"]["target"] for r in view.recs.values() if r["kind"] == "attest" and ("files" in r["body"] or "commit" in r["body"])}
+    from warrant import drift as DR
+    # the pinned acceptances as the freshness gate reads them (drift.pinned): files named, or the claims checker's; an
+    # attest naming a commit alone pins no bytes (Codex's acceptance ad48d46a of the handoff dcd17c3b, #407)
+    speaks = set(DR.pinned({**py, "_recs": view.recs, "_basis": view.basis}))
     want = {L: ("PINS_NOT_CHECKED" if x["reliance"] == "ELIGIBLE" and x["effective"] in speaks else x["reliance"])
             for L, x in py["lineages"].items()}
     by_state = {}
@@ -1182,7 +1185,7 @@ def browser_reader_cases():
     rows = {x["id"]: x for x in quick.get("rows", [])}
     summ = quick.get("summary", {})
     check("J10 the repository read by the browser's reader: every lineage's state is the Python engine's, its reliance the "
-          "engine's except PINS_NOT_CHECKED where an attest on its effective version names files or a commit, and the "
+          "engine's except PINS_NOT_CHECKED where a pinned acceptance (drift.pinned) targets its effective version, and the "
           "counts by schema and state are the engine's",
           rc == 0 and {L: x["state"] for L, x in rows.items()} == {L: x["state"] for L, x in py["lineages"].items()}
           and {L: x["reliance"] for L, x in rows.items()} == want and summ.get("lineages") == by_state
@@ -2022,12 +2025,13 @@ def _desk(*args):
 
 def _desk_expected(root):
     """What a desk block must say of the store at `root`, from the Python engine under the store's own rules: records,
-    rejected, lineages, reliance counts (ELIGIBLE on an effective version an attest names files or a commit of reads
+    rejected, lineages, reliance counts (ELIGIBLE on an effective version a pinned acceptance, drift.pinned, targets reads
     PINS_NOT_CHECKED, as J10) and the lineages with a counted challenge that stands."""
     doc = json.loads((Path(root) / ".warrant" / "v3.json").read_text())
     view = E.View(ST.Store(Path(root) / ".warrant").snapshot(), doc["trust"], doc["profile"], None)
     rep = view.report()
-    speaks = {r["body"]["target"] for r in view.recs.values() if r["kind"] == "attest" and ("files" in r["body"] or "commit" in r["body"])}
+    from warrant import drift as DR
+    speaks = set(DR.pinned({**rep, "_recs": view.recs, "_basis": view.basis}))     # as J10: drift.pinned's rule
     reliance = {}
     for x in rep["lineages"].values():
         w = "PINS_NOT_CHECKED" if x["reliance"] == "ELIGIBLE" and x["effective"] in speaks else x["reliance"]
