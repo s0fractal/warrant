@@ -16,6 +16,7 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   (`githubOf` in `site/reader.mjs`: shown only in its shape), and the block «Object to this version» and
   `site/object.html` have the second door. In this repository: `.github/ISSUE_TEMPLATE/voice.yml`,
   `.github/workflows/voice-bridge.yml` (the branch `voices`) and `bridge-key.yml` (the environment `bridge`).
+  `site/llms.txt` tells an agent both doors, with the issue's body to write; BR6 files that body as told.
   BR1–BR6, J19; mutants T221–T238.
 - The reader on a phone: a paragraph or list item wraps a name with no space in it (`site/style.css`). A lineage accepted
   by an actor named by a hash (`checker sha256:…`) made the page 610 px wide at 375; measured 375 after.

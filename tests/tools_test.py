@@ -1998,14 +1998,20 @@ def bridge_cases():
         through = BR.voice(_issue(delivered, number=50))
     except BR.Refused as e:
         through = str(e)
+    told = (ROOT / "site" / "llms.txt").read_text().split("```\n")
+    try:
+        as_told = BR.voice(_issue(told[1].replace("RECORD_ID", target), number=51)) if len(told) == 3 else "no one block"
+    except BR.Refused as e:
+        as_told = str(e)
     check("BR6 the form on disk is the form the bridge reads: its fields are an input `record`, a dropdown `stance` and a "
           "textarea `statement`, labelled Record, Stance and Statement in that order, each required, the stances offered "
           "are objection and support and nothing else, and a body built from those labels as GitHub delivers a form's "
-          "answers is filed",
+          "answers is filed; the body site/llms.txt tells an agent to write, with a record id in it, is filed too",
           fields == [("input", "record", "Record"), ("dropdown", "stance", "Stance"), ("textarea", "statement", "Statement")]
           and options == ["objection", "support"] == list(BR.STANCES) and required == 3
-          and isinstance(through, tuple) and through[0] == "challenge" and through[1]["statement"] == "as the form delivers it",
-          (fields, options, required, through))
+          and isinstance(through, tuple) and through[0] == "challenge" and through[1]["statement"] == "as the form delivers it"
+          and isinstance(as_told, tuple) and as_told[0] == "challenge" and as_told[1]["target"] == target,
+          (fields, options, required, through, as_told))
 
 
 def merged_cases():
