@@ -1412,7 +1412,7 @@ def rules_cases():
           "rules have no guard, so filing is making in force; the owner's stop is RULES_VETO",
           "RULES_PROJECTION" in rcodes(owner_files), codes(owner_files))
     def wrong_genesis(p):
-        sch = p.r.put("alice", "schema", SCHEMA)
+        p.r.put("alice", "schema", SCHEMA)
         doc = doc_of(p.r)
         p.g = p.r.put("alice", "entity", dict(doc, trust=dict(doc["trust"], keys=dict(doc["trust"]["keys"], mallory=["ab" * 32])),
                                               state="in force"), RULES)
