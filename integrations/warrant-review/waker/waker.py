@@ -322,10 +322,11 @@ class Unpublished(Exception):
 
 def binds(rec, c):
     """Whether record `rec` is a verdict on version `c["closure"]` (an entry of `roadmap.py due`): an acceptance of
-    exactly that version (its id covers its evidence) or a challenge of it."""
+    exactly that version (its id covers its evidence) or a challenge of it; for a question asked of Codex
+    (`asked`: no guard waits on the answer), an attest of any verdict on it, or a challenge."""
     b = rec.get("body") or {}
-    return b.get("target") == c["closure"] and (rec.get("kind") == "challenge"
-                                                 or (rec.get("kind") == "attest" and b.get("verdict") == "accept"))
+    return b.get("target") == c["closure"] and (rec.get("kind") == "challenge" or (
+        rec.get("kind") == "attest" and (b.get("verdict") == "accept" or (c.get("asked") and isinstance(b.get("verdict"), str)))))
 
 
 def blob_problem(digest, blobs, cited):
@@ -336,6 +337,23 @@ def blob_problem(digest, blobs, cited):
         if b not in cited:
             return f"blob {b[:12]} is cited by no verdict"
     return None
+
+
+def asked_at(code, actor):
+    """{version}: what the base tree `code`'s store asks of `actor` (warrant.graph.frontier's `asked`, under the base's
+    own trust and profile, by the base's package or the one installed); none from a package that has no `asked`. A
+    review wake carries an answer to one of these beside its verdict on the pull request (the minds session on #401:
+    Codex answering a question while he reviewed lost the answer and, with it, his verdict)."""
+    from warrant import engine as E
+    from warrant import graph as G
+    from warrant.store import Store
+    cfg = receiver(code)
+    view = E.View(Store(code / WARRANT).snapshot(), cfg["trust"], cfg["profile"])
+    try:
+        f = G.frontier(view.report(), cfg["profile"], actor, view.recs)
+    except TypeError:                                   # a package from before `asked`
+        return set()
+    return {x["version"] for x in f.get("asked", [])}
 
 
 def receiver(tree):
@@ -384,10 +402,15 @@ def verify_verdicts(req):
     recs, basis, bad, _ = E._authentic(snap, {"warrant": "trust/3", "keys": {actor: keys}}, None)
     if bad or len(recs) != len(lines) or any(b != "SIGNED" for b in basis.values()):
         return f"a line is not {actor}'s under the base's keys: {sorted(bad.values())[:1] or 'unsigned'}"
+    asked = asked_at(code, actor) if req.get("asked_too") else set()
     cited = set()
     for rid, rec in sorted(recs.items()):
-        if rec["actor"] != actor or rec["kind"] not in VERDICTS or not binds(rec, {"closure": req["closure"]}):
-            return f"record {rid[:12]} is not a verdict of {actor} on version {req['closure'][:12]}"
+        t = (rec.get("body") or {}).get("target")
+        if rec["actor"] != actor or rec["kind"] not in VERDICTS or not (
+                binds(rec, {"closure": req["closure"], "asked": req.get("asked")})
+                or (t in asked and binds(rec, {"closure": t, "asked": True}))):
+            return f"record {rid[:12]} is not a verdict of {actor} on version {req['closure'][:12]}" + (
+                ", nor an answer to a version that asks it" if req.get("asked_too") else "")
         cited.update(rec["refs"])
     why = blob_problem(C.digest, blobs, cited)
     if why:
@@ -825,7 +848,7 @@ class Waker:
                 raise Unpublished(f"no new record of {actor} in the worktree's store")
             if size + sum(map(len, lines)) > MAX_PREPARED:
                 raise Unpublished(f"the records and blobs exceed {MAX_PREPARED} bytes")
-            why = self.verify(self.tree(a["base"]), {"closure": version}, lines, blobs, actor)
+            why = self.verify(self.tree(a["base"]), {"closure": version, "asked_too": True}, lines, blobs, actor)
             if why:
                 raise Unpublished(why)
             paths = [RECORDS, *[f"{BLOBS}{b}" for b in sorted(blobs)]]
@@ -1045,7 +1068,8 @@ class Waker:
     def verify(self, code, c, lines, blobs, actor=None):
         """verify_verdicts on these bytes, in a process of its own with the base tree `code` first on PYTHONPATH:
         the base's package checks the signatures under the base's keys, as `actor`'s (default ACCEPTOR)."""
-        req = {"code": str(code), "actor": actor or ACCEPTOR, "closure": c["closure"],
+        req = {"code": str(code), "actor": actor or ACCEPTOR, "closure": c["closure"], "asked": bool(c.get("asked")),
+               "asked_too": bool(c.get("asked_too")),
                "lines": [base64.b64encode(x).decode() for x in lines],
                "blobs": {k: base64.b64encode(v).decode() for k, v in blobs.items()}}
         env = {"PATH": os.environ.get("PATH", DEFAULT_PATH), "HOME": str(Path.home()), "PYTHONPATH": str(code),
@@ -1149,6 +1173,18 @@ def accept_prompt(w, c, base, path, rev=None):
     plugin = w.plugin
     def ids(xs):
         return "; ".join(str(x)[:200] for x in xs[:20]) or "none"
+    if c.get("asked"):                   # a question addressed to Codex (opened.for), which no guard waits on
+        return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on a roadmap version\"; {who(rev)}. "
+                f"On {w.repository} {w.branch} M {base}, the version T {c['closure']} of the {c.get('schema')} lineage D "
+                f"{c['duty']} asks you a question: its body names you in `opened.for`, and no guard waits on your answer. "
+                f"T says: {json.dumps(c['statement'])}. T's references: {ids(c['refs'])}; T's subject: "
+                f"{c.get('subject') or 'none'}. Your worktree is {path}, detached at M (its remote origin is the "
+                f"repository). The plugin's stdio MCP client is {plugin / CLIENT}. Answer it on the code, the "
+                f"specification or a run: an attest on T (its verdict and what you found), or a finding@1 challenge "
+                f"targeting T, through MCP, into this worktree's store. Leave there only that record and the blobs it "
+                f"cites; do not commit, push or open a pull request: the waker checks them under the base's keys for "
+                f"{ACCEPTOR} and publishes them on {VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}. These facts come from "
+                f"`warrant.roadmap due --actor {ACCEPTOR}` at M; check them yourself before you rely on them.")
     return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on a roadmap version\"; {who(rev)}. "
             f"On "
             f"{w.repository} {w.branch} M {base}, the version T {c['closure']} of the {c.get('schema', 'obligation@1')} lineage D "

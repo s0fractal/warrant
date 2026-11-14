@@ -719,6 +719,46 @@ def carrying():
           "it is kept", got)
 
 
+def asking():
+    """A question asked of Codex (`opened.for`, no guard) reaches him as a question, and his answer is publishable."""
+    q = "ab" * 32
+    asked = {"closure": q, "item": 0, "duty": q, "schema": "goal@1", "goal": None, "statement": "why?", "evidence": [],
+             "refs": [], "subject": None, "requires": [], "asked": True}
+    closure = dict(asked, asked=False)
+    class W:
+        plugin, repository, branch = HERE, "s0fractal/minds", "main"
+    say = WAKER.accept_prompt(W(), asked, "cd" * 20, Path("/tmp/x"))
+    answer = {"kind": "attest", "body": {"target": q, "verdict": "answered"}}
+    check("W23", "asks you a question" in say and "opened.for" in say and WAKER.binds(answer, asked)
+          and not WAKER.binds(answer, closure) and WAKER.binds({"kind": "challenge", "body": {"target": q}}, asked),
+          "a question asked of Codex is put to him as a question (not a closure awaiting acceptance), and an attest of "
+          "any verdict on it is a publishable answer; on a closure only an acceptance or a challenge is", say[:200])
+
+
+def carrying_answers():
+    """A review wake carries Codex's answer to a question asked of him beside his verdict on the pull request: an
+    attest or challenge on a version that asks him (frontier's `asked`, at the base), checked as his verdict is; one on
+    a version that does not ask him refuses the carry, as before (the minds session on #401)."""
+    import base64
+    r = Repo()
+    h = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "the head version stands in for a pr-head"})
+    q = r.entity("alice", "goal@1", {"state": "open", "key": "Q1", "text": "why?", "opened": {"for": "bob"}})
+    x = r.entity("alice", "goal@1", {"state": "open", "key": "G2", "text": "asks no one"})
+    line = lambda t, v, k=0: R.line(R.record("attest", "bob", r.t + 20 + k, {"verdict": v, "target": t}, refs=[t]), KEYS["bob"])[1]
+    verdict, answer, stray = line(h, "accept"), line(q, "answered", 1), line(x, "answered", 2)
+    def carry(ls):
+        return WAKER.verify_verdicts({"code": str(r.root), "actor": "bob", "closure": h, "asked_too": True,
+                                      "lines": [base64.b64encode(y).decode() for y in ls], "blobs": {}})
+    both, alone, off = carry([verdict, answer]), carry([answer]), carry([verdict, stray])
+    old = WAKER.verify_verdicts({"code": str(r.root), "actor": "bob", "closure": h,
+                                 "lines": [base64.b64encode(y).decode() for y in (verdict, answer)], "blobs": {}})
+    check("W24", both is None and alone is None and off is not None and old is not None,
+          "a review wake carries an answer to a question asked of the reviewer (an attest of any verdict on a version "
+          "whose body names it in opened.for) beside its verdict on the head version, or alone; an answer to a version "
+          "that asks it nothing refuses the carry, and an acceptance wake (no asked_too) carries only its own verdict",
+          (both, alone, off, old))
+
+
 if __name__ == "__main__":
     manifests()
     launcher()
@@ -733,6 +773,8 @@ if __name__ == "__main__":
     configuration()
     reviewers()
     carrying()
+    asking()
+    carrying_answers()
     failed = sorted(k for k, v in results.items() if not v)
     print(f"codex plugin: {sum(results.values())} PASS / {len(failed)} FAIL" + (f" ({', '.join(failed)})" if failed else ""))
     sys.exit(1 if failed else 0)

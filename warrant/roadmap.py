@@ -41,7 +41,7 @@ def due(rep, profile, actor):
         out.append({"closure": d["version"], "item": 0, "duty": d["lineage"], "schema": d["schema"],
                     "goal": keys.get(b.get("answers")) or b.get("key"), "statement": b.get("statement") or b.get("text"),
                     "evidence": sorted(b.get("evidence") or []), "refs": list(b.get("refs") or []),
-                    "subject": b.get("subject"), "requires": g.get("requires", [])})
+                    "subject": b.get("subject"), "requires": g.get("requires", []), "asked": bool(d.get("asked"))})
     return out
 
 
