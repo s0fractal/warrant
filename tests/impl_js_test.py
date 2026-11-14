@@ -1004,6 +1004,7 @@ def main():
     browser_watch_cases()
     browser_toward_cases()
     browser_bridge_cases()
+    browser_rules_cases()
     frame_parity_cases()
     if a.limits:
         limit_cases(tally)
@@ -1738,6 +1739,97 @@ def browser_bridge_cases():
           "is a list or a string, is still a voice and is shown with no account (" + str(len(shapes)) + " shapes)",
           len(forged) == len(shapes) and all(x in vs and vs[x].get("github") is None and vs[x].get("stance") is None for x in forged),
           {x[:8]: vs.get(x, {}).get("github") for x in forged})
+
+
+# ---------------------------------------------------------------- J21: the publisher's rules changed (stage 2a)
+def browser_rules_cases():
+    """What the reader says when the publisher's rules change (docs/V3.md §14, stage 2a: `rules@1` versions whose body
+    less its state is .warrant/v3.json): the version in force is in the summary, a mark keeps the version it was set
+    under, and a mark set under rules the publisher has since changed is refused naming the change; a store with no
+    rules@1 lineage, and a mark from before, read exactly as before."""
+    from warrant import gate as GT
+    pub = Repo()
+    pub.put("alice", "schema", GT.RULES_SCHEMA)
+    plain_mark_dir = pub.home / "plain"
+    plain_mark_dir.mkdir()
+
+    def doc():
+        return json.loads((pub.dot / "v3.json").read_text())
+    v1 = pub.put("bob", "entity", dict(doc(), state="in force"), GT.RULES)
+    o = pub.entity("alice", "obligation@1", {"state": "open", "statement": "a task", "serves": []})
+    srvs, (b_pub,) = _serve_many(pub.root)
+    try:
+        m1 = pub.home / "mark-1.json"
+        _reader(b_pub, "--write-mark", str(m1))
+        _, before = _reader(b_pub)
+        pub.profile["roles"]["roadmap/acceptor"] = sorted(set(pub.profile["roles"].get("roadmap/acceptor", [])) | {"carol"})
+        pub.write_config()
+        v2 = pub.put("bob", "entity", dict(doc(), state="in force"), GT.RULES, lineage=v1)
+        _, after = _reader(b_pub, "--mark", str(m1))
+        legacy = json.loads(m1.read_text())
+        legacy.pop("rules_version", None)
+        m0 = pub.home / "mark-0.json"
+        m0.write_text(json.dumps(legacy))
+        _, old = _reader(b_pub, "--mark", str(m0))
+        m2 = pub.home / "mark-2.json"
+        _reader(b_pub, "--write-mark", str(m2))
+        mine = dict(doc())
+        mine["profile"] = dict(mine["profile"], roles=dict(mine["profile"]["roles"], **{"replayer": ["dave"]}))
+        (pub.home / "mine.json").write_text(json.dumps(mine))
+        _, reader_rules = _reader(b_pub, "--mark", str(m2), "--config", str(pub.home / "mine.json"))
+        v3 = pub.put("carol", "entity", dict(doc(), state="in force"), GT.RULES, lineage=v2)   # carol holds no pr/acceptor
+        _, not_hers = _reader(b_pub)
+        waiting = pub.put("bob", "entity", dict(doc(), state="in force"), GT.RULES, lineage=v2,     # a version whose own
+                          guard=R.guard(1, ["roadmap/acceptor"], {"verdict": "accept"}))          # guard waits: the leaf
+        _, pending = _reader(b_pub)
+        _, pending_lin = _reader(b_pub, "--lineage", v1)
+        second = pub.put("bob", "entity", dict(doc(), state="in force"), GT.RULES)            # a second rules lineage
+        _, two = _reader(b_pub)
+    finally:
+        for x in srvs:
+            x.shutdown()
+    bare = Repo()
+    bare.entity("alice", "obligation@1", {"state": "open", "statement": "a task", "serves": []})
+    srvs, (b_bare,) = _serve_many(bare.root)
+    try:
+        mb = bare.home / "mark.json"
+        _reader(b_bare, "--write-mark", str(mb))
+        _, bare_read = _reader(b_bare)
+    finally:
+        for x in srvs:
+            x.shutdown()
+    why = (after.get("changes") or {}).get("why") or ""
+    check("J21 the publisher's rules as records: the summary names the rules@1 lineage and its version in force, a mark "
+          "keeps the version it was set under, and after the publisher changes the rules (a new version, and v3.json "
+          "with it) a mark set under the old ones is refused naming the change, old version to new",
+          (before.get("summary") or {}).get("publisher_rules") == {"lineage": v1, "version": v1, "forks": False}
+          and json.loads(m1.read_text()).get("rules_version") == v1
+          and (after.get("summary") or {}).get("publisher_rules") == {"lineage": v1, "version": v2, "forks": False}
+          and f"the publisher's rules changed: {v1[:12]} → {v2[:12]} (lineage {v1[:12]})" in why
+          and "the mark was set under other rules" in why and (after.get("changes") or {}).get("mark") is None,
+          (before.get("summary", {}).get("publisher_rules"), after.get("summary", {}).get("publisher_rules"), why))
+    old_why = (old.get("changes") or {}).get("why") or ""
+    check("J21 a store that records no rules, and a mark from before (no rules_version), read as before: no "
+          "publisher_rules in the summary, no rules_version in the mark, and the refusal under other rules names no change",
+          "publisher_rules" not in (bare_read.get("summary") or {"publisher_rules": 1})
+          and "rules_version" not in json.loads(mb.read_text())
+          and old_why.startswith("the mark was set under other rules") and "changed" not in old_why, (old_why, bare_read.get("summary", {}).keys()))
+    mine_why = (reader_rules.get("changes") or {}).get("why") or ""
+    check("J21 only the publisher's change is named: a reader reading by rules of its own (--config) under which the "
+          "same version is in force is refused as under other rules, naming no change; a version filed by an actor the "
+          "rules give no pr/acceptor is no successor, and the one in force stays; a newer version whose own guard still "
+          "waits is the leaf, and the one in force stays the effective one; two rules@1 lineages are no rules "
+          "the reader can name (the gate refuses them), and the summary names none",
+          mine_why.startswith("the mark was set under other rules") and "changed" not in mine_why
+          and (not_hers.get("summary") or {}).get("publisher_rules", {}).get("version") == v2 and v3 != v2
+          and (pending.get("summary") or {}).get("publisher_rules", {}).get("version") == v2
+          and any(x.get("id") == waiting and x.get("leaf") for x in (pending_lin.get("lineage") or {}).get("versions", []))
+          and "publisher_rules" not in (two.get("summary") or {"publisher_rules": 1}) and second != v1,
+          (mine_why, (not_hers.get("summary") or {}).get("publisher_rules"), (two.get("summary") or {}).get("publisher_rules")))
+    page = (ROOT / "site" / "reader-page.mjs").read_text()
+    check("J21 the page says the change once per store address (the version last read, kept in this browser) beside "
+          "the status, from the same rulesChange the CLI uses",
+          "rulesSeen(base, rulesVersion(r))" in page and "return rulesChange(before, now);" in page, None)
 
 
 def _floor_py(rep):

@@ -3,7 +3,7 @@
 import { utf16, webBackend } from "./warrant.mjs";
 import * as reader from "./reader.mjs";
 import { changes, changesLine, comparePins, fetchStore, lineage, makeMark, memoFetch, overlay, PINS_NOT_CHECKED, read, readOthers,
-         receiver, rows, rulesId, STALE, summary } from "./reader.mjs";
+         receiver, rows, rulesChange, rulesId, rulesVersion, STALE, summary } from "./reader.mjs";
 import { $, counts, el, fill, keepActor, keptActor, loadMark, markKey, pill, saveMark, section, short, when } from "./page.mjs";
 import * as page from "./page.mjs";
 import * as voice from "./voice.mjs";
@@ -561,6 +561,17 @@ function draw() {
   drawList();
 }
 
+// The publisher's rules version this browser last read a store under (one entry per store address), and whether it
+// changed since: a change is said once, then the new version is kept. Storage absent or refusing: nothing is said.
+function rulesSeen(base, now) {
+  const key = `warrant-rules-seen/1 ${base}`;
+  try {
+    const before = globalThis.localStorage?.getItem(key) ?? null;
+    if (now?.version) globalThis.localStorage?.setItem(key, now.version);
+    return rulesChange(before, now);
+  } catch { return null; }
+}
+
 function say(text, bad) {
   const s = $("status");
   s.textContent = typeof page.plain === "function" ? page.plain(text) : text;   // an older cached page.mjs has none
@@ -602,7 +613,8 @@ async function run() {
     await compare(c, kept.mark);
     current = c;
     shownRows = PAGE;
-    say(`Read and assessed in ${((performance.now() - started) / 1000).toFixed(1)} s.`);
+    const ruled = rulesSeen(base, rulesVersion(r));
+    say(`Read and assessed in ${((performance.now() - started) / 1000).toFixed(1)} s.` + (ruled ? ` Note: ${ruled.line}; a mark set under the old rules is kept under them and not used under these.` : ""));
     draw();
   } catch (e) {
     current = null;

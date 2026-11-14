@@ -51,6 +51,7 @@ import { assessPrepared, canon, canonStr, cmp, codeIdentity, hex64, loadsLenient
 
 
 export const MIGRATION = "migration@1";
+export const RULES = "rules@1";       // the publisher's rules as records (warrant/gate.py, docs/V3.md §14, stage 2a)
 export const TITLE_MEMBERS = ["statement", "title", "text", "name", "what"];   // the first a body has, as its one-line name
 
 function split(raw) {
@@ -500,6 +501,7 @@ export function summary(r) {
     ...(r.others ? { others: othersSummary(r) } : {}),
     ...(r.overlay ? { overlay: overlaySummary(r.overlay) } : {}),
     cited: citedCounts(r),                                        // resolved(): where the bytes of every cited id are
+    ...(rulesVersion(r) ? { publisher_rules: rulesVersion(r) } : {}),   // only a store that records its rules (stage 2a)
   };
 }
 
@@ -714,6 +716,24 @@ function markProblem(m) {
 const norm = (address) => (address.endsWith("/") ? address : address + "/");
 
 // The identity of the rules a read was assessed under: the digest of {trust, profile}, whoever gave them.
+// The publisher's rules as records: {lineage, version, forks} of the store's one rules@1 lineage, `version` its
+// effective version (null when none is), as the gate's rules_in_force reads it; null when the store has no such
+// lineage or more than one (the gate refuses two). Read under the rules this reader reads by.
+export function rulesVersion(r) {
+  const lins = Object.entries(r.rep.lineages).filter(([, lin]) => lin.schema === RULES);
+  if (lins.length !== 1) return null;
+  const [L, lin] = lins[0];
+  return { lineage: L, version: lin.effective || null, forks: Boolean(lin.forks?.length) };
+}
+
+// {from, to, lineage, line} when the rules version in force now is not the one seen before (`before`, a version id
+// kept by a mark or a page), else null: nothing seen before, nothing in force now, or the same version.
+export function rulesChange(before, now) {
+  if (!hex64(before) || !now?.version || before === now.version) return null;
+  return { from: before, to: now.version, lineage: now.lineage,
+           line: `the publisher's rules changed: ${before.slice(0, 12)} → ${now.version.slice(0, 12)} (lineage ${now.lineage.slice(0, 12)})` };
+}
+
 export function rulesId(r, backend) { return docId({ trust: r.rules.trust, profile: r.rules.profile }, backend); }
 
 // The mark of `r` now (read from `base`): the ids of every record of the main store and of each other store read,
@@ -726,7 +746,9 @@ export async function makeMark(r, base, backend, at = Math.floor(Date.now() / 10
   for (const o of r.others ?? []) if (o.r && !(norm(o.address) in stores)) stores[norm(o.address)] = await markOf(o.r.recs.keys(), backend);
   const floors = {};
   for (const L of parseWatch(watch ?? []).ids) if (r.rep.lineages[L]) floors[L] = floorOf(r, L);
-  return { warrant: MARK, base: norm(base), rules: await rulesId(r, backend), at, stores, ...(Object.keys(floors).length ? { floors } : {}) };
+  const rv = rulesVersion(r);
+  return { warrant: MARK, base: norm(base), rules: await rulesId(r, backend), at, stores, ...(Object.keys(floors).length ? { floors } : {}),
+           ...(rv?.version ? { rules_version: rv.version } : {}) };
 }
 
 // warrant_agent/changes.py subset: `store` with only the lines whose record id is in `keep` (all its blobs kept).
@@ -844,7 +866,10 @@ async function markRefusal(r, mark, root, backend) {
   const bad = markProblem(mark);
   if (bad) return `the mark cannot be read: ${bad}`;
   if (mark.base !== root) return `the mark is of another store (${mark.base})`;
-  if (mark.rules !== (await rulesId(r, backend))) return "the mark was set under other rules: a mark belongs to the rules it was read under, and is not used under these";
+  if (mark.rules !== (await rulesId(r, backend))) {
+    const ch = rulesChange(mark.rules_version, rulesVersion(r));     // the publisher changed them, not the reader
+    return `${ch ? `${ch.line}; ` : ""}the mark was set under other rules: a mark belongs to the rules it was read under, and is not used under these`;
+  }
   if (!mark.stores[root]) return "the mark holds nothing of this store";
   return null;
 }
