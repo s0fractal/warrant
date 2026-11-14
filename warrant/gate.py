@@ -508,7 +508,7 @@ class Base:
                 and isinstance(v3["repository"], str) and REPO_NAME.match(v3["repository"])
                 and E.trust_problem(v3["trust"]) is None and E.profile_problem(v3["profile"]) is None):
             raise Refused(f".warrant/v3.json at the base is not a {REPOSITORY_DOC} document", "BASE_CONFIG")
-        self.repository, self.trust, self.profile = v3["repository"], v3["trust"], v3["profile"]
+        self.repository, self.trust, self.profile, self.v3 = v3["repository"], v3["trust"], v3["profile"], v3
 
     def holders(self, role):
         return set(self.profile["roles"].get(role, []))
@@ -692,7 +692,66 @@ def _shared(a, root, b, pr, checks, now=None):
                                + [f"{c} {str(i)[:12]}" for c, i, _ in rep["problems"][:2]])))
     if not rep["canonical"]:
         sh.append(("STORE_NOT_CANONICAL", "the head's records.jsonl is not in canonical order (`warrant fmt`)"))
+    sh += rules_reasons(root, b, head, rep)
     _review(a, root, b, pr, head, rep, checks, now)
+
+
+# The publisher's rules as records (docs/V3.md §14, stage 2a): `rules@1` versions, whose body less its `state` is
+# .warrant/v3.json, the file being their projection. The engine still reads the file.
+RULES, RULES_FILE = "rules@1", ".warrant/v3.json"
+RULES_SCHEMA = {"name": RULES, "fields": {"state": "str", "warrant": "str", "repository": "str", "trust": "obj",
+                                          "profile": "obj"},
+                "states": {"in force": None}, "closed": [], "successors": {"in force": ["pr/acceptor", "pr/owner"]}}
+
+
+def rules_in_force(rep):
+    """(lineage, version in force, why not) of the store's rules@1 lineage as `rep` (a report under the BASE's rules)
+    reads it: its effective version; none when the store has no such lineage."""
+    lins = sorted(L for L, lin in rep["lineages"].items() if lin["schema"] == RULES)
+    if not lins:
+        return None, None, None
+    if len(lins) > 1:
+        return lins[0], None, ("RULES_TWO", f"{len(lins)} {RULES} lineages: the rules are one lineage")
+    lin = rep["lineages"][lins[0]]
+    if lin["forks"]:
+        return lins[0], None, ("RULES_FORK", f"the {RULES} lineage forks: two versions after one")
+    return lins[0], lin["effective"], None
+
+
+def rules_reasons(root, b, head, rep):
+    """[(code, detail)]: what keeps the head's rules from being the base's or their recorded successor. Once the base
+    holds a rules@1 version in force, the head's version in force (its records read under the BASE's trust and
+    profile, as every head is: a version that names a new key or a new role holder is judged by the rules it would
+    replace, so N+1 never admits itself) must be the head's .warrant/v3.json, canonically, and be the base's version or
+    the one that succeeds it. A change of bytes that changes no canonical byte (spacing, key order) needs no version."""
+    if not hasattr(b, "_rules"):                    # once per base: every pull request is judged against it
+        b._rules = rules_in_force(assess_snapshot(b, store_at(root, b.commit)[0]))
+    _, before, why = b._rules
+    if before is None and why is None:
+        return []                                   # no rules recorded at the base: v3.json is governed as before
+    if why:
+        return [why]
+    L, now, why = rules_in_force(rep)
+    if why or now is None:
+        return [why or ("RULES_UNRECORDED", f"no {RULES} version is in force at the head under the base's rules")]
+    try:
+        file = json.loads(files_at(root, head, [RULES_FILE])[RULES_FILE])
+    except (KeyError, ValueError):
+        return [("RULES_PROJECTION", f"{RULES_FILE} at the head cannot be read as JSON")]
+    body = {k: v for k, v in rep["_recs"][now]["body"].items() if k != "state"}
+    out = []
+    if C.canon(body) != C.canon(file):
+        out.append(("RULES_PROJECTION", f"{RULES_FILE} at the head is not the {RULES} version in force, {now[:12]}: the "
+                    "file changed without a version of the rules, or a version names other rules than the file"))
+    if now != before and rep["_recs"][now].get("lineage") != before:
+        out.append(("RULES_CHAIN", f"the {RULES} version in force at the head, {now[:12]}, does not succeed the base's, "
+                    f"{before[:12]}"))
+    role = (b.gate.get(CONSTITUTIONAL) or {}).get("veto_role", "pr/owner")
+    veto = sorted(c for c, x in rep["challenges"].items() if x["target"] == now and now != before
+                  and rep["_recs"].get(c, {}).get("actor") in b.holders(role))
+    if veto:
+        out.append(("RULES_VETO", f"a {role} challenged the rules version {now[:12]}: " + ", ".join(v[:12] for v in veto)))
+    return out
 
 
 def _lineage(b, rep, n):

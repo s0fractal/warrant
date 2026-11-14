@@ -26,6 +26,7 @@ from world import KEYS, Repo, check, git, run_sections
 from warrant import gate as GT
 from warrant.store import _line_id
 from warrant import imports as IM
+from warrant import keys as K
 from warrant import records as R
 
 REPO = "s0fractal/warrant"
@@ -1327,6 +1328,91 @@ AFTER_ = dict(MERGE, after_merge=[{"workflow": ".github/workflows/pages.yml", "p
                                   {"workflow": ".github/workflows/claims-replay.yml"}])
 
 
+def rules_cases():
+    """Stage 2a (the analysis session's decision for the owner, plan §10.3): the publisher's rules as rules@1 records,
+    .warrant/v3.json their projection. The gate reads the head's records under the BASE's trust and profile."""
+    rcodes = lambda a: {c for c in codes(a) if c.startswith("RULES_")}
+    RULES = getattr(GT, "RULES", "rules@1")                  # before stage 2a the gate has neither: the cases fail on
+    SCHEMA = getattr(GT, "RULES_SCHEMA", {"name": "rules@1", "fields": {"state": "str", "warrant": "str",  # their checks
+        "repository": "str", "trust": "obj", "profile": "obj"}, "states": {"in force": None}, "closed": [],
+        "successors": {"in force": ["pr/acceptor", "pr/owner"]}})
+    def doc_of(r):
+        return json.loads((r.dot / "v3.json").read_text())
+
+    def genesis(p):
+        sch = p.r.put("alice", "schema", SCHEMA)
+        p.g = p.r.put("alice", "entity", dict(doc_of(p.r), state="in force"), RULES)
+        p.sch = sch
+
+    def change(p, by="bob", version=True, body=None, lineage=None):
+        p.r.profile["roles"]["replayer"] = sorted(set(p.r.profile["roles"]["replayer"]) | {"eve"})
+        p.r.write_config()
+        if version:
+            p.n1 = p.r.put(by, "entity", dict(body or doc_of(p.r), state="in force"), RULES, lineage=lineage or p.g)
+    ok = PR(before_base=genesis, before_x=change).assess()
+    bare = PR(before_base=genesis, before_x=lambda p: change(p, version=False)).assess()
+    other = PR(before_base=genesis, before_x=lambda p: change(p, body={**doc_of(p.r), "repository": "x/y"})).assess()
+    def eve_replays(p):                                   # eve holds a role at the base, but not one that files rules
+        p.r.profile["roles"]["replayer"] = sorted(set(p.r.profile["roles"]["replayer"]) | {"eve"})
+        p.r.write_config()
+        genesis(p)
+    def eve_files(p):
+        p.r.profile["roles"]["roadmap/owner"] = sorted(set(p.r.profile["roles"]["roadmap/owner"]) | {"eve"})
+        p.r.write_config()
+        p.n1 = p.r.put("eve", "entity", dict(doc_of(p.r), state="in force"), RULES, lineage=p.g)
+    self_made = PR(before_base=eve_replays, before_x=eve_files).assess()
+    def forked(p):
+        change(p)
+        p.r.put("dave", "entity", dict(doc_of(p.r), state="in force"), RULES, lineage=p.g)
+    fork = PR(before_base=genesis, before_x=forked).assess()
+    def spaces(p):
+        doc = doc_of(p.r)
+        (p.r.dot / "v3.json").write_text(json.dumps(doc, indent=4, sort_keys=False)[::1] + "\n\n")
+    blank = PR(before_base=genesis, before_x=spaces).assess()
+    unrecorded = PR(before_x=lambda p: change(p, version=False)).assess()
+    check("RC1 a change of .warrant/v3.json that carries the rules@1 version succeeding the base's, its body the new file, "
+          "filed by a holder of pr/acceptor or pr/owner under the base's rules, raises no rules reason", rcodes(ok) == set(), codes(ok))
+    check("RC2 the file changed with no version of the rules: refused (RULES_PROJECTION)", "RULES_PROJECTION" in rcodes(bare), codes(bare))
+    check("RC3 a version whose body is not the new file: refused (RULES_PROJECTION)", "RULES_PROJECTION" in rcodes(other), codes(other))
+    check("RC4 a version filed by an actor the base's profile gives neither pr/acceptor nor pr/owner (eve, whom the new "
+          "file would give a role) is not in force under the base's rules, so the file is no version's: refused; N+1 never "
+          "admits itself", "RULES_PROJECTION" in rcodes(self_made), codes(self_made))
+    check("RC5 two versions after the base's: the rules lineage forks, refused (RULES_FORK)", "RULES_FORK" in rcodes(fork), codes(fork))
+    check("RC6 a change of the file's bytes that changes no canonical byte (spacing, key order) needs no version",
+          rcodes(blank) == set(), codes(blank))
+    check("RC7 a base that records no rules governs .warrant/v3.json as before: no rules reason", rcodes(unrecorded) == set(),
+          codes(unrecorded))
+    def mallory(p):
+        m = K.Key.from_seed_hex("ab" * 32)
+        p.r.trust["keys"]["mallory"] = [m.public]
+        p.r.profile["roles"]["pr/acceptor"] = sorted(set(p.r.profile["roles"]["pr/acceptor"]) | {"mallory"})
+        p.r.write_config()
+        p.r.t += 1
+        rec = R.record("entity", "mallory", p.r.t, dict(doc_of(p.r), state="in force"), RULES, p.g)
+        p.r.store.append(rec, m, p.r.trust)
+    mal = PR(before_base=genesis, before_x=mallory).assess()
+    check("RC8 a version signed by a key the new file adds, its actor a pr/acceptor of the new file only: under the base's "
+          "trust that line is no one's, and the file is no version's: refused (the counterexample of N+1 admitting itself)",
+          "RULES_PROJECTION" in rcodes(mal), codes(mal))
+    def two(p):
+        genesis(p)
+        p.r.profile["roles"]["replayer"] = sorted(set(p.r.profile["roles"]["replayer"]) | {"eve"})
+        p.r.write_config()
+        p.n1 = p.r.put("bob", "entity", dict(doc_of(p.r), state="in force"), RULES, lineage=p.g)
+    def drop_n1(p):
+        lines = (p.r.dot / "records.jsonl").read_bytes().splitlines(True)
+        (p.r.dot / "records.jsonl").write_bytes(b"".join(x for x in lines if R.rid(json.loads(x)["record"]) != p.n1))
+    gap = PR(before_base=two, before_x=drop_n1).assess()
+    def vetoed(p):
+        change(p)
+        p.r.put("dave", "challenge", {"target": p.n1, "statement": "not these rules"}, refs=[p.n1])
+    veto = PR(before_base=genesis, before_x=vetoed).assess()
+    check("RC10 a challenge by the constitutional tier's veto role (pr/owner) on the new rules version stops it "
+          "(RULES_VETO), as one on the head version stops the pull request", "RULES_VETO" in rcodes(veto), codes(veto))
+    check("RC9 a head whose rules in force are not the base's nor their successor (the base's version gone): refused "
+          "(RULES_CHAIN)", "RULES_CHAIN" in rcodes(gap), codes(gap))
+
+
 def own_tiers_cases():
     """The repository's own .warrant/merge.json, as the gate reads it (the analysis session, 2026-11-14: #393 added a
     section to docs/V3.md and the verifier `rely` rests on, and merged solo with no second family: none of its files
@@ -1476,6 +1562,7 @@ if __name__ == "__main__":
         codex_356_cases,
         refresh_cases,
         own_tiers_cases,
+        rules_cases,
         after_merge_cases,
         prerelease_cases,
         revert_pending_cases,
