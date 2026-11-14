@@ -16,6 +16,15 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   at the base, `asked_at`), checked as his verdict is; one on a version that asks him nothing still refuses the carry
   (the minds session: an answer given while reviewing was refused and took the verdict with it). FA1–FA3, W23, W24;
   mutants T250–T254, P40–P42. Not tested: that `carry` passes `asked_too` (W24 calls the check itself).
+- The publisher's rules as records (stage 2a; docs/V3.md §14): `rules@1` versions whose body, less its `state`, is
+  `.warrant/v3.json` (the file their projection, canonically). Once the base holds one in force, the gate refuses a
+  pull request whose head's rules in force, read under the base's trust and profile, are not its file
+  (`RULES_PROJECTION`), do not succeed the base's (`RULES_CHAIN`), fork (`RULES_FORK`), are two lineages
+  (`RULES_TWO`) or are challenged by the veto role (`RULES_VETO`); a version is filed by a `pr/acceptor` of the
+  base (not `pr/owner`: the owner's word only lowers, and `in force` has no guard), and N+1 never admits itself; the
+  genesis must be the base's file unchanged (`RULES_GENESIS`). The engine still reads the file: the differential against 3.0.0a7 is SAME.
+  This pull request files the schema (pending until the second `schema/author` accepts it); the genesis version
+  follows in a records-only one. RC1–RC12; mutants G131–G139.
 
 - `.warrant/merge.json` watches what a receiver's `rely` rests on and the norm: `docs/V3.md`, `warrant/verify.py`, the
   single-file `warrant_verify.py`, `warrant/graph.py`, `warrant/pins.py`, `warrant/merkle.py`, `warrant/snapshot.py`.
