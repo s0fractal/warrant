@@ -13,8 +13,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   the witnessed index root, every attest and challenge on the roots' frame is in the package, or what is missing (and
   the root is not relied on); the witness must be one the receiver's profile names `witness`; two snapshots after the
   same one are equivocation, exit 4; `--extends HELD` refuses a rollback. `completeness` stays UNATTESTED.
-  `warrant/graph.py` `frame` is the reader's `frame()` (J19). Measured on this store: a frame's proof 4.3 KB median
-  as JSON, 1.29 times the frame (68 of 99 over 1); 0.56 in raw bytes (none over 1). WT1–WT6; mutants WM1, WM3–WM14.
+  `warrant/graph.py` `frame` is the reader's `frame()` (J19). The plan's stop rule (the proof larger than the frame)
+  fired by its letter: a frame's proof as sent is 4.3 KB median, 1.29 times the frame, over it in 68 of 99 lineages
+  (0.56 in raw bytes, the rule's unnamed basis). It is replaced: stop if the frame with its proof exceeds a tenth of
+  the store for the median lineage, or if the proof needs the rest of the store; measured 0.18 % here (2.9 % at most),
+  8.2 % on minds (31 % at most). WT1–WT6; mutants WM1, WM3–WM16.
 
 - The roadmap view names every goal whatever its key (`warrant/roadmap.py`): `G<number>` keys in the order of their
   numbers, then the others by their text. A goal keyed otherwise (EXP-ADOPT-1, the adoption experiment's registration)

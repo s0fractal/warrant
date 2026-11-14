@@ -800,16 +800,23 @@ def merkle_cases():
     rec_in, rec_out = M.check(M.prove_record(snap, d), roots["records"]), M.check(M.prove_record(snap, "f" * 64), roots["records"])
     forged = dict(M.prove_said(snap, d), **{"in": None, "before": None, "after": M.prove_said(snap, d)["in"]})
     other = M.check(M.prove_said(snap, d), "0" * 64)
+    low, high = M.prove_said(snap, "0" * 64), M.prove_said(snap, "f" * 64)
+    ends = (M.check(low, roots["index"]) == (True, []) and low["before"] is None and low["after"]["i"] == 0
+            and M.check(high, roots["index"]) == (True, []) and high["after"] is None and high["before"]["i"] == len(keys) - 1)
+    not_first = dict(low, after=near(1))                 # "below the first leaf", shown with the second one
+    not_last = dict(high, before=near(len(keys) - 2))    # "above the last leaf", shown with the one before it
     lied = M.prove_said(snap, d)
     lied["in"]["said"] = [x for x in lied["in"]["said"] if x[1] != c]   # the leaf's bytes kept, its list edited
     check("WT2 the reverse index's leaf for a version says every attest and challenge against it; a version nothing "
           "targets is proved absent by its neighbours; a record is proved in or out of the records tree; a leaf passed "
           "off as a neighbour of itself, neighbours that skip its leaf (not adjacent), two on the same side of it, a list that is not the "
-          "one the leaf's digest names, or a proof against another root, proves nothing",
+          "one the leaf's digest names, a key below the first leaf or above the last shown by a leaf that is not the "
+          "first or the last, or a proof against another root, proves nothing; at the ends the one neighbour does",
           said == (True, sorted([["attest", a], ["challenge", c]])) and none == (True, []) and rec_in == (True, True)
           and rec_out == (True, False) and M.check(forged, roots["index"])[0] is False and other[0] is False
           and 0 < p < len(keys) - 1 and M.check(skip, roots["index"])[0] is False and M.check(above, roots["index"])[0] is False
-          and M.check(lied, roots["index"])[0] is False,
+          and M.check(lied, roots["index"])[0] is False
+          and ends and M.check(not_first, roots["index"])[0] is False and M.check(not_last, roots["index"])[0] is False,
           (said, none, rec_in, rec_out, other, p, len(keys)))
 
 
