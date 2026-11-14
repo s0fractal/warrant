@@ -20,6 +20,7 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `warrant/review.py` | the review loop: open, head, merged, due, gate, the replay checker, verify, view |
 | `warrant/gate.py` | the merge predicate and the gate's GitHub side (constitutional path) |
 | `warrant/cli.py`, `warrant/graph.py` | the one command `warrant` (the core's verbs, `status`, and `review`, `gate`, `claims`, `roadmap`), and the queries over a report's graph that `status`, the agent's `graph` and `tools/graph.py` share |
+| `warrant/bridge.py` | the bridge: an issue opened through the form becomes one record in a store of voices of the bridge's own (below) |
 | `warrant/merkle.py`, `warrant/snapshot.py` | the store's two Merkle roots (record ids; the reverse index, target → attest and challenge) and proofs checked against a root alone; `snapshot@1`, a witness's lineage of what it saw, refusing a store that lost a witnessed record; `warrant snapshot schema / witness / prove / show` (docs/V3.md §16) |
 | `warrant/across.py` | one read over every registered store, each assessed alone (docs/HOME.md, `warrant across`, the agent's `across`) |
 | `warrant_agent/` | the agent interface: Python API, CLI, stdio MCP (docs/AGENT.md, docs/V3.md §13) |
@@ -241,6 +242,43 @@ module's name, a module added where the interpreter searches) is still the owner
 The claims checker runs on a runner (`.github/workflows/claims-replay.yml`, started by the gate after each of its merges but one of verdicts only (`after_merge` in `.warrant/merge.json`; a merge with the workflow's token starts no push workflow), on each push to master, and on a schedule GitHub mostly skips), under a key
 made there (`claims-key.yml`, the environment `claims`); its acceptances arrive as a pull request of verdicts only
 from `claims/verdicts/`, which CI re-executes and the gate merges.
+
+## The bridge: a voice with a GitHub account alone
+
+`warrant say` asks its speaker for Python, a key and a repository of their own. The bridge asks for a GitHub account:
+an issue opened through the form `.github/ISSUE_TEMPLATE/voice.yml` (a record id, a stance, a statement) is filed by
+`.github/workflows/voice-bridge.yml` as one record in a store of voices on the branch `voices`, published at
+`https://raw.githubusercontent.com/s0fractal/warrant/voices/`, and the issue is answered with the record's id
+(`warrant/bridge.py`; cases BR1–BR7 and J20).
+
+- **What a record says.** The bridge's key states that GitHub delivered this issue, opened by this account (login, id,
+  kind of account, the issue's address, the SHA-256 of its body as delivered). It is not the account's signature:
+  whoever holds the bridge's key, or the account, can make one. "Account" means whoever controls it, a person or an
+  agent acting under a person's login.
+- **What it counts for.** Nothing. The store trusts the one name `github-bridge` and gives nobody a role; an objection
+  is a `challenge`, a support an `attest` with `stance: "support"` and no `verdict`. A reader who reads the store beside
+  another sees them as voices from outside, with the account the store states and a link to the issue.
+- **What is read.** The issue as opened, once: the body must be exactly the form's three fields in order. Anything else
+  is answered with a refusal in the bridge's own words; no text of the issue reaches an answer, a command or a
+  workflow expression. One record per issue.
+- **The key.** `bridge-key.yml` makes it once on a runner and keeps it as `WARRANT_BRIDGE_SEED` of the environment
+  `bridge`, deployable from master alone (the owner makes the environment and a one-time token, as for `claims`). No
+  trust of this repository binds it. Whoever can change master's code can read it, which is the gate's guard; a key
+  that leaked signs voices only.
+- **Runs side by side.** The workflow names no concurrency group: a group keeps one run pending and cancels the one
+  that waited before it, so of three issues opened together the second got neither a record nor an answer (Codex on
+  #392). Each run files into the branch as it finds it and pushes without force; a push refused because another run
+  pushed first is tried again, up to eight times, from the branch as it is then. BR7 runs the step as the YAML writes
+  it, with another issue's run landing between a filing and its push.
+- **Limits.** Nothing stops an account from opening issues: the brakes are GitHub's own limits, the owner blocking
+  an account, and disabling the workflow. Not every issue is promised a record: a run that fails (the branch moved
+  eight times in a row, GitHub or the network failed) stays red with no answer on the issue, and nothing runs it again
+  by itself; run again by a person, GitHub delivers the event as it was, and one record per issue makes that safe.
+  Records are never removed. The door is hosted here and can be closed here; a
+  voice under one's own key (`warrant say`) needs nobody.
+- **Not established.** That the body GitHub delivers for the form is byte for byte what `FORM` expects was read from
+  GitHub's documentation and not from a delivery: the first issue through the form is that check, and a body of
+  another shape is refused with an answer, not filed wrong.
 
 ## Reviews as records
 

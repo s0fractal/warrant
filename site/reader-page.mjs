@@ -102,7 +102,10 @@ function drawOutside(out, ov) {
   return [el("h3", { text: `Voices from outside (${out.voices.length}, in ${out.stores} store(s)): not counted by this store's rules` }),
     out.left_out ? el("p", { class: "small", text: `${out.left_out} record(s) left out: their own store rejects them` }) : null,
     out.voices.length ? el("ul", { class: "said" }, out.voices.map((v) => el("li", {},
-      `${v.store} · ${v.actor} · ${v.kind === "challenge" ? "challenge" : v.verdict || "attest"} · ${when(v.at)} · on `, short(v.target),
+      `${v.store} · ${v.actor} · ${v.kind === "challenge" ? "challenge" : v.verdict || (v.stance === "support" ? "support" : "attest")} · ${when(v.at)} · on `, short(v.target),
+      // a bridge's voice: the account is what that store states of an issue, linked so that it can be compared; not a signature
+      v.github ? el("div", { class: "small" }, `GitHub account @${v.github.login} (id ${v.github.id}), as ${v.store} states of `,
+        el("a", { href: v.github.url, rel: "noopener noreferrer", text: "this issue" }), ": the account signed nothing, and this page has not asked GitHub") : null,
       v.statement ? el("div", { class: "statement", text: v.statement }) : null))) : null,
     ov ? el("p", { class: "small" }, ...[ov.why ? `For me: no overlay: ${ov.why}` : ov.same ? "For me: it reads the same under your rules."
       : [`For me: in the store ${ov.store.state || "none"} ${ov.store.shown} → for you ${ov.reader ? `${ov.reader.state || "none"} ${ov.reader.shown}` : "absent"}`,
@@ -283,6 +286,20 @@ function withField() {
   return form;
 }
 
+// The second door inside the block: the issue form with this version's id filled in, for each stance, and a link that
+// reads the bridge's store beside this one. None when voice.mjs is of an earlier release (cached apart from this script).
+function bridgeLine(t) {
+  if (typeof voice.bridgeLink !== "function") return null;
+  const [no, yes] = ["objection", "support"].map((x) => voice.bridgeLink(t.version, x));
+  if (!no || !yes) return null;
+  const beside = voice.withAdded(params().with, voice.BRIDGE.store);
+  return el("p", { class: "small" }, "With a GitHub account and nothing else: ",
+    el("a", { href: no, rel: "noopener noreferrer", text: "object through an issue" }), " or ",
+    el("a", { href: yes, rel: "noopener noreferrer", text: "say that you rely on it" }),
+    ". A bridge files the issue as one record: its key states that GitHub delivered it, opened by your account. That is not your signature, and no store's rules count it. ",
+    beside.with ? link("Read the bridge's store beside this one", { with: beside.with }) : null, beside.with ? "." : null);
+}
+
 function objectBlock(t) {
   if (!t) return null;
   const text = t.commands.join("\n");
@@ -295,6 +312,7 @@ function objectBlock(t) {
     el("pre", { class: "command" }, el("code", { text })),
     copyButton(text),
     (typeof voice.MEANING === "object" ? voice.MEANING : []).map((m) => el("p", { class: "small", text: m })),
+    bridgeLine(t),
     el("p", { class: "small", text: "The address of a store of voices, to read beside this store (added to the list under \"Other stores beside this one\"):" }),
     withField());
 }

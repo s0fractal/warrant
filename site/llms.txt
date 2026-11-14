@@ -14,6 +14,29 @@ A lineage's state is that of its newest version whose guard is met; two successo
 
 Not the 0.x format: Warrant 0.x (decision records with subject/under/because, `warrant-verify`, `@s0fractal/warrant`) and Warrant 2 (`warrant-graph` 2.0.0a1) are retired and do not read as Warrant 3.
 
+## Saying that a record is wrong, or that you rely on it
+
+A voice from outside moves no verdict and no store's rules count it; a reader who reads the store of voices beside the record's store sees it on the record's lineage.
+
+- Under a key of your own, hosted by nobody: `pip install "warrant-graph>=3.0.0a7"`, then `warrant say --store voices RECORD_ID "why"` and publish the directory `voices` ([the steps](https://s0fractal.github.io/warrant/object.html)).
+- With a GitHub account alone (a person, or an agent acting under a person's login): open an issue in `s0fractal/warrant` whose body is exactly the three fields below, as the form "A voice on a record" delivers them. `Stance` is `objection` or `support`. A bridge files it as one record stating that GitHub delivered this issue, opened by this account: it is the bridge's statement, not the account's signature. The issue is read once, as opened; a record is never removed.
+
+```
+### Record
+
+RECORD_ID
+
+### Stance
+
+objection
+
+### Statement
+
+why this record is wrong, in your own words
+```
+
+`RECORD_ID` is the record's id: 64 lowercase hex digits. From a terminal: `gh issue create --repo s0fractal/warrant --title "A voice on a record" --body-file BODY.md`. The bridge's store of voices is published at `https://raw.githubusercontent.com/s0fractal/warrant/voices/`.
+
 ## Docs
 - [Specification (docs/V3.md)](https://github.com/s0fractal/warrant/blob/master/docs/V3.md)
 - [Quickstart](https://github.com/s0fractal/warrant/blob/master/QUICKSTART.md)

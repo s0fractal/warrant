@@ -13,6 +13,7 @@ a { color: var(--accent); }
 code, pre { font: 0.92em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 code { background: var(--code); padding: 0.05em 0.3em; border-radius: 4px; }
 p code, li code, dd code { overflow-wrap: anywhere; }   /* an address in a sentence wraps; it never widens a phone's page */
+main p, main li { overflow-wrap: anywhere; }             /* so does a name with no space in it: an actor named by a hash (`checker sha256:…`) */
 .top {
   display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: baseline; justify-content: space-between;
   max-width: 52rem; margin: 0 auto; padding: 1.25rem 1rem; border-bottom: 1px solid var(--line);

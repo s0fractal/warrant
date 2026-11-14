@@ -1,0 +1,41 @@
+# The second door (site/object.html has the first): a voice on a record from someone with a GitHub account and nothing
+# else. .github/workflows/voice-bridge.yml files an issue opened through this form as one record in the bridge's store
+# of voices (warrant/bridge.py). The three fields, their labels and their order are what the bridge reads: a change
+# here is a change to FORM in warrant/bridge.py.
+name: A voice on a record
+description: Object to a record, or say that you rely on it. A GitHub account is all it takes.
+title: "A voice on a record"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Opening this issue files **one signed record** in a public store of voices, and this cannot be undone: records are never removed.
+
+        What the record says: *the bridge's key states that GitHub delivered this issue, opened by your account.* It is not your signature. No rule of any store counts it: it is a voice from outside, shown beside the record to readers who read the store of voices. It moves no verdict.
+
+        The issue is read once, as opened. Later edits are not read. To file a voice nobody hosts for you, under a key of your own, see [the first door](https://s0fractal.github.io/warrant/object.html).
+  - type: input
+    id: record
+    attributes:
+      label: Record
+      description: The record's id, 64 lowercase hex digits, as the reader shows it beside a version.
+      placeholder: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    validations:
+      required: true
+  - type: dropdown
+    id: stance
+    attributes:
+      label: Stance
+      description: An objection says the record is wrong. A support says you rely on it.
+      options:
+        - objection
+        - support
+    validations:
+      required: true
+  - type: textarea
+    id: statement
+    attributes:
+      label: Statement
+      description: Why, in your own words; up to 4000 characters. It is stored as text and shown as text.
+    validations:
+      required: true
