@@ -210,7 +210,7 @@ gate's (the workflow's bot), never an agent's `gh pr merge` under the owner's lo
 |---|---|---|---|
 | owner | `.github/`, `.warrant/merge.json` (the brake itself) | the owner merges | the owner merges |
 | constitutional | `AGENTS.md`, `.warrant/v3.json`, `.warrant/v3/`, `warrant/gate.py`, `tools/gate.py` | after 72 h | after 168 h (7 days) |
-| watched | the modules the gate imports (engine, store, records, keys, jcs, shapes, `__init__`) | after 24 h | after 72 h |
+| watched | the modules the gate imports (engine, store, records, keys, jcs, shapes, `__init__`); what a receiver's `rely` rests on (`warrant/verify.py` and the single-file `warrant_verify.py`, `graph`, `pins`, `merkle`, `snapshot`); and the norm, `docs/V3.md` | after 24 h | after 72 h |
 | everything else | | at once, when accepted | `solo`: once the checks are green (`window_hours` 0), its author a `pr/acceptor` |
 
 The table's windows apply while the owner is away. While he is present (`presence`: a merge of his made on GitHub,

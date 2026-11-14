@@ -6,6 +6,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `.warrant/merge.json` watches what a receiver's `rely` rests on and the norm: `docs/V3.md`, `warrant/verify.py`, the
+  single-file `warrant_verify.py`, `warrant/graph.py`, `warrant/pins.py`, `warrant/merkle.py`, `warrant/snapshot.py`.
+  #393 (a new section of the specification and of the verifier) merged solo with no second family, none of its files
+  being watched. With the owner present nothing waits (the brake acts after the merge); away, 24 h with two families
+  or 72 h with one. Measured once: of the 98 merges of November that were not verdicts only, 17 would have been
+  newly watched. E95; mutant G130.
+
 - The bridge (`warrant/bridge.py`, `python -m warrant.bridge file|public`): a voice from someone with a GitHub account
   and nothing else. An issue opened through the form (a record id, a stance, a statement) becomes one record in a store
   of voices of the bridge's own: an objection a `challenge`, a support an `attest` with `stance: "support"` and no
