@@ -339,6 +339,15 @@ def blob_problem(digest, blobs, cited):
     return None
 
 
+def admits(rec, req, actor, asked):
+    """Whether `rec` is one the verdict check publishes: `actor`'s verdict on the version woken, or (`asked`) its answer
+    to a version that asks it."""
+    t = (rec.get("body") or {}).get("target")
+    return rec["actor"] == actor and rec["kind"] in VERDICTS and (
+        binds(rec, {"closure": req["closure"], "asked": req.get("asked")})
+        or (t in asked and binds(rec, {"closure": t, "asked": True})))
+
+
 def asked_at(code, actor):
     """{version}: what the base tree `code`'s store asks of `actor` (warrant.graph.frontier's `asked`, under the base's
     own trust and profile, by the base's package or the one installed); none from a package that has no `asked`. A
@@ -405,10 +414,7 @@ def verify_verdicts(req):
     asked = asked_at(code, actor) if req.get("asked_too") else set()
     cited = set()
     for rid, rec in sorted(recs.items()):
-        t = (rec.get("body") or {}).get("target")
-        if rec["actor"] != actor or rec["kind"] not in VERDICTS or not (
-                binds(rec, {"closure": req["closure"], "asked": req.get("asked")})
-                or (t in asked and binds(rec, {"closure": t, "asked": True}))):
+        if not admits(rec, req, actor, asked):
             return f"record {rid[:12]} is not a verdict of {actor} on version {req['closure'][:12]}" + (
                 ", nor an answer to a version that asks it" if req.get("asked_too") else "")
         cited.update(rec["refs"])
