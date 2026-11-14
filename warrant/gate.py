@@ -524,11 +524,14 @@ class Base:
     def roadmap_due(self, actor):
         """{version ids} the base's own records hold due for `actor`'s verdict: the leaf of a goal@1 or obligation@1
         lineage whose guard waits only for attests by a role the actor holds (no open requirement), not its own,
-        neither attested nor challenged by it (the waker's `roadmap.py due`)."""
+        neither attested nor challenged by it, a version that asks it, and a schema short of its quorum it may back
+        (the waker's `roadmap.py due`)."""
         snap, problems = store_at(self.root, self.commit)
         if problems:
             return set()
-        return {x["version"] for x in due_for(assess_snapshot(self, snap), self.profile, actor, ("goal@1", "obligation@1"))}
+        rep = assess_snapshot(self, snap)
+        return {x["version"] for x in due_for(rep, self.profile, actor, ("goal@1", "obligation@1"))
+                + schemas_due(rep, self.profile, actor)}
 
 
 def due_for(rep, profile, actor, schemas):
@@ -553,6 +556,20 @@ def due_for(rep, profile, actor, schemas):
         elif isinstance(o, dict) and isinstance(o.get("for"), str) and o["for"] == actor:
             out.append({"version": v, "lineage": root, "schema": lin["schema"], "asked": True})
     return out
+
+
+def schemas_due(rep, profile, actor):
+    """The schema records short of their quorum (the report's `schemas_pending`, docs/V3.md §4) that `actor` may back:
+    it holds `schema/author`, did not file the record and has neither attested nor challenged it. Its answer is due as
+    an asked one's is: an acceptance (an attest without a schema, verdict accept, the only one that backs it) or a
+    challenge. Without this no actor is ever woken on a schema: rules@1 (e8aacad8, #400) waited for its second author
+    with no duty naming him."""
+    if actor not in profile["roles"].get("schema/author", []):
+        return []
+    acted = {r["body"]["target"] for r in _recs(rep).values() if r["kind"] in ("attest", "challenge") and r["actor"] == actor}
+    return [{"version": i, "lineage": i, "schema": "schema", "name": p["name"], "asked": True}
+            for i, p in sorted(rep.get("schemas_pending", {}).items())
+            if actor not in p["backed_by"] and i not in acted and _recs(rep)[i]["actor"] != actor]
 
 
 def _recs(rep):

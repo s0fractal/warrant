@@ -201,7 +201,9 @@ obligation, not closed here: the engine does not forbid an actor releasing its o
 Named too (an obligation under G3): after this profile `roadmap/acceptor` is `codex` alone and the `schema/author`
 quorum is `claude` and `codex`, 2 of 2. Without Codex no roadmap closure becomes effective and no new schema
 (`obligation@2` among them) is admitted; with one family the only way out is a constitutional pull request on
-`.warrant/v3.json`, merged after the 168 h solo window.
+`.warrant/v3.json`, merged after the 168 h solo window. A schema short of its quorum is due for each schema/author
+who may back it (`gate.schemas_due`, in `roadmap due`), so the review waker wakes Codex on it as on a question asked
+of him, and the gate merges his acceptance as verdicts only (rules@1 `e8aacad8` had waited with no duty naming him).
 
 `.warrant/merge.json` splits what decides merging in tiers (docs/V3.md §14, AGENTS.md rule 1). Every merge is the
 gate's (the workflow's bot), never an agent's `gh pr merge` under the owner's login:
