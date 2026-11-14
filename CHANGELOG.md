@@ -6,6 +6,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `.warrant/merge.json` watches what a receiver's `rely` rests on and the norm: `docs/V3.md`, `warrant/verify.py`, the
+  single-file `warrant_verify.py`, `warrant/graph.py`, `warrant/pins.py`, `warrant/merkle.py`, `warrant/snapshot.py`.
+  #393 (a new section of the specification and of the verifier) merged solo with no second family, none of its files
+  being watched. With the owner present nothing waits (the brake acts after the merge); away, 24 h with two families
+  or 72 h with one. Measured once: of the 98 merges of November that were not verdicts only, 17 would have been
+  newly watched. E95; mutant G130.
+
 - Witnessed roots (docs/V3.md §16; stage 3 of the plan): `warrant/merkle.py` gives a store two Merkle roots, its record
   ids and its reverse index (target → every attest and challenge on it), with proofs a reader checks against a root
   alone; `snapshot@1` (`warrant snapshot schema / witness / prove / show`) is a witness's lineage of what it saw, and

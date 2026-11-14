@@ -1327,6 +1327,20 @@ AFTER_ = dict(MERGE, after_merge=[{"workflow": ".github/workflows/pages.yml", "p
                                   {"workflow": ".github/workflows/claims-replay.yml"}])
 
 
+def own_tiers_cases():
+    """The repository's own .warrant/merge.json, as the gate reads it (the analysis session, 2026-11-14: #393 added a
+    section to docs/V3.md and the verifier `rely` rests on, and merged solo with no second family: none of its files
+    was watched)."""
+    doc = json.loads((ROOT / ".warrant" / "merge.json").read_text())
+    watched = doc.get("watched", {}).get("paths", [])
+    want = ["docs/V3.md", "warrant/verify.py", "warrant_verify.py", "warrant/graph.py", "warrant/pins.py",
+            "warrant/merkle.py", "warrant/snapshot.py"]
+    check("E95 a change to docs/V3.md, or to what a receiver's rely rests on (warrant/verify.py, warrant_verify.py, "
+          "graph, pins, merkle, snapshot), is watched under this repository's own merge.json, and the configuration "
+          "is one the gate accepts", all(GT._listed(watched, f) for f in want) and GT.policy_problem(doc) is None,
+          ([f for f in want if not GT._listed(watched, f)], GT.policy_problem(doc)))
+
+
 def after_merge_cases():
     """The analysis session, 2026-11-13: a merge by the gate starts no push workflow, and GitHub ran 5 of 52 scheduled
     runs of the gate in 26 hours, so the site and the claims checker never ran after the gate's merges. The gate starts
@@ -1461,6 +1475,7 @@ if __name__ == "__main__":
         notice_owner_cases,
         codex_356_cases,
         refresh_cases,
+        own_tiers_cases,
         after_merge_cases,
         prerelease_cases,
         revert_pending_cases,

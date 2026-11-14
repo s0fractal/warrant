@@ -14,13 +14,20 @@
   ],
   "watched": {
     "paths": [
+      "docs/V3.md",
       "warrant/__init__.py",
       "warrant/engine.py",
+      "warrant/graph.py",
       "warrant/jcs.py",
       "warrant/keys.py",
+      "warrant/merkle.py",
+      "warrant/pins.py",
       "warrant/records.py",
       "warrant/shapes.py",
-      "warrant/store.py"
+      "warrant/snapshot.py",
+      "warrant/store.py",
+      "warrant/verify.py",
+      "warrant_verify.py"
     ],
     "window_hours": 24,
     "solo_window_hours": 72,

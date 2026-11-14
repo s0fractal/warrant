@@ -541,6 +541,7 @@ MUTANTS = [
     ("G127", "warrant/gate.py", '        moved = base is None or any(code_tree(b.root, c) != base for c in a.facts.get("made_at") or [])', '        moved = base is None', GATE, ["E94"]),
     ("G128", "warrant/gate.py", '        moved = base is None or any(code_tree(b.root, c) != base for c in a.facts.get("made_at") or [])', '        moved = True', GATE, ["E94"]),
     ("G129", "warrant/gate.py", '    return sorted(r for r in rows if r and r.split("\\t", 1)[-1] != ".warrant")', '    return sorted(r for r in rows if r)', GATE, ["E94"]),
+    ("G130", ".warrant/merge.json", '      "docs/V3.md",\n', '', GATE, ["E95"]),
     ("G43", "warrant/gate.py", "    except UnicodeDecodeError:              # Git holds", "    except ZeroDivisionError:              # Git holds", GATE, ["E51"]),
     ("G32", "warrant/gate.py", 'or (status == "A" and "/" not in deeper and _module_file(deeper, "__init__"))):', 'or False):', GATE, ["E41"]),
     ("G33", "warrant/gate.py", 'if not deeper and (mode not in FILE_MODES or (status == "A"', 'if not deeper and ((status == "A"', GATE, ["E42"]),
