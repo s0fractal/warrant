@@ -719,6 +719,22 @@ def carrying():
           "it is kept", got)
 
 
+def asking():
+    """A question asked of Codex (`opened.for`, no guard) reaches him as a question, and his answer is publishable."""
+    q = "ab" * 32
+    asked = {"closure": q, "item": 0, "duty": q, "schema": "goal@1", "goal": None, "statement": "why?", "evidence": [],
+             "refs": [], "subject": None, "requires": [], "asked": True}
+    closure = dict(asked, asked=False)
+    class W:
+        plugin, repository, branch = HERE, "s0fractal/minds", "main"
+    say = WAKER.accept_prompt(W(), asked, "cd" * 20, Path("/tmp/x"))
+    answer = {"kind": "attest", "body": {"target": q, "verdict": "answered"}}
+    check("W23", "asks you a question" in say and "opened.for" in say and WAKER.binds(answer, asked)
+          and not WAKER.binds(answer, closure) and WAKER.binds({"kind": "challenge", "body": {"target": q}}, asked),
+          "a question asked of Codex is put to him as a question (not a closure awaiting acceptance), and an attest of "
+          "any verdict on it is a publishable answer; on a closure only an acceptance or a challenge is", say[:200])
+
+
 if __name__ == "__main__":
     manifests()
     launcher()
@@ -733,6 +749,7 @@ if __name__ == "__main__":
     configuration()
     reviewers()
     carrying()
+    asking()
     failed = sorted(k for k, v in results.items() if not v)
     print(f"codex plugin: {sum(results.values())} PASS / {len(failed)} FAIL" + (f" ({', '.join(failed)})" if failed else ""))
     sys.exit(1 if failed else 0)

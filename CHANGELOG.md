@@ -6,6 +6,14 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- What was asked of an actor: `graph.frontier` has a fourth list, `asked`: each lineage's latest version whose body
+  names the actor in `opened.for` (a string; any schema, a guard or none), not its own and not yet attested or
+  challenged by it (minds Q1 81d731d3, a question to codex that no guard waits on and nothing showed him). The agent's
+  frontier (MCP `warrant_graph op=frontier`) and `warrant status --actor` have it; `gate.due_for` and `roadmap due`
+  mark such a version `asked`, so the review waker wakes Codex on it, puts it to him as a question, and publishes an
+  attest of any verdict or a challenge on it as his answer (`binds`), which the gate merges as verdicts only. FA1–FA3,
+  W23; mutants T250–T254, P40, P41.
+
 - `.warrant/merge.json` watches what a receiver's `rely` rests on and the norm: `docs/V3.md`, `warrant/verify.py`, the
   single-file `warrant_verify.py`, `warrant/graph.py`, `warrant/pins.py`, `warrant/merkle.py`, `warrant/snapshot.py`.
   #393 (a new section of the specification and of the verifier) merged solo with no second family, none of its files
