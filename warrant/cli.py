@@ -259,7 +259,7 @@ def status(a):
             "schemas_pending": sorted(rep["schemas_pending"]), "problems": rep["problems"],
             "lineages": {k: dict(sorted(v.items())) for k, v in sorted(lineages.items())},
             "reliance": dict(sorted(reliance.items())),
-            "frontier": G.frontier(rep, profile, a.actor) if a.actor else None}
+            "frontier": G.frontier(rep, profile, a.actor, view.recs) if a.actor else None}
 
 
 def _counts(d):

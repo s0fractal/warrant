@@ -533,7 +533,10 @@ class Base:
 
 def due_for(rep, profile, actor, schemas):
     """The versions of `schemas` waiting for `actor`'s verdict in report `rep` (warrant.graph.frontier's
-    rule, stated here again so that the gate's decision rests on no file outside the owner paths)."""
+    rule, stated here again so that the gate's decision rests on no file outside the owner paths): each leaf whose
+    guard waits for a role the actor holds, and each leaf whose body asks it (`opened.for`, a string naming it; any
+    guard or none: frontier's `asked`, minds Q1 81d731d3), not its own and not yet attested or challenged by it. An
+    asked one is marked `asked`: the actor's answer to it is due, whether or not a guard counts it."""
     roles = {r for r, a in profile["roles"].items() if actor in a}
     acted = {r["body"]["target"] for r in _recs(rep).values() if r["kind"] in ("attest", "challenge") and r["actor"] == actor}
     out = []
@@ -542,9 +545,13 @@ def due_for(rep, profile, actor, schemas):
             continue
         v = lin["leaf"]                 # only the latest version: an earlier pending one was replaced by it
         g = rep["versions"][v]
-        if g["guard"] == "PENDING" and g["short"] and not g["open"] and roles & set(g["roles"]) \
-                and v not in acted and _recs(rep)[v]["actor"] != actor:
+        if v in acted or _recs(rep)[v]["actor"] == actor:
+            continue
+        o = (_recs(rep)[v].get("body") or {}).get("opened")
+        if g["guard"] == "PENDING" and g["short"] and not g["open"] and roles & set(g["roles"]):
             out.append({"version": v, "lineage": root, "schema": lin["schema"]})
+        elif isinstance(o, dict) and isinstance(o.get("for"), str) and o["for"] == actor:
+            out.append({"version": v, "lineage": root, "schema": lin["schema"], "asked": True})
     return out
 
 

@@ -149,7 +149,7 @@ def context(cfg, req):
         caps[i] = cap
     actor = req.get("actor") or (ws.signer[0] if ws.signer else None)
     need(actor is None or S.is_actor(actor), "BAD_REQUEST", "actor is an actor id")
-    out = {**_header(rep), "targets": caps, "frontier": G.frontier(rep, profile, actor) if actor else None}
+    out = {**_header(rep), "targets": caps, "frontier": G.frontier(rep, profile, actor, view.recs) if actor else None}
     return _budget(out, ws.limits["context_bytes"])
 
 
@@ -195,7 +195,7 @@ def graph(cfg, req):
     elif op == "frontier":
         actor = req.get("actor") or _signer(ws)
         need(S.is_actor(actor), "BAD_REQUEST", "actor is an actor id")
-        data, query = G.frontier(rep, profile, actor), {"op": op, "actor": actor}
+        data, query = G.frontier(rep, profile, actor, view.recs), {"op": op, "actor": actor}
     else:
         data, query = rep["graph"], {"op": op}
     return _budget(G.answer(rep, query, data, adapter_id()), max(ws.limits["context_bytes"], ws.limits["read_bytes"]) * 16)

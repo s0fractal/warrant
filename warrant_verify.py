@@ -31,7 +31,7 @@ import types
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
     "warrant/jcs.py": "1caa6890ea01355224cb4dd4010777b388b51a2b3e5bc405192eeff717b3f9d3",
-    "warrant/graph.py": "4a85640b26736007207474c9b4b5efed9ad4ee28920b0f7faa550715f03b07ca",
+    "warrant/graph.py": "076bb7309f6623ac437863423c3a2922407a6da065980ff51687572a65966835",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
@@ -272,10 +272,11 @@ def why(rep, i):
     return _walk(rep, i, "in")
 
 
-def frontier(rep, profile, actor):
+def frontier(rep, profile, actor, recs=None):
     """What waits for `actor` in this report: `attest` the lineage leaves whose guard waits only for attests by roles
     the actor holds (no open requirement, not its own, not yet attested or challenged by it); `pending` its own
-    leaves whose guard waits; `challenged` its lineages a counted challenge holds."""
+    leaves whose guard waits; `challenged` its lineages a counted challenge holds; `asked` what was asked of it
+    (asked_of: it needs the records, `recs` or the report's `_recs`)."""
     roles = {r for r, actors in profile["roles"].items() if actor in actors}
     nodes, _, into = index(rep)
     acted = {b for b, ins in into.items() for rel, a in ins if rel in ("attest", "challenge") and nodes[a]["actor"] == actor}
@@ -291,7 +292,32 @@ def frontier(rep, profile, actor):
             attest.append({"version": v, "lineage": root, "schema": lin["schema"], "waiting": g["waiting"]})
     challenged = [root for root, lin in sorted(rep["lineages"].items())
                   if lin["reliance"] == "CHALLENGED" and lin["actor"] == actor]
-    return {"actor": actor, "roles": sorted(roles), "attest": attest, "pending": pending, "challenged": challenged}
+    asked = [{"version": v, "lineage": root, "schema": rep["lineages"][root]["schema"]}
+             for root, v in asked_of(rep, nodes, acted, actor, recs)]
+    return {"actor": actor, "roles": sorted(roles), "attest": attest, "pending": pending, "challenged": challenged,
+            "asked": asked}
+
+
+def opened_for(body):
+    """The actor a version's body addresses (`opened.for`, a string), or None."""
+    o = body.get("opened") if isinstance(body, dict) else None
+    f = o.get("for") if isinstance(o, dict) else None
+    return f if isinstance(f, str) and f else None
+
+
+def asked_of(rep, nodes, acted, actor, recs=None):
+    """[(lineage, version)], sorted: each lineage's latest version whose body addresses `actor` (`opened.for`, any
+    schema, a guard or none), not its own and not yet attested or challenged by it: what was asked of it (minds Q1
+    81d731d3: a question to codex, which no guard waits on and which nothing showed it)."""
+    recs = recs if recs is not None else rep.get("_recs") or {}
+    out = []
+    for root, lin in sorted(rep["lineages"].items()):
+        v = lin["leaf"]
+        if v is None or v in acted or nodes[v]["actor"] == actor:
+            continue
+        if opened_for((recs.get(v) or {}).get("body")) == actor:
+            out.append((root, v))
+    return out
 
 
 def delta(rep0, rep1):

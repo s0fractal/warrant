@@ -1405,7 +1405,26 @@ export function frontier(r, actor) {
     }
   }
   const challenged = byRoot.filter(([, lin]) => lin.reliance === "CHALLENGED" && lin.actor === actor).map(([root]) => root);
-  return { actor, roles: [...roles].sort(cmp), attest, pending, challenged };
+  return { actor, roles: [...roles].sort(cmp), attest, pending, challenged, asked: askedOf(r, byRoot, author, acted, actor) };
+}
+
+// warrant/graph.py opened_for: the actor a version's body addresses (`opened.for`, a non-empty string), or null.
+function openedFor(body) {
+  const o = body && typeof body === "object" ? body.opened : null;
+  const f = o && typeof o === "object" && !Array.isArray(o) ? o.for : null;
+  return typeof f === "string" && f !== "" ? f : null;
+}
+
+// warrant/graph.py asked_of: each lineage's latest version whose body names the actor in `opened.for`, not its own
+// and not yet attested or challenged by it.
+function askedOf(r, byRoot, author, acted, actor) {
+  const out = [];
+  for (const [root, lin] of byRoot) {
+    const v = lin.leaf;
+    if (v === null || acted.has(v) || author.get(v) === actor || openedFor(r.recs.get(v)?.body) !== actor) continue;
+    out.push({ version: v, lineage: root, schema: lin.schema });
+  }
+  return out;
 }
 
 // What a page draws of frontier(): each item with its lineage (a pending version's too) and its one-line name, and

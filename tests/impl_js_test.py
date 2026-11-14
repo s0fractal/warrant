@@ -2092,8 +2092,8 @@ def _frontier_py(root, actor):
     """warrant.graph.frontier of the store at `root` under its own rules, for `actor`."""
     from warrant import graph as G
     doc = json.loads((Path(root) / ".warrant" / "v3.json").read_text())
-    rep = E.View(ST.Store(Path(root) / ".warrant").snapshot(), doc["trust"], doc["profile"], None).report()
-    return G.frontier(rep, doc["profile"], actor)
+    view = E.View(ST.Store(Path(root) / ".warrant").snapshot(), doc["trust"], doc["profile"], None)
+    return G.frontier(view.report(), doc["profile"], actor, view.recs)
 
 
 def browser_frontier_cases():
@@ -2127,6 +2127,11 @@ def browser_frontier_cases():
     f.entity("alice", "obligation@1", {"state": "done", "statement": "forked one way", "serves": []}, lineage=k_root)
     f.entity("alice", "obligation@1", {"state": "done", "statement": "forked another", "serves": []}, lineage=k_root)
     forged = f.store.append(R.record("challenge", "bob", f.t + 1, {"target": waits, "statement": "not bob's key"}, refs=[waits]), KEYS["dave"], f.trust)
+    asks = f.entity("alice", "goal@1", {"state": "open", "key": "Q1", "text": "asked of carol", "opened": {"for": "carol"}})
+    f.entity("carol", "goal@1", {"state": "open", "key": "Q2", "text": "carol asks herself", "opened": {"for": "carol"}})
+    f.entity("alice", "goal@1", {"state": "open", "key": "Q3", "text": "not a name", "opened": {"for": ["carol"]}})
+    answered = f.entity("alice", "goal@1", {"state": "open", "key": "Q4", "text": "answered", "opened": {"for": "carol"}})
+    f.attest("carol", answered, verdict="answered")
     actors = ["alice", "bob", "carol", "dave", "eve", "nobody", "bo"]       # "bo": a prefix of a role holder, no holder
     srvs, (bf,) = _serve_many(f.root)
     try:
@@ -2145,14 +2150,16 @@ def browser_frontier_cases():
           "challenged while it waits, not one that requires an open lineage, not his own (pending instead), not a "
           "version replaced while pending, not a fork; a line under his name with another's key is no act of his; "
           "carol may attest bob's claim; alice's lineage whose acceptor challenged it is listed as challenged; eve "
-          "holds no role and has her own pending closure",
+          "holds no role and has her own pending closure; carol is asked Q1 (not the question she asked herself, nor one "
+          "whose opened.for is no name, nor one she answered)",
           sorted(may) == sorted([waits, head, eves]) and sorted(bob["pending"]) == sorted([bobs, backed]) and bob["challenged"] == []
           and [x["version"] for x in py["carol"]["attest"]] == [backed] and py["alice"]["challenged"] == [a_root]
           and chal in py["alice"]["pending"] and needs in py["alice"]["pending"] and seen in py["alice"]["pending"]
           and py["dave"]["pending"] == [head] and forged in f.report()["rejected"]
           and py["eve"]["roles"] == [] and py["eve"]["pending"] == [eves] and py["eve"]["attest"] == []
           and replaced not in may and newer not in py["alice"]["pending"] and py["nobody"]["roles"] == []
-          and forged not in json.dumps(bob), py)
+          and forged not in json.dumps(bob)
+          and [x["version"] for x in py["carol"].get("asked", [])] == [asks] and py["alice"].get("asked") == [], py)
     check("J15 differential: the reader's frontier (reader.mjs --actor) equals warrant.graph.frontier for every actor of "
           "the fixture, an actor with no role, a name no profile holds and a prefix of a role holder's name included, "
           "member for member",

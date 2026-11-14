@@ -2552,6 +2552,47 @@ def harness_cases():
           (rows2, said2.getvalue()[-300:]))
 
 
+def asked_cases():
+    """What was asked of an actor (a version whose body names it in `opened.for`, minds Q1 81d731d3): graph.frontier's
+    `asked`, the gate's due_for and `roadmap due` (the review waker's queue), the agent's frontier (MCP)."""
+    from warrant import gate as GT
+    from warrant import graph as G
+    from warrant import roadmap as RM
+    from warrant_agent import api
+    from warrant_agent.config import Config
+    r = Repo()
+    q = r.entity("alice", "goal@1", {"state": "open", "key": "Q1", "text": "why?", "opened": {"by": "alice", "for": "bob"}})
+    mine = r.entity("bob", "goal@1", {"state": "open", "key": "Q2", "text": "me?", "opened": {"by": "bob", "for": "bob"}})
+    odd = [r.entity("alice", "goal@1", {"state": "open", "key": f"Q{k}", "text": "?", "opened": {"for": f}})
+           for k, f in ((3, ["bob"]), (4, {"actor": "bob"}), (5, ""))]
+    rep = RP.Repo(r.root).report()
+    prof = r.profile
+    asked = lambda rep, actor: [x["version"] for x in G.frontier(rep, prof, actor).get("asked", [])]
+    before_bob, before_carol = asked(rep, "bob"), asked(rep, "carol")
+    due = [d for d in GT.due_for(rep, prof, "bob", ("goal@1", "obligation@1")) if d.get("asked")]
+    rdue = [d for d in RM.due(rep, prof, "bob") if d.get("asked")]
+    cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {"repo": str(r.root), "operations": ["graph"]}}})
+    mcp = api.call(cfg, "graph", {"workspace": "w", "op": "frontier", "actor": "bob"})
+    via_mcp = [x["version"] for x in (mcp.get("ok", {}).get("data") or {}).get("asked", [])]
+    check("FA1 a version whose body names an actor in `opened.for` is in that actor's frontier as `asked` (with no guard "
+          "waiting on it), in no other's; the gate's due_for and `roadmap due` mark it asked (the review waker's queue), "
+          "and the agent's frontier through MCP has it",
+          before_bob == [q] and before_carol == [] and [d["version"] for d in due] == [q] and [d["closure"] for d in rdue] == [q]
+          and via_mcp == [q], (before_bob, before_carol, due, rdue, via_mcp))
+    all_due = [d["version"] for d in GT.due_for(rep, prof, "bob", ("goal@1", "obligation@1"))]
+    check("FA2 a question an actor asks itself is not shown to it (nor due for it), and an `opened.for` that is no string "
+          "naming an actor (a list, an object, empty) is shown to no one", mine not in before_bob and mine not in all_due
+          and not set(odd) & set(before_bob), (before_bob, all_due, mine, odd))
+    r.attest("bob", q, verdict="answered")
+    after_attest = asked(RP.Repo(r.root).report(), "bob")
+    r2 = Repo()
+    q2 = r2.entity("alice", "goal@1", {"state": "open", "key": "Q1", "text": "why?", "opened": {"for": "bob"}})
+    r2.put("bob", "challenge", {"target": q2, "statement": "the question rests on a wrong reading"}, refs=[q2])
+    after_challenge = [x["version"] for x in G.frontier(RP.Repo(r2.root).report(), r2.profile, "bob").get("asked", [])]
+    check("FA3 an attest or a challenge by the asked actor on the version takes it off its frontier (an answer is any "
+          "verdict: no guard waits on it)", after_attest == [] and after_challenge == [], (after_attest, after_challenge))
+
+
 if __name__ == "__main__":
     sys.exit(run_sections([
         claims_cases,
@@ -2579,4 +2620,5 @@ if __name__ == "__main__":
         narrow_cases,
         resolve_cases,
         harness_cases,
+        asked_cases,
     ]))
