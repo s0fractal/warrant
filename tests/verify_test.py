@@ -26,9 +26,12 @@ from world import KEYS, ROLES, ROOT, Repo, check, finish, git
 from warrant import engine as E
 from warrant import jcs as C
 from warrant import keys as K
+from warrant import merkle as M
 from warrant import pins as P
+from warrant import repo as RP
 from warrant import records as R
 from warrant import shapes as S
+from warrant import snapshot as SN
 from warrant import verify as V
 from warrant_agent import api
 from warrant_agent.config import Config
@@ -761,6 +764,201 @@ def signature_cases():
           "non-canonical spelling that it refuses", (differ[:2], yes))
 
 
+def merkle_cases():
+    """warrant.merkle: the roots of a store and the proofs a reader checks against a root alone (stage 3)."""
+    rnd = random.Random(7)
+    ok = True
+    for n in list(range(0, 18)) + [33, 64, 100]:
+        leaves = [bytes(rnd.getrandbits(8) for _ in range(32)) for _ in range(n)]
+        r = M.root(leaves)
+        for i in range(n):
+            ok &= M.included(r, n, i, leaves[i], M.path(leaves, i))
+            ok &= not M.included(r, n, i, leaves[i][::-1], M.path(leaves, i)) or leaves[i] == leaves[i][::-1]
+            ok &= n < 2 or not M.included(r, n, (i + 1) % n, leaves[i], M.path(leaves, i))
+    one = [b"x" * 32]
+    ok &= M.included(M.root(one), 1, 0, one[0], []) and not M.included(M.root(one), True, 0, one[0], [])   # a size is an int, not a bool
+    check("WT1 every leaf of a tree of 0 to 100 leaves is proved at its index by its audit path, and the same path "
+          "proves no other bytes and no other index (RFC 9162 hashing; the empty tree's root is SHA-256 of nothing)",
+          ok and M.root([]) == hashlib.sha256(b"").hexdigest() and M.root([b""]) == hashlib.sha256(b"\x00").hexdigest())
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+    a = r.attest("bob", d)
+    c = r.put("bob", "challenge", {"target": d, "statement": "no"}, refs=[d])
+    for k in range(6):                                   # more targets, so d's leaf has neighbours on both sides
+        x = r.entity("alice", "obligation@1", {"state": "open", "statement": f"t{k}", "serves": []})
+        r.attest("bob", x)
+    snap = r.store.snapshot()
+    roots = M.roots(snap)
+    said = M.check(M.prove_said(snap, d), roots["index"])
+    keys = [t for t, _ in M.index_entries(snap)]
+    p = keys.index(d)
+    near = lambda j: M.prove_said(snap, keys[j])["in"]
+    skip = dict(M.prove_said(snap, d), **{"in": None, "before": near(p - 1) if p > 0 else None,
+                                          "after": near(p + 1) if p + 1 < len(keys) else None})
+    above = dict(M.prove_said(snap, d), **{"in": None, "before": near(p + 1), "after": near(p + 2)}) if p + 2 < len(keys) \
+        else dict(M.prove_said(snap, d), **{"in": None, "before": near(p - 2), "after": near(p - 1)})
+    none = M.check(M.prove_said(snap, o), roots["index"])
+    rec_in, rec_out = M.check(M.prove_record(snap, d), roots["records"]), M.check(M.prove_record(snap, "f" * 64), roots["records"])
+    forged = dict(M.prove_said(snap, d), **{"in": None, "before": None, "after": M.prove_said(snap, d)["in"]})
+    other = M.check(M.prove_said(snap, d), "0" * 64)
+    low, high = M.prove_said(snap, "0" * 64), M.prove_said(snap, "f" * 64)
+    ends = (M.check(low, roots["index"]) == (True, []) and low["before"] is None and low["after"]["i"] == 0
+            and M.check(high, roots["index"]) == (True, []) and high["after"] is None and high["before"]["i"] == len(keys) - 1)
+    not_first = dict(low, after=near(1))                 # "below the first leaf", shown with the second one
+    not_last = dict(high, before=near(len(keys) - 2))    # "above the last leaf", shown with the one before it
+    lied = M.prove_said(snap, d)
+    lied["in"]["said"] = [x for x in lied["in"]["said"] if x[1] != c]   # the leaf's bytes kept, its list edited
+    check("WT2 the reverse index's leaf for a version says every attest and challenge against it; a version nothing "
+          "targets is proved absent by its neighbours; a record is proved in or out of the records tree; a leaf passed "
+          "off as a neighbour of itself, neighbours that skip its leaf (not adjacent), two on the same side of it, a list that is not the "
+          "one the leaf's digest names, a key below the first leaf or above the last shown by a leaf that is not the "
+          "first or the last, or a proof against another root, proves nothing; at the ends the one neighbour does",
+          said == (True, sorted([["attest", a], ["challenge", c]])) and none == (True, []) and rec_in == (True, True)
+          and rec_out == (True, False) and M.check(forged, roots["index"])[0] is False and other[0] is False
+          and 0 < p < len(keys) - 1 and M.check(skip, roots["index"])[0] is False and M.check(above, roots["index"])[0] is False
+          and M.check(lied, roots["index"])[0] is False and M.check(M.prove_said(snap, d), roots["index"], len(keys) + 1)[0] is False
+          and ends and M.check(not_first, roots["index"])[0] is False and M.check(not_last, roots["index"])[0] is False,
+          (said, none, rec_in, rec_out, other, p, len(keys)))
+
+
+def witness_repo():
+    """A repository whose profile names carol `witness`: the snapshot@1 schema, a closed obligation accepted by bob and
+    challenged by him, carol's first snapshot. (repo, d, challenge, snapshot, trust, profile)."""
+    r = Repo(roles=dict(ROLES, witness=["carol"]), base=TMP, git_init=True)
+    r.put("alice", "schema", SN.SCHEMA)
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+    r.attest("bob", d)
+    c = r.put("bob", "challenge", {"target": d, "statement": "no"}, refs=[d])
+    for k in range(5):                                   # other targets: the index has leaves on both sides of d's
+        x = r.entity("alice", "obligation@1", {"state": "open", "statement": f"t{k}", "serves": []})
+        r.attest("bob", x)
+    r.commit("the store")
+    s1 = SN.witness(RP.Repo(r.root), "carol", KEYS["carol"])
+    r.commit("carol witnesses it")
+    cfg = json.loads((r.dot / "v3.json").read_text())
+    return r, d, c, s1, cfg["trust"], cfg["profile"]
+
+
+def package_of(r, roots, drop=()):
+    lines = [x for x in (r.dot / "records.jsonl").read_text().splitlines() if R.rid(json.loads(x)["record"]) not in drop]
+    return json.dumps({"warrant": "package/3", "roots": roots, "lines": lines, "blobs": {}}).encode()
+
+
+def witness_cases():
+    r, d, c, s1, T, Pf = witness_repo()
+    rp = RP.Repo(r.root)
+    rep = rp.report()
+    o2 = r.entity("alice", "obligation@1", {"state": "open", "statement": "t", "serves": []})
+    r.commit("one more record")
+    s2 = SN.witness(rp, "carol", KEYS["carol"])
+    r.commit("carol again")
+    rep = rp.report()
+    lines = (r.dot / "records.jsonl").read_bytes().splitlines(True)
+    (r.dot / "records.jsonl").write_bytes(b"".join(x for x in lines if R.rid(json.loads(x)["record"]) != o2))
+    r.commit("a record dropped")
+    shrank = refused_code(lambda: SN.witness(rp, "carol", KEYS["carol"]))
+    spoil = lambda x: (lambda env: json.dumps(dict(env, sig=dict(env["sig"], ed25519=("0" if env["sig"]["ed25519"][0] != "0" else "1")
+                                                               + env["sig"]["ed25519"][1:])), separators=(",", ":")).encode() + b"\n")(json.loads(x))
+    (r.dot / "records.jsonl").write_bytes(b"".join(spoil(x) if R.rid(json.loads(x)["record"]) == o2 else x for x in lines))
+    r.commit("a record's signature spoiled")
+    spoiled = refused_code(lambda: SN.witness(rp, "carol", KEYS["carol"]))
+    (r.dot / "records.jsonl").write_bytes(b"".join(lines))
+    r.commit("restored")
+    check("WT3 a witness files its snapshots as one lineage (each names the one before), and refuses to sign a store "
+          "that lacks a line of the store it witnessed last, or holds it with its signature spoiled (SNAPSHOT_SHRANK, read "
+          "at that snapshot's commit, compared as lines, not ids)",
+          rep["_recs"][s2]["lineage"] == s1 and rep["lineages"][s1]["leaf"] == s2 and shrank == "SNAPSHOT_SHRANK"
+          and spoiled == "SNAPSHOT_SHRANK", (shrank, spoiled))
+    w = SN.prove(rp, s2, [d])
+    full = V.verify(package_of(r, [d]), T, Pf, witness=w)
+    omit = V.verify(package_of(r, [d], drop={c}), T, Pf, witness=w)
+    nobody = V.verify(package_of(r, [d]), T, dict(Pf, roles={k: v for k, v in Pf["roles"].items() if k != "witness"}), witness=w)
+    check("WT4 with a witness, the answer's `absence` holds when the package has every attest and challenge the "
+          "witnessed store holds against the roots' frame, and names what it leaves out otherwise (that package is not "
+          "relied on); a witness the receiver's profile does not name counts for nothing; completeness stays UNATTESTED",
+          full["absence"]["holds"] and full["absence"]["in"] == rep["_recs"][s2]["body"]["index"]
+          and omit["absence"]["missing"] == [c] and not omit["rely"] and not nobody["absence"]["holds"]
+          and full["completeness"]["attested"] == "UNATTESTED", (full["absence"], omit["absence"], nobody["absence"]))
+    pkg_lines = lambda edit: json.dumps({"warrant": "package/3", "roots": [d], "lines": [
+        edit(x) for x in (r.dot / "records.jsonl").read_text().splitlines()], "blobs": {}}).encode()
+    def spoil_sig(x):
+        env = json.loads(x)
+        if R.rid(env["record"]) != c:
+            return x
+        e = env["sig"]["ed25519"]
+        return json.dumps(dict(env, sig=dict(env["sig"], ed25519=("0" if e[0] != "0" else "1") + e[1:])), separators=(",", ":"))
+    def resign(x):
+        env = json.loads(x)
+        if R.rid(env["record"]) != c:
+            return x
+        k = K.Key.from_seed_hex("ab" * 32)
+        return C.canon({"record": env["record"], "sig": {"key": K.key_id(k.public), "ed25519": k.sign(R.SIG_DOMAIN + bytes.fromhex(c))}}).decode()
+    spoiled = V.verify(pkg_lines(spoil_sig), T, Pf, witness=w)
+    resigned = V.verify(pkg_lines(resign), T, Pf, witness=w)
+    narrow = dict(T, keys={k: v for k, v in T["keys"].items() if k != "bob"})
+    unbound = V.verify(package_of(r, [d]), narrow, Pf, witness=w)
+    check("WT7 in the package means admitted by its assessment: the challenge kept with its signature spoiled, or signed "
+          "again under another key while this receiver binds its actor, is missing, and the package is not relied on; one "
+          "of an actor this receiver binds no key to is `uncounted` (its signature cannot be checked here), said apart, never silent "
+          "(the analysis session on #393: a spoiled signature read as present, and the package was relied on)",
+          spoiled["absence"]["missing"] == [c] and not spoiled["rely"] and resigned["absence"]["missing"] == [c]
+          and not resigned["rely"] and c in unbound["absence"]["uncounted"] and c not in unbound["absence"]["missing"]
+          and any(x.startswith("absence:") and "binds no key" in x for x in unbound["not_established"]),
+          (spoiled["absence"], resigned["absence"], unbound["absence"]))
+    acc = next(i for i, x in rep["_recs"].items() if x["kind"] == "attest" and x["body"].get("target") == d and x["actor"] == "bob")
+    on_acc = r.put("eve", "challenge", {"target": acc, "statement": "this acceptance is wrong"}, refs=[acc])
+    r.commit("a challenge against the acceptance")
+    s3 = SN.witness(rp, "carol", KEYS["carol"])
+    r.commit("carol witnesses it")
+    w3 = SN.prove(rp, s3, [d])
+    left = V.verify(package_of(r, [d], drop={on_acc}), T, Pf, witness=w3)
+    whole = V.verify(package_of(r, [d]), T, Pf, witness=w3)
+    check("WT8 a challenge against an acceptance of the root (the frame's second step) left out of the package is missing "
+          "too, and the package with it holds", left["absence"]["missing"] == [on_acc] and not left["absence"]["holds"]
+          and whole["absence"]["holds"], (left["absence"], whole["absence"]))
+    good = SN.check_snapshot(rp, s3)
+    forged = r.put("carol", "entity", dict(rep["_recs"][s1]["body"], index="0" * 64, commit=git(r.root, "rev-parse", "HEAD")),
+                   SN.NAME, lineage=s3)
+    r.commit("a snapshot whose index root is not the store's")
+    bad = SN.check_snapshot(rp, forged)
+    check("WT9 `snapshot check` makes a snapshot's roots again from the store at its commit: a true one holds, one naming "
+          "another index root does not (how a tree built out of order is caught: by anyone with the clone)",
+          good == [] and any(k == "index" for k, _ in bad), (good, bad))
+    hidden = json.loads(json.dumps(w))
+    leaf = hidden["said"]["proofs"][d]["in"]
+    leaf["said"] = [x for x in leaf["said"] if x[1] != c]                # the challenge taken out of d's leaf
+    edited = V.verify(package_of(r, [d], drop={c}), T, Pf, witness=hidden)
+    check("WT6 the proofs are read at the root and size the witness signed: a leaf edited to drop a challenge (so that "
+          "a package leaving it out would pass) proves nothing, and the package is not relied on",
+          d in edited["absence"]["unproved"] and not edited["absence"]["holds"] and not edited["rely"], edited["absence"])
+    back = V.verify(package_of(r, [d]), T, Pf, witness=SN.prove(rp, s1, [d]), extends=s3)
+    ahead = V.verify(package_of(r, [d]), T, Pf, witness=SN.prove(rp, s3, [d]), extends=s1)
+    b = rep["_recs"][s2]["body"]
+    r.put("carol", "entity", dict(b, commit=git(r.root, "rev-parse", "HEAD")), SN.NAME, lineage=s1)
+    r.commit("a second snapshot after s1: two histories")
+    w2 = SN.prove(rp, s2, [d])
+    pkg = Path(TMP) / "wt.pkg.json"
+    pkg.write_bytes(package_of(r, [d]))
+    (Path(TMP) / "wt.witness.json").write_text(json.dumps(w2))
+    (Path(TMP) / "wt.v3.json").write_text(json.dumps({"trust": T, "profile": Pf}))
+    with contextlib.redirect_stdout(io.StringIO()):
+        code = V.main([str(pkg), "--config", str(Path(TMP) / "wt.v3.json"), "--witness", str(Path(TMP) / "wt.witness.json")])
+    check("WT5 --extends refuses a snapshot that does not descend from the one held (a rollback) and takes one that "
+          "does; two snapshots of one witness after the same one are equivocation, exit 4",
+          not back["absence"]["holds"] and "ROLLBACK" in back["absence"]["why"] and ahead["absence"]["holds"] and code == 4,
+          (back["absence"]["why"], ahead["absence"]["why"], code))
+
+
+def refused_code(fn):
+    try:
+        fn()
+        return None
+    except RP.Failed as e:
+        return e.code
+
+
 def main():
     try:
         src, pkg, d = reliance_cases()
@@ -770,6 +968,8 @@ def main():
         shape_cases()
         single_cases()
         signature_cases()
+        merkle_cases()
+        witness_cases()
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
     return finish("verify_test")

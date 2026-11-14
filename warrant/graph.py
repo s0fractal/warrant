@@ -278,6 +278,45 @@ def grounded(rep, i):
             failing.append([v, why])
     return {"from": i, "grounded": not failing, "closure": len(order), "failing": failing, "outside": sorted(outside)}
 
+SAID = ("attest", "challenge")
+
+
+def frame(rep, roots):
+    """The frame of lineage `roots` in a report (site/reader.mjs frame(), the same predicate, held to it by vectors):
+    the sorted ids reached, breadth first, from every version of each root by (a) the graph's WALK edges outwards,
+    (b) an attest or a challenge onto a member (inwards) and (c) every version of a member's lineage; only ids that
+    are nodes of the view. What lies in other stores ((d) of the reader) is not this store's."""
+    out, into = {}, {}
+    for a, rel, b in rep["graph"]["edges"]:
+        if rel not in WALK:
+            continue
+        out.setdefault(a, []).append(b)
+        if rel in SAID:
+            into.setdefault(b, []).append(a)
+    root_of = {v: L for L, lin in rep["lineages"].items() for v in lin["versions"]}
+    seen, todo = set(), []
+    def reach(x):
+        if x not in seen:
+            seen.add(x)
+            todo.append(x)
+    for L in roots:
+        for v in (rep["lineages"].get(L) or {}).get("versions", []):
+            reach(v)
+    k = 0
+    while k < len(todo):
+        cur = todo[k]
+        k += 1
+        for b in out.get(cur, []):
+            reach(b)
+        for a in into.get(cur, []):
+            reach(a)
+        if cur in root_of:
+            for v in rep["lineages"][root_of[cur]]["versions"]:
+                reach(v)
+    nodes = {n[0] for n in rep["graph"]["nodes"]}
+    return sorted(i for i in seen if i in nodes)
+
+
 def answer(rep, query, data, adapter):
     lens = C.doc_id({"code": rep["code"], "adapter": adapter, "trust": rep["trust"], "profile": rep["profile"],
                      "query": query, **({"checkout": rep["checkout"]} if "checkout" in rep else {})})

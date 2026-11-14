@@ -12,7 +12,16 @@ The answer is one line of canonical JSON on standard output, and the exit status
     0   every root asked for is one this receiver may rely on now;
     1   otherwise: a root is not relied on, or the package was refused (the answer says which);
     2   the command line, or a file of the receiver's own that it names, cannot be read;
-    3   an error of this verifier itself, never the code of a refusal.
+    3   an error of this verifier itself, never the code of a refusal;
+    4   with --witness: the witness showed two histories (two of its snapshots after the same one).
+
+With --witness FILE (a `witness/1`: snapshot@1 lines of one witness and warrant.merkle proofs, warrant.snapshot
+prove), the answer has `absence`: against the reverse index root R of the snapshot it uses, signed by an actor this
+receiver's trust binds and its profile names `witness`, every attest and challenge that store held against an id of the
+asked roots' frame (graph.frame) is in the package, or what is missing. `completeness` stays UNATTESTED: `absence`
+says what was not in that root, never that it is nowhere. A package that leaves out what the witnessed store holds is
+not relied on. With --extends HELD (a snapshot id the receiver accepted before), the snapshot used must descend from
+it in the witness's lineage: an older one, or one on another branch, is a rollback, refused.
 
 A root is a record id. It is relied on when it is the effective version of its lineage (docs/V3.md §3: a lineage
 that forks has none, and a version whose guard waits is not it), no counted challenge in the package stands against
@@ -39,6 +48,7 @@ import sys
 from . import engine as E
 from . import graph as G
 from . import jcs as C
+from . import merkle as M
 from . import pins as P
 from . import records as R
 from . import shapes as S
@@ -139,7 +149,7 @@ def describe(rep, ids):
 
 # ---------------------------------------------------------------- the answer
 
-def verify(raw, trust, profile, as_of=None, require=(), checkout=None, limit=MAX_BYTES):
+def verify(raw, trust, profile, as_of=None, require=(), checkout=None, limit=MAX_BYTES, witness=None, extends=None):
     """The answer (a JSON object, module docstring) for the bytes of a package file. `require`: the roots the receiver
     asks about (none: the package's own); `checkout`: what read_checkout gave, or None."""
     for why in (E.trust_problem(trust), E.profile_problem(profile)):
@@ -163,7 +173,108 @@ def verify(raw, trust, profile, as_of=None, require=(), checkout=None, limit=MAX
         return _refused(Refusal("LIMITS", str(e)), receiver, asked)
     if not require:
         asked["roots"] = sorted(set(pkg["roots"]))
-    return _answer(snap, view, view.report(), dict(receiver, as_of=view.as_of), asked, checkout)
+    rep = view.report()
+    ans = _answer(snap, view, rep, dict(receiver, as_of=view.as_of), asked, checkout)
+    if witness is not None:
+        ans["absence"] = absence(witness, snap, rep, asked["roots"], trust, profile, extends)
+        ans["rely"] = ans["rely"] and ans["absence"]["holds"]
+        ans["established"], ans["not_established"] = _sentences(ans)
+    return ans
+
+
+WITNESS, WITNESS_ROLE, SNAPSHOT = "witness/1", "witness", "snapshot@1"
+
+
+def _witness_lines(doc):
+    """{id: record} of a witness/1 document's lines, or a Refusal."""
+    if not (isinstance(doc, dict) and set(doc) == {"warrant", "lines", "use", "said"} and doc["warrant"] == WITNESS
+            and isinstance(doc["lines"], list) and S.hex64(doc["use"]) and isinstance(doc["said"], dict)):
+        raise Refusal("WITNESS_SHAPE", "a witness/1 is {warrant, lines, use, said}")
+    out = {}
+    for ln in doc["lines"]:
+        if not (isinstance(ln, dict) and set(ln) == {"record", "sig"}):
+            raise Refusal("WITNESS_SHAPE", "a line is {record, sig}")
+        try:
+            R.check(ln["record"])
+        except R.Invalid as e:
+            raise Refusal("WITNESS_SHAPE", f"a line's record: {e}") from None
+        out[R.rid(ln["record"])] = ln
+    return out
+
+
+def absence(doc, snap, rep, roots, trust, profile, extends=None):
+    """The `absence` of an answer (module docstring): {holds, in, records, snapshot, witnessed_by, commit, frame,
+    missing, unproved, equivocation, why}."""
+    out = {"holds": False, "in": None, "records": None, "snapshot": None, "witnessed_by": None, "commit": None,
+           "frame": 0, "missing": [], "uncounted": [], "unproved": [], "equivocation": [], "why": None}
+    try:
+        lines = _witness_lines(doc)
+    except Refusal as e:
+        return dict(out, why=f"{e.code}: {e}")
+    use = lines.get(doc["use"])
+    if use is None:
+        return dict(out, why="the snapshot it uses is not among its lines")
+    r = use["record"]
+    actor, b = r["actor"], r["body"]
+    signed = lambda ln: bool(ln["sig"]) and any(R.verifies(R.rid(ln["record"]), ln["sig"], k)
+                                                for k in trust.get("keys", {}).get(ln["record"]["actor"], []))
+    if not (r["kind"] == "entity" and r["schema"] == SNAPSHOT and signed(use)):
+        return dict(out, why=f"{doc['use'][:12]} is no snapshot@1 signed with a key this receiver binds to {actor!r}")
+    if actor not in (profile.get("roles", {}).get(WITNESS_ROLE) or []):
+        return dict(out, why=f"{actor!r} holds no `{WITNESS_ROLE}` role in this receiver's profile")
+    if not (isinstance(b, dict) and S.hex64(b.get("records")) and S.hex64(b.get("index"))):
+        return dict(out, why="the snapshot names no records and index roots")
+    out.update(**{"in": b["index"], "records": b["records"], "snapshot": doc["use"], "witnessed_by": actor,
+                  "commit": b.get("commit")})
+    mine = {i: ln["record"] for i, ln in lines.items() if ln["record"]["actor"] == actor
+            and ln["record"]["schema"] == SNAPSHOT and ln["record"]["kind"] == "entity" and signed(ln)}
+    after = {}
+    for i, x in mine.items():
+        after.setdefault(x.get("lineage"), []).append(i)
+    out["equivocation"] = sorted(sorted(v) for v in after.values() if len(v) > 1)
+    if out["equivocation"]:
+        return dict(out, why=f"{actor} showed two histories: two of its snapshots follow the same one")
+    if extends is not None:
+        chain, x = [], doc["use"]
+        while x in mine:
+            chain.append(x)
+            x = mine[x].get("lineage")
+        if extends not in chain:
+            return dict(out, why=f"ROLLBACK: {doc['use'][:12]} does not descend from {extends[:12]}, the snapshot "
+                                 "held: an older one, or one on another branch")
+    root_of = {v: L for L, lin in rep["lineages"].items() for v in lin["versions"]}
+    ids = G.frame(rep, sorted({root_of.get(i, i) for i in roots}))
+    ids = sorted(set(ids) | {i for i in roots if i in snap.lines})
+    out["frame"] = len(ids)
+    size = (b.get("size") or {}).get("index")
+    # In the package is what its assessment admitted, not a line with that id: a line whose signature does not verify is
+    # left out by the engine, and counted here as missing (the analysis session on #393: a challenge kept in the
+    # package with its signature spoiled read as present). A line signed under a key this receiver's trust does not bind
+    # is in the package and counted for nothing here: `uncounted`, said, never folded into either answer.
+    # The split is by the actor: one this receiver binds keys to (or a challenge's own named key), whose line it did not
+    # admit, is missing: its signature was not delivered, and a line signed again under another key is no less missing.
+    # A line of an actor it binds no key to is uncounted: present, and a signature this receiver cannot check (a line
+    # names its key by id, not the key).
+    admitted = {n[0] for n in rep["graph"]["nodes"]}
+    def own_key(x):
+        envs = snap.lines.get(x, [])
+        return bool(envs) and envs[0]["record"]["actor"] not in trust.get("keys", {}) and not R.named_key(envs[0]["record"])
+    for i in ids:
+        # read at the witness's root and size, as signed: RFC 9162 binds the size through the root, not through a
+        # leaf's path, and the neighbours of an absence are adjacent only in a tree of that size
+        proof = M.unpack(doc["said"], i, b["index"], size) if type(size) is int else None
+        holds, said = M.check(proof, b["index"], size) if proof else (False, None)
+        if not holds:
+            out["unproved"].append(i)
+            continue
+        out["missing"] += [x for _, x in said if x not in admitted and not own_key(x)]
+        out["uncounted"] += [x for _, x in said if x not in admitted and own_key(x)]
+    out["missing"], out["uncounted"] = sorted(set(out["missing"])), sorted(set(out["uncounted"]))
+    out["holds"] = not out["unproved"] and not out["missing"]
+    if not out["holds"]:
+        out["why"] = (f"{len(out['missing'])} record(s) the witnessed store holds against the frame are not in the "
+                      f"package" if out["missing"] else f"{len(out['unproved'])} id(s) of the frame have no proof against {b['index'][:12]}")
+    return out
 
 
 def _refused(e, receiver, asked):
@@ -348,6 +459,17 @@ def _sentences(ans):
                   + ", ".join(f"{c} {sum(1 for p in ex['problems'] if p[0] == c)}" for c in codes))
     no.append("completeness: the package holds what its sender chose to include: a challenge or a later version it "
               "left out cannot be seen here")
+    ab = ans.get("absence")
+    if ab and ab["holds"]:
+        yes.append(f"absence: every attest and challenge the store witnessed by {ab['witnessed_by']} at index root "
+                   f"{ab['in'][:12]} (snapshot {ab['snapshot'][:12]}) holds against the {_n(ab['frame'], 'record')} of the "
+                   "roots' frame is in the package; a statement about that root, not about every store")
+    elif ab:
+        no.append(f"absence: not shown: {ab['why']}")
+    if ab and ab["uncounted"]:
+        no.append(f"absence: {_n(len(ab['uncounted']), 'record')} the witness saw against the frame "
+                  f"{'is' if len(ab['uncounted']) == 1 else 'are'} in the package, of an actor your trust binds no key "
+                  "to: their signatures cannot be checked here and you count them for nothing; they are not hidden from you")
     if co["unavailable"]:
         no.append(f"completeness: {_n(len(co['unavailable']), 'record or blob', 'records or blobs')} that the roots rest "
                   "on, named and not in the package: " + ", ".join(x[:12] for x in co["unavailable"]))
@@ -472,7 +594,11 @@ def _run(argv, prog):
     ap.add_argument("--require", nargs="+", action="extend", default=[], metavar="ROOT",
                     help="the record ids you ask about (default: the ones the package names)")
     ap.add_argument("--max-bytes", type=int, default=MAX_BYTES, help=f"refuse a larger package (default {MAX_BYTES})")
+    ap.add_argument("--witness", help="a witness/1 file: a witness's snapshots and proofs against its roots (absence)")
+    ap.add_argument("--extends", help="with --witness: a snapshot id accepted before; the one used must descend from it")
     a = ap.parse_args(argv)
+    if a.extends is not None and (a.witness is None or not S.hex64(a.extends)):
+        raise Usage("--extends names a snapshot id (64 lowercase hex digits), with --witness")
     if a.max_bytes < 1 or (a.as_of is not None and a.as_of < 0):
         raise Usage("--max-bytes is at least 1 and --as-of is not negative")
     if not all(S.hex64(r) for r in a.require):
@@ -483,7 +609,9 @@ def _run(argv, prog):
             raw = f.read(a.max_bytes + 1)
     except OSError as e:
         raise Usage(f"the package {a.package}: {type(e).__name__}") from None
-    ans = verify(raw, trust, profile, a.as_of, a.require, None if a.checkout is None else read_checkout(a.checkout), a.max_bytes)
+    wit = None if a.witness is None else _own(a.witness, "--witness")
+    ans = verify(raw, trust, profile, a.as_of, a.require, None if a.checkout is None else read_checkout(a.checkout), a.max_bytes,
+                 wit, a.extends)
     line = C.canon(ans) + b"\n"
     out = getattr(sys.stdout, "buffer", None)            # the bytes, whatever encoding the terminal has
     if out is None:
@@ -491,6 +619,8 @@ def _run(argv, prog):
     else:
         out.write(line)
         out.flush()
+    if (ans.get("absence") or {}).get("equivocation"):
+        return 4
     return 0 if ans["rely"] else 1
 
 
