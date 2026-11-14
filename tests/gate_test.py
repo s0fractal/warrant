@@ -1335,7 +1335,7 @@ def rules_cases():
     RULES = getattr(GT, "RULES", "rules@1")                  # before stage 2a the gate has neither: the cases fail on
     SCHEMA = getattr(GT, "RULES_SCHEMA", {"name": "rules@1", "fields": {"state": "str", "warrant": "str",  # their checks
         "repository": "str", "trust": "obj", "profile": "obj"}, "states": {"in force": None}, "closed": [],
-        "successors": {"in force": ["pr/acceptor", "pr/owner"]}})
+        "successors": {"in force": ["pr/acceptor"]}})
     def doc_of(r):
         return json.loads((r.dot / "v3.json").read_text())
 
@@ -1363,8 +1363,9 @@ def rules_cases():
     self_made = PR(before_base=eve_replays, before_x=eve_files).assess()
     def forked(p):
         change(p)
-        p.r.put("dave", "entity", dict(doc_of(p.r), state="in force"), RULES, lineage=p.g)
+        p.r.put("bob", "entity", dict(doc_of(p.r), repository=REPO, state="in force"), RULES, lineage=p.g)
     fork = PR(before_base=genesis, before_x=forked).assess()
+    owner_files = PR(before_base=genesis, before_x=lambda p: change(p, by="dave")).assess()
     def spaces(p):
         doc = doc_of(p.r)
         (p.r.dot / "v3.json").write_text(json.dumps(doc, indent=4, sort_keys=False)[::1] + "\n\n")
@@ -1407,6 +1408,28 @@ def rules_cases():
         change(p)
         p.r.put("dave", "challenge", {"target": p.n1, "statement": "not these rules"}, refs=[p.n1])
     veto = PR(before_base=genesis, before_x=vetoed).assess()
+    check("RC11 a version filed by the base's pr/owner is not in force: the owner's word only lowers (#350), and the "
+          "rules have no guard, so filing is making in force; the owner's stop is RULES_VETO",
+          "RULES_PROJECTION" in rcodes(owner_files), codes(owner_files))
+    def wrong_genesis(p):
+        sch = p.r.put("alice", "schema", SCHEMA)
+        doc = doc_of(p.r)
+        p.g = p.r.put("alice", "entity", dict(doc, trust=dict(doc["trust"], keys=dict(doc["trust"]["keys"], mallory=["ab" * 32])),
+                                              state="in force"), RULES)
+    def genesis_and_change(p):
+        genesis(p)
+        p.r.profile["roles"]["replayer"] = sorted(set(p.r.profile["roles"]["replayer"]) | {"eve"})
+        p.r.write_config()
+    def true_genesis(p):
+        genesis(p)
+    off = PR(before_x=wrong_genesis).assess()
+    moved = PR(before_x=genesis_and_change).assess()
+    fine = PR(before_x=true_genesis).assess()
+    check("RC12 the first rules version (a base that records none) must be the base's file unchanged, in a pull request "
+          "that changes no rule: one with a key the file does not have, or one filed with a change of the file, is "
+          "refused (RULES_GENESIS); the true genesis passes (the analysis session on #400: the genesis was not checked)",
+          "RULES_GENESIS" in rcodes(off) and "RULES_GENESIS" in rcodes(moved) and rcodes(fine) == set(),
+          (codes(off), codes(moved), codes(fine)))
     check("RC10 a challenge by the constitutional tier's veto role (pr/owner) on the new rules version stops it "
           "(RULES_VETO), as one on the head version stops the pull request", "RULES_VETO" in rcodes(veto), codes(veto))
     check("RC9 a head whose rules in force are not the base's nor their successor (the base's version gone): refused "

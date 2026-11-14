@@ -10,10 +10,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   `.warrant/v3.json` (the file their projection, canonically). Once the base holds one in force, the gate refuses a
   pull request whose head's rules in force, read under the base's trust and profile, are not its file
   (`RULES_PROJECTION`), do not succeed the base's (`RULES_CHAIN`), fork (`RULES_FORK`), are two lineages
-  (`RULES_TWO`) or are challenged by the veto role (`RULES_VETO`); a version is filed by a `pr/acceptor` or `pr/owner`
-  of the base, and N+1 never admits itself. The engine still reads the file: the differential against 3.0.0a7 is SAME.
+  (`RULES_TWO`) or are challenged by the veto role (`RULES_VETO`); a version is filed by a `pr/acceptor` of the
+  base (not `pr/owner`: the owner's word only lowers, and `in force` has no guard), and N+1 never admits itself; the
+  genesis must be the base's file unchanged (`RULES_GENESIS`). The engine still reads the file: the differential against 3.0.0a7 is SAME.
   This pull request files the schema (pending until the second `schema/author` accepts it); the genesis version
-  follows in a records-only one. RC1–RC10; mutants G131–G136.
+  follows in a records-only one. RC1–RC12; mutants G131–G139.
 
 - `.warrant/merge.json` watches what a receiver's `rely` rests on and the norm: `docs/V3.md`, `warrant/verify.py`, the
   single-file `warrant_verify.py`, `warrant/graph.py`, `warrant/pins.py`, `warrant/merkle.py`, `warrant/snapshot.py`.

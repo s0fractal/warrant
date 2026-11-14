@@ -701,7 +701,7 @@ def _shared(a, root, b, pr, checks, now=None):
 RULES, RULES_FILE = "rules@1", ".warrant/v3.json"
 RULES_SCHEMA = {"name": RULES, "fields": {"state": "str", "warrant": "str", "repository": "str", "trust": "obj",
                                           "profile": "obj"},
-                "states": {"in force": None}, "closed": [], "successors": {"in force": ["pr/acceptor", "pr/owner"]}}
+                "states": {"in force": None}, "closed": [], "successors": {"in force": ["pr/acceptor"]}}
 
 
 def rules_in_force(rep):
@@ -727,11 +727,21 @@ def rules_reasons(root, b, head, rep):
     if not hasattr(b, "_rules"):                    # once per base: every pull request is judged against it
         b._rules = rules_in_force(assess_snapshot(b, store_at(root, b.commit)[0]))
     _, before, why = b._rules
-    if before is None and why is None:
-        return []                                   # no rules recorded at the base: v3.json is governed as before
     if why:
         return [why]
     L, now, why = rules_in_force(rep)
+    if before is None:                              # no rules recorded at the base: v3.json is governed as before,
+        if L is None:                               # unless the head brings the first version (the genesis), which
+            return []                               # records the base's rules and changes nothing
+        try:
+            same = C.canon(json.loads(files_at(root, head, [RULES_FILE])[RULES_FILE])) == C.canon(b.v3)
+        except (KeyError, ValueError):
+            same = False
+        body = {k: v for k, v in rep["_recs"][now]["body"].items() if k != "state"} if now else None
+        if why or now is None or not same or body is None or C.canon(body) != C.canon(b.v3):
+            return [why or ("RULES_GENESIS", f"the first {RULES} version is the base's {RULES_FILE} unchanged, in a "
+                            "pull request that changes nothing else of the rules (the analysis session on #400)")]
+        return []
     if why or now is None:
         return [why or ("RULES_UNRECORDED", f"no {RULES} version is in force at the head under the base's rules")]
     try:
