@@ -206,7 +206,7 @@ def absence(doc, snap, rep, roots, trust, profile, extends=None):
     """The `absence` of an answer (module docstring): {holds, in, records, snapshot, witnessed_by, commit, frame,
     missing, unproved, equivocation, why}."""
     out = {"holds": False, "in": None, "records": None, "snapshot": None, "witnessed_by": None, "commit": None,
-           "frame": 0, "missing": [], "unproved": [], "equivocation": [], "why": None}
+           "frame": 0, "missing": [], "uncounted": [], "unproved": [], "equivocation": [], "why": None}
     try:
         lines = _witness_lines(doc)
     except Refusal as e:
@@ -247,16 +247,29 @@ def absence(doc, snap, rep, roots, trust, profile, extends=None):
     ids = sorted(set(ids) | {i for i in roots if i in snap.lines})
     out["frame"] = len(ids)
     size = (b.get("size") or {}).get("index")
+    # In the package is what its assessment admitted, not a line with that id: a line whose signature does not verify is
+    # left out by the engine, and counted here as missing (the analysis session on #393: a challenge kept in the
+    # package with its signature spoiled read as present). A line signed under a key this receiver's trust does not bind
+    # is in the package and counted for nothing here: `uncounted`, said, never folded into either answer.
+    # The split is by the actor: one this receiver binds keys to (or a challenge's own named key), whose line it did not
+    # admit, is missing: its signature was not delivered, and a line signed again under another key is no less missing.
+    # A line of an actor it binds no key to is uncounted: present, and a signature this receiver cannot check (a line
+    # names its key by id, not the key).
+    admitted = {n[0] for n in rep["graph"]["nodes"]}
+    def own_key(x):
+        envs = snap.lines.get(x, [])
+        return bool(envs) and envs[0]["record"]["actor"] not in trust.get("keys", {}) and not R.named_key(envs[0]["record"])
     for i in ids:
         # read at the witness's root and size, as signed: RFC 9162 binds the size through the root, not through a
         # leaf's path, and the neighbours of an absence are adjacent only in a tree of that size
-        proof = M.unpack(doc["said"], i, b["index"], size) if isinstance(size, int) else None
-        holds, said = M.check(proof, b["index"]) if proof else (False, None)
+        proof = M.unpack(doc["said"], i, b["index"], size) if type(size) is int else None
+        holds, said = M.check(proof, b["index"], size) if proof else (False, None)
         if not holds:
             out["unproved"].append(i)
             continue
-        out["missing"] += [x for _, x in said if x not in snap.lines]
-    out["missing"] = sorted(set(out["missing"]))
+        out["missing"] += [x for _, x in said if x not in admitted and not own_key(x)]
+        out["uncounted"] += [x for _, x in said if x not in admitted and own_key(x)]
+    out["missing"], out["uncounted"] = sorted(set(out["missing"])), sorted(set(out["uncounted"]))
     out["holds"] = not out["unproved"] and not out["missing"]
     if not out["holds"]:
         out["why"] = (f"{len(out['missing'])} record(s) the witnessed store holds against the frame are not in the "
@@ -453,6 +466,10 @@ def _sentences(ans):
                    "roots' frame is in the package; a statement about that root, not about every store")
     elif ab:
         no.append(f"absence: not shown: {ab['why']}")
+    if ab and ab["uncounted"]:
+        no.append(f"absence: {_n(len(ab['uncounted']), 'record')} the witness saw against the frame "
+                  f"{'is' if len(ab['uncounted']) == 1 else 'are'} in the package, of an actor your trust binds no key "
+                  "to: their signatures cannot be checked here and you count them for nothing; they are not hidden from you")
     if co["unavailable"]:
         no.append(f"completeness: {_n(len(co['unavailable']), 'record or blob', 'records or blobs')} that the roots rest "
                   "on, named and not in the package: " + ", ".join(x[:12] for x in co["unavailable"]))

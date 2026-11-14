@@ -34,12 +34,12 @@ DIGESTS = {
     "warrant/graph.py": "4a85640b26736007207474c9b4b5efed9ad4ee28920b0f7faa550715f03b07ca",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
-    "warrant/merkle.py": "2b696a7ca5572a6d4641e8a21bc828bebe774b64be1e7cc8ff85b669018a8bbd",
+    "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
     "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
     "warrant/engine.py": "0ca80c4045dca431b48ef53ec340b69957ea314f0cfbc772cf3b27a36682d490",
-    "warrant/verify.py": "3b407c6f86c2443ec20ef8c78589269283fc285eccb68dd8ab2152102dc9845b",
+    "warrant/verify.py": "482b241a1a287f60d8017edf4adcc47ef90935dc700704c65c164ef4f2536553",
 }
 ORDER = ('jcs', 'graph', 'shapes', 'keys', 'merkle', 'pins', 'records', 'store', 'engine', 'verify')
 SOURCES = {}
@@ -750,7 +750,7 @@ def path(leaves, i):
 
 def included(root_hex, size, i, data, audit):
     """Whether `data` is leaf `i` of a tree of `size` leaves with root `root_hex` (RFC 9162 §2.1.3.2)."""
-    if not (isinstance(size, int) and isinstance(i, int) and 0 <= i < size and isinstance(audit, list)
+    if not (type(size) is int and type(i) is int and 0 <= i < size and isinstance(audit, list)
             and all(S.hex64(x) for x in audit) and isinstance(data, bytes) and S.hex64(root_hex)):
         return False
     fn, sn, r = i, size - 1, leaf_hash(data)
@@ -831,14 +831,17 @@ def _key_of(tree, data):
     return data[:32].hex() if len(data) == 64 else None
 
 
-def check(proof, root_hex=None):
-    """(holds, said) of a proof from prove_record / prove_said, against `root_hex` (its own `root` when None):
+def check(proof, root_hex=None, size=None):
+    """(holds, said) of a proof from prove_record / prove_said, against `root_hex` and `size` (its own `root` and `size`
+    when None: a caller that has them from a signed snapshot passes them, since RFC 9162 binds the size through the root
+    and not through a leaf's path):
     `said` is the leaf's [[kind, id], ...] for an index leaf present, [] for a key absent from the index, True / False
     for a record in / not in the records tree. `holds` False: the proof does not show what it claims."""
     try:
         tree, key, n = proof["tree"], proof["key"], proof["size"]
         r = proof["root"] if root_hex is None else root_hex
-        if tree not in ("records", "index") or not S.hex64(key) or r != proof["root"]:
+        if (tree not in ("records", "index") or not S.hex64(key) or r != proof["root"] or type(n) is not int
+                or (size is not None and n != size)):
             return False, None
         def leaf(x):
             data = bytes.fromhex(x["data"])
@@ -2147,7 +2150,7 @@ def absence(doc, snap, rep, roots, trust, profile, extends=None):
     """The `absence` of an answer (module docstring): {holds, in, records, snapshot, witnessed_by, commit, frame,
     missing, unproved, equivocation, why}."""
     out = {"holds": False, "in": None, "records": None, "snapshot": None, "witnessed_by": None, "commit": None,
-           "frame": 0, "missing": [], "unproved": [], "equivocation": [], "why": None}
+           "frame": 0, "missing": [], "uncounted": [], "unproved": [], "equivocation": [], "why": None}
     try:
         lines = _witness_lines(doc)
     except Refusal as e:
@@ -2188,16 +2191,29 @@ def absence(doc, snap, rep, roots, trust, profile, extends=None):
     ids = sorted(set(ids) | {i for i in roots if i in snap.lines})
     out["frame"] = len(ids)
     size = (b.get("size") or {}).get("index")
+    # In the package is what its assessment admitted, not a line with that id: a line whose signature does not verify is
+    # left out by the engine, and counted here as missing (the analysis session on #393: a challenge kept in the
+    # package with its signature spoiled read as present). A line signed under a key this receiver's trust does not bind
+    # is in the package and counted for nothing here: `uncounted`, said, never folded into either answer.
+    # The split is by the actor: one this receiver binds keys to (or a challenge's own named key), whose line it did not
+    # admit, is missing: its signature was not delivered, and a line signed again under another key is no less missing.
+    # A line of an actor it binds no key to is uncounted: present, and a signature this receiver cannot check (a line
+    # names its key by id, not the key).
+    admitted = {n[0] for n in rep["graph"]["nodes"]}
+    def own_key(x):
+        envs = snap.lines.get(x, [])
+        return bool(envs) and envs[0]["record"]["actor"] not in trust.get("keys", {}) and not R.named_key(envs[0]["record"])
     for i in ids:
         # read at the witness's root and size, as signed: RFC 9162 binds the size through the root, not through a
         # leaf's path, and the neighbours of an absence are adjacent only in a tree of that size
-        proof = M.unpack(doc["said"], i, b["index"], size) if isinstance(size, int) else None
-        holds, said = M.check(proof, b["index"]) if proof else (False, None)
+        proof = M.unpack(doc["said"], i, b["index"], size) if type(size) is int else None
+        holds, said = M.check(proof, b["index"], size) if proof else (False, None)
         if not holds:
             out["unproved"].append(i)
             continue
-        out["missing"] += [x for _, x in said if x not in snap.lines]
-    out["missing"] = sorted(set(out["missing"]))
+        out["missing"] += [x for _, x in said if x not in admitted and not own_key(x)]
+        out["uncounted"] += [x for _, x in said if x not in admitted and own_key(x)]
+    out["missing"], out["uncounted"] = sorted(set(out["missing"])), sorted(set(out["uncounted"]))
     out["holds"] = not out["unproved"] and not out["missing"]
     if not out["holds"]:
         out["why"] = (f"{len(out['missing'])} record(s) the witnessed store holds against the frame are not in the "
@@ -2394,6 +2410,10 @@ def _sentences(ans):
                    "roots' frame is in the package; a statement about that root, not about every store")
     elif ab:
         no.append(f"absence: not shown: {ab['why']}")
+    if ab and ab["uncounted"]:
+        no.append(f"absence: {_n(len(ab['uncounted']), 'record')} the witness saw against the frame "
+                  f"{'is' if len(ab['uncounted']) == 1 else 'are'} in the package, of an actor your trust binds no key "
+                  "to: their signatures cannot be checked here and you count them for nothing; they are not hidden from you")
     if co["unavailable"]:
         no.append(f"completeness: {_n(len(co['unavailable']), 'record or blob', 'records or blobs')} that the roots rest "
                   "on, named and not in the package: " + ", ".join(x[:12] for x in co["unavailable"]))

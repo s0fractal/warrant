@@ -83,7 +83,7 @@ def path(leaves, i):
 
 def included(root_hex, size, i, data, audit):
     """Whether `data` is leaf `i` of a tree of `size` leaves with root `root_hex` (RFC 9162 §2.1.3.2)."""
-    if not (isinstance(size, int) and isinstance(i, int) and 0 <= i < size and isinstance(audit, list)
+    if not (type(size) is int and type(i) is int and 0 <= i < size and isinstance(audit, list)
             and all(S.hex64(x) for x in audit) and isinstance(data, bytes) and S.hex64(root_hex)):
         return False
     fn, sn, r = i, size - 1, leaf_hash(data)
@@ -164,14 +164,17 @@ def _key_of(tree, data):
     return data[:32].hex() if len(data) == 64 else None
 
 
-def check(proof, root_hex=None):
-    """(holds, said) of a proof from prove_record / prove_said, against `root_hex` (its own `root` when None):
+def check(proof, root_hex=None, size=None):
+    """(holds, said) of a proof from prove_record / prove_said, against `root_hex` and `size` (its own `root` and `size`
+    when None: a caller that has them from a signed snapshot passes them, since RFC 9162 binds the size through the root
+    and not through a leaf's path):
     `said` is the leaf's [[kind, id], ...] for an index leaf present, [] for a key absent from the index, True / False
     for a record in / not in the records tree. `holds` False: the proof does not show what it claims."""
     try:
         tree, key, n = proof["tree"], proof["key"], proof["size"]
         r = proof["root"] if root_hex is None else root_hex
-        if tree not in ("records", "index") or not S.hex64(key) or r != proof["root"]:
+        if (tree not in ("records", "index") or not S.hex64(key) or r != proof["root"] or type(n) is not int
+                or (size is not None and n != size)):
             return False, None
         def leaf(x):
             data = bytes.fromhex(x["data"])

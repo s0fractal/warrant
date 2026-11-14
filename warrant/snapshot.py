@@ -18,6 +18,7 @@ store that has no witness is unchanged.
     python -m warrant.snapshot schema  --actor A --key K      # file snapshot@1 (an author of schemas)
     python -m warrant.snapshot witness --actor W --key K      # check the last witnessed store is held, file a version
     python -m warrant.snapshot prove --use SNAPSHOT --roots ID ...   # a witness/1 for warrant verify --witness
+    python -m warrant.snapshot check SNAPSHOT                 # its roots made again from the store at its commit
     python -m warrant.snapshot show [--json]                  # the store's roots now, and each witness's leaf"""
 import argparse
 import subprocess
@@ -73,9 +74,13 @@ def leaves(rep, actor):
 
 
 def holds(old, new):
-    """[(code, detail)] of what keeps `new` from holding `old`: a record of `old` that `new` lacks."""
-    gone = sorted(set(old.lines) - set(new.lines))
-    return [("SNAPSHOT_SHRANK", f"{len(gone)} record(s) of the store witnessed last are not in this one: "
+    """[(code, detail)] of what keeps `new` from holding `old`: a line of `old` (its record and its signature) that `new`
+    lacks. Compared as lines, not as ids: a record whose signature was spoiled in `new` has the same id and is no
+    longer the record that was witnessed (the analysis session on #393)."""
+    from . import jcs as C
+    lines = lambda snap: {C.canon(e) for envs in snap.lines.values() for e in envs}
+    gone = sorted({R.rid(C.loads(x)["record"]) for x in lines(old) - lines(new)})
+    return [("SNAPSHOT_SHRANK", f"{len(gone)} line(s) of the store witnessed last are not in this one: "
              + ", ".join(g[:12] for g in gone[:8]))] if gone else []
 
 
@@ -126,6 +131,20 @@ def prove(repo, use, roots):
     return {"warrant": "witness/1", "lines": lines, "use": use, "said": M.pack({i: M.prove_said(then, i) for i in ids})}
 
 
+def check_snapshot(repo, sid):
+    """[(code, detail)]: what keeps snapshot `sid` from being the store at its commit: its two roots and sizes made
+    again from that store's lines. Anyone with the clone can run it; it is how a tree a witness built out of order, or
+    with two leaves for one key (the one thing a proof of absence takes on the witness's word), is caught."""
+    snap = repo.store.snapshot()
+    if sid not in snap.lines or snap.lines[sid][0]["record"].get("schema") != NAME:
+        raise Failed("SNAPSHOT_UNKNOWN", f"{sid[:12]} is no snapshot@1 of this store")
+    b = snap.lines[sid][0]["record"]["body"]
+    r = M.roots(at_commit(repo.root, b["commit"]))
+    bad = [(k, f"{k} {b.get(k)} where the store at {b['commit'][:12]} gives {r[k]}") for k in ("records", "index") if b.get(k) != r[k]]
+    bad += [("size", f"size {b.get('size')} where it gives {r['size']}")] if b.get("size") != r["size"] else []
+    return bad
+
+
 def roots_now(repo):
     snap = repo.store.snapshot()
     return dict(M.roots(snap), digest=snap.digest)
@@ -140,6 +159,7 @@ def run(argv=None):
         p.add_argument("--actor", required=True)
         p.add_argument("--key", required=True)
     sub.choices["witness"].add_argument("--commit")
+    sub.add_parser("check").add_argument("snapshot")
     pr = sub.add_parser("prove")
     pr.add_argument("--use", required=True)
     pr.add_argument("--roots", nargs="+", required=True)
@@ -155,6 +175,12 @@ def run(argv=None):
             raise Failed("BAD_REQUEST", "--commit is a full commit id")
         dump({"snapshot": witness(repo, a.actor, load_key(a.key, root), a.commit)})
         return 0
+    if a.cmd == "check":
+        if not S.hex64(a.snapshot):
+            raise Failed("BAD_REQUEST", "a snapshot id")
+        bad = check_snapshot(repo, a.snapshot)
+        dump({"snapshot": a.snapshot, "holds": not bad, "differs": [d for _, d in bad]})
+        return 1 if bad else 0
     if a.cmd == "prove":
         if not (S.hex64(a.use) and all(S.hex64(x) for x in a.roots)):
             raise Failed("BAD_REQUEST", "--use and --roots name record ids")

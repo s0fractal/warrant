@@ -775,6 +775,8 @@ def merkle_cases():
             ok &= M.included(r, n, i, leaves[i], M.path(leaves, i))
             ok &= not M.included(r, n, i, leaves[i][::-1], M.path(leaves, i)) or leaves[i] == leaves[i][::-1]
             ok &= n < 2 or not M.included(r, n, (i + 1) % n, leaves[i], M.path(leaves, i))
+    one = [b"x" * 32]
+    ok &= M.included(M.root(one), 1, 0, one[0], []) and not M.included(M.root(one), True, 0, one[0], [])   # a size is an int, not a bool
     check("WT1 every leaf of a tree of 0 to 100 leaves is proved at its index by its audit path, and the same path "
           "proves no other bytes and no other index (RFC 9162 hashing; the empty tree's root is SHA-256 of nothing)",
           ok and M.root([]) == hashlib.sha256(b"").hexdigest() and M.root([b""]) == hashlib.sha256(b"\x00").hexdigest())
@@ -815,7 +817,7 @@ def merkle_cases():
           said == (True, sorted([["attest", a], ["challenge", c]])) and none == (True, []) and rec_in == (True, True)
           and rec_out == (True, False) and M.check(forged, roots["index"])[0] is False and other[0] is False
           and 0 < p < len(keys) - 1 and M.check(skip, roots["index"])[0] is False and M.check(above, roots["index"])[0] is False
-          and M.check(lied, roots["index"])[0] is False
+          and M.check(lied, roots["index"])[0] is False and M.check(M.prove_said(snap, d), roots["index"], len(keys) + 1)[0] is False
           and ends and M.check(not_first, roots["index"])[0] is False and M.check(not_last, roots["index"])[0] is False,
           (said, none, rec_in, rec_out, other, p, len(keys)))
 
@@ -847,6 +849,7 @@ def package_of(r, roots, drop=()):
 def witness_cases():
     r, d, c, s1, T, Pf = witness_repo()
     rp = RP.Repo(r.root)
+    rep = rp.report()
     o2 = r.entity("alice", "obligation@1", {"state": "open", "statement": "t", "serves": []})
     r.commit("one more record")
     s2 = SN.witness(rp, "carol", KEYS["carol"])
@@ -856,11 +859,18 @@ def witness_cases():
     (r.dot / "records.jsonl").write_bytes(b"".join(x for x in lines if R.rid(json.loads(x)["record"]) != o2))
     r.commit("a record dropped")
     shrank = refused_code(lambda: SN.witness(rp, "carol", KEYS["carol"]))
+    spoil = lambda x: (lambda env: json.dumps(dict(env, sig=dict(env["sig"], ed25519=("0" if env["sig"]["ed25519"][0] != "0" else "1")
+                                                               + env["sig"]["ed25519"][1:])), separators=(",", ":")).encode() + b"\n")(json.loads(x))
+    (r.dot / "records.jsonl").write_bytes(b"".join(spoil(x) if R.rid(json.loads(x)["record"]) == o2 else x for x in lines))
+    r.commit("a record's signature spoiled")
+    spoiled = refused_code(lambda: SN.witness(rp, "carol", KEYS["carol"]))
     (r.dot / "records.jsonl").write_bytes(b"".join(lines))
     r.commit("restored")
     check("WT3 a witness files its snapshots as one lineage (each names the one before), and refuses to sign a store "
-          "that lacks a record of the store it witnessed last (SNAPSHOT_SHRANK, read at that snapshot's commit)",
-          rep["_recs"][s2]["lineage"] == s1 and rep["lineages"][s1]["leaf"] == s2 and shrank == "SNAPSHOT_SHRANK", shrank)
+          "that lacks a line of the store it witnessed last, or holds it with its signature spoiled (SNAPSHOT_SHRANK, read "
+          "at that snapshot's commit, compared as lines, not ids)",
+          rep["_recs"][s2]["lineage"] == s1 and rep["lineages"][s1]["leaf"] == s2 and shrank == "SNAPSHOT_SHRANK"
+          and spoiled == "SNAPSHOT_SHRANK", (shrank, spoiled))
     w = SN.prove(rp, s2, [d])
     full = V.verify(package_of(r, [d]), T, Pf, witness=w)
     omit = V.verify(package_of(r, [d], drop={c}), T, Pf, witness=w)
@@ -871,6 +881,51 @@ def witness_cases():
           full["absence"]["holds"] and full["absence"]["in"] == rep["_recs"][s2]["body"]["index"]
           and omit["absence"]["missing"] == [c] and not omit["rely"] and not nobody["absence"]["holds"]
           and full["completeness"]["attested"] == "UNATTESTED", (full["absence"], omit["absence"], nobody["absence"]))
+    pkg_lines = lambda edit: json.dumps({"warrant": "package/3", "roots": [d], "lines": [
+        edit(x) for x in (r.dot / "records.jsonl").read_text().splitlines()], "blobs": {}}).encode()
+    def spoil_sig(x):
+        env = json.loads(x)
+        if R.rid(env["record"]) != c:
+            return x
+        e = env["sig"]["ed25519"]
+        return json.dumps(dict(env, sig=dict(env["sig"], ed25519=("0" if e[0] != "0" else "1") + e[1:])), separators=(",", ":"))
+    def resign(x):
+        env = json.loads(x)
+        if R.rid(env["record"]) != c:
+            return x
+        k = K.Key.from_seed_hex("ab" * 32)
+        return C.canon({"record": env["record"], "sig": {"key": K.key_id(k.public), "ed25519": k.sign(R.SIG_DOMAIN + bytes.fromhex(c))}}).decode()
+    spoiled = V.verify(pkg_lines(spoil_sig), T, Pf, witness=w)
+    resigned = V.verify(pkg_lines(resign), T, Pf, witness=w)
+    narrow = dict(T, keys={k: v for k, v in T["keys"].items() if k != "bob"})
+    unbound = V.verify(package_of(r, [d]), narrow, Pf, witness=w)
+    check("WT7 in the package means admitted by its assessment: the challenge kept with its signature spoiled, or signed "
+          "again under another key while this receiver binds its actor, is missing, and the package is not relied on; one "
+          "of an actor this receiver binds no key to is `uncounted` (its signature cannot be checked here), said apart, never silent "
+          "(the analysis session on #393: a spoiled signature read as present, and the package was relied on)",
+          spoiled["absence"]["missing"] == [c] and not spoiled["rely"] and resigned["absence"]["missing"] == [c]
+          and not resigned["rely"] and c in unbound["absence"]["uncounted"] and c not in unbound["absence"]["missing"]
+          and any(x.startswith("absence:") and "binds no key" in x for x in unbound["not_established"]),
+          (spoiled["absence"], resigned["absence"], unbound["absence"]))
+    acc = next(i for i, x in rep["_recs"].items() if x["kind"] == "attest" and x["body"].get("target") == d and x["actor"] == "bob")
+    on_acc = r.put("eve", "challenge", {"target": acc, "statement": "this acceptance is wrong"}, refs=[acc])
+    r.commit("a challenge against the acceptance")
+    s3 = SN.witness(rp, "carol", KEYS["carol"])
+    r.commit("carol witnesses it")
+    w3 = SN.prove(rp, s3, [d])
+    left = V.verify(package_of(r, [d], drop={on_acc}), T, Pf, witness=w3)
+    whole = V.verify(package_of(r, [d]), T, Pf, witness=w3)
+    check("WT8 a challenge against an acceptance of the root (the frame's second step) left out of the package is missing "
+          "too, and the package with it holds", left["absence"]["missing"] == [on_acc] and not left["absence"]["holds"]
+          and whole["absence"]["holds"], (left["absence"], whole["absence"]))
+    good = SN.check_snapshot(rp, s3)
+    forged = r.put("carol", "entity", dict(rep["_recs"][s1]["body"], index="0" * 64, commit=git(r.root, "rev-parse", "HEAD")),
+                   SN.NAME, lineage=s3)
+    r.commit("a snapshot whose index root is not the store's")
+    bad = SN.check_snapshot(rp, forged)
+    check("WT9 `snapshot check` makes a snapshot's roots again from the store at its commit: a true one holds, one naming "
+          "another index root does not (how a tree built out of order is caught: by anyone with the clone)",
+          good == [] and any(k == "index" for k, _ in bad), (good, bad))
     hidden = json.loads(json.dumps(w))
     leaf = hidden["said"]["proofs"][d]["in"]
     leaf["said"] = [x for x in leaf["said"] if x[1] != c]                # the challenge taken out of d's leaf
@@ -878,8 +933,8 @@ def witness_cases():
     check("WT6 the proofs are read at the root and size the witness signed: a leaf edited to drop a challenge (so that "
           "a package leaving it out would pass) proves nothing, and the package is not relied on",
           d in edited["absence"]["unproved"] and not edited["absence"]["holds"] and not edited["rely"], edited["absence"])
-    back = V.verify(package_of(r, [d]), T, Pf, witness=SN.prove(rp, s1, [d]), extends=s2)
-    ahead = V.verify(package_of(r, [d]), T, Pf, witness=w, extends=s1)
+    back = V.verify(package_of(r, [d]), T, Pf, witness=SN.prove(rp, s1, [d]), extends=s3)
+    ahead = V.verify(package_of(r, [d]), T, Pf, witness=SN.prove(rp, s3, [d]), extends=s1)
     b = rep["_recs"][s2]["body"]
     r.put("carol", "entity", dict(b, commit=git(r.root, "rev-parse", "HEAD")), SN.NAME, lineage=s1)
     r.commit("a second snapshot after s1: two histories")
