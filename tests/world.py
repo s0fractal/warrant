@@ -24,14 +24,51 @@ ROLES = {"schema/author": ["alice"], "claim/verifier": ["carol"], "roadmap/accep
          "pr/acceptor": ["bob"], "pr/owner": ["dave"], "replayer": ["carol"]}
 
 
+# The mutant harness (tests/mutants.py) runs one section of a test file, not all of it, and stops at its case's FAIL:
+#   WARRANT_SECTION=a,b   run_sections runs only the sections (functions) of these names;
+#   WARRANT_CASE_MAP=FILE  each check appends "<case id>\t<section>\n" to FILE: the map a clean run builds;
+#   WARRANT_STOP=X,Y      the process ends (status 1) right after printing `FAIL X` or `FAIL Y`.
+# Unset, a test file runs whole and nothing changes. The verdict is the printed `FAIL <case>` line either way.
+SECTION = "main"
+
+
 def check(name, ok, detail="", extra=None):
     """One case's verdict: `ok   ID ...` or `FAIL ID ...`; a mutant is killed only by a FAIL line of its case.
     check(ID, ok, what, detail) is the form with the id and its text apart."""
     if extra is not None:
         name, detail = f"{name} {detail}", extra
     print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {str(detail)[:300]}"), flush=True)
+    case = str(name).split()[0] if str(name).split() else ""
+    if os.environ.get("WARRANT_CASE_MAP"):
+        with open(os.environ["WARRANT_CASE_MAP"], "a", encoding="utf-8") as f:
+            f.write(f"{case}\t{SECTION}\n")
     if not ok:
         FAILS.append(name)
+        if case in os.environ.get("WARRANT_STOP", "").split(","):
+            sys.stdout.flush()
+            os._exit(1)
+
+
+def run_sections(sections):
+    """Run a test file's sections (its *_cases functions) in order, or only those WARRANT_SECTION names; then
+    finish(). A name that is no section of this file is refused (status 2), never a silent full run."""
+    global SECTION
+    if os.environ.get("WARRANT_LIST_SECTIONS"):
+        print("SECTIONS " + " ".join(f.__name__ for f in sections), flush=True)
+        return 0
+    only = [x for x in os.environ.get("WARRANT_SECTION", "").split(",") if x]
+    names = {f.__name__ for f in sections}
+    unknown = [x for x in only if x not in names]
+    if unknown:
+        print(f"NO_SUCH_SECTION {unknown}", flush=True)
+        return 2
+    for f in sections:
+        if only and f.__name__ not in only:
+            continue
+        SECTION = f.__name__
+        f()
+    SECTION = "main"
+    return finish()
 
 
 def finish(_name=None):

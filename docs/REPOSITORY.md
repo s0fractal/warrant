@@ -29,7 +29,7 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `.warrant/v3/schema-accepts.jsonl` | Codex's acceptances of the bootstrap schemas, as committed at #218 |
 | `tools/{claims,roadmap,review,gate}.py` | shims: `python3 -m warrant.<name>` with this checkout's package, for CI and these docs; `tools/gate.py` is what the merge workflow runs (constitutional path) |
 | `tools/graph.py` | queries over the record graph (around, path, why, frontier, impact) and the views |
-| `tests/mutants.py` | every mutant, the cases it must fail, shards and their merge |
+| `tests/mutants.py` | every mutant, the cases it must fail, shards and their merge; a mutant runs only the sections (`*_cases` functions, `tests/world.py` `run_sections`) that hold its cases, read from clean runs of each section alone (and of each set of sections a mutant runs together), and stops at its case's `FAIL`; a mutant killed so is not also run against the whole file, and a later section's state that would hide the kill in a whole run is not seen (the residual; `--whole` runs every mutant against its whole file, when time does not press) |
 | `integrations/warrant-review/` | the Codex plugin: the review skill, the MCP launcher, the review waker |
 
 ## Installing from a checkout

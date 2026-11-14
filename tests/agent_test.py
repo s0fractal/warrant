@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 
-from world import KEYS, ROLES, Repo, check, finish
+from world import KEYS, ROLES, Repo, check, run_sections
 
 from warrant import across as A
 from warrant import bootstrap as B
@@ -1904,28 +1904,29 @@ def tails_cases():
 
 
 if __name__ == "__main__":
-    operations()
-    refusal_cases()
-    admission_cases()
-    init_cases()
-    memory_cases()
-    roadmap_parity_cases()
-    mcp_cases()
-    home_cases()
-    across_cases()
-    receiver_cases()
-    bench_cases()
-    serve_cases()
-    lens_cases()
-    changes_cases()
-    scene_cases()
-    fragile_cases()
-    whatif_cases()
-    audit_cases()
-    overlay_cases()
-    commons_cases()
-    tails_cases()
-    contract_cases()
-    page_contract_cases()
-    voices_cases()
-    sys.exit(finish())
+    sys.exit(run_sections([
+        operations,
+        refusal_cases,
+        admission_cases,
+        init_cases,
+        memory_cases,
+        roadmap_parity_cases,
+        mcp_cases,
+        home_cases,
+        across_cases,
+        receiver_cases,
+        bench_cases,
+        serve_cases,
+        lens_cases,
+        changes_cases,
+        scene_cases,
+        fragile_cases,
+        whatif_cases,
+        audit_cases,
+        overlay_cases,
+        commons_cases,
+        tails_cases,
+        contract_cases,
+        page_contract_cases,
+        voices_cases,
+    ]))

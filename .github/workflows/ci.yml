@@ -33,6 +33,15 @@ on:
 permissions:
   contents: read
 
+# A pull request's run is cancelled when a newer run of the same pull request starts (a push of the code and then of
+# its review record started two full runs, the older one for nothing: 2 to 4 at once on one branch, 2026-11-13). The
+# gate reads `test` at the head only, so a run of an older head cancelled changes no verdict. Runs on master and
+# dispatched runs (the gate's and the claims checker's, each on its own branch) are never cancelled: each is in a
+# group of its own run.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   code:
     runs-on: ubuntu-latest
