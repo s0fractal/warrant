@@ -959,7 +959,8 @@ def _verdicts_only(a, root, b, pr, head, rep):
     loose = _uncited(rep, added, blobs)
     if loose:
         out.append(("TAIL_BLOB_UNCITED", f"{len(loose)} blob(s) cited by no verdict: " + ", ".join(o[:12] for o in loose[:8])))
-    a.facts.update(verdicts=sorted(added), x=mb)
+    a.facts.update(verdicts=sorted(added), x=mb,
+                   made_at=sorted({str(x["body"].get("commit")) for x in recs if isinstance(x["body"].get("commit"), str)}))
     a.verdict = True
     a.accept = (recs[0]["actor"], min(added), mb)
     return out
@@ -1202,7 +1203,7 @@ def refresh_verdicts(root, b, gh, found):
     that GitHub cannot merge (its records conflict with the base's: two branches append to one file) is carried by a
     new one: the base merged into its head through GitHub's API, the stores' union as its records, on a new branch
     under the same prefix named by the base and the old number, opened as a pull request with CI started on it; the
-    old one is closed with a comment naming the new one, and its branch deleted. A pull request of the claims
+    old one is closed with a comment naming the new one, its branch kept. A pull request of the claims
     checker's acceptances runs CI for long enough that the base moves on meanwhile; without this it would conflict
     again and never merge (#364, 2026-11-13). Not the old branch moved: GitHub answers the workflow token's update of
     a pull request's branch with a pull_request run held for approval (action_required, under the repository's
@@ -1214,7 +1215,15 @@ def refresh_verdicts(root, b, gh, found):
             continue
         n, head, branch = a.pr["number"], a.pr["head"], a.pr.get("branch")
         try:
-            if gh.api(f"pulls/{_number(n)}").get("mergeable_state") != "dirty":
+            p = gh.api(f"pulls/{_number(n)}")
+            if p.get("mergeable_state") != "dirty":
+                continue
+            # The carry is of the head assessed; a source that moved since holds verdicts it would not carry (Codex
+            # on #383 at f1da8d88: a verdict pushed after the survey was lost with the source's branch). The next
+            # run assesses the new head.
+            if (p.get("head") or {}).get("sha") != head:
+                out.append((n, f"not carried: its head moved since it was assessed ({head[:12]} -> "
+                               f"{str((p.get('head') or {}).get('sha'))[:12]}); the next run reads it"))
                 continue
             prefix = CLAIMS_BRANCH if branch.startswith(CLAIMS_BRANCH) else VERDICT_BRANCH
             fresh = _branch(f"{prefix}{b.commit[:12]}-from-{_number(n)}")
@@ -1228,7 +1237,7 @@ def refresh_verdicts(root, b, gh, found):
             # A run that failed part way leaves its steps done: the new pull request open, or the branch made with no
             # pull request. Each step is made once (the analysis session on #383), and nothing is retired on a name:
             # what is on the branch must be this carry, its parents the head and the base and its tree the one above,
-            # and CI must have started on it, before the old pull request is closed and its branch deleted (Codex on
+            # and CI must have started on it, before the old pull request is closed (Codex on
             # #383 head version 5be30830: an open pull request or a branch of that name was read as the carry done,
             # and one whose dispatch had failed was never run).
             open_ = next((x.pr for x in found if x.pr.get("branch") == fresh and x.pr.get("head_repo") == b.repository
@@ -1255,17 +1264,54 @@ def refresh_verdicts(root, b, gh, found):
             ran = {w.get("path") for w in gh.api(f"actions/runs?head_sha={_sha(tip)}&per_page=100").get("workflow_runs", [])}
             for w in sorted({c["workflow"] for c in b.gate["required"]} - ran):
                 gh.dispatch(w, fresh)
+            if (gh.api(f"pulls/{_number(n)}").get("head") or {}).get("sha") != head:
+                raise Refused(f"#{n}'s head moved while it was carried: it is left open, and the next run reads it", "GITHUB")
             gh.comment(n, f"Carried by #{carried} (the base merged in, records only, on {fresh}); closed by the gate.")
             gh.api(f"pulls/{n}", "PATCH", {"state": "closed"})
-            done = f"carried by #{carried} from {fresh}" + (f" ({commit[:12]}, the base merged in)" if commit else " (resumed)")
+            done = (f"carried by #{carried} from {fresh}" + (f" ({commit[:12]}, the base merged in)" if commit else " (resumed)")
+                    + f"; {branch} kept")
         except Refused as e:
             out.append((n, f"refresh FAILED: {e}"))
             continue
-        try:
-            gh.api(f"git/refs/heads/{_branch(branch)}", "DELETE")
-        except Refused as e:
-            done += f"; its branch {branch} NOT deleted: {e}"
+        # The source's branch is kept: GitHub deletes a ref with no expected head, so a verdict pushed between a read
+        # of its tip and the delete would go with it (Codex on #388 at e42e6695). Closing a pull request can be undone;
+        # the gate deletes nothing of a branch it did not make.
         out.append((n, done))
+    return out
+
+
+HELD = {"CHECK_MISSING", "CHECK_PENDING", "CHECK_RED"}
+
+
+def approve_held(b, gh, found):
+    """[(pr, outcome)]: the gate approves a pull_request run GitHub holds for approval (action_required) at the head of
+    a pull request it assessed as verdicts only, from a branch of this repository, refused for nothing but its checks,
+    whose head is still the one assessed; of the required workflows only. Such a head adds records and blobs alone, so
+    the run is the base's workflow on data. GitHub held these runs for the bot's pull requests when they were opened as
+    well as when their branch moved (#389, 2026-11-13, after #379 and #382), and the owner approved each by hand.
+    Whether GitHub lets the workflow's token approve is not known before it is tried: the outcome says what it
+    answered."""
+    out = []
+    required = {c["workflow"] for c in b.gate["required"]}
+    for a in found:
+        if not a.facts.get("verdicts") or a.pr.get("head_repo") != b.repository:
+            continue
+        if {c for c, _ in a.reasons + a.shared} - HELD:
+            continue
+        n, head = a.pr["number"], a.pr["head"]
+        try:
+            p = gh.api(f"pulls/{_number(n)}")
+            if p.get("state") != "open" or (p.get("head") or {}).get("sha") != head:
+                continue                                              # closed, or moved since it was assessed
+            runs = gh.api(f"actions/runs?head_sha={_sha(head)}&event=pull_request&per_page=100").get("workflow_runs", [])
+            for w in runs:
+                if w.get("conclusion") == "action_required" and w.get("path") in required and w.get("head_sha") == head:
+                    gh.api(f"actions/runs/{int(w['id'])}/approve", "POST")
+                    out.append((n, f"approved the held run {int(w['id'])} of {w.get('path')} at {head[:12]}"))
+        except Refused as e:
+            out.append((n, f"approving a held run FAILED: {e}"))
+        except (KeyError, TypeError, ValueError) as e:
+            out.append((n, f"approving a held run FAILED: an answer not read ({type(e).__name__})"))
     return out
 
 
@@ -1537,11 +1583,25 @@ def merge_one(b, a, gh):
     return out
 
 
+def code_tree(root, commit):
+    """The tree of `commit` without `.warrant/` (what CI's suites and mutants test), or None when Git cannot say."""
+    try:
+        rows = git(root, "ls-tree", "-z", commit).decode().split("\0")
+    except (subprocess.CalledProcessError, UnicodeDecodeError):
+        return None
+    return sorted(r for r in rows if r and r.split("\t", 1)[-1] != ".warrant")
+
+
 def after_merge(b, a):
-    """The `after_merge` workflows a merge of `a` starts: none after verdicts only (a merge of the claims checker's
-    acceptances must not start the checker again); one with `paths` when the change touched one of them."""
+    """The `after_merge` workflows a merge of `a` starts: one with `paths` when the change touched one of them. After
+    verdicts only, the ones with no `paths` (the claims checker) only when the code moved since a commit the verdicts
+    were made at: a merge of acceptances made at the base's code must not start the checker again, but ones made at
+    older code are stale on arrival and nothing else would start it (the analysis session, #389 at 45f73a63: merged
+    after #386 and #387 had changed the code, 75 claims read STALE). A commit Git cannot read counts as moved."""
     if a.facts.get("verdicts"):
-        return []
+        base = code_tree(b.root, b.commit)
+        moved = base is None or any(code_tree(b.root, c) != base for c in a.facts.get("made_at") or [])
+        return [x["workflow"] for x in b.gate.get(AFTER, []) if "paths" not in x] if moved else []
     changed = a.facts.get("changed")
     return [x["workflow"] for x in b.gate.get(AFTER, [])
             if "paths" not in x or changed is None or any(_listed(x["paths"], p) for p in changed)]
@@ -1628,6 +1688,7 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
     if merge:
         away = announce_away(b, gh, until)
         noticed = (notify(b, found, gh) + enforce_brakes(root, b, gh, found) + refresh_verdicts(root, b, gh, found)
+                   + approve_held(b, gh, found)
                    + ([(0, away)] if away else []))
         first = next((x for x in found if x.eligible and x.facts.get("revert")), None) or next((x for x in found if x.eligible), None)
         merged = merge_one(b, first, gh) if first is not None else None

@@ -30,7 +30,7 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `.warrant/v3/schema-accepts.jsonl` | Codex's acceptances of the bootstrap schemas, as committed at #218 |
 | `tools/{claims,roadmap,review,gate}.py` | shims: `python3 -m warrant.<name>` with this checkout's package, for CI and these docs; `tools/gate.py` is what the merge workflow runs (constitutional path) |
 | `tools/graph.py` | queries over the record graph (around, path, why, frontier, impact) and the views |
-| `tests/mutants.py` | every mutant, the cases it must fail, shards and their merge |
+| `tests/mutants.py` | every mutant, the cases it must fail, shards and their merge; a mutant runs only the sections (`*_cases` functions, `tests/world.py` `run_sections`) that hold its cases, read from clean runs of each section alone (and of each set of sections a mutant runs together), and stops at its case's `FAIL`; a mutant killed so is not also run against the whole file, and a later section's state that would hide the kill in a whole run is not seen (the residual; `--whole` runs every mutant against its whole file, when time does not press) |
 | `integrations/warrant-review/` | the Codex plugin: the review skill, the MCP launcher, the review waker |
 
 ## Installing from a checkout
@@ -53,7 +53,7 @@ python3 tests/gate_test.py            # the merge gate (§14)
 python3 tests/tools_test.py           # claims, review replay, roadmap (§14)
 python3 tests/boundary_test.py        # the public surface; python3 tests/quickstart_test.py: QUICKSTART.md
 python3 integrations/warrant-review/test_plugin.py
-python3 tests/mutants.py --shard 1/4 --matrix part-1.json    # ... 4/4, then --merge
+python3 tests/mutants.py --shard 1/6 --matrix part-1.json    # ... 6/6, then --merge
 python3 tools/claims.py check && python3 tools/roadmap.py check
 python3 tools/review.py verify --base <base commit>          # replays new since the base, re-executed
 python3 tools/claims.py verify --base <base commit>          # claims checker acceptances new since the base, re-executed
