@@ -39,6 +39,7 @@ from urllib.parse import quote
 
 from . import keys as K
 from . import records as R
+from . import shapes as S
 from .engine import head
 from .store import Refused as StoreRefused
 from .store import Store
@@ -49,8 +50,8 @@ STATEMENT_MAX = 4000
 V3 = "v3.json"
 STANCES = {"objection": "challenge", "support": "attest"}
 # The body an issue form delivers: each field under `### <its label>`, a blank line either side. The statement is the
-# last field and takes the rest, so no text in it can pass for another field.
-FORM = re.compile(r"### Record\n\n([0-9a-f]{64})\n\n### Stance\n\n(objection|support)\n\n### Statement\n\n(.+)", re.S)
+# last field and takes the rest, so no text in it can pass for another field. What a record id is, warrant/shapes.py says.
+FORM = re.compile(r"### Record\n\n(\S+)\n\n### Stance\n\n(objection|support)\n\n### Statement\n\n(.+)", re.S)
 LOGIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?")
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}")
 ACCOUNTS = ("User", "Bot")
@@ -88,7 +89,7 @@ def voice(event):
     if not isinstance(raw, str):
         raise Refused("the issue has no body")
     m = FORM.fullmatch(raw.replace("\r\n", "\n").strip())
-    if m is None:
+    if m is None or not S.hex64(m.group(1)):
         raise Refused("the issue's body is not the form's three fields in order: a record id of 64 lowercase hex "
                       "digits, a stance (objection or support) and a statement")
     target, stance, statement = m.group(1), m.group(2), m.group(3).strip()
