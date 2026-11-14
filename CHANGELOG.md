@@ -20,6 +20,9 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   BR1–BR6, J19; mutants T221–T238.
 - The reader on a phone: a paragraph or list item wraps a name with no space in it (`site/style.css`). A lineage accepted
   by an actor named by a hash (`checker sha256:…`) made the page 610 px wide at 375; measured 375 after.
+- The roadmap view names every goal whatever its key (`warrant/roadmap.py`): `G<number>` keys in the order of their
+  numbers, then the others by their text. A goal keyed otherwise (EXP-ADOPT-1, the adoption experiment's registration)
+  ended `tools/graph.py views` in `int()`.
 - A mutant runs only the sections of its test file that hold its cases (a test file's `*_cases` functions,
   `tests/world.py` `run_sections`), and its run ends at the first `FAIL` of one of its cases; the verdict is the same
   printed `FAIL <case>` line. Which section holds a case is read from clean runs of each section alone, unmutated, in

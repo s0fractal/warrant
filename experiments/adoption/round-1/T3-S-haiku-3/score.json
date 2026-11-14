@@ -1,0 +1,40 @@
+{
+ "answer": {
+  "idempotent": "RELY",
+  "rerun": "DO NOT RELY",
+  "rollback": "RELY"
+ },
+ "answered": 1,
+ "arm": "S",
+ "cost_usd": 0.00258711,
+ "duration_s": 15.1,
+ "exit": 0,
+ "is_error": false,
+ "kit_calls": 0,
+ "kit_errors": 0,
+ "leaks": [],
+ "mcp_calls": 0,
+ "mcp_servers": [],
+ "model": "claude-haiku-5-5",
+ "model_alias": "haiku",
+ "ran_tests": 1,
+ "read_notes": 0,
+ "read_store": 0,
+ "run": "T3-S-haiku-3",
+ "stop": "success",
+ "success": 0,
+ "task": "T3",
+ "tool_calls": 3,
+ "tools": [
+  "Bash",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Read",
+  "Write"
+ ],
+ "turns": 4,
+ "used_kit": 0,
+ "wall_s": 15.8,
+ "wrong_credit": 1
+}

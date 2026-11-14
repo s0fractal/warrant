@@ -1,0 +1,12 @@
+diff --git a/pipeline/run.py b/pipeline/run.py
+index aba56ad..312a864 100644
+--- a/pipeline/run.py
++++ b/pipeline/run.py
+@@ -8,6 +8,7 @@ def main(path="data.json"):
+     with open(path, encoding="utf-8") as fh:
+         rows = json.load(fh)
+     kept = dedupe(rows)
++    kept = dedupe(kept)  # second pass
+     with open("out.json", "w", encoding="utf-8") as fh:
+         json.dump(kept, fh, indent=1)
+     print(f"kept {len(kept)} of {len(rows)} rows")

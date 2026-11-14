@@ -1,0 +1,49 @@
+{
+ "answer": {
+  "RELY": "NO"
+ },
+ "answered": 0,
+ "arm": "A",
+ "cost_usd": 0.0290224,
+ "duration_s": 8.2,
+ "exit": 0,
+ "is_error": false,
+ "kit_calls": 2,
+ "kit_errors": 0,
+ "leaks": [],
+ "mcp_calls": 1,
+ "mcp_servers": [
+  "warrant"
+ ],
+ "model": "claude-sonnet-5-5",
+ "model_alias": "sonnet",
+ "ran_tests": 0,
+ "read_notes": 0,
+ "read_store": 0,
+ "run": "T1-A-sonnet-2",
+ "stop": "success",
+ "success": 0,
+ "task": "T1",
+ "tool_calls": 4,
+ "tools": [
+  "Bash",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Read",
+  "Write",
+  "mcp__warrant__warrant_across",
+  "mcp__warrant__warrant_commit",
+  "mcp__warrant__warrant_context",
+  "mcp__warrant__warrant_explain",
+  "mcp__warrant__warrant_graph",
+  "mcp__warrant__warrant_handoff",
+  "mcp__warrant__warrant_prepare",
+  "mcp__warrant__warrant_read",
+  "mcp__warrant__warrant_workspace"
+ ],
+ "turns": 5,
+ "used_kit": 1,
+ "wall_s": 9.3,
+ "wrong_credit": 0
+}

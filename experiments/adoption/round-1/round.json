@@ -1,0 +1,21 @@
+{
+ "arms": [
+  "N",
+  "S",
+  "A"
+ ],
+ "budget_per_run": 0.75,
+ "cap": 25.0,
+ "claude": "2.1.322 (Claude Code)",
+ "entry_sha256": "9114d7c650b0fb1a85d41cc39d43d798e37ec0a6fc3f66a18c14eb11138d4fea",
+ "models": [
+  "sonnet",
+  "haiku"
+ ],
+ "n": 3,
+ "package": "warrant-graph[mcp]==3.0.0a7",
+ "plan_sha256": "ca3a92d30df632d57e30f5b7c8adc6f9abe2259c3b2727091b176c65244b5dae",
+ "registered": "4dd5fdc44452e224f330ebf581263327bbdad604dadfbc43b7b8eb5e29ad59c0",
+ "tools": "Bash,Read,Grep,Glob,Edit,Write",
+ "wall_s": 900
+}
