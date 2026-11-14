@@ -1750,13 +1750,11 @@ def browser_rules_cases():
     from warrant import gate as GT
     pub = Repo()
     pub.put("alice", "schema", GT.RULES_SCHEMA)
-    plain_mark_dir = pub.home / "plain"
-    plain_mark_dir.mkdir()
 
     def doc():
         return json.loads((pub.dot / "v3.json").read_text())
     v1 = pub.put("bob", "entity", dict(doc(), state="in force"), GT.RULES)
-    o = pub.entity("alice", "obligation@1", {"state": "open", "statement": "a task", "serves": []})
+    pub.entity("alice", "obligation@1", {"state": "open", "statement": "a task", "serves": []})
     srvs, (b_pub,) = _serve_many(pub.root)
     try:
         m1 = pub.home / "mark-1.json"
