@@ -17,11 +17,12 @@ on:
 
 permissions: {}
 
-# One issue at a time: each run appends to the branch the last one pushed.
-concurrency:
-  group: voice-bridge
-  cancel-in-progress: false
-
+# No concurrency group. A group keeps one run pending and cancels the one that waited before it, so of three issues
+# opened together the second would get neither a record nor an answer (Codex on #392). Runs go side by side instead:
+# each files into the branch as it finds it and pushes without force; a push the branch refuses because another run
+# pushed first is tried again from the branch as it is then (the bridge files one record per issue, so a second
+# filing of the same issue adds nothing). A run that fails stays red and can be run again: GitHub keeps the event as
+# delivered.
 jobs:
   # Whether the issue came through the form (its body starts with the form's first field). Any other issue ends here:
   # no environment, no permission, no answer.
@@ -82,34 +83,41 @@ jobs:
             exit 0
           fi
           gh auth setup-git
-          git init -q voices
-          git -C voices remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
-          if git -C voices fetch -q --depth 1 origin voices; then
-            git -C voices checkout -q -b voices FETCH_HEAD
-          else
-            git -C voices checkout -q --orphan voices
-            printf '%s\n' "# A store of voices" "" \
-              "Written by \`.github/workflows/voice-bridge.yml\` of the default branch (\`warrant/bridge.py\`): one record for each issue opened through the form *A voice on a record*." \
-              "Each record says that GitHub delivered that issue, opened by that account. It is not the account's signature, and no rule of any store counts it." \
-              "" "Read it beside another store: $READER?with=https%3A%2F%2Fraw.githubusercontent.com%2F${GITHUB_REPOSITORY%%/*}%2F${GITHUB_REPOSITORY##*/}%2Fvoices%2F" > voices/README.md
-          fi
-          set +e
-          PYTHONPATH="$GITHUB_WORKSPACE/code" python -m warrant.bridge file --event "$GITHUB_EVENT_PATH" --store voices \
-            --reader "$READER" --voices "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/voices/" > "$RUNNER_TEMP/out.json"
-          rc=$?
-          set -e
-          if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then
-            echo "the bridge could not file (status $rc):" >&2
-            cat "$RUNNER_TEMP/out.json" >&2
-            exit 1
-          fi
-          python -c 'import json, sys; print(json.load(open(sys.argv[1]))["comment"])' "$RUNNER_TEMP/out.json" > "$RUNNER_TEMP/answer.md"
-          if [ "$rc" = 0 ]; then
-            git -C voices add README.md .warrant
-            if ! git -C voices diff --cached --quiet; then
-              git -C voices commit -q -m "voice: issue #$number"
-              git -C voices push -q origin voices
+          tries=8
+          for try in $(seq 1 "$tries"); do
+            dir="voices-$try"
+            git init -q "$dir"
+            git -C "$dir" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+            if git -C "$dir" fetch -q --depth 1 origin voices; then
+              git -C "$dir" checkout -q -b voices FETCH_HEAD
+            else
+              git -C "$dir" checkout -q --orphan voices
+              printf '%s\n' "# A store of voices" "" \
+                "Written by \`.github/workflows/voice-bridge.yml\` of the default branch (\`warrant/bridge.py\`): one record for each issue opened through the form *A voice on a record*." \
+                "Each record says that GitHub delivered that issue, opened by that account. It is not the account's signature, and no rule of any store counts it." \
+                "" "Read it beside another store: $READER?with=https%3A%2F%2Fraw.githubusercontent.com%2F${GITHUB_REPOSITORY%%/*}%2F${GITHUB_REPOSITORY##*/}%2Fvoices%2F" > "$dir/README.md"
             fi
-          fi
+            set +e
+            PYTHONPATH="$GITHUB_WORKSPACE/code" python -m warrant.bridge file --event "$GITHUB_EVENT_PATH" --store "$dir" \
+              --reader "$READER" --voices "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/voices/" > "$RUNNER_TEMP/out.json"
+            rc=$?
+            set -e
+            if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then
+              echo "the bridge could not file (status $rc):" >&2
+              cat "$RUNNER_TEMP/out.json" >&2
+              exit 1
+            fi
+            if [ "$rc" = 3 ]; then break; fi                     # refused: nothing to publish, only to answer
+            git -C "$dir" add -A
+            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run
+            git -C "$dir" commit -q -m "voice: issue #$number"
+            if git -C "$dir" push -q origin voices; then break; fi
+            if [ "$try" = "$tries" ]; then
+              echo "the branch voices moved under $tries tries in a row; nothing was published for issue #$number" >&2
+              exit 1
+            fi
+            sleep $(( (RANDOM % (try * 3)) + 1 ))                # another run pushed first: again, from the branch as it is now
+          done
+          python -c 'import json, sys; print(json.load(open(sys.argv[1]))["comment"])' "$RUNNER_TEMP/out.json" > "$RUNNER_TEMP/answer.md"
           answer "$RUNNER_TEMP/answer.md"
           cat "$RUNNER_TEMP/answer.md" >> "$GITHUB_STEP_SUMMARY"

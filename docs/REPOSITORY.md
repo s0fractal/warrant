@@ -248,7 +248,7 @@ from `claims/verdicts/`, which CI re-executes and the gate merges.
 an issue opened through the form `.github/ISSUE_TEMPLATE/voice.yml` (a record id, a stance, a statement) is filed by
 `.github/workflows/voice-bridge.yml` as one record in a store of voices on the branch `voices`, published at
 `https://raw.githubusercontent.com/s0fractal/warrant/voices/`, and the issue is answered with the record's id
-(`warrant/bridge.py`; cases BR1–BR6 and J19).
+(`warrant/bridge.py`; cases BR1–BR7 and J19).
 
 - **What a record says.** The bridge's key states that GitHub delivered this issue, opened by this account (login, id,
   kind of account, the issue's address, the SHA-256 of its body as delivered). It is not the account's signature:
@@ -264,8 +264,16 @@ an issue opened through the form `.github/ISSUE_TEMPLATE/voice.yml` (a record id
   `bridge`, deployable from master alone (the owner makes the environment and a one-time token, as for `claims`). No
   trust of this repository binds it. Whoever can change master's code can read it, which is the gate's guard; a key
   that leaked signs voices only.
-- **Limits.** Every issue through the form is filed: the brakes are GitHub's own limits, the owner blocking an
-  account, and disabling the workflow. Records are never removed. The door is hosted here and can be closed here; a
+- **Runs side by side.** The workflow names no concurrency group: a group keeps one run pending and cancels the one
+  that waited before it, so of three issues opened together the second got neither a record nor an answer (Codex on
+  #392). Each run files into the branch as it finds it and pushes without force; a push refused because another run
+  pushed first is tried again, up to eight times, from the branch as it is then. BR7 runs the step as the YAML writes
+  it, with another issue's run landing between a filing and its push.
+- **Limits.** Nothing stops an account from opening issues: the brakes are GitHub's own limits, the owner blocking
+  an account, and disabling the workflow. Not every issue is promised a record: a run that fails (the branch moved
+  eight times in a row, GitHub or the network failed) stays red with no answer on the issue, and nothing runs it again
+  by itself; run again by a person, GitHub delivers the event as it was, and one record per issue makes that safe.
+  Records are never removed. The door is hosted here and can be closed here; a
   voice under one's own key (`warrant say`) needs nobody.
 - **Not established.** That the body GitHub delivers for the form is byte for byte what `FORM` expects was read from
   GitHub's documentation and not from a delivery: the first issue through the form is that check, and a body of

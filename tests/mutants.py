@@ -313,6 +313,10 @@ MUTANTS = [
     ("T203", "tests/mutants.py", '        refused += combinations(rows, ids, where, places)\n', '', TOOLS, ["HM4"]),
     ("T204", "tests/mutants.py", '\n            if rc != 0:                      # red, or past the timeout', '\n            if rc:                      # red, or past the timeout', TOOLS, ["HM1", "HM5"]),
     ("T205", "tests/mutants.py", 'if s and len(s) > 1})\n', 'if s and len(s) > 2})\n', TOOLS, ["HM4"]),
+    # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
+    ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
+    ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),
+    ("T241", ".github/workflows/voice-bridge.yml", '            dir="voices-$try"\n', '            dir="voices"\n', TOOLS, ["BR7"]),
     ("T184", "warrant/drift.py", 'if r["kind"] != "attest" or rep["_basis"].get(i) != "SIGNED" or b.get("verdict") != "accept":', 'if r["kind"] != "attest" or b.get("verdict") != "accept":', TOOLS, ["DR31"]),
     ("T185", "warrant/drift.py", '        elif isinstance(b.get("files"), dict) and counted(rep, r):', '        elif False:', TOOLS, ["DR30"]),
     ("T186", "warrant/cli.py", '    if a.as_of is None and Path(store).name == ".warrant":\n        from . import drift as D\n        view = E.View(', '    if False:\n        from . import drift as D\n        view = E.View(', TOOLS, ["DR30"]),

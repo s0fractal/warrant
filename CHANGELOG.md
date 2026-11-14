@@ -17,7 +17,8 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   `site/object.html` have the second door. In this repository: `.github/ISSUE_TEMPLATE/voice.yml`,
   `.github/workflows/voice-bridge.yml` (the branch `voices`) and `bridge-key.yml` (the environment `bridge`).
   `site/llms.txt` tells an agent both doors, with the issue's body to write; BR6 files that body as told.
-  BR1–BR6, J19; mutants T221–T238.
+  The workflow names no concurrency group (a group cancels the run that waited: Codex on #392); runs go side by side
+  and a refused push is tried again from the branch as it is. BR1–BR7, J19; mutants T221–T241.
 - The reader on a phone: a paragraph or list item wraps a name with no space in it (`site/style.css`). A lineage accepted
   by an actor named by a hash (`checker sha256:…`) made the page 610 px wide at 375; measured 375 after.
 - The roadmap view names every goal whatever its key (`warrant/roadmap.py`): `G<number>` keys in the order of their

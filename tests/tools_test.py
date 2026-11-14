@@ -2024,6 +2024,107 @@ def bridge_cases():
           (fields, options, required, through, as_told))
 
 
+def _bridge_step(home):
+    """The filing step of .github/workflows/voice-bridge.yml as a script, byte for byte, and what runs it here: a bare
+    repository standing for GitHub's (Git rewrites the step's address to it), `gh` that keeps each answer in a file,
+    `python` that is this interpreter, `sleep` that does not wait, and `git` that, when RACE names a script, runs it once
+    just before the first push. (run(event number, seed, race) -> (status, answer, output), the bare repository)."""
+    text = (ROOT / ".github" / "workflows" / "voice-bridge.yml").read_text()
+    step = text.split("      - name: File the voice, publish the store, answer the issue\n")[1].split("        run: |\n")[1]
+    script = "\n".join(line[10:] if line.startswith("          ") else line for line in step.splitlines()) + "\n"
+    real_git = shutil.which("git")
+    binp, origin, ws = home / "bin", home / "origin.git", home / "ws"
+    for d in (binp, ws, home / "answers", home / "events"):
+        d.mkdir(parents=True)
+    os.symlink(ROOT, ws / "code")
+    subprocess.run([real_git, "init", "-q", "--bare", str(origin)], check=True)
+    (home / "step.sh").write_text(script)
+    (home / "gitconfig").write_text(f'[url "{origin}"]\n\tinsteadOf = https://github.com/acme/widget.git\n[init]\n\tdefaultBranch = scratch\n')
+    tools = {"gh": f'#!/bin/sh\nif [ "$1" = "issue" ]; then cp "$7" "{home}/answers/$3.md"; fi\n',
+             "python": f'#!/bin/sh\nexec "{sys.executable}" -B "$@"\n', "sleep": "#!/bin/sh\nexit 0\n",
+             "git": f'#!/bin/sh\nif [ -n "$RACE" ] && [ ! -e "$RACE.done" ]; then for a in "$@"; do if [ "$a" = "push" ]; then : > "$RACE.done"; '
+                    f'RACE_NOW="$RACE"; RACE= sh "$RACE_NOW" >/dev/null 2>&1; fi; done; fi\nexec "{real_git}" "$@"\n'}
+    for name, body in tools.items():
+        (binp / name).write_text(body)
+        (binp / name).chmod(0o755)
+
+    def run(event, seed="0b" * 32, race=None, extra=None):
+        n = event["issue"]["number"]
+        (home / "events" / f"{n}.json").write_text(json.dumps(event))
+        work = Path(tempfile.mkdtemp(dir=home))
+        env = {"PATH": f"{binp}:/usr/bin:/bin", "HOME": str(home), "GIT_CONFIG_GLOBAL": str(home / "gitconfig"), "GIT_CONFIG_NOSYSTEM": "1",
+               "GIT_AUTHOR_NAME": "github-bridge", "GIT_AUTHOR_EMAIL": "b@invalid", "GIT_COMMITTER_NAME": "github-bridge",
+               "GIT_COMMITTER_EMAIL": "b@invalid", "READER": "https://example.test/reader.html", "WARRANT_BRIDGE_SEED": seed, "GH_TOKEN": "x",
+               "GITHUB_EVENT_PATH": str(home / "events" / f"{n}.json"), "GITHUB_REPOSITORY": "acme/widget", "RUNNER_TEMP": str(work),
+               "GITHUB_STEP_SUMMARY": str(work / "summary.md"), "GITHUB_WORKSPACE": str(ws), "RACE": str(race or ""), **(extra or {})}
+        (home / "answers" / f"{n}.md").unlink(missing_ok=True)
+        r = subprocess.run(["bash", str(home / "step.sh")], cwd=work, env=env, capture_output=True, text=True, timeout=120)
+        ans = home / "answers" / f"{n}.md"
+        return r.returncode, ans.read_text() if ans.exists() else "", r.stdout + r.stderr, env
+    return run, origin, real_git
+
+
+def bridge_step_cases():
+    """The workflow's own step (voice-bridge.yml), run as written: what Codex found on #392 was in the workflow, where no
+    case looked. A concurrency group kept one run pending and cancelled the one before it; now runs go side by side and
+    a push the branch refuses is tried again from the branch as it is."""
+    r = Repo()
+    home = r.home / "runner"
+    home.mkdir()
+    run, origin, git_ = _bridge_step(home)
+    target = "ab" * 32
+
+    def show(*args):
+        return subprocess.run([git_, "--git-dir", str(origin), *args], capture_output=True, text=True).stdout
+
+    def records():
+        return [json.loads(x)["record"] for x in show("show", "voices:.warrant/records.jsonl").splitlines()]
+    rc5, a5, o5, env = run(_issue(_form(target, "objection", "the first voice; $(touch PWNED) `touch PWNED2`"), number=5))
+    first = records()
+    # issue 7's run meets a branch that moved: issue 99's whole run lands between its filing and its push
+    race = home / "race.sh"
+    (home / "events" / "99.json").write_text(json.dumps(_issue(_form(target, "support", "the run that got there first"), number=99)))
+    racer = dict(env, GITHUB_EVENT_PATH=str(home / "events" / "99.json"), RUNNER_TEMP=str(home / "race-tmp"),
+                 GITHUB_STEP_SUMMARY=str(home / "race-tmp" / "summary.md"), RACE="")
+    (home / "race-tmp").mkdir()
+    (home / "race-work").mkdir()
+    race.write_text("cd " + str(home / "race-work") + " && env -i " + " ".join(f"{k}='{v}'" for k, v in racer.items()) + f" bash {home / 'step.sh'}\n")
+    rc7, a7, o7, _ = run(_issue(_form(target, "objection", "the voice that had to try again"), number=7), race=race)
+    both = records()
+    doc = json.loads(show("show", "voices:.warrant/v3.json") or "{}")
+    snap = E.assess  # the published store, assessed under its own rules
+    work = Path(tempfile.mkdtemp(dir=home))
+    subprocess.run([git_, "clone", "-q", "--branch", "voices", str(origin), str(work / "v")], check=False, capture_output=True)
+    rep = snap(Store(work / "v" / ".warrant").snapshot(), doc.get("trust", {}), doc.get("profile", {})) if (work / "v" / ".warrant").exists() else {}
+    by_issue = {x["body"]["github"]["issue"]: x for x in both}
+    id7 = next((i for i, e in Store(work / "v" / ".warrant").snapshot().lines.items() if e[0]["record"]["body"]["github"]["issue"] == 7), "")
+    check("BR7 the workflow's filing step, run as the YAML writes it against a repository standing for GitHub's: the first "
+          "issue makes the branch voices (the store and a README) and is answered with its record's id; a statement "
+          "holding shell text runs nothing; and when another issue's run publishes between this run's filing and its "
+          "push, the refused push is tried again from the branch as it is then: both voices are on the branch, each "
+          "once, both signed in the store's own assessment with none rejected and no fork, and the answer names the "
+          "record that was published, not the one of the refused try",
+          (rc5, rc7) == (0, 0) and len(first) == 1 and sorted(by_issue) == [5, 7, 99] and len(both) == 3
+          and (race.parent / "race.sh.done").exists() and rep.get("rejected") == {} and rep.get("basis", {}).get("SIGNED") == 3
+          and rep.get("chains", {}).get("forks") == [] and bool(id7) and f"`{id7}`" in a7 and show("ls-tree", "-r", "--name-only", "voices").split()
+          == [".warrant/records.jsonl", ".warrant/v3.json", "README.md"] and not list(home.rglob("PWNED*")),
+          (rc5, rc7, len(first), sorted(by_issue), rep.get("rejected"), rep.get("basis"), o7[-400:]))
+    tip = show("rev-parse", "voices").strip()
+    rc_bad, a_bad, _, _ = run(_issue(_form(target, "accept", "x"), number=8))
+    rc_again, a_again, _, _ = run(_issue(_form(target, "objection", "the voice that had to try again"), number=7))
+    rc_none, a_none, _, _ = run(_issue(_form(target, "objection", "no key"), number=9), seed="")
+    rc_other, a_other, o_other, _ = run(_issue(_form(target, "objection", "another key"), number=10), seed="0c" * 32)
+    wf = (ROOT / ".github" / "workflows" / "voice-bridge.yml").read_text()
+    check("BR7 what publishes nothing: a refused issue is answered with the refusal, an issue filed before is answered "
+          "with its first record, a run with no seed says the bridge has no key yet, and a run whose key the branch's "
+          "store does not bind fails with no answer; the branch does not move in any of them. The workflow names no "
+          "concurrency group, at its top or on a job: a group would cancel the run that waited",
+          (rc_bad, rc_again, rc_none) == (0, 0, 0) and rc_other != 0 and "Nothing was filed" in a_bad and f"`{id7}`" in a_again
+          and "nothing was filed now" in a_again and "no key yet" in a_none and a_other == "" and show("rev-parse", "voices").strip() == tip
+          and "concurrency:" not in wf.replace("# No concurrency group.", ""),
+          (rc_bad, rc_again, rc_none, rc_other, a_bad[:60], a_again[:80], a_none[:60], a_other, o_other[-200:]))
+
+
 def merged_cases():
     """The observation of a merge says how it came about: a solo merge says that no second family reviewed it."""
     import argparse
@@ -2473,6 +2574,7 @@ if __name__ == "__main__":
         merged_cases,
         voices_cases,
         bridge_cases,
+        bridge_step_cases,
         board_cases,
         narrow_cases,
         resolve_cases,
