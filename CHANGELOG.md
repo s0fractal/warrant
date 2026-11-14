@@ -4,7 +4,18 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
-## Unreleased
+## 3.0.0a8 — witnessed roots; what was asked; the rules as records; an entry for the next agent
+
+Read first:
+- **STALE reads more acceptances, and `warrant assess` applies it.** The freshness gate reads every acceptance the
+  version's guard counts that names `files`, whatever its actor and schema, with or without `.warrant/claims.json`;
+  `warrant assess` (not only `status`, `drift` and the agent) reads a repository's store through it. A lineage
+  ELIGIBLE under 3.0.0a7 may read STALE under this release.
+- **`warrant init` writes files beside the store** of a repository: `.warrant/v3.json`, an `AGENTS.md` block,
+  `@AGENTS.md` in `CLAUDE.md`, `.warrant/agent.json` and the MCP server in `.mcp.json`; `--no-entry` and `--no-mcp`
+  leave them out.
+- **`frontier` has a fourth list, `asked`**, and the gate's `due_for` counts what was asked of an actor as due: a
+  gate that runs this release merges an answer to such a question as verdicts only.
 
 - The reader says when the publisher's rules change (stage 2a, docs/V3.md §14): the summary names the store's `rules@1`
   lineage and its version in force (`publisher_rules`, only for a store that records its rules), a mark keeps the

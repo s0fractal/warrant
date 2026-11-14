@@ -4,5 +4,5 @@ from .keys import Key
 from .records import guard, record
 from .store import Snapshot, Store
 
-__version__ = "3.0.0a7"
+__version__ = "3.0.0a8"
 __all__ = ["Key", "Snapshot", "Store", "assess", "guard", "record"]
