@@ -954,6 +954,31 @@ def vectors_current(tally):
           p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "", p.stdout[-600:] + p.stderr[-600:])
 
 
+def frame_parity_cases():
+    """J19: warrant.graph.frame (the frame the verifier's `absence` proves over, stage 3) is site/reader.mjs frame(),
+    one predicate: on this repository's store, for a lineage of each schema and the widest ones, the reader's --frame
+    ids equal the Python ones."""
+    from warrant import graph as G
+    from warrant import repo as RP
+    rep = RP.Repo(ROOT).report()
+    by = {}
+    for L, lin in sorted(rep["lineages"].items()):
+        by.setdefault(lin["schema"], []).append(L)
+    picks = sorted({ls[0] for ls in by.values()} | {ls[-1] for ls in by.values()})
+    srv, base = _serve(ROOT)
+    bad = []
+    try:
+        for L in picks:
+            _, out = _reader(base, "--frame", L)
+            js = (out.get("frame") or {}).get("ids")
+            if js != G.frame(rep, [L]):
+                bad.append((L[:12], len(js or []), len(G.frame(rep, [L]))))
+    finally:
+        srv.shutdown()
+    check("J19 graph.frame is the reader's frame(): the same sorted ids for a first and a last lineage of every schema "
+          f"of this store ({len(picks)} lineages)", picks and not bad, bad)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=3)
@@ -979,6 +1004,7 @@ def main():
     browser_watch_cases()
     browser_toward_cases()
     browser_bridge_cases()
+    frame_parity_cases()
     if a.limits:
         limit_cases(tally)
     worlds = capture_core_worlds()
@@ -1636,7 +1662,7 @@ def browser_others_cases():
           and "rows" in (impost.get("summary", {}).get("overlay") or {}), (held6, jheld6, py6, js6, impost.get("summary", {}).get("overlay")))
 
 
-# ---------------------------------------------------------------- J19: a bridge's voices (warrant/bridge.py)
+# ---------------------------------------------------------------- J20: a bridge's voices (warrant/bridge.py)
 def browser_bridge_cases():
     """What the reader shows of a bridge's store read beside a publisher's: each voice with the GitHub account the store
     states (login, id, the issue's address) and its stance, uncounted like any voice from outside. The account is shown
@@ -1682,7 +1708,7 @@ def browser_bridge_cases():
     floor = (opened.get("lineage") or {}).get("floor", {})
     vs = {v["id"]: v for v in (floor.get("outside") or {}).get("voices", [])}
     a, b = vs.get(obj, {}), vs.get(sup, {})
-    check("J19 a bridge's store read beside a publisher's: its objection and its support are voices from outside on the "
+    check("J20 a bridge's store read beside a publisher's: its objection and its support are voices from outside on the "
           "lineage of the record they name, each with its stance and the GitHub account that store states (login, id, the "
           "issue's address), the statement as text, under the actor github-bridge as that store names it, and uncounted: "
           "the lineage reads as it does without them",
@@ -1698,7 +1724,7 @@ def browser_bridge_cases():
     bad = [_node_json(VOICE, "--bridge", x)[1].get("links") for x in (d.upper(), d[:63], d + "&stance=support", "")]
     block = (ROOT / "site" / "reader-page.mjs").read_text()
     page = (ROOT / "site" / "object.html").read_text()
-    check("J19 the second door: the reader's block links the issue form with the version's id and a stance filled in under "
+    check("J20 the second door: the reader's block links the issue form with the version's id and a stance filled in under "
           "the form's own field ids (record, stance), for an objection and for a support and for nothing else; an id that "
           "is not 64 lowercase hex digits makes no link; object.html names the same form and the same store of voices, "
           "and the block's line is drawn from voice.mjs",
@@ -1707,7 +1733,7 @@ def browser_bridge_cases():
           and door.get("bad") is None and bad == [[None, None]] * 4
           and door.get("bridge", {}).get("form", "") + '"' in page and "<code>" + door.get("bridge", {}).get("store", "?") + "</code>" in page
           and "bridgeLine(t)," in block and 'voice.bridgeLink(t.version, x)' in block, (door, bad, ids))
-    check("J19 an account is shown only in its shape: a voice whose `github` names another host, an address that is not an "
+    check("J20 an account is shown only in its shape: a voice whose `github` names another host, an address that is not an "
           "issue's (a query after it, a pull request), a login with a space, an id that is negative, text or missing, or that "
           "is a list or a string, is still a voice and is shown with no account (" + str(len(shapes)) + " shapes)",
           len(forged) == len(shapes) and all(x in vs and vs[x].get("github") is None and vs[x].get("stance") is None for x in forged),

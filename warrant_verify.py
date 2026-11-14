@@ -31,16 +31,17 @@ import types
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
     "warrant/jcs.py": "1caa6890ea01355224cb4dd4010777b388b51a2b3e5bc405192eeff717b3f9d3",
-    "warrant/graph.py": "20d7486840528a0e6685daac1955a3b73b2ab6a7d51dd0c49edee9e263174d2d",
+    "warrant/graph.py": "4a85640b26736007207474c9b4b5efed9ad4ee28920b0f7faa550715f03b07ca",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
+    "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
     "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
     "warrant/engine.py": "0ca80c4045dca431b48ef53ec340b69957ea314f0cfbc772cf3b27a36682d490",
-    "warrant/verify.py": "3a54828b3474195712ae021ad6105eaab29326a28fb63ff791832b81b9487fdb",
+    "warrant/verify.py": "482b241a1a287f60d8017edf4adcc47ef90935dc700704c65c164ef4f2536553",
 }
-ORDER = ('jcs', 'graph', 'shapes', 'keys', 'pins', 'records', 'store', 'engine', 'verify')
+ORDER = ('jcs', 'graph', 'shapes', 'keys', 'merkle', 'pins', 'records', 'store', 'engine', 'verify')
 SOURCES = {}
 
 SOURCES["jcs"] = r'''"""Canonical JSON (SPEC §2): RFC 8785 over integers, strings, booleans, null,
@@ -465,6 +466,45 @@ def grounded(rep, i):
             failing.append([v, why])
     return {"from": i, "grounded": not failing, "closure": len(order), "failing": failing, "outside": sorted(outside)}
 
+SAID = ("attest", "challenge")
+
+
+def frame(rep, roots):
+    """The frame of lineage `roots` in a report (site/reader.mjs frame(), the same predicate, held to it by vectors):
+    the sorted ids reached, breadth first, from every version of each root by (a) the graph's WALK edges outwards,
+    (b) an attest or a challenge onto a member (inwards) and (c) every version of a member's lineage; only ids that
+    are nodes of the view. What lies in other stores ((d) of the reader) is not this store's."""
+    out, into = {}, {}
+    for a, rel, b in rep["graph"]["edges"]:
+        if rel not in WALK:
+            continue
+        out.setdefault(a, []).append(b)
+        if rel in SAID:
+            into.setdefault(b, []).append(a)
+    root_of = {v: L for L, lin in rep["lineages"].items() for v in lin["versions"]}
+    seen, todo = set(), []
+    def reach(x):
+        if x not in seen:
+            seen.add(x)
+            todo.append(x)
+    for L in roots:
+        for v in (rep["lineages"].get(L) or {}).get("versions", []):
+            reach(v)
+    k = 0
+    while k < len(todo):
+        cur = todo[k]
+        k += 1
+        for b in out.get(cur, []):
+            reach(b)
+        for a in into.get(cur, []):
+            reach(a)
+        if cur in root_of:
+            for v in rep["lineages"][root_of[cur]]["versions"]:
+                reach(v)
+    nodes = {n[0] for n in rep["graph"]["nodes"]}
+    return sorted(i for i in seen if i in nodes)
+
+
 def answer(rep, query, data, adapter):
     lens = C.doc_id({"code": rep["code"], "adapter": adapter, "trust": rep["trust"], "profile": rep["profile"],
                      "query": query, **({"checkout": rep["checkout"]} if "checkout" in rep else {})})
@@ -623,6 +663,267 @@ class Key:
 
     def sign(self, message):
         return self._sk.sign(message).hex()
+'''
+
+SOURCES["merkle"] = r'''"""Merkle roots of a store, and proofs a reader checks against a root alone (docs/V3.md §16, stage 3).
+
+A snapshot's `digest` hashes every line in one pass: it lets nobody prove anything about one record. Two trees
+replace it for that purpose (the digest stays, as the snapshot's identity):
+
+    records   the sorted record ids of the store's lines: a record's inclusion, or its absence;
+    index     the reverse index, sorted by target: each id an `attest` or a `challenge` targets, with the sorted
+              [kind, id] of every one targeting it. Its leaf for X says everything filed against X in this store;
+              its absence says nothing is.
+
+Hashing is RFC 9162's (§2.1): a leaf is SHA-256(0x00 || data), an inner node SHA-256(0x01 || left || right), the tree
+over n leaves split at the largest power of two below n; the empty tree's root is SHA-256 of nothing. A records leaf's
+data is the 32 bytes of the id; an index leaf's is the 32 bytes of the target and the SHA-256 of the canonical JSON of
+its [[kind, id], ...]: a neighbour in an absence proof costs its 64 bytes, and only the leaf asked about carries its
+list (2026-11-14: with the whole list in every leaf, the proof of a frame was larger than the frame in 33 of 99
+lineages of warrant's store, an absence there being two neighbours for three ids in four).
+
+An inclusion proof is RFC 9162's audit path. An absence proof of key K is the inclusion of its neighbours: the leaf
+before K and the leaf after it, at adjacent indices (or K below the first leaf, or above the last), so no leaf between
+them can hold K. A proof says what is in, or not in, the tree under that root: never what is in no store anywhere
+(`completeness` stays UNATTESTED; `absence` names the root, Codex on the plan, 2026-11-13).
+
+Measured once (2026-11-13, the analysis session, live stores): a record's inclusion 384 B in warrant (3068 records); a
+target's absence from the reverse index at most 704 B."""
+import bisect
+import hashlib
+
+from . import jcs as C
+from . import shapes as S
+
+FORMAT = "merkle/1"
+EMPTY = hashlib.sha256(b"").hexdigest()
+SAID = ("attest", "challenge")
+
+
+def _h(b):
+    return hashlib.sha256(b).digest()
+
+
+def leaf_hash(data):
+    return _h(b"\x00" + data)
+
+
+def _node(left, right):
+    return _h(b"\x01" + left + right)
+
+
+def _split(n):
+    """The largest power of two strictly below n (n >= 2)."""
+    k = 1
+    while k * 2 < n:
+        k *= 2
+    return k
+
+
+def _root(hashes):
+    if not hashes:
+        return bytes.fromhex(EMPTY)
+    if len(hashes) == 1:
+        return hashes[0]
+    k = _split(len(hashes))
+    return _node(_root(hashes[:k]), _root(hashes[k:]))
+
+
+def root(leaves):
+    """The root (hex) of the tree over `leaves` (bytes each), in their order."""
+    return _root([leaf_hash(d) for d in leaves]).hex()
+
+
+def _path(hashes, i):
+    if len(hashes) <= 1:
+        return []
+    k = _split(len(hashes))
+    if i < k:
+        return _path(hashes[:k], i) + [_root(hashes[k:])]
+    return _path(hashes[k:], i - k) + [_root(hashes[:k])]
+
+
+def path(leaves, i):
+    """The audit path (hex, from the leaf up) of leaf `i` among `leaves`."""
+    return [h.hex() for h in _path([leaf_hash(d) for d in leaves], i)]
+
+
+def included(root_hex, size, i, data, audit):
+    """Whether `data` is leaf `i` of a tree of `size` leaves with root `root_hex` (RFC 9162 §2.1.3.2)."""
+    if not (type(size) is int and type(i) is int and 0 <= i < size and isinstance(audit, list)
+            and all(S.hex64(x) for x in audit) and isinstance(data, bytes) and S.hex64(root_hex)):
+        return False
+    fn, sn, r = i, size - 1, leaf_hash(data)
+    for p in audit:
+        p = bytes.fromhex(p)
+        if sn == 0:
+            return False
+        if fn & 1 or fn == sn:
+            r = _node(p, r)
+            if not fn & 1:
+                while fn and not fn & 1:
+                    fn, sn = fn >> 1, sn >> 1
+        else:
+            r = _node(r, p)
+        fn, sn = fn >> 1, sn >> 1
+    return sn == 0 and r.hex() == root_hex
+
+
+# ---------------------------------------------------------------- the two trees of a store
+
+def records_leaves(snap):
+    """The sorted record ids of a snapshot's lines (as bytes, the leaves' data)."""
+    return [bytes.fromhex(i) for i in sorted(snap.lines)]
+
+
+def index_entries(snap):
+    """[(target, [[kind, id], ...])] sorted by target: every attest and challenge of the snapshot by what it targets."""
+    out = {}
+    for i, envs in snap.lines.items():
+        r = envs[0]["record"]
+        t = (r.get("body") or {}).get("target") if isinstance(r.get("body"), dict) else None
+        if r.get("kind") in SAID and S.hex64(t):
+            out.setdefault(t, []).append([r["kind"], i])
+    return [(t, sorted(v)) for t, v in sorted(out.items())]
+
+
+def index_leaf(target, said):
+    return bytes.fromhex(target) + hashlib.sha256(C.canon(said)).digest()
+
+
+def roots(snap):
+    """{format, records, index, size: {records, index}} of a snapshot."""
+    rec, idx = records_leaves(snap), [index_leaf(t, v) for t, v in index_entries(snap)]
+    return {"format": FORMAT, "records": root(rec), "index": root(idx), "size": {"records": len(rec), "index": len(idx)}}
+
+
+def _keyed(keys, leaves, key, lists=None):
+    """{root, size, key, in: {i, data, path} | None, before, after} over sorted `keys` with their `leaves`: the leaf of
+    `key` when present, else its neighbours (absence)."""
+    n, p = len(keys), bisect.bisect_left(keys, key)
+    at = lambda j: {"i": j, "data": leaves[j].hex(), "path": path(leaves, j)}
+    out = {"root": root(leaves), "size": n, "key": key, "in": None, "before": None, "after": None}
+    if p < n and keys[p] == key:
+        out["in"] = dict(at(p), **({"said": lists[p]} if lists is not None else {}))
+    else:
+        out["before"] = at(p - 1) if p > 0 else None
+        out["after"] = at(p) if p < n else None
+    return out
+
+
+def prove_record(snap, rid):
+    """The inclusion of record `rid` in the records tree, or its absence."""
+    ids = sorted(snap.lines)
+    return dict(_keyed(ids, [bytes.fromhex(i) for i in ids], rid), tree="records")
+
+
+def prove_said(snap, target):
+    """What the reverse index holds against `target`: its leaf (every attest and challenge targeting it), or that it
+    holds none."""
+    entries = index_entries(snap)
+    return dict(_keyed([t for t, _ in entries], [index_leaf(t, v) for t, v in entries], target, [v for _, v in entries]),
+                tree="index")
+
+
+def _key_of(tree, data):
+    if tree == "records":
+        return data.hex() if len(data) == 32 else None
+    return data[:32].hex() if len(data) == 64 else None
+
+
+def check(proof, root_hex=None, size=None):
+    """(holds, said) of a proof from prove_record / prove_said, against `root_hex` and `size` (its own `root` and `size`
+    when None: a caller that has them from a signed snapshot passes them, since RFC 9162 binds the size through the root
+    and not through a leaf's path):
+    `said` is the leaf's [[kind, id], ...] for an index leaf present, [] for a key absent from the index, True / False
+    for a record in / not in the records tree. `holds` False: the proof does not show what it claims."""
+    try:
+        tree, key, n = proof["tree"], proof["key"], proof["size"]
+        r = proof["root"] if root_hex is None else root_hex
+        if (tree not in ("records", "index") or not S.hex64(key) or r != proof["root"] or type(n) is not int
+                or (size is not None and n != size)):
+            return False, None
+        def leaf(x):
+            data = bytes.fromhex(x["data"])
+            return data, _key_of(tree, data), included(r, n, x["i"], data, x["path"])
+        if proof["in"] is not None:
+            data, k, ok = leaf(proof["in"])
+            if not ok or k != key:
+                return False, None
+            if tree == "records":
+                return True, True
+            said = proof["in"].get("said")
+            if not (isinstance(said, list) and hashlib.sha256(C.canon(said)).digest() == data[32:]
+                    and all(isinstance(x, list) and len(x) == 2 and x[0] in SAID and S.hex64(x[1]) for x in said)):
+                return False, None
+            return True, said
+        b, a = proof["before"], proof["after"]
+        if n == 0:
+            return (r == EMPTY and b is None and a is None), (False if tree == "records" else [])
+        kb = ka = None
+        if b is not None:
+            _, kb, ok = leaf(b)
+            if not ok or kb is None or not kb < key:
+                return False, None
+        if a is not None:
+            _, ka, ok = leaf(a)
+            if not ok or ka is None or not key < ka:
+                return False, None
+        adjacent = ((b is None and a is not None and a["i"] == 0) or (a is None and b is not None and b["i"] == n - 1)
+                    or (b is not None and a is not None and a["i"] == b["i"] + 1))
+        return adjacent, ((False if tree == "records" else []) if adjacent else None)
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return False, None
+
+
+# ---------------------------------------------------------------- a set of index proofs, compact (witness/1 `said`)
+
+def pack(proofs):
+    """{hashes, proofs} of index proofs from prove_said, one per key, for a witness/1: every hash of every path once,
+    in a table, and each path as the table's indices; each leaf as its [target, said] value, not as hex. The root, the
+    size and the tree are the witness's (its snapshot names them), so they are not repeated. Measured on warrant's
+    store (2026-11-14): the proof of a lineage's frame went from 2.4 times the frame's bytes (each proof whole, hex) to
+    the figures docs/V3.md §16 gives."""
+    table, out = {}, {}
+    def ref(h):
+        return table.setdefault(h, len(table))
+    for key, p in sorted(proofs.items()):
+        def leaf(x, said=False):
+            if x is None:
+                return None
+            d = bytes.fromhex(x["data"])
+            got = {"i": x["i"], "path": [ref(h) for h in x["path"]]}
+            return dict(got, said=x["said"]) if said else dict(got, key=d[:32].hex(), digest=d[32:].hex())
+        out[key] = {"in": leaf(p["in"], True), "before": leaf(p["before"]), "after": leaf(p["after"])}
+    return {"hashes": [h for h, _ in sorted(table.items(), key=lambda kv: kv[1])], "proofs": out}
+
+
+def unpack(packed, key, root_hex, size):
+    """The prove_said form of `key`'s proof in a pack, at the witness's root and size; None when it has none or is
+    malformed (then check() is never asked)."""
+    try:
+        hs, p = packed["hashes"], packed["proofs"][key]
+        if not (isinstance(hs, list) and all(S.hex64(h) for h in hs) and isinstance(p, dict)
+                and set(p) == {"in", "before", "after"}):
+            return None
+        def leaf(x, said=False):
+            if x is None:
+                return None
+            want = {"i", "said", "path"} if said else {"i", "key", "digest", "path"}
+            if not (isinstance(x, dict) and set(x) == want and isinstance(x["path"], list)
+                    and all(type(j) is int and 0 <= j < len(hs) for j in x["path"])):
+                raise ValueError("a leaf of a pack")
+            path_ = [hs[j] for j in x["path"]]
+            if said:
+                return {"i": x["i"], "data": index_leaf(key, x["said"]).hex(), "said": x["said"], "path": path_}
+            if not (S.hex64(x["key"]) and S.hex64(x["digest"])):
+                raise ValueError("a neighbour of a pack")
+            return {"i": x["i"], "data": x["key"] + x["digest"], "path": path_}
+        return {"tree": "index", "root": root_hex, "size": size, "key": key,
+                "in": leaf(p["in"], True), "before": leaf(p["before"]), "after": leaf(p["after"])}
+    except (KeyError, TypeError, ValueError):
+        return None
+
 '''
 
 SOURCES["pins"] = r'''"""Pins: the bytes an acceptance names, compared with a Git tree of the receiver's (G14).
@@ -1655,7 +1956,16 @@ The answer is one line of canonical JSON on standard output, and the exit status
     0   every root asked for is one this receiver may rely on now;
     1   otherwise: a root is not relied on, or the package was refused (the answer says which);
     2   the command line, or a file of the receiver's own that it names, cannot be read;
-    3   an error of this verifier itself, never the code of a refusal.
+    3   an error of this verifier itself, never the code of a refusal;
+    4   with --witness: the witness showed two histories (two of its snapshots after the same one).
+
+With --witness FILE (a `witness/1`: snapshot@1 lines of one witness and warrant.merkle proofs, warrant.snapshot
+prove), the answer has `absence`: against the reverse index root R of the snapshot it uses, signed by an actor this
+receiver's trust binds and its profile names `witness`, every attest and challenge that store held against an id of the
+asked roots' frame (graph.frame) is in the package, or what is missing. `completeness` stays UNATTESTED: `absence`
+says what was not in that root, never that it is nowhere. A package that leaves out what the witnessed store holds is
+not relied on. With --extends HELD (a snapshot id the receiver accepted before), the snapshot used must descend from
+it in the witness's lineage: an older one, or one on another branch, is a rollback, refused.
 
 A root is a record id. It is relied on when it is the effective version of its lineage (docs/V3.md §3: a lineage
 that forks has none, and a version whose guard waits is not it), no counted challenge in the package stands against
@@ -1682,6 +1992,7 @@ import sys
 from . import engine as E
 from . import graph as G
 from . import jcs as C
+from . import merkle as M
 from . import pins as P
 from . import records as R
 from . import shapes as S
@@ -1782,7 +2093,7 @@ def describe(rep, ids):
 
 # ---------------------------------------------------------------- the answer
 
-def verify(raw, trust, profile, as_of=None, require=(), checkout=None, limit=MAX_BYTES):
+def verify(raw, trust, profile, as_of=None, require=(), checkout=None, limit=MAX_BYTES, witness=None, extends=None):
     """The answer (a JSON object, module docstring) for the bytes of a package file. `require`: the roots the receiver
     asks about (none: the package's own); `checkout`: what read_checkout gave, or None."""
     for why in (E.trust_problem(trust), E.profile_problem(profile)):
@@ -1806,7 +2117,108 @@ def verify(raw, trust, profile, as_of=None, require=(), checkout=None, limit=MAX
         return _refused(Refusal("LIMITS", str(e)), receiver, asked)
     if not require:
         asked["roots"] = sorted(set(pkg["roots"]))
-    return _answer(snap, view, view.report(), dict(receiver, as_of=view.as_of), asked, checkout)
+    rep = view.report()
+    ans = _answer(snap, view, rep, dict(receiver, as_of=view.as_of), asked, checkout)
+    if witness is not None:
+        ans["absence"] = absence(witness, snap, rep, asked["roots"], trust, profile, extends)
+        ans["rely"] = ans["rely"] and ans["absence"]["holds"]
+        ans["established"], ans["not_established"] = _sentences(ans)
+    return ans
+
+
+WITNESS, WITNESS_ROLE, SNAPSHOT = "witness/1", "witness", "snapshot@1"
+
+
+def _witness_lines(doc):
+    """{id: record} of a witness/1 document's lines, or a Refusal."""
+    if not (isinstance(doc, dict) and set(doc) == {"warrant", "lines", "use", "said"} and doc["warrant"] == WITNESS
+            and isinstance(doc["lines"], list) and S.hex64(doc["use"]) and isinstance(doc["said"], dict)):
+        raise Refusal("WITNESS_SHAPE", "a witness/1 is {warrant, lines, use, said}")
+    out = {}
+    for ln in doc["lines"]:
+        if not (isinstance(ln, dict) and set(ln) == {"record", "sig"}):
+            raise Refusal("WITNESS_SHAPE", "a line is {record, sig}")
+        try:
+            R.check(ln["record"])
+        except R.Invalid as e:
+            raise Refusal("WITNESS_SHAPE", f"a line's record: {e}") from None
+        out[R.rid(ln["record"])] = ln
+    return out
+
+
+def absence(doc, snap, rep, roots, trust, profile, extends=None):
+    """The `absence` of an answer (module docstring): {holds, in, records, snapshot, witnessed_by, commit, frame,
+    missing, unproved, equivocation, why}."""
+    out = {"holds": False, "in": None, "records": None, "snapshot": None, "witnessed_by": None, "commit": None,
+           "frame": 0, "missing": [], "uncounted": [], "unproved": [], "equivocation": [], "why": None}
+    try:
+        lines = _witness_lines(doc)
+    except Refusal as e:
+        return dict(out, why=f"{e.code}: {e}")
+    use = lines.get(doc["use"])
+    if use is None:
+        return dict(out, why="the snapshot it uses is not among its lines")
+    r = use["record"]
+    actor, b = r["actor"], r["body"]
+    signed = lambda ln: bool(ln["sig"]) and any(R.verifies(R.rid(ln["record"]), ln["sig"], k)
+                                                for k in trust.get("keys", {}).get(ln["record"]["actor"], []))
+    if not (r["kind"] == "entity" and r["schema"] == SNAPSHOT and signed(use)):
+        return dict(out, why=f"{doc['use'][:12]} is no snapshot@1 signed with a key this receiver binds to {actor!r}")
+    if actor not in (profile.get("roles", {}).get(WITNESS_ROLE) or []):
+        return dict(out, why=f"{actor!r} holds no `{WITNESS_ROLE}` role in this receiver's profile")
+    if not (isinstance(b, dict) and S.hex64(b.get("records")) and S.hex64(b.get("index"))):
+        return dict(out, why="the snapshot names no records and index roots")
+    out.update(**{"in": b["index"], "records": b["records"], "snapshot": doc["use"], "witnessed_by": actor,
+                  "commit": b.get("commit")})
+    mine = {i: ln["record"] for i, ln in lines.items() if ln["record"]["actor"] == actor
+            and ln["record"]["schema"] == SNAPSHOT and ln["record"]["kind"] == "entity" and signed(ln)}
+    after = {}
+    for i, x in mine.items():
+        after.setdefault(x.get("lineage"), []).append(i)
+    out["equivocation"] = sorted(sorted(v) for v in after.values() if len(v) > 1)
+    if out["equivocation"]:
+        return dict(out, why=f"{actor} showed two histories: two of its snapshots follow the same one")
+    if extends is not None:
+        chain, x = [], doc["use"]
+        while x in mine:
+            chain.append(x)
+            x = mine[x].get("lineage")
+        if extends not in chain:
+            return dict(out, why=f"ROLLBACK: {doc['use'][:12]} does not descend from {extends[:12]}, the snapshot "
+                                 "held: an older one, or one on another branch")
+    root_of = {v: L for L, lin in rep["lineages"].items() for v in lin["versions"]}
+    ids = G.frame(rep, sorted({root_of.get(i, i) for i in roots}))
+    ids = sorted(set(ids) | {i for i in roots if i in snap.lines})
+    out["frame"] = len(ids)
+    size = (b.get("size") or {}).get("index")
+    # In the package is what its assessment admitted, not a line with that id: a line whose signature does not verify is
+    # left out by the engine, and counted here as missing (the analysis session on #393: a challenge kept in the
+    # package with its signature spoiled read as present). A line signed under a key this receiver's trust does not bind
+    # is in the package and counted for nothing here: `uncounted`, said, never folded into either answer.
+    # The split is by the actor: one this receiver binds keys to (or a challenge's own named key), whose line it did not
+    # admit, is missing: its signature was not delivered, and a line signed again under another key is no less missing.
+    # A line of an actor it binds no key to is uncounted: present, and a signature this receiver cannot check (a line
+    # names its key by id, not the key).
+    admitted = {n[0] for n in rep["graph"]["nodes"]}
+    def own_key(x):
+        envs = snap.lines.get(x, [])
+        return bool(envs) and envs[0]["record"]["actor"] not in trust.get("keys", {}) and not R.named_key(envs[0]["record"])
+    for i in ids:
+        # read at the witness's root and size, as signed: RFC 9162 binds the size through the root, not through a
+        # leaf's path, and the neighbours of an absence are adjacent only in a tree of that size
+        proof = M.unpack(doc["said"], i, b["index"], size) if type(size) is int else None
+        holds, said = M.check(proof, b["index"], size) if proof else (False, None)
+        if not holds:
+            out["unproved"].append(i)
+            continue
+        out["missing"] += [x for _, x in said if x not in admitted and not own_key(x)]
+        out["uncounted"] += [x for _, x in said if x not in admitted and own_key(x)]
+    out["missing"], out["uncounted"] = sorted(set(out["missing"])), sorted(set(out["uncounted"]))
+    out["holds"] = not out["unproved"] and not out["missing"]
+    if not out["holds"]:
+        out["why"] = (f"{len(out['missing'])} record(s) the witnessed store holds against the frame are not in the "
+                      f"package" if out["missing"] else f"{len(out['unproved'])} id(s) of the frame have no proof against {b['index'][:12]}")
+    return out
 
 
 def _refused(e, receiver, asked):
@@ -1991,6 +2403,17 @@ def _sentences(ans):
                   + ", ".join(f"{c} {sum(1 for p in ex['problems'] if p[0] == c)}" for c in codes))
     no.append("completeness: the package holds what its sender chose to include: a challenge or a later version it "
               "left out cannot be seen here")
+    ab = ans.get("absence")
+    if ab and ab["holds"]:
+        yes.append(f"absence: every attest and challenge the store witnessed by {ab['witnessed_by']} at index root "
+                   f"{ab['in'][:12]} (snapshot {ab['snapshot'][:12]}) holds against the {_n(ab['frame'], 'record')} of the "
+                   "roots' frame is in the package; a statement about that root, not about every store")
+    elif ab:
+        no.append(f"absence: not shown: {ab['why']}")
+    if ab and ab["uncounted"]:
+        no.append(f"absence: {_n(len(ab['uncounted']), 'record')} the witness saw against the frame "
+                  f"{'is' if len(ab['uncounted']) == 1 else 'are'} in the package, of an actor your trust binds no key "
+                  "to: their signatures cannot be checked here and you count them for nothing; they are not hidden from you")
     if co["unavailable"]:
         no.append(f"completeness: {_n(len(co['unavailable']), 'record or blob', 'records or blobs')} that the roots rest "
                   "on, named and not in the package: " + ", ".join(x[:12] for x in co["unavailable"]))
@@ -2115,7 +2538,11 @@ def _run(argv, prog):
     ap.add_argument("--require", nargs="+", action="extend", default=[], metavar="ROOT",
                     help="the record ids you ask about (default: the ones the package names)")
     ap.add_argument("--max-bytes", type=int, default=MAX_BYTES, help=f"refuse a larger package (default {MAX_BYTES})")
+    ap.add_argument("--witness", help="a witness/1 file: a witness's snapshots and proofs against its roots (absence)")
+    ap.add_argument("--extends", help="with --witness: a snapshot id accepted before; the one used must descend from it")
     a = ap.parse_args(argv)
+    if a.extends is not None and (a.witness is None or not S.hex64(a.extends)):
+        raise Usage("--extends names a snapshot id (64 lowercase hex digits), with --witness")
     if a.max_bytes < 1 or (a.as_of is not None and a.as_of < 0):
         raise Usage("--max-bytes is at least 1 and --as-of is not negative")
     if not all(S.hex64(r) for r in a.require):
@@ -2126,7 +2553,9 @@ def _run(argv, prog):
             raw = f.read(a.max_bytes + 1)
     except OSError as e:
         raise Usage(f"the package {a.package}: {type(e).__name__}") from None
-    ans = verify(raw, trust, profile, a.as_of, a.require, None if a.checkout is None else read_checkout(a.checkout), a.max_bytes)
+    wit = None if a.witness is None else _own(a.witness, "--witness")
+    ans = verify(raw, trust, profile, a.as_of, a.require, None if a.checkout is None else read_checkout(a.checkout), a.max_bytes,
+                 wit, a.extends)
     line = C.canon(ans) + b"\n"
     out = getattr(sys.stdout, "buffer", None)            # the bytes, whatever encoding the terminal has
     if out is None:
@@ -2134,6 +2563,8 @@ def _run(argv, prog):
     else:
         out.write(line)
         out.flush()
+    if (ans.get("absence") or {}).get("equivocation"):
+        return 4
     return 0 if ans["rely"] else 1
 
 

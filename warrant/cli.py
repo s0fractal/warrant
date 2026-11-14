@@ -30,7 +30,7 @@ from . import home as H
 from . import records as R
 from .store import Refused, Store, confined, read_inside
 
-LOOP = ("review", "gate", "claims", "roadmap", "drift")       # the review loop's commands, each its own module's parser
+LOOP = ("review", "gate", "claims", "roadmap", "drift", "snapshot")       # the review loop's commands, each its own module's parser
 RECEIVER = "v3.json"                                 # a repository's trust and profile, in its store directory
 
 
@@ -368,9 +368,9 @@ def say(argv):
 
 def loop(argv):
     """`warrant review|gate|claims|roadmap|drift ARGS`: that module's own command, unchanged."""
-    from . import claims, drift, gate, review, roadmap
+    from . import claims, drift, gate, review, roadmap, snapshot
     from .repo import main as run_tool
-    mod = {"review": review, "gate": gate, "claims": claims, "roadmap": roadmap, "drift": drift}[argv[0]]
+    mod = {"review": review, "gate": gate, "claims": claims, "roadmap": roadmap, "drift": drift, "snapshot": snapshot}[argv[0]]
     return mod.main(argv[1:]) if mod is gate else run_tool(mod.run, argv[1:])
 
 

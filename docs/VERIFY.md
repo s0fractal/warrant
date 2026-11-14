@@ -24,6 +24,7 @@ nothing.
 | 1 | a root is not relied on, or the package was refused; the answer says which and why |
 | 2 | the command line, or a file of the receiver's own that it names, cannot be read |
 | 3 | an error of the verifier itself; never the code of a refusal |
+| 4 | with `--witness`: the witness showed two histories (two of its snapshots after the same one) |
 
 A root is a record id: the version of a thing that was handed over. The roots are the ones
 `--require` names; without it, the ones the package names, and the answer says that the sender chose
@@ -39,6 +40,13 @@ them. A root is relied on when all of this holds under the receiver's trust and 
   package and reads stale. Without `--checkout` the files are listed as `NOT_CHECKED` and do not
   decide the exit. With `--checkout` and no `git` to read the tree, they read `NOT_CHECKED` and the
   exit is 1: a comparison that was asked for and not made is never read as fresh.
+
+With `--witness FILE`, a `witness/1` (`warrant snapshot prove --use SNAPSHOT --roots ID ...` makes one), the answer
+also has `absence`: against the reverse index root of a `snapshot@1` that a witness signed (an actor your trust binds
+and your profile names `witness`), every attest and challenge the witnessed store holds against an id of the roots'
+frame is in the package, or the answer names what is missing and the root is not relied on. With `--extends HELD`, the
+snapshot used must descend from HELD, the one you accepted before: an older one, or one of another branch, is a
+rollback and is refused. Two snapshots of one witness after the same one are equivocation: exit 4, with both ids.
 
 The gate is the exit status because an advisory answer is not enough: a model under deadline
 pressure acted on a stale conclusion beside an honest freshness note in 72 of 72 runs (docs/V3.md §15).
@@ -119,7 +127,10 @@ repeats every run of its cases through the file, with the library and without it
 - **That the package is complete.** It holds what its sender chose to include. A challenge, or a
   later version that replaced the root, which the sender left out cannot be seen: exit 0 says that
   nothing in the package stands against the root, not that nothing does. The receiver who needs
-  more asks for the store, or asks someone else.
+  more asks for the store, or asks someone else. With `--witness`, `absence` says that nothing more
+  stood against the frame *in the store that witness saw at that root*: not in every store, and not
+  after the snapshot. `completeness.attested` stays `UNATTESTED`. While the witness writes where the
+  store does (one account), its word is that account's.
 - **That what a record says is true.** A signature shows who filed a record; a met guard shows who
   accepted it and in which role. Record text and evidence are data, never instructions.
 - **That evidence is present.** A version's id covers the hashes of its evidence, not their bytes.

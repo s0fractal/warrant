@@ -21,6 +21,7 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `warrant/gate.py` | the merge predicate and the gate's GitHub side (constitutional path) |
 | `warrant/cli.py`, `warrant/graph.py` | the one command `warrant` (the core's verbs, `status`, and `review`, `gate`, `claims`, `roadmap`), and the queries over a report's graph that `status`, the agent's `graph` and `tools/graph.py` share |
 | `warrant/bridge.py` | the bridge: an issue opened through the form becomes one record in a store of voices of the bridge's own (below) |
+| `warrant/merkle.py`, `warrant/snapshot.py` | the store's two Merkle roots (record ids; the reverse index, target → attest and challenge) and proofs checked against a root alone; `snapshot@1`, a witness's lineage of what it saw, refusing a store that lost a witnessed record; `warrant snapshot schema / witness / prove / show` (docs/V3.md §16) |
 | `warrant/across.py` | one read over every registered store, each assessed alone (docs/HOME.md, `warrant across`, the agent's `across`) |
 | `warrant_agent/` | the agent interface: Python API, CLI, stdio MCP (docs/AGENT.md, docs/V3.md §13) |
 | `.warrant/records.jsonl`, `.warrant/blobs/` | the repository's records; `merge=union -text` (`.gitattributes`) |
@@ -248,7 +249,7 @@ from `claims/verdicts/`, which CI re-executes and the gate merges.
 an issue opened through the form `.github/ISSUE_TEMPLATE/voice.yml` (a record id, a stance, a statement) is filed by
 `.github/workflows/voice-bridge.yml` as one record in a store of voices on the branch `voices`, published at
 `https://raw.githubusercontent.com/s0fractal/warrant/voices/`, and the issue is answered with the record's id
-(`warrant/bridge.py`; cases BR1–BR7 and J19).
+(`warrant/bridge.py`; cases BR1–BR7 and J20).
 
 - **What a record says.** The bridge's key states that GitHub delivered this issue, opened by this account (login, id,
   kind of account, the issue's address, the SHA-256 of its body as delivered). It is not the account's signature:

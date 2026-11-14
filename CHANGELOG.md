@@ -18,9 +18,22 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   `.github/workflows/voice-bridge.yml` (the branch `voices`) and `bridge-key.yml` (the environment `bridge`).
   `site/llms.txt` tells an agent both doors, with the issue's body to write; BR6 files that body as told.
   The workflow names no concurrency group (a group cancels the run that waited: Codex on #392); runs go side by side
-  and a refused push is tried again from the branch as it is. BR1–BR7, J19; mutants T221–T241.
+  and a refused push is tried again from the branch as it is. BR1–BR7, J20; mutants T221–T241.
 - The reader on a phone: a paragraph or list item wraps a name with no space in it (`site/style.css`). A lineage accepted
   by an actor named by a hash (`checker sha256:…`) made the page 610 px wide at 375; measured 375 after.
+- Witnessed roots (docs/V3.md §16; stage 3 of the plan): `warrant/merkle.py` gives a store two Merkle roots, its record
+  ids and its reverse index (target → every attest and challenge on it), with proofs a reader checks against a root
+  alone; `snapshot@1` (`warrant snapshot schema / witness / prove / show`) is a witness's lineage of what it saw, and
+  a witness refuses a store that lost a record it witnessed. `warrant verify --witness FILE` answers `absence`: against
+  the witnessed index root, every attest and challenge on the roots' frame is in the package, or what is missing (and
+  the root is not relied on); the witness must be one the receiver's profile names `witness`; two snapshots after the
+  same one are equivocation, exit 4; `--extends HELD` refuses a rollback. `completeness` stays UNATTESTED.
+  `warrant/graph.py` `frame` is the reader's `frame()` (J19). The plan's stop rule (the proof larger than the frame)
+  fired by its letter: a frame's proof as sent is 4.3 KB median, 1.29 times the frame, over it in 68 of 99 lineages
+  (0.56 in raw bytes, the rule's unnamed basis). It is replaced: stop if the frame with its proof exceeds a tenth of
+  the store for the median lineage, or if the proof needs the rest of the store; measured 0.18 % here (2.9 % at most),
+  8.2 % on minds (31 % at most). WT1–WT6; mutants WM1, WM3–WM7, WM9–WM22.
+
 - The roadmap view names every goal whatever its key (`warrant/roadmap.py`): `G<number>` keys in the order of their
   numbers, then the others by their text. A goal keyed otherwise (EXP-ADOPT-1, the adoption experiment's registration)
   ended `tools/graph.py views` in `int()`.
