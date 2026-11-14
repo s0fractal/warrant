@@ -17,6 +17,7 @@ store that has no witness is unchanged.
 
     python -m warrant.snapshot schema  --actor A --key K      # file snapshot@1 (an author of schemas)
     python -m warrant.snapshot witness --actor W --key K      # check the last witnessed store is held, file a version
+    python -m warrant.snapshot prove --use SNAPSHOT --roots ID ...   # a witness/1 for warrant verify --witness
     python -m warrant.snapshot show [--json]                  # the store's roots now, and each witness's leaf"""
 import argparse
 import json
@@ -24,6 +25,7 @@ import subprocess
 import sys
 
 from . import engine as E
+from . import graph as G
 from . import merkle as M
 from . import records as R
 from . import shapes as S
@@ -105,6 +107,26 @@ def witness(repo, actor, key, commit=None):
     return repo.file(actor, key, [rec])[0]
 
 
+def prove(repo, use, roots):
+    """A witness/1 (warrant.verify --witness): every snapshot@1 line of the witness of `use`, and for each id of the
+    frame of `roots` (graph.frame) in the store `use` witnessed (read at its commit), what its reverse index holds
+    against that id, proved against `use`'s index root."""
+    snap = repo.store.snapshot()
+    if use not in snap.lines or snap.lines[use][0]["record"].get("schema") != NAME:
+        raise Failed("SNAPSHOT_UNKNOWN", f"{use[:12]} is no snapshot@1 of this store")
+    r = snap.lines[use][0]["record"]
+    then = at_commit(repo.root, r["body"]["commit"])
+    if M.roots(then)["index"] != r["body"]["index"]:
+        raise Failed("SNAPSHOT_ROOTS", f"the store at {r['body']['commit'][:12]} does not have the roots {use[:12]} names")
+    trust, profile, _ = repo.config()
+    rep = E.View(then, trust, profile).report()
+    root_of = {v: L for L, lin in rep["lineages"].items() for v in lin["versions"]}
+    ids = sorted(set(G.frame(rep, sorted({root_of.get(i, i) for i in roots}))) | {i for i in roots if i in then.lines})
+    lines = [envs[0] for i, envs in sorted(snap.lines.items()) if envs[0]["record"]["actor"] == r["actor"]
+             and envs[0]["record"].get("schema") == NAME and envs[0]["record"]["kind"] == "entity"]
+    return {"warrant": "witness/1", "lines": lines, "use": use, "said": {i: M.prove_said(then, i) for i in ids}}
+
+
 def roots_now(repo):
     snap = repo.store.snapshot()
     return dict(M.roots(snap), digest=snap.digest)
@@ -119,6 +141,9 @@ def run(argv=None):
         p.add_argument("--actor", required=True)
         p.add_argument("--key", required=True)
     sub.choices["witness"].add_argument("--commit")
+    pr = sub.add_parser("prove")
+    pr.add_argument("--use", required=True)
+    pr.add_argument("--roots", nargs="+", required=True)
     sub.add_parser("show").add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     repo = Repo(root)
@@ -130,6 +155,11 @@ def run(argv=None):
         if a.commit is not None and not S.hex_of(a.commit, 40):
             raise Failed("BAD_REQUEST", "--commit is a full commit id")
         dump({"snapshot": witness(repo, a.actor, load_key(a.key, root), a.commit)})
+        return 0
+    if a.cmd == "prove":
+        if not (S.hex64(a.use) and all(S.hex64(x) for x in a.roots)):
+            raise Failed("BAD_REQUEST", "--use and --roots name record ids")
+        dump(prove(repo, a.use, a.roots))
         return 0
     rep = repo.report()
     out = {"roots": roots_now(repo), "witnesses": {}}
