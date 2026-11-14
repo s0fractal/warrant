@@ -13,6 +13,21 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   or 72 h with one. Measured once: of the 98 merges of November that were not verdicts only, 17 would have been
   newly watched. E95; mutant G130.
 
+- The bridge (`warrant/bridge.py`, `python -m warrant.bridge file|public`): a voice from someone with a GitHub account
+  and nothing else. An issue opened through the form (a record id, a stance, a statement) becomes one record in a store
+  of voices of the bridge's own: an objection a `challenge`, a support an `attest` with `stance: "support"` and no
+  verdict, each naming the account as the bridge states it (login, id, the issue's address, the SHA-256 of the body as
+  delivered). It is the bridge's statement, not the account's signature; the store gives nobody a role and no rule
+  counts it. Anything but the form as opened is refused in the bridge's own words, one record per issue, and the bridge
+  writes into no store but its own. The reader shows such a voice with its stance and the account, linked to the issue
+  (`githubOf` in `site/reader.mjs`: shown only in its shape), and the block «Object to this version» and
+  `site/object.html` have the second door. In this repository: `.github/ISSUE_TEMPLATE/voice.yml`,
+  `.github/workflows/voice-bridge.yml` (the branch `voices`) and `bridge-key.yml` (the environment `bridge`).
+  `site/llms.txt` tells an agent both doors, with the issue's body to write; BR6 files that body as told.
+  The workflow names no concurrency group (a group cancels the run that waited: Codex on #392); runs go side by side
+  and a refused push is tried again from the branch as it is. BR1–BR7, J20; mutants T221–T241.
+- The reader on a phone: a paragraph or list item wraps a name with no space in it (`site/style.css`). A lineage accepted
+  by an actor named by a hash (`checker sha256:…`) made the page 610 px wide at 375; measured 375 after.
 - Witnessed roots (docs/V3.md §16; stage 3 of the plan): `warrant/merkle.py` gives a store two Merkle roots, its record
   ids and its reverse index (target → every attest and challenge on it), with proofs a reader checks against a root
   alone; `snapshot@1` (`warrant snapshot schema / witness / prove / show`) is a witness's lineage of what it saw, and

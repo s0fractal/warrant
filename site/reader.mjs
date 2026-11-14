@@ -342,6 +342,19 @@ export async function readOthers(addresses, backend, source, { fetcher = globalT
 // attests and challenges whose body.target is such a version. A voice is a record its own store's assessment admits
 // (in its view: its graph's nodes); a line that store rejects is no voice and is counted apart. A record the main store
 // holds too is the main store's, not a voice. Built once per read.
+// What a bridge's record says of the GitHub account that spoke (warrant/bridge.py): {login, id, url} when the body
+// carries all three in their shapes and the address is an issue on github.com, else null. It is that store's statement
+// and is shown as such: this reader asks GitHub nothing, and the account signed nothing.
+const GH_LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}(\[bot\])?$/;
+const GH_ISSUE = /^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/issues\/[1-9][0-9]{0,9}$/;
+export function githubOf(rec) {
+  const g = rec?.body?.github;
+  if (typeof g !== "object" || g === null) return null;
+  const ok = typeof g.login === "string" && GH_LOGIN.test(g.login) && Number.isSafeInteger(g.id) && g.id > 0
+    && typeof g.url === "string" && GH_ISSUE.test(g.url);
+  return ok ? { login: g.login, id: g.id, url: g.url } : null;
+}
+
 function outside(r) {
   if (r._outside) return r._outside;
   const versions = new Set();
@@ -356,7 +369,9 @@ function outside(r) {
       if (!admitted.has(id)) { left.set(t, (left.get(t) || 0) + 1); continue; }
       if (!voices.has(t)) voices.set(t, []);
       voices.get(t).push({ id, store: o.name, address: o.address, kind: rec.kind, actor: rec.actor, at: rec.at, target: t,
-                           verdict: typeof rec.body.verdict === "string" ? rec.body.verdict : null, statement: title(rec), counted: false });
+                           verdict: typeof rec.body.verdict === "string" ? rec.body.verdict : null,
+                           stance: rec.body.stance === "support" || rec.body.stance === "objection" ? rec.body.stance : null,
+                           github: githubOf(rec), statement: title(rec), counted: false });
     }
   }
   r._outside = { voices, left };

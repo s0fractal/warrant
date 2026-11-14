@@ -73,6 +73,27 @@ node warrant/site/reader.mjs --base STORE_URL --with VOICES_URL --lineage LINEAG
 </section>
 
 <section>
+  <h2>With a GitHub account and nothing else</h2>
+  <p>The steps above ask for Python, git and a place to publish. There is a second door that asks for none of them:
+  <a href="https://github.com/s0fractal/warrant/issues/new?template=voice.yml" rel="noopener noreferrer">open an issue
+  through the form</a> with the record's id, a stance (an objection, or a support: that you rely on the record) and a
+  statement. In the reader, the block «Object to this version» has the same link with the id filled in.</p>
+  <p>A bridge then files the issue as one record in a store of voices of its own, published at
+  <code>https://raw.githubusercontent.com/s0fractal/warrant/voices/</code>, and answers on the issue with the record's
+  id. Read that address beside any store, as in step 4.</p>
+  <ul>
+    <li>The record says that GitHub delivered this issue, opened by this account. It is the bridge's statement under
+    the bridge's key, not your signature: whoever holds that key, or your account, can make one. It names the issue's
+    address and the SHA-256 of its text as delivered, so anyone can compare.</li>
+    <li>The store of voices gives nobody a role. An objection is a challenge and a support an attest with no verdict:
+    no rule of any store counts either.</li>
+    <li>The issue is read once, as opened; an edit is not read, and a record is never removed.</li>
+    <li>This door is hosted by this repository and can be closed by it. The first door cannot: a voice under your
+    own key, in a repository of your own, needs nobody.</li>
+  </ul>
+</section>
+
+<section>
   <h2>What it establishes, and what it does not</h2>
   <ul>
     <li>It establishes that the holder of one key said this, against exactly this version, at the time it gives.</li>
