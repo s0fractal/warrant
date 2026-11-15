@@ -257,6 +257,10 @@ an issue opened through the form `.github/ISSUE_TEMPLATE/voice.yml` (a record id
   kind of account, the issue's address, the SHA-256 of its body as delivered). It is not the account's signature:
   whoever holds the bridge's key, or the account, can make one. "Account" means whoever controls it, a person or an
   agent acting under a person's login.
+- **One per merge, and only a signed one counts.** A receipt already on the branch stops a second only when it is
+  signed under the key the store binds to `merge-gate` and says the same. Any other line (unsigned, signed by another
+  key, another actor's, a signed receipt for that merge that says something else) makes the store not the gate's: the
+  job fails instead of skipping, so a forged line can neither stand in for a receipt nor hide a merge.
 - **What it counts for.** Nothing. The store trusts the one name `github-bridge` and gives nobody a role; an objection
   is a `challenge`, a support an `attest` with `stance: "support"` and no `verdict`. A reader who reads the store beside
   another sees them as voices from outside, with the account the store states and a link to the issue.

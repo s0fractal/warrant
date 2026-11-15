@@ -24,6 +24,9 @@ in any store. Read beside this repository's own store, it is a signed observatio
 an agent's `merged` attest is. A key that leaked states merges that did not happen; anyone can compare each receipt with
 the merge commit it names.
 
+A receipt already filed stops a second only when it is signed under the store's key and says the same; any other line
+makes the store not the gate's (Broken), so a forged line can neither stand in for a receipt nor hide a merge.
+
 Limits: one receipt per merge commit; a revert of a vetoed merge gets none (it targets a commit, not a record: the
 revert's own message names the merge it reverts)."""
 import argparse
@@ -37,7 +40,7 @@ from pathlib import Path
 from . import keys as K
 from . import records as R
 from . import shapes as S
-from .engine import head
+from .engine import _authentic, head
 from .review import merged_how
 from .store import Refused as StoreRefused
 from .store import Store
@@ -129,11 +132,19 @@ def init(store, key):
     return dot, doc
 
 
-def filed_for(dot, merge):
-    """The id of the receipt the store already holds for this merge commit, or None."""
-    for rid, envs in Store(dot).snapshot().lines.items():
-        r = envs[0]["record"]
-        if r["actor"] == ACTOR and isinstance(r["body"], dict) and r["body"].get("merge") == merge:
+def filed_for(dot, trust, body):
+    """The id of the receipt the store already holds for this body's merge commit, or None. Only a record signed under
+    the key the store binds to merge-gate stands for a receipt: a line that is not one (unsigned, signed by another key,
+    another actor's) makes the store not the gate's, and so does a signed receipt for the same merge that says
+    something else; either is Broken, never a reason to skip signing."""
+    snap = Store(dot).snapshot()
+    recs, basis, _, _ = _authentic(snap, trust, None)
+    if set(snap.lines) - {i for i in recs if basis[i] == "SIGNED" and recs[i]["actor"] == ACTOR}:
+        raise Broken("the store holds a line that is not signed under merge-gate's key: it is not the gate's")
+    for rid, r in recs.items():
+        if isinstance(r["body"], dict) and r["body"].get("merge") == body["merge"]:
+            if (r["kind"], r["refs"], r["body"]) != ("attest", [body["target"]], body):
+                raise Broken("the store holds a signed receipt for this merge that says something else")
             return rid
     return None
 
@@ -144,7 +155,7 @@ def file(store, merge, pull, commit, repository, key, at=None):
     body = body_of(merge, pull, commit, repository)
     dot, doc = init(store, key)
     out = {"target": body["target"], "merge": body["merge"], "how": body["how"]}
-    had = filed_for(dot, body["merge"])
+    had = filed_for(dot, doc["trust"], body)
     if had is not None:
         return dict(out, filed=had, already=True)
     if at is None:                  # a runner's clock behind the chain's last record must not stop the next receipt
