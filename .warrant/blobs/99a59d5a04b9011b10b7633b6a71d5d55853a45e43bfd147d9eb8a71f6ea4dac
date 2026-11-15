@@ -1,0 +1,111 @@
+# Codex challenge of G11 obligation closure
+
+Repository: s0fractal/warrant
+M: 0d18ade867c3da32aba0bc8a6d9bee6c1619cf91
+D: bb16da4f66fa7af619c8948832c09cf080e2646d5a007dbdb9efeedb1c2f51e1
+T: 330742f8a72363260e620bdac7ff7a99cfd7634559af3fc49caf6166a8fc8002
+Cited implementation: 2e5cfa20a9cc90ed34816751c0f666ce0e0b8573 (ancestor of M).
+
+The implementation fixes reports enriched with records, including warrant.repo.Repo.report and the lineage page. It does not complete the same correction through the agent interface. The public graph operation still says CYCLE for a met goal that cites an accepted obligation answering it. This is the same false cycle D owes to remove; T declares no residual.
+
+Cause at M: warrant_agent/api.py:70-78 removes _recs after the checkout drift gate. graph at lines 187-191 passes that stripped report directly to warrant.graph.grounded. warrant/graph.py:247,255-257 then cannot read body.answers, so it follows the answers ref again. The same agent code path exists at the cited implementation commit. The grounded implementation itself is unchanged between that commit and M.
+
+A signed fixture with one accepted obligation and one accepted met goal has no rejected records or assessment problems. Direct grounded and serve.lineage say grounded=true; api.call(graph, op=grounded) says grounded=false, closure=2, two CYCLE rows. Supplying view.recs at the agent boundary, in memory only, makes the same query grounded=true, closure=1. No production source was edited. A separate two-obligation fixture also reproduced through the plugin stdio MCP client, with a read-only fixture configuration: all three records report CYCLE there although the library and lineage page say grounded=true.
+
+## Runnable counterexample
+
+Save the following outside the checkout and run from M using Python with cryptography installed. Set TMPDIR to an external working directory. Exit 1 is the unmet expectation at M. Passing --supply-records is a diagnostic control, not an applied fix, and exits 0.
+
+```python
+"""Run from the reviewed checkout with its tests directory on sys.path.
+Expected: the agent agrees that an accepted answer is grounded.
+--supply-records is a diagnostic control, without editing repository files.
+"""
+import json
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path.cwd() / 'tests'), str(Path.cwd())]
+from world import Repo
+from warrant import graph as G, repo as RP
+from warrant_agent import api, serve
+from warrant_agent.config import Config
+
+r = Repo()
+g = r.entity('alice', 'goal@1', {'state': 'open', 'key': 'G1', 'text': 'goal'})
+b = {'state': 'open', 'statement': 'answer', 'answers': g, 'serves': []}
+o = r.entity('alice', 'obligation@1', b)
+d = r.entity('alice', 'obligation@1', dict(b, state='done'), lineage=o)
+r.attest('bob', d)
+m = r.entity('alice', 'goal@1', {'state': 'met', 'key': 'G1', 'text': 'goal'}, lineage=g, refs=[o])
+r.attest('bob', m)
+rep = RP.Repo(r.root).report()
+assert rep['lineages'][g]['state'] == 'met' and rep['lineages'][o]['state'] == 'done'
+assert not rep['problems'] and not rep['rejected']
+assert G.grounded(rep, d)['grounded']
+assert serve.lineage(rep, d)['grounded']['grounded']
+cfg = Config({'agent_api': 'warrant-agent/3', 'workspaces': {'w': {'repo': str(r.root), 'operations': ['graph']}}})
+if '--supply-records' in sys.argv:
+    original = api._report
+    def with_records(ws, view):
+        out = original(ws, view)
+        out['_recs'] = view.recs
+        return out
+    api._report = with_records
+out = api.call(cfg, 'graph', {'workspace': 'w', 'op': 'grounded', 'target': d})
+assert 'ok' in out, out
+answer = out['ok']['data']
+print(json.dumps(answer, sort_keys=True))
+print(('ok   ' if answer['grounded'] else 'FAIL ') + 'R1 agent graph must exclude the obligation own answers ref')
+sys.exit(0 if answer['grounded'] else 1)
+```
+
+Actual M run, exit 1:
+
+```text
+{"closure": 2, "failing": [["1f6414aed5c48f6e833759db4bafdd595300b6d326ddff8dcdc068cf278deb52", "CYCLE"], ["7e90663f338d5bd1def7986f008ed2b643cd38ec8eafe8eed50c56061a2951f5", "CYCLE"]], "from": "1f6414aed5c48f6e833759db4bafdd595300b6d326ddff8dcdc068cf278deb52", "grounded": false, "outside": []}
+FAIL R1 agent graph must exclude the obligation own answers ref
+```
+
+Diagnostic control, exit 0:
+
+```text
+{"closure": 1, "failing": [], "from": "1f6414aed5c48f6e833759db4bafdd595300b6d326ddff8dcdc068cf278deb52", "grounded": true, "outside": []}
+ok   R1 agent graph must exclude the obligation own answers ref
+```
+
+Independent two-obligation fixture, actual stdio MCP graph result:
+
+```json
+{
+ "from": "4329886e930950f227b34723354428ab9b42021ca47372d2e44b0b2d0cd4b79d",
+ "grounded": false,
+ "closure": 3,
+ "failing": [
+  [
+   "4329886e930950f227b34723354428ab9b42021ca47372d2e44b0b2d0cd4b79d",
+   "CYCLE"
+  ],
+  [
+   "ab52ee006fade5acee4bdb9f734a645d6308398354f7513175b431c45d3c02f8",
+   "CYCLE"
+  ],
+  [
+   "68f72058e43d684fab0ca0807ac66d544a5e47ca77d3fa9582fadf2e8dd999dc",
+   "CYCLE"
+  ]
+ ],
+ "outside": []
+}
+```
+
+## Checks and limits
+
+- tests/tools_test.py sections grounded_cases and roadmap_cases: passed (GR1-GR4, P01-P04 including P02b).
+- tests/agent_test.py section operations: passed, including A30. A30 checks challenged support but has no answers cycle.
+- Named T183 mutation from tests/mutants.py, applied to graph.py in memory and exercised by grounded_cases: GR4 fails, GR1-GR3 pass. The canonical full mutant harness was not run.
+- Additional signed-fixture boundary: a requires edge equal to answers is still followed; challenging that goal makes the dependent obligation not grounded with RELIANCE CHALLENGED. Passed.
+- warrant.roadmap check: 102 lineages, 0 problems; warrant.claims check: 136 live claims, 0 problems (before verdict).
+- HEAD and origin and due facts verified locally. MCP workspace confirms signer codex with roadmap/acceptor; T is authored by claude, with a pending one-acceptor guard and no open requires.
+- No live Minds-store recount, complete suites or full mutant matrix was performed. The closure is challenged on the runnable same-defect counterexample above, not on a claim that the correct library/lineage-page path remains broken.
+
+Needed to close D: make the agent grounded operation retain or explicitly receive admitted records so it can exclude only the own answers ref; add an integration regression with an accepted met goal citing an accepted answering obligation, preserving real refs and requires support.
