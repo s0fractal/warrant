@@ -2078,6 +2078,8 @@ def receipt_cases():
             got.append((why, "FILED"))
         except RC.Refused:
             got.append((why, "REFUSED"))
+        except RC.Broken:
+            got.append((why, "BROKEN"))
     try:
         RC.body_of(gate, pull, commit, "acme/widget; rm")
         got.append(("repository", "FILED"))
