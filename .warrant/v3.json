@@ -1,0 +1,16 @@
+{
+ "profile": {
+  "roles": {},
+  "warrant": "profile/3"
+ },
+ "repository": "receipts/merge-gate",
+ "trust": {
+  "keys": {
+   "merge-gate": [
+    "5d29ebfdbff7362a5f871f86a1c6d71524fc260b65289d11578b692c3db974b9"
+   ]
+  },
+  "warrant": "trust/3"
+ },
+ "warrant": "repository/3"
+}
