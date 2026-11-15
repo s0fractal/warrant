@@ -827,6 +827,7 @@ for (let b = 0; b < 0x110000; b += 0x1000) {
 }
 out.unicode = blocks;
 out.unicode_version = process.versions.unicode;
+out.unicode14 = W.UNICODE14_ASSIGNED;
 process.stdout.write(JSON.stringify(out));
 """
 
@@ -872,13 +873,17 @@ def encoding_cases(tally, worlds):
     diff = [(b * 0x1000 + k, x, y) for b, (pb, jb) in enumerate(zip(py, got["unicode"])) for k, (x, y) in enumerate(zip(pb, jb))
             if x != y.rstrip("n")]
     same = tuple(map(int, unicodedata.unidata_version.split("."))) == tuple(map(int, (got["unicode_version"] + ".0.0").split(".")[:3]))
-    # With one Unicode version both sides must agree everywhere; across versions, only where a code point is assigned
-    # in one table and not the other (a new character's repr): the rest of the shapes still agree.
-    unexplained = [d for d in diff if same or (unicodedata.category(chr(d[0])) == "Cn") == d[2].endswith("n")]
+    # With one Unicode version both sides must agree everywhere. Across versions a new character's repr may differ
+    # (where a code point is assigned in one table and not the other), but whether it makes an actor id may not: the
+    # format fixes Unicode 14.0.0 for that (shapes.UNICODE14_ASSIGNED), whatever tables either side runs.
+    unexplained = [d for d in diff if same or d[1][-2:] != d[2].rstrip("n")[-2:]
+                   or (unicodedata.category(chr(d[0])) == "Cn") == d[2].endswith("n")]
     check(f"J6 every code point: Python's repr, is_actor(c) and is_actor('a'+c+'a') against the platform's Unicode tables "
-          f"(Python {unicodedata.unidata_version}, node {got['unicode_version']})", not unexplained,
-          f"0x110000 code points, {len(diff)} differ only by a character one table has not assigned",
+          f"(Python {unicodedata.unidata_version}, node {got['unicode_version']}); is_actor agrees everywhere", not unexplained,
+          f"0x110000 code points, {len(diff)} differ only in the repr of a character one table has not assigned",
           [f"U+{c:04X} python {x} js {y}" for c, x, y in unexplained[:8]] + [f"{len(unexplained)} in all"])
+    check("J6 the JavaScript port carries the same Unicode 14.0.0 table of code points an actor id may use",
+          got.get("unicode14") == SH.UNICODE14_ASSIGNED, len(got.get("unicode14") or ""))
     # the WebCrypto backend answers as node:crypto does, on the worlds with signatures that verify and do not
     sample = [c for _, c in worlds][:30]
     a, b = js_batch(sample), js_batch(sample, ["--webcrypto"])

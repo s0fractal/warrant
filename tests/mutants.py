@@ -355,6 +355,9 @@ MUTANTS = [
     ("T267", "warrant/receipt.py", 'if basis[i] == "SIGNED" and recs[i]["actor"] == ACTOR}', 'if basis[i] == "SIGNED"}', TOOLS, ["RC6"]),
     ("T268", "warrant/receipt.py", '    recs, basis, _, _ = _authentic(snap, trust, None)\n    if set(snap.lines)', '    recs, basis, _, _ = _authentic(snap, trust, None)\n    if set()', TOOLS, ["RC6"]),
     ("T269", "warrant/receipt.py", '!= ("attest", [body["target"]], body):', '!= ("attest", [body["target"]], dict(r["body"])):', TOOLS, ["RC6"]),
+    ("T270", "warrant/shapes.py", '    if not all(assigned14(ord(c)) for c in v):\n', '    if False:\n', SHAPES_TEST, ["S9"]),
+    ("T271", "warrant/shapes.py", '    return i >= 0 and cp <= _U14[i][1]\n', '    return i >= 0\n', SHAPES_TEST, ["S9"]),
+    ("T272", "warrant/shapes.py", '    if not all(assigned14(ord(c)) for c in v):\n        return "must use only code points assigned in Unicode 14.0.0"\n    if not unicodedata.is_normalized("NFC", v):\n        return "must be in Unicode NFC"\n', '    if not unicodedata.is_normalized("NFC", v):\n        return "must be in Unicode NFC"\n    if not all(assigned14(ord(c)) for c in v):\n        return "must use only code points assigned in Unicode 14.0.0"\n', SHAPES_TEST, ["S9"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),

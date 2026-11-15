@@ -29,8 +29,9 @@ def code_identity():
     """The digest of every file that decides a verdict: this package, whole (the core imports nothing
     outside it but the standard library and the signature library), with that library's version and the version of
     the interpreter's Unicode tables, which decide whether an actor id is in NFC and of an allowed category (minds #94,
-    2026-11-13: "\U00016D67\U00016D67" is an actor under Unicode 14 and 15, not under 16 and 17, so a schema counted
-    under one interpreter was not under another with the same digest of files)."""
+    2026-11-13: "\U00016D67\U00016D67" was an actor under Unicode 14 and 15, not under 16 and 17, so a schema counted
+    under one interpreter was not under another with the same digest of files). Since 2026-11-15 the format fixes
+    Unicode 14.0.0 for actor ids (shapes.UNICODE14_ASSIGNED), under which those verdicts agree; the version stays named."""
     if not _CODE:
         import cryptography
         files = sorted(Path(__file__).resolve().parent.glob("*.py"))

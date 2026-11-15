@@ -103,6 +103,22 @@ def main():
     ok, wrong = table(S.is_actor, valid, bad)
     check("S5", ok and S.actor_problem("a" * 201) == "must be a string ≤ 200", "actor ids (SPEC-3-21): at most 200 code "
           "points, NFC, no Cc, no white space at the ends; a checker named by its code's hash is one", wrong)
+    import unicodedata
+    later = ["\U00016D67\U00016D67", "\U0001FAE8", "a\U00031350", "\U000E0080", "codex\U0010FFFF", "e\u0301\U000E0080"]
+    reasons = {S.actor_problem(x) for x in later}
+    spans = [tuple(int(x, 16) for x in r.split("-")) for r in S.UNICODE14_ASSIGNED.split(",")]
+    cps = [c for a, b in spans for c in range(a, b + 1)]
+    if unicodedata.unidata_version == "14.0.0":
+        sys.path.insert(0, str(ROOT / "tools"))
+        import unicode14 as gen
+        table_ok, how = S.UNICODE14_ASSIGNED == gen.table(), "equal to this interpreter's Unicode 14.0.0 tables"
+    else:
+        table_ok, how = all(unicodedata.category(chr(c)) != "Cn" for c in cps), f"assigned under this interpreter's {unicodedata.unidata_version} too"
+    check("S9", S.is_actor("\u0870") and S.is_actor("a\u0870b") and reasons == {"must use only code points assigned in Unicode 14.0.0"}
+          and (len(spans), len(cps)) == (698, 284278) and table_ok,
+          "actor ids use only code points assigned in Unicode 14.0.0, the format's version, checked first so the reason "
+          "is one on every interpreter: U+0870 (new in 14.0) is an actor; U+16D67 twice (16.0, minds #94), U+1FAE8 "
+          f"(15.0), U+31350 (15.0), an unassigned and a noncharacter are not, nor one also not in NFC; the carried table ({how})", (reasons, len(spans)))
     found = hex_patterns()
     outside = sorted({(f, p) for f, p in found if f != "warrant/shapes.py"} - OTHER_SHAPES)
     dollar = sorted((f, p) for f, p in found if p.endswith("$"))
