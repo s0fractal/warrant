@@ -355,6 +355,8 @@ MUTANTS = [
     ("T267", "warrant/receipt.py", 'if basis[i] == "SIGNED" and recs[i]["actor"] == ACTOR}', 'if basis[i] == "SIGNED"}', TOOLS, ["RC6"]),
     ("T268", "warrant/receipt.py", '    recs, basis, _, _ = _authentic(snap, trust, None)\n    if set(snap.lines)', '    recs, basis, _, _ = _authentic(snap, trust, None)\n    if set()', TOOLS, ["RC6"]),
     ("T269", "warrant/receipt.py", '!= ("attest", [body["target"]], body):', '!= ("attest", [body["target"]], dict(r["body"])):', TOOLS, ["RC6"]),
+    ("T273", "warrant_agent/api.py", 'data = G.grounded(rep, i, view.recs) if op == "grounded" else getattr(G, op)(rep, i)', 'data = getattr(G, op)(rep, i)', AGENT, ["A44"]),
+    ("T274", "warrant/graph.py", '    recs = recs if recs is not None else rep.get("_recs") or {}\n\n    def grounds(v):', '    recs = rep.get("_recs") or {}\n\n    def grounds(v):', AGENT, ["A44"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),

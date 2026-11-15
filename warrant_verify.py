@@ -31,7 +31,7 @@ import types
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
     "warrant/jcs.py": "1caa6890ea01355224cb4dd4010777b388b51a2b3e5bc405192eeff717b3f9d3",
-    "warrant/graph.py": "076bb7309f6623ac437863423c3a2922407a6da065980ff51687572a65966835",
+    "warrant/graph.py": "408df6080c14856612a5c92f82c933923914baf2a897b97a43d0e10af11c9ae5",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
@@ -199,7 +199,7 @@ call the same ones. Every state shown is the report's, never recomputed.
   delta(rep0, rep1)        nodes added and removed, lineages whose state or reliance changed
   impact(rep0, rep1)       the lineages the changed records bear on, and what rests on those
   ledger(rep, recs)        the witness ledger: per actor, acceptances later refuted, challenges that replayed
-  grounded(rep, id)        whether a version stands on ground: it, and every entity version it rests on by `refs`
+  grounded(rep, id, recs)  whether a version stands on ground: it, and every entity version it rests on by `refs`
                            and `requires`, transitively, is the effective version of an ELIGIBLE lineage
   answer(rep, query, data, adapter)   {root, lens, query, data}: the same lens over the same root gives
                            the same bytes, so a result may be cached by (lens, root) and re-derived
@@ -419,7 +419,7 @@ def _cites(recs, x, y, memo):
         memo[key] = seen is None
     return memo[key]
 
-def grounded(rep, i):
+def grounded(rep, i, recs=None):
     """Whether entity version `i` is GROUNDED (minds' Grounded, proofs/Vars1/Grounded.lean, read over a Warrant report):
     it and every entity version it rests on, by `ref` and by `requires` (a required lineage through its effective
     version), transitively, is the effective version of a lineage whose reliance is ELIGIBLE. The least fixed point:
@@ -428,11 +428,13 @@ def grounded(rep, i):
     effective version, or a cited lineage has none), RELIANCE (its lineage is PENDING, CHALLENGED or FORK), CYCLE. A reference to no record of the report
     (a blob, or a record held elsewhere) is listed under `outside` and decides nothing: whether a closure's evidence
     must be present is R-EVIDENCE-PRESENCE (docs/V3.md §12). Pure, without recursion; ELIGIBLE alone does not
-    propagate (a lineage is ELIGIBLE on a ground that is not), which is what this answers."""
+    propagate (a lineage is ELIGIBLE on a ground that is not), which is what this answers. `recs` ({id: record}, as
+    ledger and frontier take it; else the report's `_recs`) is where an obligation's `answers` is read: a caller
+    whose report carries no records must pass them (Codex f9698537 on #426: the agent's graph op did not)."""
     nodes, out, _ = index(rep)
     lineage = {v: root for root, lin in rep["lineages"].items() for v in lin["versions"]}
 
-    recs = rep.get("_recs") or {}
+    recs = recs if recs is not None else rep.get("_recs") or {}
 
     def grounds(v):
         """The grounds of v: each entity it cites by `ref`, or requires, read as its lineage (a lineage is named by any
