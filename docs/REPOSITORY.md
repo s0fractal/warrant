@@ -291,6 +291,28 @@ The reviewer accepts the head version or files `finding@1` challenges against it
 finding's test at each later head and attests the result; `review.py verify` in CI re-executes those
 new since the base. After a merge, `review.py merged --pr N --merge SHA` files the observation.
 
+### The gate's receipts
+
+After every merge it makes, the gate files a receipt of it (`warrant/receipt.py`, job `receipt` of
+`.github/workflows/merge-on-acceptance.yml`): one `attest` by the actor `merge-gate`, shaped as an agent's `merged`
+record (`target` the head version the gate assessed, `verdict: "merged"`, `merge`, `tip`, `how`) with the base and the
+pull request's address, in a store of its own on the branch `receipts`.
+
+- **What a receipt says.** The gate's key states that GitHub reports pull request #N merged as commit M, with parents
+  (base, head), from the head version the gate assessed, the merge's message saying how (`solo`, `verdicts`,
+  `accepted`). Three accounts must agree before anything is filed: the gate's result for the merge, the pull request
+  as GitHub reports it and the merge commit as GitHub reports it. A merge whose message is not the gate's is refused:
+  the key never states a hand merge, which stays an agent's observation (`python -m warrant.review merged`, `how: hand`).
+- **What it counts for.** Nothing. The store trusts the one name `merge-gate` and gives nobody a role; read beside
+  this repository's store, a receipt is a signed observation on the head version it targets.
+- **The key.** `gate-key.yml` makes it once on a runner and keeps it as `WARRANT_GATE_SEED` of the environment `gate`,
+  deployable from master alone, as `bridge-key.yml` does for the bridge (the owner makes the environment and a
+  one-time fine-grained token with Environments: read and write). Whoever can change master's code can read it, which
+  is the gate's guard; a key that leaked states merges in a store that counts for nothing, each naming a merge commit
+  anyone can compare. Without the seed the job files nothing and says so in its summary.
+- **Limits.** One receipt per merge commit. A revert of a vetoed merge gets none: it targets a commit, not a record.
+  A run that fails stays red and files nothing; merges before the key existed have no receipt.
+
 ### Merging on acceptance, and waking the reviewer
 
 `.github/workflows/merge-on-acceptance.yml` runs master's `tools/gate.py` (warrant/gate.py): it

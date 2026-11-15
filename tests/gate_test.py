@@ -344,7 +344,8 @@ def merge_cases():
     ok = GH()
     m = GT.merge_one(b, a, ok)
     check("E27 an eligible pull request is merged at the head assessed, and the required workflows dispatched",
-          m["merged"] and ok.merged == [head] and m["as_assessed"] and m["dispatched"] == [".github/workflows/ci.yml"], m)
+          m["merged"] and ok.merged == [head] and m["as_assessed"] and m["dispatched"] == [".github/workflows/ci.yml"]
+          and m.get("version") == a.accept[1], m)
 
 
 def imported_modules(root, start, searched=("", "tools")):
