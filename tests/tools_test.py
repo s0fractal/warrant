@@ -2129,6 +2129,28 @@ def receipt_cases():
           ok_rc == 0 and json.loads(ok_out).get("filed") and no_rc == 3 and "refused" in json.loads(no_out)
           and seedless_rc == 2 and pub == key.public and len(Store(dot).snapshot().lines) == 2,
           (ok_rc, ok_out, no_rc, no_out, seedless_rc, pub))
+    body = RC.body_of(gate, pull, commit, "acme/widget")
+    third = K.Key.from_seed_hex("0f" * 32)
+    seen = {}
+    for name, signer, kind, actor, b in (("unsigned", None, "attest", RC.ACTOR, body), ("another key", other_key, "attest", RC.ACTOR, body),
+                                         ("a challenge under its own key", third, "challenge", "key:" + third.public, dict(body, merge="9" * 40)),
+                                         ("says else", key, "attest", RC.ACTOR, dict(body, how="solo")),
+                                         ("trusted", key, "attest", RC.ACTOR, body)):
+        x = r.home / f"auth-{name.replace(' ', '-')}"
+        xdot, _ = RC.init(x, key)
+        line_id, line = R.line(R.record(kind, actor, 1_900_000_000, b, refs=[v]), signer)
+        (xdot / "records.jsonl").write_bytes(line)
+        try:
+            out = RC.file(x, gate, pull, commit, "acme/widget", key, at=1_900_000_001)
+            seen[name] = ("already" if out["already"] and out["filed"] == line_id else "FILED", len(Store(xdot).snapshot().lines))
+        except RC.Broken:
+            seen[name] = ("BROKEN", len(Store(xdot).snapshot().lines))
+    check("RC6 only a receipt signed under the store's key stops a second: an unsigned line, one signed by another key, "
+          "a challenge on another merge signed under the key it names itself by (it verifies, but is not merge-gate's) and a signed "
+          "receipt for the merge that says something else each make the store Broken "
+          "(nothing filed, nothing skipped); the gate's own identical receipt is answered as already filed",
+          seen == {"unsigned": ("BROKEN", 1), "another key": ("BROKEN", 1), "a challenge under its own key": ("BROKEN", 1),
+                   "says else": ("BROKEN", 1), "trusted": ("already", 1)}, seen)
 
 
 def _bridge_step(home):
