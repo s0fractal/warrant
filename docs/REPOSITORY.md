@@ -309,7 +309,9 @@ pull request's address, in a store of its own on the branch `receipts`.
   the key never states a hand merge, which stays an agent's observation (`python -m warrant.review merged`, `how: hand`).
 - **What it counts for.** Nothing. The store trusts the one name `merge-gate` and gives nobody a role; read beside
   this repository's store, a receipt is a signed observation on the head version it targets.
-- **The key.** `gate-key.yml` makes it once on a runner and keeps it as `WARRANT_GATE_SEED` of the environment `gate`,
+- **The key.** Its public key is `5d29ebfdbff7362a5f871f86a1c6d71524fc260b65289d11578b692c3db974b9`, pinned in
+  `site/reader.mjs` (`GATE`): the reader shows a receipt as the gate's only from a store bound to it alone.
+  `gate-key.yml` makes it once on a runner and keeps it as `WARRANT_GATE_SEED` of the environment `gate`,
   deployable from master alone, as `bridge-key.yml` does for the bridge (the owner makes the environment and a
   one-time fine-grained token with Environments: read and write). Whoever can change master's code can read it, which
   is the gate's guard; a key that leaked states merges in a store that counts for nothing, each naming a merge commit
