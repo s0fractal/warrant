@@ -332,7 +332,7 @@ export async function readOthers(addresses, backend, source, { fetcher = globalT
     try {
       const store = await fetchStore(address, backend, { fetcher });
       const r = await read(store, receiver(store.doc, null), backend, source);
-      return { address, name: typeof store.doc.repository === "string" ? store.doc.repository : address, r, why: null };
+      return { address, name: typeof store.doc.repository === "string" ? store.doc.repository : address, doc: store.doc, r, why: null };
     } catch (e) {
       return { address, name: address, r: null, why: String(e?.message ?? e) };
     }
@@ -356,6 +356,37 @@ export function githubOf(rec) {
   return ok ? { login: g.login, id: g.id, url: g.url } : null;
 }
 
+// The gate's receipts (warrant/receipt.py, docs/REPOSITORY.md "The gate's receipts"): after each merge it makes, the
+// merge gate files an attest by `merge-gate` on the merged head version, in a store of its own on the branch
+// `receipts` that trusts that one name and gives nobody a role. Its key was made once on a runner (gate-key.yml) and
+// is pinned here, so this page can tell the gate's store from one that only calls itself so: a receipt counts as the
+// gate's only when its store binds merge-gate to exactly this key and gives no role. A key change is a change of this
+// file. Like a bridge's voice, a receipt is that store's statement: this page asks GitHub nothing.
+export const GATE = { actor: "merge-gate", key: "5d29ebfdbff7362a5f871f86a1c6d71524fc260b65289d11578b692c3db974b9",
+                      store: "https://raw.githubusercontent.com/s0fractal/warrant/receipts/" };
+const HEX40 = /^[0-9a-f]{40}$/, GH_PULL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/pull\/[1-9][0-9]{0,9}$/;
+const HOWS = new Set(["solo", "verdicts", "accepted"]);
+
+// Whether a store's configuration is the gate's as pinned here: trust binds the one name merge-gate to [GATE.key]
+// alone, and the profile gives nobody a role.
+export function gateStore(doc) {
+  const keys = doc?.trust?.keys, roles = doc?.profile?.roles;
+  return typeof keys === "object" && keys !== null && Object.keys(keys).length === 1 && Array.isArray(keys[GATE.actor])
+    && keys[GATE.actor].length === 1 && keys[GATE.actor][0] === GATE.key
+    && typeof roles === "object" && roles !== null && !Array.isArray(roles) && Object.keys(roles).length === 0;
+}
+
+// What a record says as a receipt: {pr, url, merge, how, gate} when it is an attest by merge-gate with verdict merged
+// whose body carries the merge commit, a gate's way of merging and the pull request's address in their shapes, else
+// null. `gate` is whether its store is the gate's as pinned here (gateStore): false reads as not the gate's.
+export function receiptOf(rec, doc) {
+  const b = rec?.body, g = b?.github;
+  if (!(rec?.kind === "attest" && rec.actor === GATE.actor && b?.verdict === "merged")) return null;
+  if (!(typeof b.merge === "string" && HEX40.test(b.merge) && HOWS.has(b.how) && typeof g === "object" && g !== null
+        && Number.isSafeInteger(g.pr) && g.pr > 0 && typeof g.url === "string" && GH_PULL.test(g.url) && g.url.endsWith(`/pull/${g.pr}`))) return null;
+  return { pr: g.pr, url: g.url, merge: b.merge, how: b.how, gate: gateStore(doc) };
+}
+
 function outside(r) {
   if (r._outside) return r._outside;
   const versions = new Set();
@@ -372,7 +403,7 @@ function outside(r) {
       voices.get(t).push({ id, store: o.name, address: o.address, kind: rec.kind, actor: rec.actor, at: rec.at, target: t,
                            verdict: typeof rec.body.verdict === "string" ? rec.body.verdict : null,
                            stance: rec.body.stance === "support" || rec.body.stance === "objection" ? rec.body.stance : null,
-                           github: githubOf(rec), statement: title(rec), counted: false });
+                           github: githubOf(rec), receipt: receiptOf(rec, o.doc), statement: title(rec), counted: false });
     }
   }
   r._outside = { voices, left };
@@ -383,7 +414,25 @@ function outside(r) {
 function outsideOf(r, root) {
   const { voices, left } = outside(r), lin = r.rep.lineages[root];
   const vs = lin.versions.flatMap((v) => voices.get(v) || []).sort((a, b) => a.at - b.at || utf16(a.id, b.id));
-  return { voices: vs, stores: new Set(vs.map((x) => x.address)).size, left_out: lin.versions.reduce((n, v) => n + (left.get(v) || 0), 0) };
+  return { voices: vs, stores: new Set(vs.map((x) => x.address)).size, left_out: lin.versions.reduce((n, v) => n + (left.get(v) || 0), 0),
+           hand: handMerges(r, lin) };
+}
+
+// The merges this store itself records as made by hand (an agent's `merged` attest with how "hand",
+// warrant.review merged) on a lineage's versions: [{id, actor, at, merge}], oldest first. The gate's key states nothing
+// about these; beside them a missing receipt is what is expected, not a gap. Built once per read.
+function handMerges(r, lin) {
+  if (!r._hand) {
+    const admitted = new Set(r.rep.graph.nodes.map((n) => n[0]));
+    r._hand = new Map();
+    for (const [id, rec] of [...r.recs].sort((a, b) => utf16(a[0], b[0]))) {
+      const b = rec.body;
+      if (!(rec.kind === "attest" && b?.verdict === "merged" && b.how === "hand" && typeof b.target === "string" && admitted.has(id))) continue;
+      if (!r._hand.has(b.target)) r._hand.set(b.target, []);
+      r._hand.get(b.target).push({ id, actor: rec.actor, at: rec.at, merge: typeof b.merge === "string" && HEX40.test(b.merge) ? b.merge : null });
+    }
+  }
+  return lin.versions.flatMap((v) => r._hand.get(v) || []).sort((a, b) => a.at - b.at || utf16(a.id, b.id));
 }
 
 // warrant_agent/overlay.py receiver: (trust, profile, held) of the reader composing `sources` ({store: trust}). The

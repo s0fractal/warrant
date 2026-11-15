@@ -2,7 +2,7 @@
 // built from a string), and the page's policy allows no script but this origin's (reader.html).
 import { utf16, webBackend } from "./warrant.mjs";
 import * as reader from "./reader.mjs";
-import { changes, changesLine, comparePins, fetchStore, lineage, makeMark, memoFetch, overlay, PINS_NOT_CHECKED, read, readOthers,
+import { changes, changesLine, comparePins, fetchStore, GATE, lineage, makeMark, memoFetch, overlay, PINS_NOT_CHECKED, read, readOthers,
          receiver, rows, rulesChange, rulesId, rulesVersion, STALE, summary } from "./reader.mjs";
 import { $, counts, el, fill, keepActor, keptActor, loadMark, markKey, pill, saveMark, section, short, when } from "./page.mjs";
 import * as page from "./page.mjs";
@@ -16,7 +16,14 @@ let shownRows = PAGE;
 
 function params() {
   const p = new URLSearchParams(location.search);
-  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: p.getAll("with").filter(Boolean), l: p.get("l"), changes: p.get("changes") === "1", watch: p.has("watch") ? p.getAll("watch") : null, schema: p.get("schema") || "", reliance: p.get("reliance") || "", actor: (p.get("actor") || "").trim() };
+  return { base: p.get("base"), full: p.get("full") === "1", pins: p.get("pins") === "1", with: withOf(p), l: p.get("l"), changes: p.get("changes") === "1", watch: p.has("watch") ? p.getAll("watch") : null, schema: p.get("schema") || "", reliance: p.get("reliance") || "", actor: (p.get("actor") || "").trim() };
+}
+
+// The stores read beside: those `with=` names; with no `with=` at all, warrant's own page reads the gate's receipts
+// beside it (reader.GATE), and `with=` given empty reads none.
+function withOf(p) {
+  if (p.has("with")) return p.getAll("with").filter(Boolean);
+  return (p.get("base") || DEFAULT_BASE) === DEFAULT_BASE ? [GATE.store] : [];
 }
 
 function href(over) {
@@ -26,6 +33,7 @@ function href(over) {
   if (v.full) q.set("full", "1");
   if (v.pins) q.set("pins", "1");
   for (const w of v.with ?? []) q.append("with", w);
+  if (!(v.with ?? []).length && (v.base || DEFAULT_BASE) === DEFAULT_BASE) q.append("with", "");   // none, not the default
   if (v.l) q.set("l", v.l);
   if (v.changes) q.set("changes", "1");
   if (v.watch) q.set("watch", v.watch.join(","));
@@ -106,7 +114,14 @@ function drawOutside(out, ov) {
       // a bridge's voice: the account is what that store states of an issue, linked so that it can be compared; not a signature
       v.github ? el("div", { class: "small" }, `GitHub account @${v.github.login} (id ${v.github.id}), as ${v.store} states of `,
         el("a", { href: v.github.url, rel: "noopener noreferrer", text: "this issue" }), ": the account signed nothing, and this page has not asked GitHub") : null,
+      // a receipt: the gate's only when its store binds merge-gate to the key pinned on this page (reader.GATE)
+      v.receipt ? el("div", { class: "small" }, v.receipt.gate
+        ? [`The gate's receipt: pull request #${v.receipt.pr} merged as `, el("a", { href: `${v.receipt.url.replace(/\/pull\/\d+$/, "")}/commit/${v.receipt.merge}`, rel: "noopener noreferrer", text: v.receipt.merge.slice(0, 12) }),
+           ` (${v.receipt.how}), signed under the merge-gate key ${GATE.key.slice(0, 8)}… pinned on this page; compare it with `, el("a", { href: v.receipt.url, rel: "noopener noreferrer", text: "the pull request" }), "."]
+        : `Says it is a receipt of pull request #${v.receipt.pr}, but ${v.store} does not bind merge-gate to the key pinned on this page: not the gate's.`) : null,
       v.statement ? el("div", { class: "statement", text: v.statement }) : null))) : null,
+    out.hand?.length ? el("p", { class: "small" }, ...out.hand.map((h) =>
+      `Merged by hand${h.merge ? ` as ${h.merge.slice(0, 12)}` : ""}, as ${h.actor} records (${when(h.at)}): the gate's key states nothing about this merge, so it has no receipt. `)) : null,
     ov ? el("p", { class: "small" }, ...[ov.why ? `For me: no overlay: ${ov.why}` : ov.same ? "For me: it reads the same under your rules."
       : [`For me: in the store ${ov.store.state || "none"} ${ov.store.shown} → for you ${ov.reader ? `${ov.reader.state || "none"} ${ov.reader.shown}` : "absent"}`,
          ov.challenges.length ? [" · challenges that stand for you: ", ...ov.challenges.flatMap((c) => [short(c), " "])] : null,

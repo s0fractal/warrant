@@ -1005,6 +1005,7 @@ def main():
     browser_toward_cases()
     browser_bridge_cases()
     browser_rules_cases()
+    browser_receipts_cases()
     frame_parity_cases()
     if a.limits:
         limit_cases(tally)
@@ -1742,6 +1743,81 @@ def browser_bridge_cases():
           "is a list or a string, is still a voice and is shown with no account (" + str(len(shapes)) + " shapes)",
           len(forged) == len(shapes) and all(x in vs and vs[x].get("github") is None and vs[x].get("stance") is None for x in forged),
           {x[:8]: vs.get(x, {}).get("github") for x in forged})
+
+
+# ---------------------------------------------------------------- J22: the gate's receipts (warrant/receipt.py)
+def browser_receipts_cases():
+    """What the reader shows of the gate's receipts read beside warrant's store: a receipt is the gate's only when its
+    store binds merge-gate to the key pinned in site/reader.mjs (GATE) and gives no role; a store that calls itself the
+    gate's under any other key is shown as not the gate's; a merge the main store records as by hand is named as one the
+    gate's key states nothing about. The page reads the receipts by default on warrant's own address."""
+    from warrant import receipt as RC
+    pub = Repo()
+    o = pub.entity("alice", "obligation@1", {"state": "open", "statement": "the change", "serves": []})
+    d = pub.entity("alice", "obligation@1", {"state": "done", "statement": "the change", "serves": []}, lineage=o)
+    h = pub.entity("alice", "obligation@1", {"state": "open", "statement": "merged by hand", "serves": []})
+    m, tip, base = "1" * 40, "2" * 40, "3" * 40
+    hand = pub.attest("bob", h, verdict="merged", merge="4" * 40, tip=tip, how="hand")
+    gate = {"pr": 9, "merged": True, "merge": m, "head": tip, "base": base, "version": d}
+    pull = {"number": 9, "merged": True, "merge_commit_sha": m, "head": {"sha": tip}}
+    commit = {"sha": m, "parents": [{"sha": base}, {"sha": tip}],
+              "commit": {"message": f"merge-on-acceptance: solo: head version {d} by claude at {tip}, one model family"}}
+    forged_key = K.Key.from_seed_hex("0d" * 32)            # not the gate's: its seed is on GitHub's runner alone
+    receipts = pub.home / "receipts"
+    forged = RC.file(receipts, gate, pull, commit, "acme/widget", forged_key, at=1_900_000_000)["filed"]
+    srvs, (b_pub, b_rc) = _serve_many(pub.root, receipts)
+    try:
+        _, opened = _reader(b_pub, "--with", b_rc, "--lineage", o)
+        _, plain = _reader(b_pub, "--lineage", o)
+        _, handed = _reader(b_pub, "--with", b_rc, "--lineage", h)
+    finally:
+        for x in srvs:
+            x.shutdown()
+    floor = (opened.get("lineage") or {}).get("floor", {})
+    vs = {v["id"]: v for v in (floor.get("outside") or {}).get("voices", [])}
+    hf = ((handed.get("lineage") or {}).get("floor", {}).get("outside") or {})
+    check("J22 a receipts store bound to any key but the pinned one is read, its receipt a voice from outside on the merged "
+          "version with the pull request, the merge commit and how, and shown as not the gate's; uncounted: the lineage reads "
+          "as it does without it",
+          vs.get(forged, {}).get("receipt") == {"pr": 9, "url": "https://github.com/acme/widget/pull/9", "merge": m, "how": "solo", "gate": False}
+          and vs[forged].get("counted") is False and vs[forged].get("actor") == "merge-gate"
+          and floor.get("reliance") == (plain.get("lineage") or {}).get("floor", {}).get("reliance")
+          and floor.get("state") == (plain.get("lineage") or {}).get("floor", {}).get("state"), (vs, floor.get("reliance")))
+    check("J22 a merge the main store records as by hand is named on its lineage, with its merge commit and who recorded it, "
+          "and no receipt is looked for beside it",
+          hf.get("hand") == [{"id": hand, "actor": "bob", "at": hf.get("hand", [{}])[0].get("at"), "merge": "4" * 40}]
+          and hf.get("voices") == [] and (floor.get("outside") or {}).get("hand") == [], hf)
+    real = json.loads((receipts / ".warrant" / "v3.json").read_text())
+    js = subprocess.run([NODE, "--input-type=module", "-e", f"""
+import {{ GATE, gateStore, receiptOf }} from {json.dumps(READER.as_uri())};
+const doc = (k, roles = {{}}) => ({{ warrant: "repository/3", trust: {{ warrant: "trust/3", keys: k }}, profile: {{ warrant: "profile/3", roles }} }});
+const rec = {json.dumps({"kind": "attest", "actor": "merge-gate", "body": RC.body_of(gate, pull, commit, "acme/widget")})};
+const body = rec.body, alt = (b) => receiptOf({{ ...rec, body: {{ ...body, ...b }} }}, doc({{ "merge-gate": [GATE.key] }}));
+console.log(JSON.stringify({{ key: GATE.key, store: GATE.store,
+  real: receiptOf(rec, doc({{ "merge-gate": [GATE.key] }})),
+  forged: gateStore({json.dumps(real)}),
+  two_keys: gateStore(doc({{ "merge-gate": [GATE.key, "{forged_key.public}"] }})),
+  two_names: gateStore(doc({{ "merge-gate": [GATE.key], mallory: [GATE.key] }})),
+  a_role: gateStore(doc({{ "merge-gate": [GATE.key] }}, {{ "pr/acceptor": ["merge-gate"] }})),
+  not_receipts: [alt({{ verdict: "accept" }}), alt({{ how: "hand" }}), alt({{ merge: "x" }}),
+                 alt({{ github: {{ ...body.github, url: "https://github.com/acme/widget/pull/10" }} }}),
+                 alt({{ github: {{ ...body.github, url: "https://github.com.evil.example/acme/widget/pull/9" }} }}),
+                 receiptOf({{ ...rec, actor: "claude" }}, doc({{ "merge-gate": [GATE.key] }}))] }}));
+"""], capture_output=True, text=True, timeout=120)
+    try:
+        got = json.loads(js.stdout)
+    except ValueError:
+        got = {"crash": js.stderr[-300:]}
+    docs = (ROOT / "docs" / "REPOSITORY.md").read_text()
+    page = (ROOT / "site" / "reader-page.mjs").read_text()
+    check("J22 the pinned key is the one docs/REPOSITORY.md publishes and the store is the branch receipts; a store binding "
+          "merge-gate to it alone with no role makes a receipt the gate's, while a second key, a second name or a role, "
+          "a verdict other than merged, how hand, a malformed merge, an address of another pull request or host, or another "
+          "actor make it not the gate's or no receipt at all; the page reads the receipts by default on warrant's address",
+          got.get("real", {}).get("gate") is True and got.get("forged") is False and got.get("two_keys") is False
+          and got.get("two_names") is False and got.get("a_role") is False and got.get("not_receipts") == [None] * 6
+          and f"`{got.get('key')}`" in docs and got.get("store") == "https://raw.githubusercontent.com/s0fractal/warrant/receipts/"
+          and "with: withOf(p)," in page and "? [GATE.store] : []" in page, got)
 
 
 # ---------------------------------------------------------------- J21: the publisher's rules changed (stage 2a)
