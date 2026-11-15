@@ -164,6 +164,20 @@ def operations():
           led.get("data", {}).get("bob", {}).get("refuted") == [[d, c]] and led.get("query") == {"op": "ledger"}
           and gro.get("data", {}).get("grounded") is False
           and [d, "RELIANCE CHALLENGED"] in gro.get("data", {}).get("failing", []), (led.get("data"), gro.get("data")))
+    met = Repo()
+    goal = met.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "goal"})
+    ob = {"state": "open", "statement": "answer", "answers": goal, "serves": []}
+    o1 = met.entity("alice", "obligation@1", ob)
+    d1 = met.entity("alice", "obligation@1", dict(ob, state="done"), lineage=o1)
+    met.attest("bob", d1)
+    m1 = met.entity("alice", "goal@1", {"state": "met", "key": "G1", "text": "goal"}, lineage=goal, refs=[o1])
+    met.attest("bob", m1)
+    ans = ok(api.call(cfg_of(met), "graph", {"workspace": "w", "op": "grounded", "target": d1}))
+    check("A44 graph op=grounded reads an obligation's answers as a direction, as the library does: a done obligation "
+          "that answers a met goal citing it is grounded with a closure of itself alone, no CYCLE, where the same report "
+          "without the records reads it not grounded (Codex f9698537 on #426)",
+          ans.get("data", {}).get("grounded") is True and ans.get("data", {}).get("closure") == 1
+          and G.grounded(met.report(), d1)["grounded"] is False, ans.get("data"))   # a report with no records: the old CYCLE
     deep = Repo()
     prev = None
     for n in range(LIMITS["requires"] + 20):
