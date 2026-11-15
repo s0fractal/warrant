@@ -350,6 +350,7 @@ MUTANTS = [
     ("T262", "warrant/receipt.py", ' and doc["profile"].get("roles") == {}):', '):', TOOLS, ["RC4"]),
     ("T263", "warrant/receipt.py", '    if had is not None:\n        return dict(out, filed=had, already=True)\n', '', TOOLS, ["RC1"]),
     ("T264", "warrant/gate.py", ' "base": base, "version": rid,', ' "base": base,', GATE, ["E27"]),
+    ("T265", "warrant/gate.py", '    if path and merged and merged["merged"]:\n', '    if path and merged:\n', GATE, ["E97"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),

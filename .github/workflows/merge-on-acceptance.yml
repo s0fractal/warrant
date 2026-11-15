@@ -45,7 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
-      base: ${{ steps.base.outputs.base }}
       receipt: ${{ steps.assess.outputs.receipt }}
     permissions:
       contents: write          # the merge
@@ -98,8 +97,8 @@ jobs:
             echo "receipt=$(cat "$RUNNER_TEMP/receipt.json")" >> "$GITHUB_OUTPUT"   # one line: the gate writes it with no newline
           fi
 
-  # The receipt of the merge the job `gate` made. Its code is the base the gate ran, checked out at that commit; the
-  # merge is read again from GitHub and filed only when the three accounts agree (warrant/receipt.py). The seed is in
+  # The receipt of the merge the job `gate` made. Its code is the default branch's, as this workflow's (workflow_run
+  # and schedule run the default branch; the job `gate` refuses any other ref); the merge is read again from GitHub and filed only when the three accounts agree (warrant/receipt.py). The seed is in
   # the environment of a job that runs master's code: whoever can change master's code can read it, which is the
   # gate's own guard. A key that leaked states merges in a store that counts for nothing; each names its merge commit.
   receipt:
@@ -119,7 +118,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.gate.outputs.base }}
           path: code
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0

@@ -1796,9 +1796,7 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
         print(line(x))
     if merged:
         print("MERGE " + describe(merged))
-    if receipt and merged and merged["merged"]:         # what the job `receipt` files, once GitHub agrees (warrant/receipt.py)
-        with open(_runner_file(receipt, "receipt"), "w", encoding="utf-8") as f:
-            f.write(json.dumps(merged, sort_keys=True))
+    _write_receipt(receipt, merged)
     if as_json_:
         print(json.dumps({"base": base, "assessments": [as_json(x) for x in found], "merge": merged}, indent=1))
     return 0
@@ -1823,6 +1821,13 @@ def _runner_file(path, what):
     if not any(real.startswith(os.path.realpath(b) + os.sep) for b in filter(None, (os.environ.get("RUNNER_TEMP"), os.getcwd()))):
         raise Refused(f"{path}: the {what} is a file of the runner's temporary directory or of the current one", "GATE_INPUT")
     return real
+
+
+def _write_receipt(path, merged):
+    """The merge made, as one line of JSON, for the job `receipt` (warrant/receipt.py files it once GitHub agrees)."""
+    if path and merged and merged["merged"]:
+        with open(_runner_file(path, "receipt"), "w", encoding="utf-8") as f:
+            f.write(json.dumps(merged, sort_keys=True))
 
 
 def _append(path, text):
