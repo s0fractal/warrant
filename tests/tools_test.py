@@ -2024,6 +2024,113 @@ def bridge_cases():
           (fields, options, required, through, as_told))
 
 
+def receipt_cases():
+    """The gate's receipt (warrant/receipt.py): a merge the gate made becomes one record, signed by merge-gate, in a
+    store that trusts that key alone, only when the gate's account, GitHub's pull request and GitHub's merge commit
+    agree; a hand merge, a revert or any disagreement files nothing."""
+    from warrant import receipt as RC
+    r = Repo()
+    key, other_key = K.Key.from_seed_hex("0d" * 32), K.Key.from_seed_hex("0e" * 32)
+    d = r.home / "receipts"
+    m, tip, base, v = "1" * 40, "2" * 40, "3" * 40, "ab" * 32
+    gate = {"pr": 9, "merged": True, "merge": m, "parents": [base, tip], "head": tip, "base": base, "version": v,
+            "as_assessed": True, "dispatched": []}
+    pull = {"number": 9, "merged": True, "merge_commit_sha": m, "head": {"sha": tip}}
+    msg = f"merge-on-acceptance: head version {v} accepted by codex at {tip}; head {tip}; base {base}. Required checks green at the head."
+    commit = {"sha": m, "parents": [{"sha": base}, {"sha": tip}], "commit": {"message": msg}}
+    first = RC.file(d, gate, pull, commit, "acme/widget", key, at=1_900_000_000)
+    again = RC.file(d, gate, pull, commit, "acme/widget", key, at=1_900_000_005)
+    dot = d / ".warrant"
+    doc = json.loads((dot / "v3.json").read_text())
+    snap = Store(dot).snapshot()
+    recs = {i: e[0]["record"] for i, e in snap.lines.items()}
+    a = recs.get(first.get("filed"), {})
+    check("RC1 a merge the gate made becomes one attest by merge-gate in a store that trusts that one name and gives "
+          "nobody a role, shaped as an agent's merged record (target the head version, verdict merged, merge, tip, how "
+          "read from the merge's message) with the base and the pull request's address; a second run files nothing",
+          RC.is_receipt_store(doc, key.public) and doc["profile"]["roles"] == {} and list(doc["trust"]["keys"]) == ["merge-gate"]
+          and (a.get("kind"), a.get("actor"), a.get("refs")) == ("attest", "merge-gate", [v])
+          and a.get("body") == {"target": v, "verdict": "merged", "merge": m, "tip": tip, "base": base, "how": "accepted",
+                                "github": {"repository": "acme/widget", "pr": 9, "url": "https://github.com/acme/widget/pull/9"}}
+          and not first["already"] and again["already"] and again["filed"] == first["filed"] and len(snap.lines) == 1,
+          (first, again, a, doc))
+    solo = dict(commit, commit={"message": f"merge-on-acceptance: solo: head version {v} by claude at {tip}, one model family"})
+    check("RC2 how is the merge message's: a solo merge's receipt says solo", RC.body_of(gate, pull, solo, "acme/widget")["how"] == "solo")
+    bad = [
+        ("not merged", dict(gate, merged=False), pull, commit),
+        ("no version (a revert)", dict(gate, version=m), pull, commit),
+        ("pull not merged", gate, dict(pull, merged=False), commit),
+        ("pull of another number", gate, dict(pull, number=10), commit),
+        ("pull merged as another commit", gate, dict(pull, merge_commit_sha="4" * 40), commit),
+        ("pull from another head", gate, dict(pull, head={"sha": "5" * 40}), commit),
+        ("commit of another id", gate, pull, dict(commit, sha="4" * 40)),
+        ("parents swapped", gate, pull, dict(commit, parents=[{"sha": tip}, {"sha": base}])),
+        ("one parent", gate, pull, dict(commit, parents=[{"sha": base}])),
+        ("a hand merge", gate, pull, dict(commit, commit={"message": "Merge pull request #9 from acme/branch"})),
+        ("the gate's revert", gate, pull, dict(commit, commit={"message": f"merge-on-acceptance: revert of {m}: vetoed"})),
+        ("no message", gate, pull, dict(commit, commit={})),
+        ("commit not an object", gate, pull, None),
+    ]
+    got = []
+    for why, g_, p_, c_ in bad:
+        try:
+            RC.file(d, g_, p_, c_, "acme/widget", key, at=1_900_000_010)
+            got.append((why, "FILED"))
+        except RC.Refused:
+            got.append((why, "REFUSED"))
+    try:
+        RC.body_of(gate, pull, commit, "acme/widget; rm")
+        got.append(("repository", "FILED"))
+    except RC.Refused:
+        got.append(("repository", "REFUSED"))
+    check("RC3 nothing is filed unless the three accounts agree: the gate's result is a merge naming a head version, "
+          "GitHub's pull request is that number merged as that commit from that head, GitHub's merge commit has the "
+          "parents (base, head) in order and the gate's message; a hand merge and the gate's revert are refused",
+          all(x == "REFUSED" for _, x in got) and len(Store(dot).snapshot().lines) == 1, got)
+    foreign = r.home / "foreign"
+    RC.init(foreign, other_key)
+    shared = r.home / "shared"
+    (shared / ".warrant").mkdir(parents=True)
+    two = RC.doc_for(key.public)
+    two["trust"]["keys"]["mallory"] = [other_key.public]
+    (shared / ".warrant" / "v3.json").write_text(json.dumps(two))
+    roles = r.home / "roles"
+    (roles / ".warrant").mkdir(parents=True)
+    (roles / ".warrant" / "v3.json").write_text(json.dumps(dict(RC.doc_for(key.public), profile={"warrant": "profile/3", "roles": {"pr/acceptor": ["merge-gate"]}})))
+    broke = []
+    for x in (r.root, foreign, shared, roles):
+        try:
+            RC.file(x, gate, pull, commit, "acme/widget", key, at=1_900_000_020)
+            broke.append("FILED")
+        except RC.Broken:
+            broke.append("BROKEN")
+    check("RC4 the gate's key writes into its own store alone: a project's store, a receipts store bound to another key, "
+          "one that trusts a second name and one that gives merge-gate a role are each Broken",
+          broke == ["BROKEN"] * 4, broke)
+    env = dict(os.environ, PYTHONPATH=str(ROOT), WARRANT_GATE_SEED="0d" * 32)
+    files = {}
+    for name, obj in (("merge", dict(gate, merge="6" * 40)), ("pull", dict(pull, merge_commit_sha="6" * 40)),
+                      ("commit", dict(commit, sha="6" * 40))):
+        files[name] = r.home / f"{name}.json"
+        files[name].write_text(json.dumps(obj))
+    def cli(*extra, seed=True):
+        e = env if seed else {k: x for k, x in env.items() if k != "WARRANT_GATE_SEED"}
+        p = subprocess.run([sys.executable, "-m", "warrant.receipt", "file", "--merge", str(files["merge"]), "--pull", str(files["pull"]),
+                            "--commit", str(files["commit"]), "--repository", "acme/widget", "--store", str(d), *extra],
+                           capture_output=True, text=True, env=e)
+        return p.returncode, p.stdout
+    ok_rc, ok_out = cli()
+    files["pull"].write_text(json.dumps(dict(pull, merge_commit_sha="7" * 40)))
+    no_rc, no_out = cli()
+    seedless_rc, _ = cli(seed=False)
+    pub = subprocess.run([sys.executable, "-m", "warrant.receipt", "public"], capture_output=True, text=True, env=env).stdout.strip()
+    check("RC5 the command files the receipt (status 0, its id), refuses inputs that disagree (status 3, nothing filed), "
+          "has no seed as status 2, and `public` prints the key the store is bound to",
+          ok_rc == 0 and json.loads(ok_out).get("filed") and no_rc == 3 and "refused" in json.loads(no_out)
+          and seedless_rc == 2 and pub == key.public and len(Store(dot).snapshot().lines) == 2,
+          (ok_rc, ok_out, no_rc, no_out, seedless_rc, pub))
+
+
 def _bridge_step(home):
     """The filing step of .github/workflows/voice-bridge.yml as a script, byte for byte, and what runs it here: a bare
     repository standing for GitHub's (Git rewrites the step's address to it), `gh` that keeps each answer in a file,
@@ -2655,6 +2762,7 @@ if __name__ == "__main__":
         voices_cases,
         bridge_cases,
         bridge_step_cases,
+        receipt_cases,
         board_cases,
         narrow_cases,
         resolve_cases,

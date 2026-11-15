@@ -1664,7 +1664,7 @@ def merge_one(b, a, gh):
     if res.get("merged") is not True or not S.hex_of(res.get("sha"), 40):
         return {"pr": n, "merged": False, "why": f"GitHub answered {json.dumps(res)[:200]}"}
     parents = gh.parents(res["sha"])
-    out = {"pr": n, "merged": True, "merge": res["sha"], "parents": parents, "head": head, "base": base,
+    out = {"pr": n, "merged": True, "merge": res["sha"], "parents": parents, "head": head, "base": base, "version": rid,
            "as_assessed": parents == [base, head], "dispatched": [], "dispatch_failed": []}
     for w in sorted({c["workflow"] for c in b.gate["required"]}) + after_merge(b, a):
         try:
@@ -1766,7 +1766,7 @@ def describe(m):
     return s + (f"; dispatch FAILED: {'; '.join(m['dispatch_failed'])}" if m["dispatch_failed"] else "")
 
 
-def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="origin", as_json_=False, gh=None):
+def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="origin", as_json_=False, gh=None, receipt=None):
     """Assess every open pull request into the base branch; with merge, merge the first eligible one."""
     b = Base(root, _sha(base))
     gh = gh or GitHub(b.repository)
@@ -1796,6 +1796,7 @@ def cmd_gate(root, base, merge=False, hold=False, summary=None, prs=(), remote="
         print(line(x))
     if merged:
         print("MERGE " + describe(merged))
+    _write_receipt(receipt, merged)
     if as_json_:
         print(json.dumps({"base": base, "assessments": [as_json(x) for x in found], "merge": merged}, indent=1))
     return 0
@@ -1814,18 +1815,30 @@ def cmd_due(root, base, as_json_=False, remote="origin", gh=None):
     return 0
 
 
+def _runner_file(path, what):
+    """`path` resolved, when it is a file of the runner's own (RUNNER_TEMP) or of the current directory."""
+    real = os.path.realpath(path)
+    if not any(real.startswith(os.path.realpath(b) + os.sep) for b in filter(None, (os.environ.get("RUNNER_TEMP"), os.getcwd()))):
+        raise Refused(f"{path}: the {what} is a file of the runner's temporary directory or of the current one", "GATE_INPUT")
+    return real
+
+
+def _write_receipt(path, merged):
+    """The merge made, as one line of JSON, for the job `receipt` (warrant/receipt.py files it once GitHub agrees)."""
+    if path and merged and merged["merged"]:
+        with open(_runner_file(path, "receipt"), "w", encoding="utf-8") as f:
+            f.write(json.dumps(merged, sort_keys=True))
+
+
 def _append(path, text):
     """Append to the job summary: a file of the runner's own (RUNNER_TEMP) or of the current directory."""
     if path:
-        real = os.path.realpath(path)
-        if not any(real.startswith(os.path.realpath(b) + os.sep) for b in filter(None, (os.environ.get("RUNNER_TEMP"), os.getcwd()))):
-            raise Refused(f"{path}: the summary is a file of the runner's temporary directory or of the current one", "GATE_INPUT")
-        with open(real, "a", encoding="utf-8") as f:
+        with open(_runner_file(path, "summary"), "a", encoding="utf-8") as f:
             f.write(text)
 
 
 def main(argv=None):
-    """python3 -m warrant.gate [--root DIR] gate --base M [--merge] [--gate-var V] [--summary FILE] [--pr N ...] [--json]
+    """python3 -m warrant.gate [--root DIR] gate --base M [--merge] [--gate-var V] [--summary FILE] [--receipt FILE] [--pr N ...] [--json]
        python3 -m warrant.gate [--root DIR] due --base M [--json]
        python3 -m warrant.gate [--root DIR] brakes --at C       # exit 1 while a merge in C's history may still be vetoed
     The workflow runs this module from the base commit's checkout (`tools/gate.py`, a shim of it, in this package's
@@ -1844,6 +1857,7 @@ def main(argv=None):
     g.add_argument("--merge", action="store_true")
     g.add_argument("--gate-var", default="")
     g.add_argument("--summary")
+    g.add_argument("--receipt", help="write the merge made, as JSON, for the job that files its receipt (warrant/receipt.py)")
     g.add_argument("--pr", type=int, action="append", default=[])
     k = sub.add_parser("brakes")
     k.add_argument("--at", required=True)
@@ -1862,7 +1876,7 @@ def main(argv=None):
             return 1 if open_ and not pre else 0
         if a.cmd == "due":
             return cmd_due(a.root, a.base, a.json, a.remote)
-        return cmd_gate(a.root, a.base, a.merge, a.gate_var == "hold", a.summary, a.pr, a.remote, a.json)
+        return cmd_gate(a.root, a.base, a.merge, a.gate_var == "hold", a.summary, a.pr, a.remote, a.json, receipt=a.receipt)
     except Refused as e:
         print(f"REFUSED {e.code} {e}", file=sys.stderr)
         return 2

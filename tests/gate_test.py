@@ -344,7 +344,24 @@ def merge_cases():
     ok = GH()
     m = GT.merge_one(b, a, ok)
     check("E27 an eligible pull request is merged at the head assessed, and the required workflows dispatched",
-          m["merged"] and ok.merged == [head] and m["as_assessed"] and m["dispatched"] == [".github/workflows/ci.yml"], m)
+          m["merged"] and ok.merged == [head] and m["as_assessed"] and m["dispatched"] == [".github/workflows/ci.yml"]
+          and m.get("version") == a.accept[1], m)
+    here, out, wrote = os.getcwd(), p.r.home / "receipt.json", []
+    try:
+        os.chdir(p.r.home)
+        GT._write_receipt(str(out), dict(m, merged=False))
+        wrote.append(out.exists())
+        GT._write_receipt(str(out), m)
+        wrote.append(json.loads(out.read_text()) == m and "\n" not in out.read_text())
+        try:
+            GT._write_receipt("/etc/receipt.json", m)
+            wrote.append("WRITTEN")
+        except GT.Refused as e:
+            wrote.append(e.code)
+    finally:
+        os.chdir(here)
+    check("E97 the gate writes the merge it made, one line of JSON, for the job that files its receipt; nothing when it "
+          "merged nothing, and only into the runner's temporary directory or the current one", wrote == [False, True, "GATE_INPUT"], wrote)
 
 
 def imported_modules(root, start, searched=("", "tools")):

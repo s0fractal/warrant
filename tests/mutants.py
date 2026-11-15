@@ -339,6 +339,18 @@ MUTANTS = [
     ("T252", "warrant/gate.py", '        elif isinstance(o, dict) and isinstance(o.get("for"), str) and o["for"] == actor:\n', '        elif False:\n', TOOLS, ["FA1"]),
     ("T253", "warrant/gate.py", '        if v in acted or _recs(rep)[v]["actor"] == actor:\n            continue\n', '', TOOLS, ["FA2"]),
     ("T254", "warrant_agent/api.py", 'G.frontier(rep, profile, actor, view.recs), {"op": op', 'G.frontier(rep, profile, actor), {"op": op', TOOLS, ["FA1"]),
+    # the gate's receipt (warrant/receipt.py): filed only when the gate's account, GitHub's pull request and its merge commit agree
+    ("T255", "warrant/receipt.py", ' and pull.get("merge_commit_sha") == m and', ' and', TOOLS, ["RC3"]),
+    ("T256", "warrant/receipt.py", ' and pull["head"].get("sha") == tip):', '):', TOOLS, ["RC3"]),
+    ("T257", "warrant/receipt.py", 'and [p.get("sha") for p in parents] == [base, tip]):', 'and sorted(p.get("sha") for p in parents) == sorted([base, tip])):', TOOLS, ["RC3"]),
+    ("T258", "warrant/receipt.py", '    if how == "hand":\n', '    if False:\n', TOOLS, ["RC3"]),
+    ("T259", "warrant/receipt.py", '    if how == "revert":\n', '    if False:\n', TOOLS, ["RC3"]),
+    ("T260", "warrant/receipt.py", '    if not S.hex64(v):\n', '    if not v:\n', TOOLS, ["RC3"]),
+    ("T261", "warrant/receipt.py", 'set(keys) == {ACTOR} and', 'ACTOR in keys and', TOOLS, ["RC4"]),
+    ("T262", "warrant/receipt.py", ' and doc["profile"].get("roles") == {}):', '):', TOOLS, ["RC4"]),
+    ("T263", "warrant/receipt.py", '    if had is not None:\n        return dict(out, filed=had, already=True)\n', '', TOOLS, ["RC1"]),
+    ("T264", "warrant/gate.py", ' "base": base, "version": rid,', ' "base": base,', GATE, ["E27"]),
+    ("T265", "warrant/gate.py", '    if path and merged and merged["merged"]:\n', '    if path and merged:\n', GATE, ["E97"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),
