@@ -109,8 +109,8 @@ def main():
     spans = [tuple(int(x, 16) for x in r.split("-")) for r in S.UNICODE14_ASSIGNED.split(",")]
     cps = [c for a, b in spans for c in range(a, b + 1)]
     if unicodedata.unidata_version == "14.0.0":
-        sys.path.insert(0, str(ROOT / "tools"))
-        import unicode14 as gen
+        sys.path.insert(0, str(ROOT / "tests"))
+        import unicode14_table as gen
         table_ok, how = S.UNICODE14_ASSIGNED == gen.table(), "equal to this interpreter's Unicode 14.0.0 tables"
     else:
         table_ok, how = all(unicodedata.category(chr(c)) != "Cn" for c in cps), f"assigned under this interpreter's {unicodedata.unidata_version} too"

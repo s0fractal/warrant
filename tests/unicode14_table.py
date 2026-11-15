@@ -1,7 +1,7 @@
 """The code points assigned in Unicode 14.0.0, as the format fixes them for actor ids (docs/V3.md §2, `actor`).
 
-    python3.11 tools/unicode14.py          # prints the table, from an interpreter whose tables are Unicode 14.0.0
-    python3.11 tools/unicode14.py --write  # writes it into warrant/shapes.py and impl-js/warrant.mjs
+    python3.11 tests/unicode14_table.py          # prints the table, from an interpreter whose tables are Unicode 14.0.0
+    python3.11 tests/unicode14_table.py --write  # writes it into warrant/shapes.py and impl-js/warrant.mjs
 
 The table is the ranges of code points whose General_Category is not Cn in UnicodeData 14.0.0, written as
 `start-end` in lowercase hex, comma-separated. Python 3.11 carries exactly these tables; tests/shapes_test.py holds the

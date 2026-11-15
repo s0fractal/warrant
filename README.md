@@ -24,7 +24,7 @@ of it (Python API, CLI, stdio MCP).
 ## Install
 
 ```bash
-pip install --pre warrant-graph           # Warrant 3 (3.0.0a8); Python ≥ 3.10; depends on `cryptography`
+pip install --pre warrant-graph           # Warrant 3 (3.0.0a8); Python ≥ 3.11; depends on `cryptography`
 pip install --pre "warrant-graph[mcp]"    # adds `warrant-agent-mcp` on the official MCP SDK (2.x, from 2.3)
 ```
 
