@@ -64,8 +64,21 @@ def assess(snaps, trust, profile):
     return rep
 
 
-def identity(snaps, trust, profile, code):
+def identity(snaps, trust, profile, code, identities=None):
     """The identity of an overlay assessment: each store's records (their ids), the trust, the profile and the engine:
-    the same inputs give the same identity, another record set or another receiver another."""
-    return C.doc_id({"stores": {n: C.doc_id(sorted(s.lines)) for n, s in sorted(snaps.items())},
+    the same inputs give the same identity, another record set or another receiver another. A store is keyed by its
+    identity (`identities` {store: the root of its one self-signed rules@1 lineage, or None}, warrant.graph.identity;
+    obligation ec6d1ebe), as `rules@1:<id>`, and only a store with none by the name it is read under: two readers who
+    name one store otherwise get one identity, and one store read at two places counts once (its record ids united)."""
+    keyed = {}
+    for n, s in snaps.items():
+        keyed.setdefault(key(n, identities), set()).update(s.lines)
+    return C.doc_id({"stores": {k: C.doc_id(sorted(ids)) for k, ids in sorted(keyed.items())},
                      "trust": C.doc_id(trust), "profile": C.doc_id(profile), "code": code})
+
+
+def key(name, identities=None):
+    """The key of the store read as `name`: `rules@1:<identity>` when it has one, else `name` (no name of Home or
+    address holds `rules@1:`)."""
+    i = (identities or {}).get(name)
+    return f"rules@1:{i}" if i else name
