@@ -40,7 +40,7 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 python3 -m venv .venv && .venv/bin/pip install -e ".[mcp]"
 ```
 
-The tools run from the checkout with any Python ≥ 3.10 that has `cryptography`
+The tools run from the checkout with any Python ≥ 3.11 (Unicode tables 14.0.0 or later, docs/V3.md §2) that has `cryptography`
 (`python3 tools/claims.py check`, or `python3 -m warrant.claims check` from the checkout's root).
 
 ## Checks

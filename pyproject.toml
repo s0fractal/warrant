@@ -9,7 +9,7 @@ name = "warrant-graph"
 version = "3.0.0a8"
 description = "Signed records of work with native lineage and schemas as records; each receiver judges them under its own trust and profile."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "s0fractal" }]
 dependencies = ["cryptography>=41"]
