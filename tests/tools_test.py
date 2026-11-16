@@ -792,6 +792,14 @@ def review_repo():
     return r
 
 
+JAILED = '''diff --git a/tests/bug_test.py b/tests/bug_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/bug_test.py
+@@ -0,0 +1,2 @@
++import sys
++print("@@LINE@@", file=sys.stderr)
+'''
 PATCH = '''diff --git a/tests/bug_test.py b/tests/bug_test.py
 new file mode 100644
 --- /dev/null
@@ -1062,6 +1070,11 @@ def review_cases():
                 RV.run_test(r.root, "bug_test", "F9", PATCH))
     check("R03 a test's verdict is its own case's line: FAIL reproduces, ok does not, absent is no result (another case's FAIL is not)",
           verdicts == ("reproduces", "does_not_reproduce", "no_result") and not (r.root / "tests" / "bug_test.py").exists(), verdicts)
+    denied = [RV.run_test(r.root, "bug_test", "F1", JAILED.replace("@@LINE@@", x)) for x in (
+        "PermissionError: [Errno 1] Operation not permitted", "Error: listen EPERM: operation not permitted 127.0.0.1",
+        "PermissionError: [Errno 13] Permission denied: 'x'")]
+    check("R03b a run its jail refused (a test that could not bind or connect: the waker's sandbox denies network) is "
+          "denied, not no result; another permission error is still no result", denied == [RV.DENIED, RV.DENIED, "no_result"], denied)
     wide = PATCH.replace("+++ b/tests/bug_test.py", "+++ b/code.py")
     check("R04 a finding's test may add one new file under tests/, nothing else",
           RV.finding_test({"test": test}) and RV.finding_test({"test": dict(test, patch=wide)}) is None
@@ -1100,6 +1113,16 @@ def review_cases():
     check("R08 the replayer signs each replay as `review-replayer`, naming the code that ran (its own tool's) and its environment",
           out.returncode == 0 and len(got) == 1 and got[0]["body"]["target"] == f2 and got[0]["body"]["on"] == v2
           and got[0]["body"].get("code") == me["code"] and got[0]["body"].get("env") == me["env"], (out.stderr[-300:], got))
+    f3 = r.put("bob", "challenge", {"target": v2, "statement": "P1 z", "severity": "P1", "what": "w", "where": [],
+                                    "commit": x2, "tree": ran["tree"], "test": {"file": "bug_test", "case": "F1",
+                                    "patch": JAILED.replace("@@LINE@@", "PermissionError: [Errno 1] Operation not permitted")}},
+               "finding@1", refs=[v2])
+    r.commit("a finding whose test its jail refuses")
+    out3 = subprocess.run([sys.executable, "-B", "-m", "warrant.review", "--root", str(r.root), "replay", "--key", "-"],
+                          input=CHECKER_KEY.seed_hex() + "\n", capture_output=True, text=True, cwd=ROOT, timeout=120)
+    on3 = [x for x in rp.report()["_recs"].values() if x["actor"] == RV.REPLAYER and x["body"]["target"] == f3]
+    check("R08b a replay its jail refused is not filed: no attest on that finding, and the run says it was not run",
+          out3.returncode == 0 and on3 == [] and f"not run {f3[:12]}" in out3.stdout, (out3.stdout[-300:], out3.stderr[-300:], on3))
     carrier_cases(r)
     try:
         RP.identity(ROOT)

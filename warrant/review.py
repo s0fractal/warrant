@@ -44,6 +44,11 @@ REPLAYER = "review-replayer"          # the replay checker's actor: one key, bou
 TEST_FILE = re.compile(r"[a-z0-9_]{1,80}_test\Z")
 CASE = re.compile(r"[A-Za-z0-9_.-]{1,40}\Z")
 RUN_SECONDS = 600
+# A run its jail refused (the waker's sandbox denies all network: a test that serves the reader over 127.0.0.1 cannot
+# bind there) observed nothing: it is no replay, and is not filed, as a run that failed is not one. Filed as no_result,
+# CI's re-execution with a network got a result, and every later head was replayed into REPLAY_DIFFERS again (#449).
+DENIED = "denied"
+JAIL_DENIED = re.compile(r"PermissionError: \[Errno 1\] Operation not permitted|\b(?:listen|bind|connect) EPERM\b")
 REPLAY_VERDICTS = ("reproduces", "does_not_reproduce", "no_result", "does_not_apply")
 PR_HEAD = "pr-head@1"
 
@@ -94,7 +99,7 @@ def run_test(root, file, case, patch):
         return "reproduces"
     if any(x[:2] == ["ok", case] for x in lines):
         return "does_not_reproduce"
-    return "no_result"
+    return DENIED if JAIL_DENIED.search(out) else "no_result"
 
 
 def to_replay(rep, replayers):
@@ -145,6 +150,9 @@ def replay(repo, key):
             continue
         t0 = int(time.time())
         verdict = run_test(repo.root, file, case, patch)
+        if verdict == DENIED:
+            print(f"not run {c[:12]} on {h[:12]}: the jail denied what its test needs (no observation)", flush=True)
+            continue
         body = {"target": c, "verdict": verdict, "on": h, "commit": x, "tree": git(repo.root, "rev-parse", f"{x}^{{tree}}"),
                 "test": f"{file}:{case}", "window": [t0, int(time.time())], **me}
         [i] = repo.file(REPLAYER, key, [R.record("attest", REPLAYER, 0, body, refs=[c, h])])
