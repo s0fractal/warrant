@@ -371,7 +371,7 @@ MUTANTS = [
     ("T185", "warrant/drift.py", '        elif isinstance(b.get("files"), dict) and counted(rep, r):', '        elif False:', TOOLS, ["DR30"]),
     ("T186", "warrant/cli.py", '    if a.as_of is None and Path(store).name == ".warrant":\n        from . import drift as D\n        view = E.View(', '    if False:\n        from . import drift as D\n        view = E.View(', TOOLS, ["DR30"]),
     ("T187", "warrant/cli.py", '    if a.as_of is None and Path(store).name == ".warrant":\n        from . import drift as D\n        rep["_recs"]', '    if a.as_of is None and Path(store).name == ".warrant" and (root / ".warrant" / "claims.json").is_file():\n        from . import drift as D\n        rep["_recs"]', TOOLS, ["DR30"]),
-    ("T188", "warrant/drift.py", '        if not done.get(eff) or (lin["schema"] == C.CLAIM and L not in live):', '        if not done.get(eff) or L not in live:', TOOLS, ["DR30"]),
+    ("T188", "warrant/drift.py", 'if done.get(lin["effective"]) and not (lin["schema"] == C.CLAIM and L not in live)}', 'if done.get(lin["effective"]) and L in live}', TOOLS, ["DR30"]),
     ("T194", "warrant/drift.py", '        elif isinstance(b.get("files"), dict) and counted(rep, r):', '        elif isinstance(b.get("files"), dict):', TOOLS, ["DR32"]),
     ("T195", "warrant/drift.py", 'and r["actor"] in v.get("accepted_by", [])\n', 'and True\n', TOOLS, ["DR32"]),
     ("T189", "warrant/entry.py", '        elif found.group(0) != marked().rstrip("\\n"):', '        elif False:', TOOLS, ["IN2"]),
