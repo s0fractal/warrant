@@ -250,7 +250,7 @@ def status(a):
         by, state = lineages.setdefault(lin["schema"], {}), lin["state"] or "none"     # none: no effective version yet
         by[state] = by.get(state, 0) + 1
         reliance[lin["reliance"]] = reliance.get(lin["reliance"], 0) + 1
-    return {"repository": name, "identity": G.identity(rep), "store": store, "snapshot": rep["snapshot"], "assessment": rep["assessment"],
+    return {"repository": name, "identity": G.identity(rep, snap), "store": store, "snapshot": rep["snapshot"], "assessment": rep["assessment"],
             "trusted": sorted(trust.get("keys", {})), "roles": {r: sorted(a) for r, a in sorted(profile.get("roles", {}).items())},
             "records": len(snap.lines), "blobs": len(snap.blobs), "canonical": rep["canonical"],
             "completeness": rep["completeness"], "rejected": len(rep["rejected"]),

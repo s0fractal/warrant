@@ -102,7 +102,7 @@ class Reading:
         rep = self.rep
         out = {"store": self.name, "root": rep["snapshot"], "as_of": rep["as_of"], "assessment": rep["assessment"], "trust": rep["trust"],
                "profile": rep["profile"], "records": len(self.view.recs), "rejected": len(rep["rejected"]),
-               "problems": len(rep["problems"]), "identity": G.identity(rep)["identity"]}
+               "problems": len(rep["problems"]), "identity": G.identity(rep, self.view.snap)["identity"]}
         return out | ({"repository": _short(self.repository)} if isinstance(self.repository, str) else {})
 
     def verdict(self, i):

@@ -1742,6 +1742,10 @@ def ledger_cases():
           partial[1] and full[1], (partial[0], full[0]))
 
 
+def _rep_snap(r):
+    return RP.Repo(r.root).report(), r.store.snapshot()
+
+
 def identity_cases():
     """A store's identity (obligation ec6d1ebe): the root of its one rules@1 lineage, never its self-given name nor its
     earliest record by time."""
@@ -1760,7 +1764,7 @@ def identity_cases():
     two, _ = rules_store(2)
     copy, _ = rules_store(0, name="s0fractal/warrant")          # the same self-given name, no genesis
     early = one.put("carol", "entity", {"state": "open", "statement": "dated first", "serves": []}, "obligation@1", at=1)
-    ids = [G.identity(RP.Repo(x.root).report()) for x in (one, none, two, copy)]
+    ids = [G.identity(*_rep_snap(x)) for x in (one, none, two, copy)]
     _, out = cli(one.root, "status", "--json")
     st = json.loads(out) if out.strip().startswith("{") else {}
     check("ID1 a store's identity is the root of its one rules@1 lineage, and stays it when a record dated earlier than "
@@ -1769,6 +1773,31 @@ def identity_cases():
           ids[0] == {"identity": g, "by": "rules@1"} and early and all(x["identity"] is None and x["why"] for x in ids[1:])
           and "no rules@1 genesis" in ids[1]["why"] and "2 rules@1 lineages" in ids[2]["why"]
           and st.get("identity", {}).get("identity") == g, (ids, st.get("identity")))
+
+    # ID2 (codex finding on #444): a copy of the genesis re-signed under a key the copier's own v3.json binds to the
+    # author is admitted by that store, but it is not signed by any key the genesis binds to its author: no identity.
+    # The key is alice's, which the genesis binds to alice, not to bob, its author.
+    from warrant import records as R
+    from warrant.across import Reading
+    snap = one.store.snapshot()
+    rec = snap.lines[g][0]["record"]
+    rogue = KEYS["alice"]
+    imp = Repo(name="s0fractal/warrant")
+    imp.trust["keys"]["bob"] = [rogue.public]
+    imp.write_config()
+    forged_id, forged = R.line(rec, rogue)
+    lines = [forged if i == g else b"".join(JCS.canon(e) + b"\n" for e in envs) for i, envs in snap.lines.items()]
+    imp.store.file.write_bytes(b"".join(sorted(lines)))
+    rep, isnap = _rep_snap(imp)
+    got = G.identity(rep, isnap)
+    head = Reading("imp", lambda: (isnap, imp.trust, imp.profile, "s0fractal/warrant")).header()
+    check("ID2 a rules@1 genesis copied and re-signed under a key its own body binds to another actor, not its author, names no "
+          "store, in graph and in across, though the copying store admits it; the original keeps its identity",
+          forged_id == g and not rep["problems"] and g in rep["lineages"] and got["identity"] is None
+          and "signed by no key" in got["why"] and head.get("identity") is None and ids[0]["identity"] == g
+          and not any(R.verifies(g, json.loads(forged)["sig"], k) for k in rec["body"]["trust"]["keys"]["bob"])
+          and rogue.public in rec["body"]["trust"]["keys"]["alice"],
+          (got, head.get("identity"), rep["problems"]))
 
 
 def grounded_cases():

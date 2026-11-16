@@ -11,7 +11,7 @@ call the same ones. Every state shown is the report's, never recomputed.
   delta(rep0, rep1)        nodes added and removed, lineages whose state or reliance changed
   impact(rep0, rep1)       the lineages the changed records bear on, and what rests on those
   ledger(rep, recs)        the witness ledger: per actor, acceptances later refuted, challenges that replayed
-  identity(rep)            the store's identity: the root of its one rules@1 lineage, or why it has none
+  identity(rep, snap)      the store's identity: the root of its one self-signed rules@1 lineage, or why it has none
   grounded(rep, id, recs)  whether a version stands on ground: it, and every entity version it rests on by `refs`
                            and `requires`, transitively, is the effective version of an ELIGIBLE lineage
   answer(rep, query, data, adapter)   {root, lens, query, data}: the same lens over the same root gives
@@ -20,6 +20,7 @@ call the same ones. Every state shown is the report's, never recomputed.
 `root` is the snapshot digest; `lens` the content address of everything else that decides a result:
 the engine's code, the adapter's, the trust, the profile and the query."""
 from . import jcs as C
+from . import records as R
 
 WALK = ("lineage", "requires", "ref", "attest", "challenge")       # `prev` orders a writer's chain; it is no dependency
 MAX_NODES = 2000
@@ -235,18 +236,44 @@ def _cites(recs, x, y, memo):
 RULES = "rules@1"
 
 
-def identity(rep):
+def identity(rep, snap):
     """A store's identity (obligation ec6d1ebe, docs/V3.md §14): the root of its one `rules@1` lineage, the genesis of
-    the publisher's rules (stage 2a), a record that says whose rules these are. {"identity": id, "by": "rules@1"}, or
-    {"identity": None, "why": ...} when the store counts no such lineage, or more than one. Not the first record by
-    time: anyone may append a record dated earlier, and the store's name would move. Not the `repository` string of
-    v3.json: a store gives itself that, and another can copy it. A store that copies the genesis record claims to
-    continue those rules, as a minds chain that copies a genesis does; the reader sees whose keys signed it."""
+    the publisher's rules (stage 2a), a record that says whose rules these are, and signed by a key it binds to its own
+    author. {"identity": id, "by": "rules@1"}, or {"identity": None, "why": ...} when the store counts no such lineage,
+    or more than one, or its genesis carries no signature under its own body's binding. Not the first record by time:
+    anyone may append a record dated earlier, and the store's name would move. Not the `repository` string of v3.json:
+    a store gives itself that, and another can copy it. Nor the store's admission alone: v3.json's trust is self-given
+    too, and a record's id does not cover its signature, so a store could copy the genesis, bind its author to a key of
+    its own and re-sign it. `snap` holds the envelopes. A store that copies the genesis with its signature claims to
+    continue those rules, as a minds chain that copies a genesis does."""
     roots = sorted(L for L, lin in rep["lineages"].items() if lin["schema"] == RULES)
-    if len(roots) == 1:
-        return {"identity": roots[0], "by": RULES}
-    return {"identity": None, "why": f"{len(roots)} {RULES} lineages: the store names its rules by none" if roots
-            else f"no {RULES} genesis: the store is named only by where it is read"}
+    if len(roots) != 1:
+        return {"identity": None, "why": f"{len(roots)} {RULES} lineages: the store names its rules by none" if roots
+                else f"no {RULES} genesis: the store is named only by where it is read"}
+    root = roots[0]
+    if not any(_self_signed(root, env) for env in snap.lines.get(root, [])):
+        return {"identity": None, "why": f"the {RULES} genesis {root[:12]} is signed by no key its body binds to its "
+                                         f"author: a copy re-signed elsewhere names no store"}
+    return {"identity": root, "by": RULES}
+
+
+def _self_signed(i, env):
+    """Whether envelope `env` of record `i` is signed by a key the record's own body binds to its actor (a rules body's
+    trust.keys)."""
+    rec, sig = env.get("record") or {}, env.get("sig")
+    trust = (rec.get("body") or {}).get("trust")
+    keys = trust.get("keys") if isinstance(trust, dict) else None
+    keys = keys.get(rec.get("actor")) if isinstance(keys, dict) else None
+    if not isinstance(sig, dict) or not isinstance(keys, list):
+        return False
+    return any(isinstance(k, str) and _verifies(i, sig, k) for k in keys)
+
+
+def _verifies(i, sig, public):
+    try:
+        return R.verifies(i, sig, public)
+    except (ValueError, TypeError, KeyError):
+        return False
 
 
 def grounded(rep, i, recs=None):
