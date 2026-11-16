@@ -2380,6 +2380,10 @@ def browser_frontier_cases():
     f.entity("alice", "goal@1", {"state": "open", "key": "Q3", "text": "not a name", "opened": {"for": ["carol"]}})
     answered = f.entity("alice", "goal@1", {"state": "open", "key": "Q4", "text": "answered", "opened": {"for": "carol"}})
     f.attest("carol", answered, verdict="answered")
+    cannot = f.entity("alice", "goal@1", {"state": "open", "key": "Q5", "text": "declined", "opened": {"for": "carol"}})
+    f.attest("carol", cannot, verdict="decline", reason="no tools here")
+    mute = f.entity("alice", "goal@1", {"state": "open", "key": "Q6", "text": "declined, no reason", "opened": {"for": "carol"}})
+    f.attest("carol", mute, verdict="decline")
     actors = ["alice", "bob", "carol", "dave", "eve", "nobody", "bo"]       # "bo": a prefix of a role holder, no holder
     srvs, (bf,) = _serve_many(f.root)
     try:
@@ -2399,7 +2403,7 @@ def browser_frontier_cases():
           "version replaced while pending, not a fork; a line under his name with another's key is no act of his; "
           "carol may attest bob's claim; alice's lineage whose acceptor challenged it is listed as challenged; eve "
           "holds no role and has her own pending closure; carol is asked Q1 (not the question she asked herself, nor one "
-          "whose opened.for is no name, nor one she answered)",
+          "whose opened.for is no name, nor one she answered); the two she declined are listed as declined, one with its reason",
           sorted(may) == sorted([waits, head, eves]) and sorted(bob["pending"]) == sorted([bobs, backed]) and bob["challenged"] == []
           and [x["version"] for x in py["carol"]["attest"]] == [backed] and py["alice"]["challenged"] == [a_root]
           and chal in py["alice"]["pending"] and needs in py["alice"]["pending"] and seen in py["alice"]["pending"]
@@ -2407,7 +2411,8 @@ def browser_frontier_cases():
           and py["eve"]["roles"] == [] and py["eve"]["pending"] == [eves] and py["eve"]["attest"] == []
           and replaced not in may and newer not in py["alice"]["pending"] and py["nobody"]["roles"] == []
           and forged not in json.dumps(bob)
-          and [x["version"] for x in py["carol"].get("asked", [])] == [asks] and py["alice"].get("asked") == [], py)
+          and [x["version"] for x in py["carol"].get("asked", [])] == [asks] and py["alice"].get("asked") == []
+          and sorted((x["version"], x["reason"]) for x in py["carol"].get("declined", [])) == sorted([(cannot, "no tools here"), (mute, None)]), py)
     check("J15 differential: the reader's frontier (reader.mjs --actor) equals warrant.graph.frontier for every actor of "
           "the fixture, an actor with no role, a name no profile holds and a prefix of a role holder's name included, "
           "member for member",

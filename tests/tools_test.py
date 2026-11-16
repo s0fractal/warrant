@@ -2824,6 +2824,26 @@ def asked_cases():
     after_challenge = [x["version"] for x in G.frontier(RP.Repo(r2.root).report(), r2.profile, "bob").get("asked", [])]
     check("FA3 an attest or a challenge by the asked actor on the version takes it off its frontier (an answer is any "
           "verdict: no guard waits on it)", after_attest == [] and after_challenge == [], (after_attest, after_challenge))
+    r3 = Repo()
+    ask = lambda k, schema="goal@1", **b: r3.entity("alice", schema, dict({"state": "open", "key": k, "text": "replay it?",
+                                                                       "opened": {"for": "bob"}}, **b))
+    q3, q4, q5 = ask("Q1"), ask("Q2"), ask("Q3")
+    o = r3.entity("alice", "obligation@1", {"state": "open", "statement": "replayed", "serves": []})
+    done = r3.entity("alice", "obligation@1", {"state": "done", "statement": "replayed", "serves": [], "opened": {"for": "bob"}},
+                     lineage=o)                            # waits for roadmap/acceptor (bob) to accept
+    d3 = r3.attest("bob", q3, verdict="decline", reason="no tools here to replay it")
+    r3.attest("bob", q4, verdict="decline", reason="  ")       # a blank reason names none
+    r3.attest("bob", q5, verdict="answered")
+    r3.attest("bob", done, verdict="decline", reason="outside my horizon")
+    rep3 = RP.Repo(r3.root).report()
+    f3 = G.frontier(rep3, r3.profile, "bob")
+    dec = {x["version"]: (x["decline"], x["reason"]) for x in f3["declined"]}
+    check("FA4 an asked actor may answer \"I cannot\": an attest of verdict decline takes the ask off its frontier as any "
+          "answer does, and is listed apart under `declined` with its reason (None when it names none, a blank one included); another verdict "
+          "is no decline; a decline counts for no guard: the closure it answers still waits",
+          f3["asked"] == [] and dec.get(q3) == (d3, "no tools here to replay it") and dec.get(q4, ("", "x"))[1] is None
+          and q5 not in dec and done in dec and rep3["versions"][done]["guard"] == "PENDING"
+          and f3["attest"] == [] , (f3, rep3["versions"][done]["guard"]))
 
 
 def schemas_due_cases():

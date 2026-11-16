@@ -1513,7 +1513,8 @@ export function frontier(r, actor) {
     }
   }
   const challenged = byRoot.filter(([, lin]) => lin.reliance === "CHALLENGED" && lin.actor === actor).map(([root]) => root);
-  return { actor, roles: [...roles].sort(cmp), attest, pending, challenged, asked: askedOf(r, byRoot, author, acted, actor) };
+  return { actor, roles: [...roles].sort(cmp), attest, pending, challenged, asked: askedOf(r, byRoot, author, acted, actor),
+           declined: declinedBy(r, byRoot, author, actor) };
 }
 
 // warrant/graph.py opened_for: the actor a version's body addresses (`opened.for`, a non-empty string), or null.
@@ -1531,6 +1532,24 @@ function askedOf(r, byRoot, author, acted, actor) {
     const v = lin.leaf;
     if (v === null || acted.has(v) || author.get(v) === actor || openedFor(r.recs.get(v)?.body) !== actor) continue;
     out.push({ version: v, lineage: root, schema: lin.schema });
+  }
+  return out;
+}
+
+// warrant/graph.py declined_by: each lineage's latest version whose body asks the actor and that the actor answered
+// with an attest of verdict `decline` ("I cannot", apart from no answer), with its reason (a non-empty string, else
+// null). Edges in Python's order: by (rel, from), the first decline found.
+function declinedBy(r, byRoot, author, actor) {
+  const into = new Map();
+  for (const [a, rel, b] of r.rep.graph.edges) if (rel === "attest") (into.get(b) ?? into.set(b, []).get(b)).push(a);
+  const out = [];
+  for (const [root, lin] of byRoot) {
+    const v = lin.leaf;
+    if (v === null || author.get(v) === actor || openedFor(r.recs.get(v)?.body) !== actor) continue;
+    const a = (into.get(v) ?? []).slice().sort(cmp).find((x) => author.get(x) === actor && r.recs.get(x)?.body?.verdict === "decline");
+    if (a === undefined) continue;
+    const reason = r.recs.get(a).body.reason;
+    out.push({ version: v, lineage: root, schema: lin.schema, decline: a, reason: typeof reason === "string" && reason.trim() ? reason : null });
   }
   return out;
 }
