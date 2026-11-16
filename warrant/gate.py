@@ -522,7 +522,7 @@ class Base:
                 and rep["_recs"][lin["leaf"]]["body"].get("state") == "backed"}
 
     def roadmap_due(self, actor):
-        """{version ids} the base's own records hold due for `actor`'s verdict: the leaf of a goal@1 or obligation@1
+        """{version ids} the base's own records hold due for `actor`'s verdict: the leaf of a goal@1, obligation@1 or obligation@2
         lineage whose guard waits only for attests by a role the actor holds (no open requirement), not its own,
         neither attested nor challenged by it, a version that asks it, and a schema short of its quorum it may back
         (the waker's `roadmap.py due`)."""
@@ -530,7 +530,7 @@ class Base:
         if problems:
             return set()
         rep = assess_snapshot(self, snap)
-        return {x["version"] for x in due_for(rep, self.profile, actor, ("goal@1", "obligation@1"))
+        return {x["version"] for x in due_for(rep, self.profile, actor, ("goal@1", "obligation@1", "obligation@2"))
                 + schemas_due(rep, self.profile, actor)}
 
 

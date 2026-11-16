@@ -219,11 +219,18 @@ def lineage_cases():
 
 
 def verdict_cases():
-    def setup(branch="codex/verdicts/x", repo=REPO, due=True, again=False):
+    def setup(branch="codex/verdicts/x", repo=REPO, due=True, again=False, released2=False):
         r = Repo()
         (r.dot / "merge.json").write_text(json.dumps(MERGE))
-        o = r.entity("alice", "obligation@1", {"state": "open", "statement": "o", "serves": []})
-        d = r.entity("alice", "obligation@1", {"state": "done", "statement": "o", "serves": []}, lineage=o) if due else o
+        if released2:                                  # obligation@2: a release waits for another roadmap/acceptor
+            from warrant import roadmap as RM
+            r.put("alice", "schema", RM.OBLIGATION2_SCHEMA)
+            o = r.put("alice", "entity", {"state": "open", "statement": "o", "serves": []}, "obligation@2")
+            d = r.put("dave", "entity", {"state": "released", "statement": "o", "serves": [], "residual": ["r"]}, "obligation@2",
+                      o, guard=RM.OBLIGATION2_SCHEMA["states"]["released"])
+        else:
+            o = r.entity("alice", "obligation@1", {"state": "open", "statement": "o", "serves": []})
+            d = r.entity("alice", "obligation@1", {"state": "done", "statement": "o", "serves": []}, lineage=o) if due else o
         git(r.root, "init", "-q", "-b", "master")
         base = r.commit("base")
         git(r.root, "checkout", "-q", "-b", "verdict")
@@ -243,6 +250,9 @@ def verdict_cases():
     check("E23 verdicts only from a branch outside codex/verdicts/ are refused", codes(setup(branch="feature")) == {"VERDICTS_BRANCH"})
     check("E18 a verdict the base holds already is refused", "VERDICT_NOT_NEW" in codes(setup(again=True)))
     check("E19 a verdict on a version the base does not hold due for its actor is refused", codes(setup(due=False)) == {"VERDICT_NOT_DUE"})
+    rel2 = setup(released2=True)
+    check("E98 a roadmap/acceptor's verdict on an obligation@2 release (one that waits for an acceptor other than the "
+          "releasing roadmap/owner) is due at the base: eligible, verdicts only", rel2.eligible and rel2.facts.get("verdicts"), rel2.reasons)
     def schema_pr(author=True):
         roles = dict(ROLES, **{"schema/author": ["alice", "bob"] if author else ["alice"]})
         r = Repo(roles=roles)

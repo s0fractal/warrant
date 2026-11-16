@@ -1180,6 +1180,38 @@ def roadmap_cases():
           by_holder == 2 and by_owner == 0 and lin["state"] == "released"
           and rep["_recs"][lin["effective"]]["body"].get("residual") == ["no longer wanted"], (by_holder, by_owner, lin))
 
+    r = Repo()
+    rp = RP.Repo(r.root)
+    tool = lambda *argv: RP.main(RM.run, ["--root", str(r.root), *argv])           # noqa: E731
+    g = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "goal"})
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        tool("oblige", "--goal", "G1", "--statement", "before", "--actor", "alice", "--key", str(r.seed("alice")))
+    r.put("alice", "schema", RM.OBLIGATION2_SCHEMA)                    # the receiver counts obligation@2 from here
+    r.profile["roles"]["roadmap/acceptor"] = ["bob", "dave"]          # the releasing owner also an acceptor
+    r.write_config()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        tool("oblige", "--goal", "G1", "--statement", "after", "--actor", "alice", "--key", str(r.seed("alice")))
+    rep = rp.report()
+    by = {rep["_recs"][L]["body"]["statement"]: L for L, lin in rep["lineages"].items() if lin["schema"] in RM.OBLIGATIONS}
+    old, new = by.get("before"), by.get("after")
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        tool("release", "--obligation", old, "--reason", "r1", "--actor", "dave", "--key", str(r.seed("dave")))
+        tool("release", "--obligation", new, "--reason", "r2", "--actor", "dave", "--key", str(r.seed("dave")))
+    rep = rp.report()
+    leaf = rep["lineages"][new]["leaf"]
+    r.attest("dave", leaf)                                               # the releaser's own acceptance
+    own = rp.report()["lineages"][new]
+    due_bob = [x["closure"] for x in RM.due(rp.report(), r.profile, "bob")]
+    r.attest("bob", leaf)
+    done = rp.report()["lineages"][new]
+    check("P05 obligation@2: once the receiver counts it, `oblige` files on it (an earlier lineage stays obligation@1); its "
+          "release waits for a roadmap/acceptor other than the releasing owner, whose own acceptance does not count, is due "
+          "for that acceptor and then takes effect; an obligation@1 release takes effect as filed (d485438a)",
+          rep["lineages"][old]["schema"] == "obligation@1" and rep["lineages"][new]["schema"] == "obligation@2"
+          and rep["lineages"][old]["state"] == "released" and own["state"] == "open" and leaf in due_bob
+          and done["state"] == "released" and done["effective"] == leaf,
+          (rep["lineages"].get(old, {}).get("state"), own.get("state"), due_bob, done.get("state")))
+
 
 def cli(cwd, *argv):
     """`warrant ARGV` in process from the directory `cwd`, WARRANT_REPO_ROOT unset: (exit code, standard output)."""

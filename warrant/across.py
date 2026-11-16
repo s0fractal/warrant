@@ -11,7 +11,7 @@ read from a repository is data only: `.warrant/records.jsonl`, `.warrant/blobs/`
 checkout, the Git trees and history the G14 gate compares (warrant.drift): a claim whose acceptances all name other
 bytes reads STALE here as in context and graph, and the lens binds the tree it read.
 
-Queries, none assuming a repository's schemas beyond the two names INTENTS gives:
+Queries, none assuming a repository's schemas beyond the names INTENTS gives (goal@1, and obligation@1 or obligation@2):
 
     stores                  each store's lineages by schema and state
     actor {actor, schema?}  the records each store admits as that actor's, under that store's keys for the name
@@ -40,7 +40,7 @@ FORMAT = "across/1"
 QUERIES = ("stores", "actor", "open", "challenges", "rests")
 MEMBERS = {"stores": (), "actor": ("actor", "schema"), "open": ("schema",), "challenges": ("schema",),
            "rests": ("target", "schema")}
-INTENTS = ("goal@1", "obligation@1")
+INTENTS = ("goal@1", "obligation@1", "obligation@2")
 REFERENCE_STATES = ("ELSEWHERE", "UNAVAILABLE")
 BUDGET = 64 << 10                # a result's bytes, as the agent's context_bytes
 STORE_BYTES = 64 << 20           # a store's bytes admitted before it is parsed, as the agent's store_bytes
@@ -208,7 +208,8 @@ def _open(readings, schema, stores):
         found = [lin for lin in x.rep["lineages"].values() if lin["schema"] in INTENTS and lin["state"] == "open"]
         ids.update(lin["effective"] for lin in found)
         row["intents"] = {n: sum(1 for lin in found if lin["schema"] == n) for n in INTENTS if n in x.rep["schemas"]}
-        missing = [n for n in INTENTS if n not in x.rep["schemas"]]
+        # an obligation schema is missing only when neither version is counted (obligation@2, d485438a)
+        missing = [n for n in INTENTS[:2] if n not in x.rep["schemas"] and not (n == "obligation@1" and "obligation@2" in x.rep["schemas"])]
         row.update({"no_schema": missing} if missing else {})
     return _recent(ids, readings, schema)
 
