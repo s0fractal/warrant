@@ -36,7 +36,7 @@ DIGESTS = {
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
-    "warrant/graph.py": "05782a7ce980e6b5070b8651030212c6a95b65bf6c89266f73f8f5a354e1240c",
+    "warrant/graph.py": "fc939d9693e60c4c0f3feae7816885361474baa588d7b59be1c0d922f11ae019",
     "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
     "warrant/verify.py": "482b241a1a287f60d8017edf4adcc47ef90935dc700704c65c164ef4f2536553",
@@ -979,6 +979,27 @@ def frontier(rep, profile, actor, recs=None):
 
 DECLINE = "decline"
 BLANK = " \t\n\r\f\v"        # a reason of these alone names none: ASCII only, one rule with site/reader.mjs (Codex on #450)
+
+
+def seen_of(rep, target):
+    """What an acceptor saw of `target` (an acceptance's `seen`, Qwen's wish 2): the root of the snapshot its report
+    read and the challenges against `target` in it. A signer who names them accepts within that horizon, not over all
+    there is; a reader holding more can say what the acceptance did not see (horizon)."""
+    return {"root": rep["snapshot"], "challenges": sorted(c for c, x in rep["challenges"].items() if x["target"] == target)}
+
+
+def horizon(rep, a, recs=None):
+    """{root, unseen} of attest `a` that names what it saw (`seen`: {root, challenges}), `unseen` the challenges against
+    its target in this report it does not list (filed after it, or not in its view); None when `a` names nothing: an
+    acceptance with no `seen` says nothing of its horizon, which is not that it saw everything."""
+    recs = recs if recs is not None else rep.get("_recs") or {}
+    body = (recs.get(a) or {}).get("body") or {}
+    seen = body.get("seen")
+    listed = seen.get("challenges") if isinstance(seen, dict) else None
+    if not (isinstance(listed, list) and all(isinstance(c, str) for c in listed)) or not isinstance(seen.get("root"), str):
+        return None
+    t = body.get("target")
+    return {"root": seen["root"], "unseen": sorted(c for c, x in rep["challenges"].items() if x["target"] == t and c not in listed)}
 
 
 def declined_by(rep, nodes, into, actor, recs=None):

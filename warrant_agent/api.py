@@ -146,6 +146,7 @@ def context(cfg, req):
         if i in view.recs:
             cap["record"] = view.recs[i]
         cap["attests"] = sorted(a for rel, a in into.get(i, []) if rel == "attest")
+        cap["horizons"] = {a: G.horizon(rep, a, view.recs) for a in cap["attests"]}    # None: it names no horizon
         cap["challenges"] = {c: rep["challenges"][c] for rel, c in into.get(i, []) if rel == "challenge"}
         if i in rep["rejected"]:
             cap["rejected"] = rep["rejected"][i]
@@ -390,6 +391,8 @@ def prepare(cfg, req):
     if kind in ("attest", "challenge"):
         t = _resolve(snap, req.get("target") or body.get("target") or "")
         body, refs = dict(body, target=t), refs + [t]
+        if kind == "attest" and body.get("verdict") == "accept" and "seen" not in body:
+            body["seen"] = G.seen_of(view.report(), t)       # the horizon it accepts within: what this view held
     schema, guard = req.get("schema"), req.get("guard")
     s = view.schemas.get(schema) if isinstance(schema, str) else None
     if s is not None:

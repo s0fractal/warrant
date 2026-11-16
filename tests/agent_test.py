@@ -52,6 +52,35 @@ def err(out):
     return out.get("error")
 
 
+def horizon_cases():
+    """An acceptance names what its signer saw (Qwen's wish 2, voice 0a29cc85): `seen` {root, challenges}, filled by
+    prepare and `warrant attest`; context reads its horizon, the challenges against the target it did not see."""
+    from warrant import graph as G
+    repo = Repo()
+    obl = repo.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    done = repo.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=obl)
+    early = repo.put("eve", "challenge", {"target": done, "statement": "seen before the acceptance"}, refs=[done])
+    cfg = cfg_of(repo)
+    root = repo.report()["snapshot"]
+    p = ok(api.call(cfg, "prepare", {"workspace": "w", "kind": "attest", "target": done, "body": {"verdict": "accept"}}))
+    seen = (p.get("record") or {}).get("body", {}).get("seen")
+    acc = p.get("id")
+    api.call(cfg, "commit", {"workspace": "w", "record": p.get("record")})
+    late = repo.put("eve", "challenge", {"target": done, "statement": "filed after it"}, refs=[done])
+    blind = repo.attest("carol", done)                        # an acceptance that names no horizon
+    named = repo.attest("dave", done, seen={"root": root, "challenges": [early, late]})
+    cap = ok(api.call(cfg, "context", {"workspace": "w", "targets": [done]})).get("targets", {}).get(done, {})
+    hz = cap.get("horizons", {})
+    rep = repo.report()
+    check("A46 prepare fills an acceptance's `seen`: the root of the snapshot its view read and the challenges against the "
+          "target in it; a guard still counts it (its match is the verdict)",
+          seen == {"root": root, "challenges": [early]} and rep["lineages"][obl]["state"] == "done", (seen, rep["lineages"][obl]["state"]))
+    check("A47 context reads each acceptance's horizon: a challenge filed after it is unseen, one it listed is not; an "
+          "acceptance naming no `seen` has no horizon (None), never `saw everything`",
+          hz.get(acc) == {"root": root, "unseen": [late]} and hz.get(named) == {"root": root, "unseen": []}
+          and blind in hz and hz[blind] is None and G.horizon(RP.Repo(repo.root).report(), acc) == hz.get(acc), hz)
+
+
 def operations():
     repo = Repo()
     obl = repo.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
@@ -1965,6 +1994,7 @@ def tails_cases():
 if __name__ == "__main__":
     sys.exit(run_sections([
         operations,
+        horizon_cases,
         refusal_cases,
         admission_cases,
         init_cases,

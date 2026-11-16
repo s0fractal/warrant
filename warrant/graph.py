@@ -116,6 +116,27 @@ DECLINE = "decline"
 BLANK = " \t\n\r\f\v"        # a reason of these alone names none: ASCII only, one rule with site/reader.mjs (Codex on #450)
 
 
+def seen_of(rep, target):
+    """What an acceptor saw of `target` (an acceptance's `seen`, Qwen's wish 2): the root of the snapshot its report
+    read and the challenges against `target` in it. A signer who names them accepts within that horizon, not over all
+    there is; a reader holding more can say what the acceptance did not see (horizon)."""
+    return {"root": rep["snapshot"], "challenges": sorted(c for c, x in rep["challenges"].items() if x["target"] == target)}
+
+
+def horizon(rep, a, recs=None):
+    """{root, unseen} of attest `a` that names what it saw (`seen`: {root, challenges}), `unseen` the challenges against
+    its target in this report it does not list (filed after it, or not in its view); None when `a` names nothing: an
+    acceptance with no `seen` says nothing of its horizon, which is not that it saw everything."""
+    recs = recs if recs is not None else rep.get("_recs") or {}
+    body = (recs.get(a) or {}).get("body") or {}
+    seen = body.get("seen")
+    listed = seen.get("challenges") if isinstance(seen, dict) else None
+    if not (isinstance(listed, list) and all(isinstance(c, str) for c in listed)) or not isinstance(seen.get("root"), str):
+        return None
+    t = body.get("target")
+    return {"root": seen["root"], "unseen": sorted(c for c, x in rep["challenges"].items() if x["target"] == t and c not in listed)}
+
+
 def declined_by(rep, nodes, into, actor, recs=None):
     """[{version, lineage, schema, decline, reason}], sorted: each lineage's latest version whose body asks `actor`
     (`opened.for`) and that `actor` answered with an attest of verdict `decline`: "I cannot", apart from no answer.
