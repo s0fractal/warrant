@@ -951,6 +951,26 @@ def brake_cases():
           and not at(when - 10, {merge: hand}, now=when + 60) and not at(when + 10, {merge: owner}, now=when + 60)
           and not at(when - 10, {merge: owner}, days=1, now=when + 2 * 86400),
           when)
+    tip = merge                                  # 31 merges by the workflow's bot after his, as the gate makes them
+    env = dict(os.environ, GIT_AUTHOR_NAME="github-actions[bot]", GIT_AUTHOR_EMAIL=GT.BOT_EMAIL,
+               GIT_COMMITTER_NAME="GitHub", GIT_COMMITTER_EMAIL="noreply@github.com",
+               GIT_AUTHOR_DATE=f"{when + 30} +0000", GIT_COMMITTER_DATE=f"{when + 30} +0000")
+    tree = git(r.root, "rev-parse", f"{merge}^{{tree}}")
+    run = lambda *a: subprocess.run(["git", "-C", str(r.root), *a], env=env, capture_output=True, text=True, check=True).stdout.strip()  # noqa: E731
+    for k in range(31):
+        side = run("commit-tree", tree, "-p", tip, "-m", f"side {k}")
+        tip = run("commit-tree", tree, "-p", tip, "-p", side, "-m", f"Merge pull request #{100 + k}")
+    asked = []
+    late_gh = GH(commits={merge: owner})
+    seen_commit = late_gh.commit
+    late_gh.commit = lambda sha: (asked.append(sha), seen_commit(sha))[1]
+    rb_late = GT.Base(r.root, base)
+    rb_late.commit = tip
+    rb_late.gate = dict(rb_late.gate, presence={"login": "owner-login", "days": 14, "since": when - 10})
+    late = GT.present(r.root, rb_late, late_gh, now=when + 3600)
+    check("E72b the owner's merge on GitHub stays his sign however many of the gate's own merges follow it: the bot's "
+          "merges ask GitHub nothing and count toward no bound (his merge was the 32nd back on 2026-11-16)",
+          late and asked == [merge], (late, len(asked)))
     p = PRES["presence"]
     bad = [{k: v for k, v in PRES.items() if k not in ("watched", "constitutional")},
            dict(PRES, presence=dict(p, days=0)), dict(PRES, presence=dict(p, login="@x")), dict(PRES, presence=dict(p, extra=1))]
