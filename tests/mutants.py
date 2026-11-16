@@ -371,6 +371,9 @@ MUTANTS = [
     ("T283", "warrant/across.py", '"problems": len(rep["problems"]), "identity": G.identity(rep, self.view.snap)["identity"]}', '"problems": len(rep["problems"]), "identity": None}', AGENT, ["X04b"]),
     ("T284", "warrant/graph.py", '    if not any(_self_signed(root, env) for env in snap.lines.get(root, [])):\n', '    if False:\n', TOOLS, ["ID2"]),
     ("T285", "warrant/graph.py", '    keys = keys.get(rec.get("actor")) if isinstance(keys, dict) else None\n', '    keys = sum(keys.values(), []) if isinstance(keys, dict) else None\n', TOOLS, ["ID2"]),
+    ("T286", "warrant/resolve.py", '            self.identity = G.identity(E.View(self.snap, trust, profile).report(), self.snap)["identity"]\n', '            self.identity = None\n', TOOLS, ["RV3"]),
+    ("T287", "warrant/home.py", '        row.update({"same": same} if same else {})\n', '        pass\n', TOOLS, ["RV3"]),
+    ("T288", "warrant/home.py", '            row["identity"] = identity_of(store_of(doc, name), trust, profile)\n', '            row["identity"] = None\n', TOOLS, ["RV3"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),

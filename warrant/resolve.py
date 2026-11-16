@@ -11,8 +11,8 @@ Where the bytes are is not whether they changed: freshness is `drift`'s, and not
 Bytes that do not hash to their name are a refusal (BYTES_MISMATCH), never MISSING: a transport is not trusted. Nothing
 of a repository is executed or written: the stores are read as data, a clone through `git cat-file`, `ls-tree` and
 `for-each-ref`. The answer carries `root` (every store's snapshot and every Git tip read) and `lens` (the code and the
-query), as `across` does. A store names itself by its `repository` string, which it gives itself: no identity (an
-obligation of stage 2: a store named by its root record).
+query), as `across` does. Each store's `identities` entry is the root of its one self-signed rules@1 lineage
+(warrant.graph.identity), or None: a store's `repository` string is one it gives itself, and another can copy it.
 
     python -m warrant.resolve [ID ...] [--json]     # every cited id not PRESENT in its citing store, or these ids"""
 import argparse
@@ -23,6 +23,7 @@ import subprocess
 import sys
 
 from . import engine as E
+from . import graph as G
 from . import home as H
 from . import jcs as C
 from . import records as R
@@ -58,6 +59,11 @@ class Place:
     def __init__(self, name, repo_path, store_path):
         self.name, self.path = name, os.path.expanduser(repo_path)
         self.snap = Store(store_path).snapshot()
+        trust, profile, _ = H.receiver(self.path)
+        try:
+            self.identity = G.identity(E.View(self.snap, trust, profile).report(), self.snap)["identity"]
+        except Exception:                # NOSONAR S112: a store its own rules cannot assess has no identity, and still resolves
+            self.identity = None
         self.records = {i: envs[0]["record"] for i, envs in self.snap.lines.items()}
         try:
             rows = git(self.path, "for-each-ref", "--format=%(objectname) %(refname)", "refs/vars/heads").splitlines()
@@ -149,7 +155,8 @@ def answer(doc, ids=None):
                      "unavailable": unavailable})
     lens = C.doc_id({"code": E.code_identity(), "query": {"ids": sorted(set(ids or []))}})
     return {"warrant": FORMAT, "completeness": "UNATTESTED", "untrusted": True, "root": root, "lens": lens,
-            "stores": [p.name for p in ps], "unavailable": unavailable, "counts": counts, "rows": rows}
+            "stores": [p.name for p in ps], "identities": {p.name: p.identity for p in ps}, "unavailable": unavailable,
+            "counts": counts, "rows": rows}
 
 
 def run(argv=None):
@@ -172,6 +179,8 @@ def run(argv=None):
     if a.json:
         print(json.dumps(out, indent=1, sort_keys=True))
     else:
+        for name, ident in out["identities"].items():
+            print(f"store {name}: " + (f"identity {ident[:12]}" if ident else "no identity (named by where it is read)"))
         print("cited ids: " + " · ".join(f"{s} {n}" for s, n in out["counts"].items()))
         for r in out["rows"]:
             print(f"{r['state']:<9} {r['id'][:12]} cited by {', '.join(r['cited_by']) or '-'}" + (f" · {r['where']}" if r["where"] else ""))

@@ -1902,6 +1902,18 @@ def resolve_cases():
         refused = str(e)
     check("RV2 bytes found under a name they do not hash to are refused (BYTES_MISMATCH), never MISSING: a transport is not "
           "trusted", refused is not None and "does not hash" in refused, refused)
+    from warrant import gate as GT
+    a.put("alice", "schema", GT.RULES_SCHEMA)
+    g = a.put("bob", "entity", dict(json.loads((a.dot / "v3.json").read_text()), state="in force"), GT.RULES)
+    twice = H.add_repository(H.add_repository(H.empty(), str(a.root), "a"), str(b.root), "b")
+    twice["repositories"]["again"] = {"path": str(a.root)}           # one store registered at two places
+    ids = RS.answer(twice, [nowhere])["identities"]
+    rows = {x["name"]: x for x in H.listing(twice)}
+    check("RV3 resolve and Home name each store by its identity, the root of its one self-signed rules@1 lineage: a store "
+          "with none says so; Home marks one store registered twice as the same store, whatever its names",
+          ids == {"a": g, "again": g, "b": None} and rows["a"].get("identity") == g and rows["a"].get("same") == ["again"]
+          and rows["again"].get("same") == ["a"] and rows["b"].get("identity") is None and "same" not in rows["b"],
+          (ids, rows))
 
 def voices_cases():
     """W4's stranger path in the core command: `warrant init --voices` and `warrant say`, with nothing but the package."""

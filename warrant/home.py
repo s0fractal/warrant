@@ -195,19 +195,37 @@ def store_of(doc, name):
     return confined(os.path.join(root, ".warrant"), root)
 
 
+def identity_of(store_path, trust, profile):
+    """The identity of the store at `store_path` under its own receiver configuration (warrant.graph.identity: the
+    root of its one self-signed rules@1 lineage), or None."""
+    from . import engine as E                               # late: the engine reads no Home
+    from . import graph as G
+    from .store import Store
+    snap = Store(store_path).snapshot()
+    return G.identity(E.View(snap, trust, profile).report(), snap)["identity"]
+
+
 def listing(doc):
-    """One row per registered repository: where it is, the repository its v3.json names, how many record lines its
-    store holds, and its signer with whether that repository's trust binds the identity's key to it."""
+    """One row per registered repository: where it is, the repository its v3.json names, its store's identity (the root
+    of its one self-signed rules@1 lineage, or None), how many record lines its store holds, and its signer with whether
+    that repository's trust binds the identity's key to it. Rows of one identity name each other under `same`: one
+    store registered at two places, whatever each calls itself (obligation ec6d1ebe)."""
     rows = []
     for name, r in sorted(doc["repositories"].items()):
         p = os.path.expanduser(r["path"])
         row = {"name": name, "path": p, "signer": r.get("signer"), "operations": r.get("operations", list(OPERATIONS))}
         try:
-            trust, _, repository = receiver(p)
+            trust, profile, repository = receiver(p)
             f = dot_of(p) / "records.jsonl"
             row.update(repository=repository, records=sum(1 for _ in f.open("rb")) if f.is_file() else 0,
                        bound=None if not r.get("signer") else doc["identities"][r["signer"]]["public"] in trust["keys"].get(r["signer"], []))
+            row["identity"] = identity_of(store_of(doc, name), trust, profile)
         except (OSError, ValueError) as e:
             row["problem"] = f"{type(e).__name__}: {e}"
+        except Exception as e:           # NOSONAR S112: the engine refusing a store names it, and leaves the other rows
+            row["problem"] = f"{getattr(e, 'code', type(e).__name__)}: {e}"
         rows.append(row)
+    for row in rows:
+        same = sorted(x["name"] for x in rows if x is not row and row.get("identity") and x.get("identity") == row["identity"])
+        row.update({"same": same} if same else {})
     return rows

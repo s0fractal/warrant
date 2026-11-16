@@ -329,8 +329,10 @@ def render_home(out):
             rows.append(f"            {r}")
             continue
         signer = "read only" if not r["signer"] else f"signs as {r['signer']}" + ("" if r.get("bound") else " (key NOT bound there)")
-        rows.append(f"{r['name']:<12}{r.get('repository') or r.get('problem')} · {r.get('records', '?')} records · {signer}"
-                    f" · {r['path']}")
+        ident = f"identity {r['identity'][:12]}" if r.get("identity") else "no identity"
+        same = f" (same store as {', '.join(r['same'])})" if r.get("same") else ""
+        rows.append(f"{r['name']:<12}{r.get('repository') or r.get('problem')} · {ident}{same} · {r.get('records', '?')} records"
+                    f" · {signer} · {r['path']}")
     return "\n".join(rows) + "\n"
 
 
