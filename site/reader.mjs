@@ -155,23 +155,27 @@ export async function storeIdentity(rep, lines, backend) {
     return { identity: null, why: roots.length ? `${roots.length} ${RULES} lineages: the store names its rules by none`
                                               : `no ${RULES} genesis: the store is named only by where it is read` };
   }
-  const root = roots[0], msg = new TextEncoder().encode(SIG_DOMAIN);
-  const signed = new Uint8Array([...msg, ...hexToBytes(root)]);
+  const root = roots[0], signed = new Uint8Array([...new TextEncoder().encode(SIG_DOMAIN), ...hexToBytes(root)]);
   for (const env of lines.get(root) ?? []) {
-    const rec = env?.record ?? {}, sig = env?.sig, trust = rec.body?.trust;
-    const keys = isPlain(trust) && isPlain(trust.keys) && Object.hasOwn(trust.keys, rec.actor) ? trust.keys[rec.actor] : null;
-    if (!isPlain(sig) || !Array.isArray(keys)) continue;
-    for (const k of keys) {
-      if (typeof k !== "string" || !hex64(k)) continue;
-      if (await verifySig(backend, k, sig.ed25519, signed) && sig.key === await backend.sha256(hexToBytes(k))) return { identity: root, by: RULES };
-    }
+    if (await selfSigned(env, signed, backend)) return { identity: root, by: RULES };
   }
   return { identity: null, why: `the ${RULES} genesis ${root.slice(0, 12)} is signed by no key its body binds to its author: a copy re-signed elsewhere names no store` };
 }
 
+// Whether envelope `env` is signed (over `signed`) by a key its record's own body binds to its actor (trust.keys).
+async function selfSigned(env, signed, backend) {
+  const rec = env?.record ?? {}, sig = env?.sig, trust = rec.body?.trust;
+  const keys = isPlain(trust) && isPlain(trust.keys) && Object.hasOwn(trust.keys, rec.actor) ? trust.keys[rec.actor] : null;
+  if (!isPlain(sig) || !Array.isArray(keys)) return false;
+  for (const k of keys.filter((x) => typeof x === "string" && hex64(x))) {
+    if (await verifySig(backend, k, sig.ed25519, signed) && sig.key === await backend.sha256(hexToBytes(k))) return true;
+  }
+  return false;
+}
+
 const SIG_DOMAIN = "warrant-sig-v3:";                    // records.SIG_DOMAIN: what a record's signature signs, before its id
 const isPlain = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
-const hexToBytes = (h) => Uint8Array.from(h.match(/../g), (b) => parseInt(b, 16));
+const hexToBytes = (h) => Uint8Array.from(h.match(/../g), (b) => Number.parseInt(b, 16));
 
 export const PINS_NOT_CHECKED = "PINS_NOT_CHECKED";
 

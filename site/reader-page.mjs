@@ -82,11 +82,13 @@ function drawPins(c) {
   ];
 }
 
+const identityWord = (id) => (id ? "identity " + id.slice(0, 12) : "no identity");
+
 function drawOthers(s) {
   if (!s.others) return [];
   const o = s.others;
   return [
-    fact("other stores", el("ul", {}, o.stores.map((x) => el("li", {}, `${x.name} · ${x.identity ? `identity ${x.identity.slice(0, 12)}` : "no identity"} · ${x.address} · `,
+    fact("other stores", el("ul", {}, o.stores.map((x) => el("li", {}, `${x.name} · ${identityWord(x.identity)} · ${x.address} · `,
       x.read ? `read, ${x.records} records, under its own rules` : el("strong", { text: `not read: ${x.why}` }))))),
     fact("voices from outside", `${o.voices} on ${o.lineages} lineage(s), counted by this store's rules: none`
       + (o.left_out ? ` · ${o.left_out} left out (their own store rejects them)` : "")),
