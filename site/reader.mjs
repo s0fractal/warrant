@@ -524,14 +524,21 @@ export async function overlay(r, address, backend, source) {
   try { own = await read(r.store, receiver(r.store.doc, null), backend, source); }
   catch (e) { return done({ why: `the store's own verdict cannot be read: ${e?.message ?? e}` }); }
   const readable = (r.others ?? []).filter((o) => o.r);
-  const stores = [{ name: address, store: r.store, ids: [...r.recs.keys()] },
-                  ...readable.map((o) => ({ name: o.address, store: o.r.store, ids: [...o.r.recs.keys()] }))];
+  const stores = [{ name: address, identity: r.identity?.identity ?? null, store: r.store, ids: [...r.recs.keys()] },
+                  ...readable.map((o) => ({ name: o.address, identity: o.identity ?? null, store: o.r.store, ids: [...o.r.recs.keys()] }))];
   const sources = Object.fromEntries(stores.map((s) => [s.name, (s.name === address ? own : readable.find((o) => o.address === s.name).r).rules.trust]));
   const { trust, profile, held } = overlayReceiver(r.rules.trust, r.rules.profile, sources);
   const { lines, blobs } = compose(stores.map((s) => s.store));
   const over = await read({ lines, blobs, doc: r.store.doc }, { trust, profile, whose: "reader" }, backend, source);
-  const ids = {};
-  for (const s of [...stores].sort((a, b) => utf16(a.name, b.name))) ids[s.name] = await docId([...new Set(s.ids)].sort(utf16), backend);
+  // Each store keyed by its identity, `rules@1:<id>`, and only one with none by its address (warrant_agent/overlay.py
+  // identity, obligation ec6d1ebe): one store at two addresses counts once, its record ids united.
+  const keyed = new Map(), ids = {};
+  for (const s of stores) {
+    const k = s.identity ? `${RULES}:${s.identity}` : s.name;
+    if (!keyed.has(k)) keyed.set(k, new Set());
+    for (const i of s.ids) keyed.get(k).add(i);
+  }
+  for (const k of [...keyed.keys()].sort(utf16)) ids[k] = await docId([...keyed.get(k)].sort(utf16), backend);
   const identity = await docId({ stores: ids, trust: await docId(trust, backend), profile: await docId(profile, backend), code: over.rep.code }, backend);
   const out = [];
   for (const [L, a] of Object.entries(own.rep.lineages).sort((x, y) => utf16(x[0], y[0]))) {
