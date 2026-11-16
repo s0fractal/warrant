@@ -376,6 +376,8 @@ MUTANTS = [
     ("T288", "warrant/home.py", '            row["identity"] = identity_of(store_of(doc, name), trust, profile)\n', '            row["identity"] = None\n', TOOLS, ["RV3"]),
     ("T292", "warrant/graph.py", 'if rel == "attest" and nodes[a]["actor"] == actor and body.get("verdict") == DECLINE:', 'if rel == "attest" and nodes[a]["actor"] == actor:', TOOLS, ["FA4"]),
     ("T293", "warrant/graph.py", '"reason": reason if isinstance(reason, str) and reason.strip() else None})', '"reason": reason})', TOOLS, ["FA4"]),
+    ("T294", "warrant/review.py", '    return DENIED if JAIL_DENIED.search(out) else "no_result"\n', '    return "no_result"\n', TOOLS, ["R03b"]),
+    ("T295", "warrant/review.py", '        if verdict == DENIED:\n', '        if False:\n', TOOLS, ["R08b"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),
