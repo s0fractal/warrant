@@ -1899,20 +1899,24 @@ def browser_identity_cases():
     # J25: the overlay keys a store by its identity: the store with a genesis read at two addresses counts once
     from warrant_agent import overlay as OV
     rules = one.home / "rules.json"
-    rules.write_text(json.dumps({"trust": one.trust, "profile": one.profile}))
+    picky = dict(one.profile, roles=dict(one.profile["roles"], **{"schema/author": []}))   # admits no schema: no genesis for it
+    rules.write_text(json.dumps({"trust": one.trust, "profile": picky}))
     srvs, (b1, b2) = _serve_many(one.root, one.root)
     try:
         _, out = _reader(b1, "--with", b2, "--config", str(rules))
+        _, swapped = _reader(b2, "--with", b1, "--config", str(rules))
     finally:
         for x in srvs:
             x.shutdown()
     o = (out.get("summary") or {}).get("overlay") or {}
-    t, p, _ = OV.receiver(one.trust, one.profile, {b1: one.trust, b2: one.trust})
+    t, p, _ = OV.receiver(one.trust, picky, {b1: one.trust, b2: one.trust})
     two_places = OV.identity({b1: snap, b2: snap}, t, p, o.get("code"), {b1: g, b2: g})
     elsewhere = OV.identity({"mine": snap}, t, p, o.get("code"), {"mine": g})
     check("J25 the browser's overlay keys a store by its identity, as warrant_agent.overlay does: one store with a rules@1 "
-          "genesis read at two addresses counts once, and the overlay's identity is the one any name for it gives",
+          "genesis read at two addresses counts once, and the overlay's identity is the one any name for it gives, whichever "
+          "address is the main one, under a reader's rules that admit no schema (the identity is the store's own rules')",
           o.get("identity") is not None and o.get("identity") == two_places == elsewhere
+          and ((swapped.get("summary") or {}).get("overlay") or {}).get("identity") == two_places
           and two_places != OV.identity({b1: snap, b2: snap}, t, p, o.get("code")), (o.get("identity"), two_places, o.get("why")))
 
 

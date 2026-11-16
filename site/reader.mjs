@@ -524,7 +524,9 @@ export async function overlay(r, address, backend, source) {
   try { own = await read(r.store, receiver(r.store.doc, null), backend, source); }
   catch (e) { return done({ why: `the store's own verdict cannot be read: ${e?.message ?? e}` }); }
   const readable = (r.others ?? []).filter((o) => o.r);
-  const stores = [{ name: address, identity: r.identity?.identity ?? null, store: r.store, ids: [...r.recs.keys()] },
+  // The main store's identity is the one its own rules give (`own`), as each other store's is: under the reader's rules
+  // a reader who admits no schema author would see no genesis, and one store would be keyed twice (Codex on #449).
+  const stores = [{ name: address, identity: own.identity?.identity ?? null, store: r.store, ids: [...r.recs.keys()] },
                   ...readable.map((o) => ({ name: o.address, identity: o.identity ?? null, store: o.r.store, ids: [...o.r.recs.keys()] }))];
   const sources = Object.fromEntries(stores.map((s) => [s.name, (s.name === address ? own : readable.find((o) => o.address === s.name).r).rules.trust]));
   const { trust, profile, held } = overlayReceiver(r.rules.trust, r.rules.profile, sources);
