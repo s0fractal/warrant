@@ -517,6 +517,21 @@ const docId = (v, backend) => backend.sha256(canon(v));
 // the reader's, the challenges that stand for the reader and not in the store, and the actors who accept a version for
 // the reader and not in the store. The reliance words are the engine's; `shown` applies this reader's rule to both
 // sides: ELIGIBLE on pins nobody compared reads PINS_NOT_CHECKED (the overlay compares no pins).
+// {key: docId of its record ids} of the stores an overlay unites: each keyed by its identity, `rules@1:<id>`, and only
+// one with none by its address (warrant_agent/overlay.py identity, obligation ec6d1ebe): one store at two addresses
+// counts once, its record ids united.
+async function keyedIds(stores, backend) {
+  const keyed = new Map();
+  for (const s of stores) {
+    const k = s.identity ? `${RULES}:${s.identity}` : s.name;
+    if (!keyed.has(k)) keyed.set(k, new Set());
+    for (const i of s.ids) keyed.get(k).add(i);
+  }
+  const keys = [...keyed.keys()].sort(utf16);
+  const digests = await Promise.all(keys.map((k) => docId([...keyed.get(k)].sort(utf16), backend)));
+  return Object.fromEntries(keys.map((k, n) => [k, digests[n]]));
+}
+
 export async function overlay(r, address, backend, source) {
   const done = (o) => { r.overlay = o; return r; };
   if (r.whose !== "reader") return done({ why: "no rules of the reader's own were given: there is nobody to read it for" });
@@ -524,14 +539,15 @@ export async function overlay(r, address, backend, source) {
   try { own = await read(r.store, receiver(r.store.doc, null), backend, source); }
   catch (e) { return done({ why: `the store's own verdict cannot be read: ${e?.message ?? e}` }); }
   const readable = (r.others ?? []).filter((o) => o.r);
-  const stores = [{ name: address, store: r.store, ids: [...r.recs.keys()] },
-                  ...readable.map((o) => ({ name: o.address, store: o.r.store, ids: [...o.r.recs.keys()] }))];
+  // The main store's identity is the one its own rules give (`own`), as each other store's is: under the reader's rules
+  // a reader who admits no schema author would see no genesis, and one store would be keyed twice (Codex on #449).
+  const stores = [{ name: address, identity: own.identity?.identity ?? null, store: r.store, ids: [...r.recs.keys()] },
+                  ...readable.map((o) => ({ name: o.address, identity: o.identity ?? null, store: o.r.store, ids: [...o.r.recs.keys()] }))];
   const sources = Object.fromEntries(stores.map((s) => [s.name, (s.name === address ? own : readable.find((o) => o.address === s.name).r).rules.trust]));
   const { trust, profile, held } = overlayReceiver(r.rules.trust, r.rules.profile, sources);
   const { lines, blobs } = compose(stores.map((s) => s.store));
   const over = await read({ lines, blobs, doc: r.store.doc }, { trust, profile, whose: "reader" }, backend, source);
-  const ids = {};
-  for (const s of [...stores].sort((a, b) => utf16(a.name, b.name))) ids[s.name] = await docId([...new Set(s.ids)].sort(utf16), backend);
+  const ids = await keyedIds(stores, backend);
   const identity = await docId({ stores: ids, trust: await docId(trust, backend), profile: await docId(profile, backend), code: over.rep.code }, backend);
   const out = [];
   for (const [L, a] of Object.entries(own.rep.lineages).sort((x, y) => utf16(x[0], y[0]))) {

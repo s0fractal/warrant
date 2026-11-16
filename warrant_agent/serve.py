@@ -978,7 +978,8 @@ class App:
         base = self.space.report(store)
         card = lambda schema: LZ.card_of(self.pick(schema, None)[1])
         rows = [x for x in VW.delta(sys.modules[__name__], base, over, card)[0] if x["lineage"] in base["lineages"]]
-        ident = OVL.identity(snaps, t, p, over["code"])
+        idents = {n: G.identity(self.space.report(n), snaps[n])["identity"] for n in names}
+        ident = OVL.identity(snaps, t, p, over["code"], idents)
         asked = sorted({r for v in base["versions"].values() for r in v.get("roles", [])})
         unnamed = [r for r in asked if not p["roles"].get(r)]
         picks = " · ".join(f'<a href="/overlay?store={quote(n)}">{E(n)}</a>' for n in readable if n != self.mine)

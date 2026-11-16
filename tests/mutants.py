@@ -374,6 +374,8 @@ MUTANTS = [
     ("T286", "warrant/resolve.py", '            self.identity = G.identity(E.View(self.snap, trust, profile).report(), self.snap)["identity"]\n', '            self.identity = None\n', TOOLS, ["RV3"]),
     ("T287", "warrant/home.py", '        row.update({"same": same} if same else {})\n', '        pass\n', TOOLS, ["RV3"]),
     ("T288", "warrant/home.py", '            row["identity"] = identity_of(store_of(doc, name), trust, profile)\n', '            row["identity"] = None\n', TOOLS, ["RV3"]),
+    ("T290", "warrant_agent/overlay.py", '    return f"rules@1:{i}" if i else name\n', '    return name\n', AGENT, ["OV7"]),
+    ("T291", "warrant_agent/overlay.py", '        keyed.setdefault(key(n, identities), set()).update(s.lines)\n', '        keyed.setdefault(n, set()).update(s.lines)\n', AGENT, ["OV7"]),
     ("T296", "warrant/gate.py", '        if len(parents) != 2 or _bot_merge(root, x):\n', '        if len(parents) != 2:\n', GATE, ["E72b"]),
     ("T294", "warrant/review.py", '    return DENIED if JAIL_DENIED.search(out) else "no_result"\n', '    return "no_result"\n', TOOLS, ["R03b"]),
     ("T295", "warrant/review.py", '        if verdict == DENIED:\n', '        if False:\n', TOOLS, ["R08b"]),

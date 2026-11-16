@@ -1773,6 +1773,23 @@ def overlay_cases():
           and OV.identity(snaps, t1, p1, code) == OV.identity(snaps, t1, p1, again["code"])
           and OV.identity(snaps, t1, p1, code) != OV.identity(snaps, t1, p2, code)
           and OV.identity(snaps, t1, p1, code) != OV.identity({"pub": snaps["pub"]}, t1, p1, code), r2["challenges"].get(c))
+    # OV7: the overlay keys a store by its identity (obligation ec6d1ebe), not by the name a reader gives it
+    from warrant import gate as GT
+    from warrant import graph as G
+    ruled = Repo()                                     # its own store: pub is read again by the page below
+    ruled.put("alice", "schema", GT.RULES_SCHEMA)
+    g = ruled.put("bob", "entity", dict(json.loads((ruled.dot / "v3.json").read_text()), state="in force"), GT.RULES)
+    ps = ruled.store.snapshot()
+    gid = G.identity(RP.Repo(ruled.root).report(), ps)["identity"]
+    named = lambda n: {n: ps, "crit": snaps["crit"]}
+    ids = lambda n: {n: gid, "crit": None}
+    as_pub, as_other = OV.identity(named("pub"), t1, p1, code, ids("pub")), OV.identity(named("publisher"), t1, p1, code, ids("publisher"))
+    twice = OV.identity({"pub": ps, "again": ps, "crit": snaps["crit"]}, t1, p1, code, {"pub": gid, "again": gid, "crit": None})
+    check("OV7 the overlay's identity keys a store by its identity: two readers who name the store with a rules@1 genesis "
+          "otherwise get one identity, the store read at two places counts once; a store with none is keyed by its name",
+          gid == g and as_pub == as_other == twice and OV.identity(named("pub"), t1, p1, code) != OV.identity(named("publisher"), t1, p1, code)
+          and OV.identity(named("pub"), t1, p1, code, {"pub": gid}) != OV.identity({"pub": ps, "critic": snaps["crit"]}, t1, p1, code, {"pub": gid}),
+          (as_pub, as_other, twice))
     forged = dict(pub.trust, keys=dict(pub.trust["keys"], eve=[KEYS["dave"].public]))   # a store that calls dave's key eve
     reader_trust = dict(pub.trust, keys={a: k for a, k in pub.trust["keys"].items() if a != "eve"})
     t3, _, conflicts = OV.receiver(reader_trust, p2, {"pub": pub.trust, "forger": forged})     # eve holds no role in p2
