@@ -115,16 +115,16 @@ def join(a):
 
 def seen_body(a, body):
     """An acceptance with what its signer's view held of the target (warrant.graph.seen_of), as the agent interface's
-    prepare gives it; any other verdict, a body that names its own `seen`, or a store with no rules to read it by
-    (--trust without --profile, and no v3.json), as given."""
-    if body.get("verdict") != "accept" or "seen" in body:
+    prepare gives it (warrant.graph.with_seen); any other verdict, or a store with no rules to read it by (--trust
+    without --profile, and no v3.json), as given."""
+    if body.get("verdict") != "accept":
         return body
     store = store_dir(a)
     try:
         trust, profile = receiver(a, store)[:2]
     except Refused:                  # no rules to read the store by (--trust alone): it names no horizon
         return body
-    return dict(body, seen=G.seen_of(E.View(Store(store).snapshot(), trust, profile).report(), body["target"]))
+    return G.with_seen(E.View(Store(store).snapshot(), trust, profile).report(), body)
 
 
 def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):

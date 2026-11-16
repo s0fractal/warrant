@@ -59,26 +59,53 @@ def horizon_cases():
     repo = Repo()
     obl = repo.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
     done = repo.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=obl)
-    early = repo.put("eve", "challenge", {"target": done, "statement": "seen before the acceptance"}, refs=[done])
+    early = repo.put("alice", "challenge", {"target": done, "statement": "seen before the acceptance"}, refs=[done])
+    repo.put("eve", "challenge", {"target": done, "statement": "not counted here"}, refs=[done])
     cfg = cfg_of(repo)
     root = repo.report()["snapshot"]
     p = ok(api.call(cfg, "prepare", {"workspace": "w", "kind": "attest", "target": done, "body": {"verdict": "accept"}}))
     seen = (p.get("record") or {}).get("body", {}).get("seen")
     acc = p.get("id")
     api.call(cfg, "commit", {"workspace": "w", "record": p.get("record")})
-    late = repo.put("eve", "challenge", {"target": done, "statement": "filed after it"}, refs=[done])
+    late = repo.put("alice", "challenge", {"target": done, "statement": "filed after it"}, refs=[done])
+    repo.put("eve", "challenge", {"target": done, "statement": "not counted, after it"}, refs=[done])
     blind = repo.attest("carol", done)                        # an acceptance that names no horizon
     named = repo.attest("dave", done, seen={"root": root, "challenges": [early, late]})
     cap = ok(api.call(cfg, "context", {"workspace": "w", "targets": [done]})).get("targets", {}).get(done, {})
     hz = cap.get("horizons", {})
     rep = repo.report()
-    check("A46 prepare fills an acceptance's `seen`: the root of the snapshot its view read and the challenges against the "
-          "target in it; a guard still counts it (its match is the verdict)",
-          seen == {"root": root, "challenges": [early]} and rep["lineages"][obl]["state"] == "done", (seen, rep["lineages"][obl]["state"]))
+    check("A46 prepare fills an acceptance's `seen`: the root of the snapshot its view read and the counted challenges "
+          "against the target in it (eve's does not count here, so it is not listed)",
+          seen == {"root": root, "challenges": [early]}, seen)
     check("A47 context reads each acceptance's horizon: a challenge filed after it is unseen, one it listed is not; an "
           "acceptance naming no `seen` has no horizon (None), never `saw everything`",
           hz.get(acc) == {"root": root, "unseen": [late]} and hz.get(named) == {"root": root, "unseen": []}
           and blind in hz and hz[blind] is None and G.horizon(RP.Repo(repo.root).report(), acc) == hz.get(acc), hz)
+    seen_bounds()
+
+
+def seen_bounds():
+    """`seen` never makes a valid acceptance invalid (Codex on #457): a schema's closed body is left as given, and a
+    list that would not fit the body limit is left out, so the acceptance names no horizon."""
+    repo = Repo()
+    obl = repo.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    done = repo.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=obl)
+    repo.put("alice", "schema", {"name": "ack@1", "fields": {"target": "ref", "verdict": "str"},
+                                 "states": None, "closed": [], "successors": {}})
+    cfg = cfg_of(repo)
+    p = ok(api.call(cfg, "prepare", {"workspace": "w", "kind": "attest", "schema": "ack@1", "target": done,
+                                     "body": {"verdict": "accept"}}))
+    out = api.call(cfg, "commit", {"workspace": "w", "record": p.get("record")})
+    check("A48 a schema-bound acceptance is prepared as given (no `seen` its closed body would refuse) and commits",
+          "seen" not in (p.get("record") or {}).get("body", {}) and "ok" in out and not repo.report()["problems"], out)
+    many = [R.record("challenge", who, repo.t + n + 1, {"target": done, "statement": str(n)}, refs=[done])
+            for who in ("eve", "alice") for n in range(250)]
+    for who in ("eve", "alice"):
+        repo.store.extend([r for r in many if r["actor"] == who], KEYS[who], repo.trust)
+    p = ok(api.call(cfg, "prepare", {"workspace": "w", "kind": "attest", "target": done, "body": {"verdict": "accept"}}))
+    out = api.call(cfg, "commit", {"workspace": "w", "record": p.get("record")})
+    check("A49 250 uncounted and 250 counted challenges: the acceptance leaves out a `seen` that would not fit and commits",
+          "seen" not in (p.get("record") or {}).get("body", {}) and "ok" in out and not repo.report()["problems"], out)
 
 
 def operations():

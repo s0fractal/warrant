@@ -391,8 +391,8 @@ def prepare(cfg, req):
     if kind in ("attest", "challenge"):
         t = _resolve(snap, req.get("target") or body.get("target") or "")
         body, refs = dict(body, target=t), refs + [t]
-        if kind == "attest" and body.get("verdict") == "accept" and "seen" not in body:
-            body["seen"] = G.seen_of(view.report(), t)       # the horizon it accepts within: what this view held
+        if kind == "attest" and body.get("verdict") == "accept" and req.get("schema") is None:
+            body = G.with_seen(view.report(), body)     # the horizon it accepts within; a schema's closed body: as given
     schema, guard = req.get("schema"), req.get("guard")
     s = view.schemas.get(schema) if isinstance(schema, str) else None
     if s is not None:
