@@ -1012,6 +1012,7 @@ def main():
     browser_rules_cases()
     browser_receipts_cases()
     browser_pins_vector_cases()
+    browser_identity_cases()
     frame_parity_cases()
     if a.limits:
         limit_cases(tally)
@@ -1846,6 +1847,55 @@ def browser_pins_vector_cases():
     check("J23 the browser's reader passes tests/vectors/pins-not-checked.json: read with no pins compared, each lineage "
           "the freshness gate covers is PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance",
           shown == vec["expect"], {L[:12]: (shown.get(L), w) for L, w in vec["expect"].items()} or js)
+
+
+# ---------------------------------------------------------------- J24: a store's identity (obligation ec6d1ebe)
+def browser_identity_cases():
+    """The browser's reader names a store as warrant/graph.py identity does: the root of its one rules@1 lineage when the
+    root carries a signature under a key its own body binds to its author; a store with none, with two, or with a copy
+    of the genesis re-signed under a key its own v3.json binds (Codex's finding on #444) has none."""
+    from warrant import gate as GT
+    from warrant import graph as G
+    from warrant import jcs as JCS
+    from warrant import records as R
+    from warrant import repo as RP
+    from world import KEYS
+
+    def rules_store(n):
+        r = Repo()
+        if n:
+            r.put("alice", "schema", GT.RULES_SCHEMA)
+        doc = json.loads((r.dot / "v3.json").read_text())
+        return r, [r.put("bob", "entity", dict(doc, state="in force"), GT.RULES) for _ in range(n)]
+    one, (g,) = rules_store(1)
+    none, _ = rules_store(0)
+    two, _ = rules_store(2)
+    snap = one.store.snapshot()
+    forged = Repo()
+    forged.trust["keys"]["bob"] = [KEYS["alice"].public]
+    forged.write_config()
+    line = R.line(snap.lines[g][0]["record"], KEYS["alice"])[1]
+    forged.store.file.write_bytes(b"".join(sorted(line if i == g else b"".join(JCS.canon(e) + b"\n" for e in envs)
+                                                  for i, envs in snap.lines.items())))
+    stores = {"one": one, "none": none, "two": two, "forged": forged}
+    py = {k: G.identity(RP.Repo(r.root).report(), r.store.snapshot()) for k, r in stores.items()}
+    js, servers = {}, []
+    try:
+        bases = {}
+        for k, r in stores.items():
+            srv, bases[k] = _serve(r.root)
+            servers.append(srv)
+        for k in stores:
+            js[k] = _js_eval(bases[k], "return R.summary(r).identity;")
+        others = _js_eval(bases["one"], "return R.summary(r).others.stores.map((x) => x.identity);", [bases["forged"], bases["one"]])
+    finally:
+        for srv in servers:
+            srv.shutdown()
+    check("J24 the browser's reader gives each store the identity warrant/graph.py gives it: the self-signed rules@1 root, "
+          "or none with the same reason (no genesis, two, a genesis re-signed under the copier's own binding); a store "
+          "read beside the main one carries its identity",
+          js == py and py["one"]["identity"] == g and py["forged"]["identity"] is None and sorted(others or [], key=str) == sorted([None, g], key=str),
+          {"py": py, "js": js, "others": others})
 
 
 # ---------------------------------------------------------------- J21: the publisher's rules changed (stage 2a)
@@ -3050,7 +3100,9 @@ def _watch_golden(reader):
         w = {k: v for k, v in (out.get("watch") or {}).items() if k != "toward"}
         # `code` and `assessment` name the runtime (impl-js codeIdentity: the node and OpenSSL versions), not what was
         # read: a digest over them holds on one machine only (CI's node is not a developer's)
-        s = {k: v for k, v in (out.get("summary") or {}).items() if k not in ("cited", "code", "assessment")}
+        s = {k: v for k, v in (out.get("summary") or {}).items() if k not in ("cited", "identity", "code", "assessment")}
+        if isinstance(s.get("others"), dict):          # each other store's identity is J24's, added after the digests
+            s["others"] = dict(s["others"], stores=[{k: v for k, v in x.items() if k != "identity"} for x in s["others"]["stores"]])
         outs.append([rc, w, s])
     try:
         m_a = mark("--with", bo, "--watch", w1)
