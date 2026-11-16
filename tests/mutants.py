@@ -363,6 +363,9 @@ MUTANTS = [
     ("T275", "warrant/drift.py", '        rep["lineages"][L]["reliance"] = PINS_NOT_CHECKED\n', '        pass\n', AGENT, ["A45"]),
     ("T276", "warrant_agent/api.py", '    else:\n        D.not_checked(rep)\n', '', AGENT, ["A45"]),
     ("T277", "warrant/drift.py", 'if done.get(lin["effective"]) and not (lin["schema"] == C.CLAIM and L not in live)}', 'if done.get(lin["effective"])}', AGENT, ["A45"]),
+    ("T278", "warrant/roadmap.py", '    schema = OBLIGATION2 if OBLIGATION2 in rep["schemas"] else OBLIGATION\n', '    schema = OBLIGATION\n', TOOLS, ["P05"]),
+    ("T279", "warrant/roadmap.py", '    g = rep["_recs"][rep["schemas"][schema]]["body"]["states"].get(state) if schema in rep["schemas"] else None\n', '    g = None\n', TOOLS, ["P05"]),
+    ("T280", "warrant/gate.py", 'due_for(rep, self.profile, actor, ("goal@1", "obligation@1", "obligation@2"))', 'due_for(rep, self.profile, actor, ("goal@1", "obligation@1"))', GATE, ["E98"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),

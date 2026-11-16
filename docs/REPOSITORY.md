@@ -115,6 +115,11 @@ version, which a `roadmap/acceptor` (codex) accepts. `revise` files a new `open`
 (only the actor who opened the obligation), and `release` its `released` version with the reason (only a
 `roadmap/owner`: forgiveness is the creditor's). `due --actor codex` is what the review waker
 reads: the leaves waiting only for that actor's attest.
+Since the models hold `roadmap/owner` beside the owner, a model could release its own obligation alone; `obligation@2`
+(defined in `warrant/roadmap.py`, obligation d485438a) is `obligation@1` whose `released` waits for a
+`roadmap/acceptor` other than the releasing actor (a guard never counts a version's own actor, docs/V3.md §6).
+`oblige` files on `obligation@2` once the store counts that schema (two `schema/author`s); a lineage already on
+`obligation@1` keeps its schema and its releases keep their meaning.
 
 ## The board: the roadmap where people already look
 

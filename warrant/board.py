@@ -40,8 +40,8 @@ from pathlib import Path
 from . import jcs as C
 from .repo import Failed, Repo, dump, main
 
-GOAL, OBLIGATION = "goal@1", "obligation@1"
-KIND = {GOAL: "Goal", OBLIGATION: "Obligation"}
+GOAL, OBLIGATION, OBLIGATION2 = "goal@1", "obligation@1", "obligation@2"
+KIND = {GOAL: "Goal", OBLIGATION: "Obligation", OBLIGATION2: "Obligation"}
 OPEN, CLAIMED, ACCEPTED, RELEASED, WITHDRAWN, CHALLENGED, FORKED, OTHER = (
     "Open", "Claimed, not accepted", "Accepted", "Released", "Withdrawn", "Challenged", "Forked", "Other")
 STATUSES = (OPEN, CLAIMED, ACCEPTED, RELEASED, WITHDRAWN, CHALLENGED, FORKED, OTHER)

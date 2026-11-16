@@ -1,4 +1,4 @@
-"""The roadmap: goals (goal@1) and the obligations that answer them (obligation@1), as records in
+"""The roadmap: goals (goal@1) and the obligations that answer them (obligation@1, obligation@2), as records in
 .warrant/records.jsonl. The rules (who closes, who accepts, who releases) are the schema records'; this
 tool shows them, lists what waits for an acceptor, and files obligations and their closures.
 
@@ -18,12 +18,20 @@ import argparse
 import re
 import sys
 
+from . import bootstrap as B
 from . import records as R
 from .gate import due_for, schemas_due
 from .repo import Failed, Repo, dump, emit, env_root, load_key, main
 
-GOAL, OBLIGATION = "goal@1", "obligation@1"
-SCHEMAS = (GOAL, OBLIGATION)
+GOAL, OBLIGATION, OBLIGATION2 = "goal@1", "obligation@1", "obligation@2"
+OBLIGATIONS = (OBLIGATION, OBLIGATION2)
+SCHEMAS = (GOAL, *OBLIGATIONS)
+# obligation@2 (obligation d485438a, 2026-11-13): obligation@1 whose `released` waits for a roadmap/acceptor other than
+# the releasing actor (a guard never counts a version's own actor, docs/V3.md §6), so that no actor releases its own
+# obligation alone now that the models hold roadmap/owner. Lineages on obligation@1 stay there; `oblige` files on
+# obligation@2 once the receiver counts it.
+OBLIGATION2_SCHEMA = dict(next(s for s in B.SCHEMAS if s["name"] == OBLIGATION), name=OBLIGATION2)
+OBLIGATION2_SCHEMA["states"] = dict(OBLIGATION2_SCHEMA["states"], released=B._accepted_by(B.ROADMAP_ACCEPTOR))
 
 
 def goals(rep):
@@ -60,7 +68,7 @@ def check(rep):
             out.append(f"{L[:12]} ({lin['schema']}) forks")
         for v in lin["versions"]:
             a = recs[v]["body"].get("answers")
-            if lin["schema"] == OBLIGATION and a is not None and a not in keys:
+            if lin["schema"] in OBLIGATIONS and a is not None and a not in keys:
                 out.append(f"obligation version {v[:12]} answers {a[:12]}, which is no goal version")
     return out
 
@@ -80,7 +88,7 @@ def view(rep):
              f"`{rep['assessment'][:12]}`); a build artifact, never committed. Completeness: {rep['completeness']}.", ""]
     by_goal = {}
     for L, lin in rep["lineages"].items():
-        if lin["schema"] == OBLIGATION:
+        if lin["schema"] in OBLIGATIONS:
             leaf = recs[lin["leaf"]]["body"] if lin["leaf"] else recs[L]["body"]
             by_goal.setdefault(keys.get(leaf.get("answers")), []).append((L, lin, leaf))
     for L, lin in sorted(((L, lin) for L, lin in rep["lineages"].items() if lin["schema"] == GOAL),
@@ -165,24 +173,28 @@ def _obligation(rep, a):
               if lin["schema"] == GOAL and rep["_recs"][L]["body"]["key"] == a.goal), None)
     if g is None:
         raise Failed("GOAL", f"no goal {a.goal}")
+    schema = OBLIGATION2 if OBLIGATION2 in rep["schemas"] else OBLIGATION
     return R.record("entity", a.actor, 0, {"state": "open", "statement": a.statement, "answers": g, "serves": sorted(a.serves)},
-                    OBLIGATION, refs=[g, *a.serves])
+                    schema, refs=[g, *a.serves])
 
 
 def _lineage(rep, a):
     """(lineage id, its leaf's body) of the obligation --obligation names; refused unless it is one without a fork."""
     L = a.obligation if a.obligation in rep["lineages"] else None
-    if L is None or rep["lineages"][L]["schema"] != OBLIGATION or not rep["lineages"][L]["leaf"]:
+    if L is None or rep["lineages"][L]["schema"] not in OBLIGATIONS or not rep["lineages"][L]["leaf"]:
         raise Failed("OBLIGATION", f"{a.obligation[:12]} is not an obligation lineage without a fork")
     return L, rep["_recs"][rep["lineages"][L]["leaf"]]["body"]
 
 
 def _successor(rep, a, L, prev, state, **notes):
-    """A successor of L's leaf in `state`, carrying the leaf's statement, answers and serves (docs/V3.md §3)."""
+    """A successor of L's leaf in `state`, carrying the leaf's statement, answers and serves (docs/V3.md §3), on the
+    lineage's own schema, with that schema's guard for the state when it has one (obligation@2's `released`)."""
     body = {"state": state, "statement": prev["statement"], "answers": prev.get("answers"), "serves": prev.get("serves", []),
             **notes}
-    return R.record("entity", a.actor, 0, {k: v for k, v in body.items() if v is not None}, OBLIGATION, lineage=rep["lineages"][L]["leaf"],
-                    refs=([body["answers"]] if body["answers"] else []) + body["serves"])
+    schema = rep["lineages"][L]["schema"]
+    g = rep["_recs"][rep["schemas"][schema]]["body"]["states"].get(state) if schema in rep["schemas"] else None
+    return R.record("entity", a.actor, 0, {k: v for k, v in body.items() if v is not None}, schema, lineage=rep["lineages"][L]["leaf"],
+                    refs=([body["answers"]] if body["answers"] else []) + body["serves"], guard=g)
 
 
 def _revision(rep, a):
@@ -196,7 +208,8 @@ def _revision(rep, a):
 
 def _release(rep, a, profile):
     """The `released` version `release` files: the obligation forgiven, its reason as the residual, by a roadmap/owner
-    (obligation@1's successors); refused for an actor without that role before it is signed."""
+    (the schema's successors); refused for an actor without that role before it is signed. On obligation@2 it waits
+    for a roadmap/acceptor other than the releasing actor."""
     L, prev = _lineage(rep, a)
     if a.actor not in profile["roles"].get("roadmap/owner", []):
         raise Failed("ROLE", f"{a.actor} is no roadmap/owner: only the owner releases an obligation")
@@ -208,8 +221,9 @@ def _closure(rep, a):
     L, prev = _lineage(rep, a)
     body = {"state": "done", "statement": prev["statement"], "answers": prev.get("answers"), "serves": prev.get("serves", []),
             "evidence": sorted(a.evidence), "refs": a.ref, "established": a.established, "residual": a.residual}
-    g = dict(rep["_recs"][rep["schemas"][OBLIGATION]]["body"]["states"]["done"], requires=sorted(a.requires))
-    return R.record("entity", a.actor, 0, {k: v for k, v in body.items() if v is not None}, OBLIGATION,
+    schema = rep["lineages"][L]["schema"]
+    g = dict(rep["_recs"][rep["schemas"][schema]]["body"]["states"]["done"], requires=sorted(a.requires))
+    return R.record("entity", a.actor, 0, {k: v for k, v in body.items() if v is not None}, schema,
                     lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])
                     + body["serves"], guard=g)
 

@@ -57,7 +57,7 @@ with open(dot + "/records.jsonl", "rb") as f:
             r = json.loads(line)["record"]
             recs[R.rid(r)] = r
 found = sorted(lin["effective"] for lin in rep["lineages"].values()
-               if lin["schema"] == "obligation@1" and lin["effective"] and lin["state"] == "done"
+               if lin["schema"] in ("obligation@1", "obligation@2") and lin["effective"] and lin["state"] == "done"
                and lin["reliance"] == "ELIGIBLE" and want in (recs.get(lin["effective"], {}).get("body", {}).get("refs") or []))
 sys.stdout.write(json.dumps({"release": want, "accepted": found}))
 """
