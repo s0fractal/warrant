@@ -1742,6 +1742,64 @@ def ledger_cases():
           partial[1] and full[1], (partial[0], full[0]))
 
 
+def _rep_snap(r):
+    return RP.Repo(r.root).report(), r.store.snapshot()
+
+
+def identity_cases():
+    """A store's identity (obligation ec6d1ebe): the root of its one rules@1 lineage, never its self-given name nor its
+    earliest record by time."""
+    from warrant import gate as GT
+    from warrant import graph as G
+
+    def rules_store(n, name="s0fractal/warrant"):
+        r = Repo(name=name)
+        if n:
+            r.put("alice", "schema", GT.RULES_SCHEMA)
+        doc = json.loads((r.dot / "v3.json").read_text())
+        roots = [r.put("bob", "entity", dict(doc, state="in force"), GT.RULES) for _ in range(n)]
+        return r, roots
+    one, (g,) = rules_store(1)
+    none, _ = rules_store(0)
+    two, _ = rules_store(2)
+    copy, _ = rules_store(0, name="s0fractal/warrant")          # the same self-given name, no genesis
+    early = one.put("carol", "entity", {"state": "open", "statement": "dated first", "serves": []}, "obligation@1", at=1)
+    ids = [G.identity(*_rep_snap(x)) for x in (one, none, two, copy)]
+    _, out = cli(one.root, "status", "--json")
+    st = json.loads(out) if out.strip().startswith("{") else {}
+    check("ID1 a store's identity is the root of its one rules@1 lineage, and stays it when a record dated earlier than "
+          "every other is appended; a store with no rules@1 lineage, or two, has none and says why; one that copies the "
+          "self-given repository name but not the genesis has none; `warrant status` shows it",
+          ids[0] == {"identity": g, "by": "rules@1"} and early and all(x["identity"] is None and x["why"] for x in ids[1:])
+          and "no rules@1 genesis" in ids[1]["why"] and "2 rules@1 lineages" in ids[2]["why"]
+          and st.get("identity", {}).get("identity") == g, (ids, st.get("identity")))
+
+    # ID2 (codex finding on #444): a copy of the genesis re-signed under a key the copier's own v3.json binds to the
+    # author is admitted by that store, but it is not signed by any key the genesis binds to its author: no identity.
+    # The key is alice's, which the genesis binds to alice, not to bob, its author.
+    from warrant import records as R
+    from warrant.across import Reading
+    snap = one.store.snapshot()
+    rec = snap.lines[g][0]["record"]
+    rogue = KEYS["alice"]
+    imp = Repo(name="s0fractal/warrant")
+    imp.trust["keys"]["bob"] = [rogue.public]
+    imp.write_config()
+    forged_id, forged = R.line(rec, rogue)
+    lines = [forged if i == g else b"".join(JCS.canon(e) + b"\n" for e in envs) for i, envs in snap.lines.items()]
+    imp.store.file.write_bytes(b"".join(sorted(lines)))
+    rep, isnap = _rep_snap(imp)
+    got = G.identity(rep, isnap)
+    head = Reading("imp", lambda: (isnap, imp.trust, imp.profile, "s0fractal/warrant")).header()
+    check("ID2 a rules@1 genesis copied and re-signed under a key its own body binds to another actor, not its author, names no "
+          "store, in graph and in across, though the copying store admits it; the original keeps its identity",
+          forged_id == g and not rep["problems"] and g in rep["lineages"] and got["identity"] is None
+          and "signed by no key" in got["why"] and head.get("identity") is None and ids[0]["identity"] == g
+          and not any(R.verifies(g, json.loads(forged)["sig"], k) for k in rec["body"]["trust"]["keys"]["bob"])
+          and rogue.public in rec["body"]["trust"]["keys"]["alice"],
+          (got, head.get("identity"), rep["problems"]))
+
+
 def grounded_cases():
     """warrant.graph.grounded: minds' Grounded over a report. A lineage is ELIGIBLE on a ground that is not: only the
     transitive answer says so."""
@@ -1844,6 +1902,18 @@ def resolve_cases():
         refused = str(e)
     check("RV2 bytes found under a name they do not hash to are refused (BYTES_MISMATCH), never MISSING: a transport is not "
           "trusted", refused is not None and "does not hash" in refused, refused)
+    from warrant import gate as GT
+    a.put("alice", "schema", GT.RULES_SCHEMA)
+    g = a.put("bob", "entity", dict(json.loads((a.dot / "v3.json").read_text()), state="in force"), GT.RULES)
+    twice = H.add_repository(H.add_repository(H.empty(), str(a.root), "a"), str(b.root), "b")
+    twice["repositories"]["again"] = {"path": str(a.root)}           # one store registered at two places
+    ids = RS.answer(twice, [nowhere])["identities"]
+    rows = {x["name"]: x for x in H.listing(twice)}
+    check("RV3 resolve and Home name each store by its identity, the root of its one self-signed rules@1 lineage: a store "
+          "with none says so; Home marks one store registered twice as the same store, whatever its names",
+          ids == {"a": g, "again": g, "b": None} and rows["a"].get("identity") == g and rows["a"].get("same") == ["again"]
+          and rows["again"].get("same") == ["a"] and rows["b"].get("identity") is None and "same" not in rows["b"],
+          (ids, rows))
 
 def voices_cases():
     """W4's stranger path in the core command: `warrant init --voices` and `warrant say`, with nothing but the package."""
@@ -2813,6 +2883,7 @@ if __name__ == "__main__":
         differential_cases,
         ledger_cases,
         grounded_cases,
+        identity_cases,
         observer_cases,
         merged_cases,
         voices_cases,
