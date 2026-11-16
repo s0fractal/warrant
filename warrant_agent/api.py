@@ -188,7 +188,7 @@ def graph(cfg, req):
     rep = _report(ws, view)
     if op in ("around", "path", "why", "grounded"):
         i = _resolve(snap, req.get("target"))
-        data = getattr(G, op)(rep, i)
+        data = G.grounded(rep, i, view.recs) if op == "grounded" else getattr(G, op)(rep, i)   # answers needs the records
         query = {"op": op, "target": i}
     elif op == "ledger":
         data, query = G.ledger(rep, view.recs), {"op": op}
