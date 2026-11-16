@@ -15,6 +15,10 @@ TERMS = {
               "where its witness or mutant files are not the bytes at this checkout's HEAD (warrant.drift, G14). It is "
               "not ELIGIBLE until the checker accepts it again at a commit holding those bytes.",
               "It does not establish that the claim is false: only that what was checked is not what is here."),
+    "PINS_NOT_CHECKED": ("Read with no checkout beside the store: the lineage's effective version has a pinned "
+                         "acceptance (one naming files at a commit, warrant.drift pinned), and nobody compared those "
+                         "files with a tree, so it is not shown ELIGIBLE (docs/V3.md §10).",
+                         "It does not establish that the pins are stale: read the store in a checkout to know."),
     "FORK": ("Two admitted versions succeed the same version: the lineage has no leaf and no state (§3). As a lineage "
              "verdict, every branch is listed and nothing is excluded.", "Neither branch is preferred."),
     # guard verdicts (§6)

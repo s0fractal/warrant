@@ -1,0 +1,82 @@
+{
+ "expect": {
+  "1a1e0862d19e246edfe76dda36b9a9ee0f906868c98bac206bdef2c59a2da9df": "ELIGIBLE",
+  "6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": "ELIGIBLE",
+  "6fefa27b36695558a6b5819a2e9d1b76255daed93c70cad0cc5383afb2824d2d": "PENDING",
+  "d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d": "PINS_NOT_CHECKED",
+  "feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e": "PINS_NOT_CHECKED"
+ },
+ "lines": [
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000010,\"body\":{\"serves\":[],\"state\":\"done\",\"statement\":\"accepted, no files\"},\"guard\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"roadmap/acceptor\"]},\"kind\":\"entity\",\"lineage\":null,\"prev\":\"a003e1cac7d7b4cd79d7145f19bd9ae50903540491dd8486af7e06b05b12bc46\",\"refs\":[],\"schema\":\"obligation@1\",\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"24eb7d2ec4db9a24a794b64ae880488887ecd1bfb064a2bfe0700b23e7394018825602593666a54286fced7539d423b8b12ed8dcebe437e5edcf18fe3f42d905\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000001,\"body\":{\"closed\":[\"backed\"],\"fields\":{\"because\":\"str?\",\"challenge\":\"ref?\",\"counter\":\"ref?\",\"established\":\"strs?\",\"evidence\":\"refs?\",\"id\":\"str\",\"mutants\":\"strs\",\"opened\":\"obj?\",\"reason\":\"str?\",\"residual\":\"strs?\",\"section\":\"str\",\"source\":\"str\",\"state\":\"str\",\"subject\":\"str?\",\"text\":\"str\",\"witnesses\":\"strs\"},\"name\":\"claim@1\",\"states\":{\"backed\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"claim/verifier\"]},\"informative\":null,\"retired\":null,\"unbacked\":null},\"successors\":{}},\"guard\":null,\"kind\":\"schema\",\"lineage\":null,\"prev\":null,\"refs\":[],\"schema\":null,\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"36515c21691ff13b6f2fc239403f0818584e33cb33a781d61e8065164271090bbfde110c75ebbf30fe41f843d67abf2361ef370b17d3575ceccdf5a9c53f6d0a\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"claims-checker\",\"at\":1794836568,\"body\":{\"closure\":\"imports/1\",\"code\":\"c341f12aab7ce13655bae7799f2688a503b58add9b2ff4c6e8ade7b14cc0db21\",\"commit\":\"b005d3d7e26348a30ee799bfa993e9d05c3d2096\",\"env\":{\"cryptography\":\"50.0.2\",\"python\":\"3.15.2\"},\"files\":{\"mutated.py\":\"668d1887d4d5d53b2d48c09f5af13a1abb2899af\",\"tests/helper.py\":\"ad9f4de4faafa2bd103c729ea89fafb0c01d1887\",\"tests/q_test.py\":\"e566bf1a02432d2a5e1fe72a99b6c33f56c5a8b1\"},\"mutants\":[\"Z1\"],\"target\":\"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3\",\"tree\":\"91adecbfc18cff79e916aed9ad135916928801e7\",\"verdict\":\"accept\",\"witnesses\":[\"q_test:Q1\"]},\"guard\":null,\"kind\":\"attest\",\"lineage\":null,\"prev\":null,\"refs\":[\"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3\"],\"schema\":null,\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"914723dcac8d3d35e68995a189564638e32cd1d8d2ceb918ba43cff21246097ecce6fa669f1d4c7ca0ca5bb84c3f84f7025b5ebce8521bb20c826de07d6b480c\",\"key\":\"7599776c3085e3f9da0d13071eb0b4ab50fd2bf64c06dd92c2365af3a328eca3\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000006,\"body\":{\"id\":\"V3-3-1\",\"mutants\":[\"Z1\"],\"section\":\"3\",\"source\":\"docs/V3.md\",\"state\":\"backed\",\"text\":\"A record whose `lineage` is L **succeeds** L.\",\"witnesses\":[\"q_test:Q1\"]},\"guard\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"claim/verifier\"]},\"kind\":\"entity\",\"lineage\":null,\"prev\":\"df5e9b7a684b1d24b120b2d46699dfffcc5b944aa3c120b1b38bc1931bd650e6\",\"refs\":[],\"schema\":\"claim@1\",\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"e882dfc438e0ec7f6c9479553d8dd92d561d7fe0a5704adf6d90c6d36c3a01a024894dfc4e30d220c59da96f095d71b97227fa83da860a505bc68b27b4199708\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000012,\"body\":{\"serves\":[],\"state\":\"done\",\"statement\":\"waiting\"},\"guard\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"roadmap/acceptor\"]},\"kind\":\"entity\",\"lineage\":null,\"prev\":\"1a1e0862d19e246edfe76dda36b9a9ee0f906868c98bac206bdef2c59a2da9df\",\"refs\":[],\"schema\":\"obligation@1\",\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"46292280ea6a4254a8870c1b2a5f8cd422a30ed273c2b19d2fb9e99d5e968381073e0eb6105badcbbb4f1a423140500f507b5acac92e913fd0b5b9997908c00b\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000002,\"body\":{\"closed\":[\"met\"],\"fields\":{\"because\":\"str?\",\"established\":\"strs?\",\"key\":\"str\",\"opened\":\"obj?\",\"refs\":\"strs?\",\"residual\":\"strs?\",\"sources\":\"obj?\",\"state\":\"str\",\"subject\":\"str?\",\"text\":\"str\"},\"name\":\"goal@1\",\"states\":{\"met\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"roadmap/acceptor\"]},\"open\":null,\"reformulated\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"roadmap/acceptor\"]},\"withdrawn\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"roadmap/acceptor\"]}},\"successors\":{}},\"guard\":null,\"kind\":\"schema\",\"lineage\":null,\"prev\":\"1d013886e323a241a295593f6c9aca6c3d8dd8acd91c34bc950dd804e5b2d268\",\"refs\":[],\"schema\":null,\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"96291f33525b3324030eadadc3acc836e6b2d8c6d49cbb8c5be3fc2cc95890aa809a62a00f086b9d4825f8e3fd086ef1c9b248bfde70801b2c38927c0dc90304\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"bob\",\"at\":1800000011,\"body\":{\"target\":\"1a1e0862d19e246edfe76dda36b9a9ee0f906868c98bac206bdef2c59a2da9df\",\"verdict\":\"accept\"},\"guard\":null,\"kind\":\"attest\",\"lineage\":null,\"prev\":null,\"refs\":[\"1a1e0862d19e246edfe76dda36b9a9ee0f906868c98bac206bdef2c59a2da9df\"],\"schema\":null,\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"1d7ed372044757ff53329159dba5d5aa8aa094dce4eb45bad06bceddcfd02e04526b5099ac0ec38ff0ee80e76410e3cec8ff2175577359b5ab85c95d54cbf209\",\"key\":\"6a3803d5f059902a1c6dafbc9ba4729212f7caac08634cc3ae76b27529f03827\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000003,\"body\":{\"closed\":[\"done\"],\"fields\":{\"answers\":\"ref?\",\"established\":\"strs?\",\"evidence\":\"refs?\",\"opened\":\"obj?\",\"refs\":\"strs?\",\"residual\":\"strs?\",\"serves\":\"refs\",\"state\":\"str\",\"statement\":\"str\",\"subject\":\"str?\"},\"name\":\"obligation@1\",\"states\":{\"done\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"roadmap/acceptor\"]},\"open\":null,\"released\":null},\"successors\":{\"released\":[\"roadmap/owner\"]}},\"guard\":null,\"kind\":\"schema\",\"lineage\":null,\"prev\":\"7f82b32cb613835a636a4e9cca53f42b993781b3165cb2a20dfd1f04954e8310\",\"refs\":[],\"schema\":null,\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"5df8616a326dc2a95486ccdbea64749e976a35e2d75d590dce8885b3ffe63882fa7fa15b5cff2dfef24f19c4984753185c444718d08f57c3acc2b34b6db8440e\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000009,\"body\":{\"id\":\"V3-3-1\",\"mutants\":[\"Z1\"],\"reason\":\"retired for the vector\",\"section\":\"3\",\"source\":\"docs/V3.md\",\"state\":\"retired\",\"text\":\"A record whose `lineage` is L **succeeds** L.\",\"witnesses\":[\"q_test:Q1\"]},\"guard\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"claim/verifier\"]},\"kind\":\"entity\",\"lineage\":\"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3\",\"prev\":\"feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e\",\"refs\":[],\"schema\":\"claim@1\",\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"371df8f4b4a9e64fab5706e7152c262e4350c9d4cfbb1b378a55afd4f6f3c23227133d3e6e95061b050aa46b527f20d96f7e2e151101f63ff5483e36f8b82e00\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"claims-checker\",\"at\":1794836568,\"body\":{\"closure\":\"imports/1\",\"code\":\"c341f12aab7ce13655bae7799f2688a503b58add9b2ff4c6e8ade7b14cc0db21\",\"commit\":\"b005d3d7e26348a30ee799bfa993e9d05c3d2096\",\"env\":{\"cryptography\":\"50.0.2\",\"python\":\"3.15.2\"},\"files\":{\"other.py\":\"54b41c818fea25cc9bd9259c6c269d97d590c635\",\"tests/s_test.py\":\"e7e88a8c2670d4c3a70fd5b11b49b1b4369a6317\"},\"mutants\":[\"X1\"],\"target\":\"feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e\",\"tree\":\"91adecbfc18cff79e916aed9ad135916928801e7\",\"verdict\":\"accept\",\"witnesses\":[\"s_test:S1\"]},\"guard\":null,\"kind\":\"attest\",\"lineage\":null,\"prev\":\"ed7d5cbdff5c347318b4a5f35b24b3d5eeda04f6460268db93a923c0ca7f96c8\",\"refs\":[\"feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e\"],\"schema\":null,\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"1170bb548cb640fe03c900afebeab340684a879137614b1b5e56558b825f5057b2e3889021a72b31864bae1f835a4fe9ad488ac5aa5b2ced4359e796d239df03\",\"key\":\"7599776c3085e3f9da0d13071eb0b4ab50fd2bf64c06dd92c2365af3a328eca3\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000007,\"body\":{\"id\":\"V3-3-2\",\"mutants\":[\"Y1\"],\"section\":\"3\",\"source\":\"docs/V3.md\",\"state\":\"backed\",\"text\":\"A record whose `lineage` is L **succeeds** L.\",\"witnesses\":[\"p_test:P1\"]},\"guard\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"claim/verifier\"]},\"kind\":\"entity\",\"lineage\":null,\"prev\":\"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3\",\"refs\":[],\"schema\":\"claim@1\",\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"e13b1de38229b15212d0a7cfdbca5a10793016376a322287ec449ed7d7eadf2202eab78dd9c9507e96fd3746446796adb0720441471da038c0a0c0a5c45a7a0a\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000005,\"body\":{\"closed\":[],\"fields\":{\"commit\":\"str\",\"severity\":\"str\",\"statement\":\"str\",\"test\":\"obj?\",\"tree\":\"str\",\"what\":\"str\",\"where\":\"strs\"},\"name\":\"finding@1\",\"states\":null,\"successors\":{}},\"guard\":null,\"kind\":\"schema\",\"lineage\":null,\"prev\":\"edd74312aa3df52b586eecd0d66f703c6d27024f4b73e5828caafc19f0382f0f\",\"refs\":[],\"schema\":null,\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"67ae5e387773b169bb51918cbfcd561df92b1ae8b199415a74abe4e1d1181d3a7bd030e6a62bc1cfdc54af837562d683cd9d851adf641a2b49682c57e0c9a00e\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"claims-checker\",\"at\":1794836568,\"body\":{\"closure\":\"imports/1\",\"code\":\"c341f12aab7ce13655bae7799f2688a503b58add9b2ff4c6e8ade7b14cc0db21\",\"commit\":\"b005d3d7e26348a30ee799bfa993e9d05c3d2096\",\"env\":{\"cryptography\":\"50.0.2\",\"python\":\"3.15.2\"},\"files\":{\"mutated.py\":\"668d1887d4d5d53b2d48c09f5af13a1abb2899af\",\"tests/helper.py\":\"ad9f4de4faafa2bd103c729ea89fafb0c01d1887\",\"tests/p_test.py\":\"5cbd29af249acb5bba16abb24b5a191dadafaab7\"},\"mutants\":[\"Y1\"],\"target\":\"d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d\",\"tree\":\"91adecbfc18cff79e916aed9ad135916928801e7\",\"verdict\":\"accept\",\"witnesses\":[\"p_test:P1\"]},\"guard\":null,\"kind\":\"attest\",\"lineage\":null,\"prev\":\"5af74d9b7f2a19b24081133cf6d22a4842453c598ef949980253da34423ea0f3\",\"refs\":[\"d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d\"],\"schema\":null,\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"7b90dae157e76d77b928ca9f86a4bfea309ec64a1b3ef77a34644e93a6035dd3e7c7fc401230c61387c53e4da1501963851b27c964f5f52a5c39af55295ea700\",\"key\":\"7599776c3085e3f9da0d13071eb0b4ab50fd2bf64c06dd92c2365af3a328eca3\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000004,\"body\":{\"closed\":[\"head\"],\"fields\":{\"answers\":\"refs?\",\"commit\":\"str?\",\"established\":\"strs?\",\"opened\":\"obj?\",\"pr\":\"int?\",\"repository\":\"str?\",\"residual\":\"strs?\",\"serves\":\"refs?\",\"state\":\"str\",\"subject\":\"str?\",\"title\":\"str?\",\"tree\":\"str?\"},\"name\":\"pr-head@1\",\"states\":{\"head\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"pr/acceptor\"]},\"open\":null},\"successors\":{}},\"guard\":null,\"kind\":\"schema\",\"lineage\":null,\"prev\":\"9f348763d11aafb03f87a8c3a6fdaf2f9394572420c97e3d36714129dd232078\",\"refs\":[],\"schema\":null,\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"ebc1dce2c64db73cb498296341557b94ba01296d143e4b113d4854b985f472192e0cc7d16201575ec502de9f5d86ef847a86ce386be96a6440c74bb3d541d406\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}",
+  "{\"record\":{\"actor\":\"alice\",\"at\":1800000008,\"body\":{\"id\":\"V3-3-3\",\"mutants\":[\"X1\"],\"section\":\"3\",\"source\":\"docs/V3.md\",\"state\":\"backed\",\"text\":\"A record whose `lineage` is L **succeeds** L.\",\"witnesses\":[\"s_test:S1\"]},\"guard\":{\"match\":{\"verdict\":\"accept\"},\"quorum\":1,\"requires\":[],\"roles\":[\"claim/verifier\"]},\"kind\":\"entity\",\"lineage\":null,\"prev\":\"d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d\",\"refs\":[],\"schema\":\"claim@1\",\"warrant\":\"3\"},\"sig\":{\"ed25519\":\"1f16e6040423581a51c77b37fc74726a7cec76d695b7ac68b6823f6dbac7198fb2c33f902b47eda39ddc238e8feff5d1b64a0a45f3bdfc9e4dfb2a37491f5c0f\",\"key\":\"34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e\"}}"
+ ],
+ "rule": "docs/V3.md \u00a710: read with no checkout beside the store, a lineage the freshness gate covers is PINS_NOT_CHECKED, never ELIGIBLE; every other lineage reads the engine's reliance",
+ "v3": {
+  "profile": {
+   "roles": {
+    "claim/verifier": [
+     "carol",
+     "claims-checker"
+    ],
+    "pr/acceptor": [
+     "bob"
+    ],
+    "pr/owner": [
+     "dave"
+    ],
+    "replayer": [
+     "carol"
+    ],
+    "roadmap/acceptor": [
+     "bob"
+    ],
+    "roadmap/owner": [
+     "dave"
+    ],
+    "schema/author": [
+     "alice"
+    ]
+   },
+   "warrant": "profile/3"
+  },
+  "repository": "s0fractal/warrant",
+  "trust": {
+   "keys": {
+    "alice": [
+     "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    ],
+    "bob": [
+     "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    ],
+    "carol": [
+     "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    ],
+    "claims-checker": [
+     "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1"
+    ],
+    "dave": [
+     "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1"
+    ],
+    "eve": [
+     "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c"
+    ]
+   },
+   "warrant": "trust/3"
+  },
+  "warrant": "repository/3"
+ },
+ "warrant": "vector/pins-not-checked/1"
+}
