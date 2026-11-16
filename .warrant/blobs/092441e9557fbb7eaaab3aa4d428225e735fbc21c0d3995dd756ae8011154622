@@ -1,0 +1,149 @@
+# Codex roadmap verdict: store identity reader keying is incomplete
+
+Base M: b03316c9fa3ea4a511d9a499d55dd0215538e8da
+Obligation D: ec6d1ebe46843748ed41d055233acaa332e1411afea88ad11418ed8c9d98102d (G3)
+Closure T: bbe129440c1c24b4719b90b07f2145fdbbe74410683e0d8efedadc60dea3669d
+
+Verdict: challenge T. D explicitly owes that across, resolve, overlay and Home key stores by the identity of a root record. The root identity implementation, self-signature check, Home's same grouping and overlay identity keying are present. Across and resolve expose the identity as metadata but continue to key sources by their local names. This is partial completion of D.
+
+Counterexample at M: create a store with exactly one self-signed rules@1 genesis and one citation of an unavailable hash; copy that store's complete .warrant directory to a different repository directory; register both through home.add_repository as first and second. The Home document passes home.problem and both snapshots are byte-identical. Home identifies the two registrations as the same store with the same genesis. Nevertheless resolve.answer doubles its counts from PRESENT=6, MISSING=1 to PRESENT=12, MISSING=2, and emits two rows for the one missing citation keyed by cited_by=[first] and [second]. Across's store keys remain first and second, with the shared genesis only in the additional identity field. Thus adding another location for one identified store still creates another source in those readers.
+
+Code at M:
+- warrant/resolve.py:139-159 iterates Place instances by registration, increments counts per registration, uses p.name for cited_by, root's store keys and stores, and only adds a parallel identities map.
+- warrant/resolve.py:76-81 and 120-128 keep locations as store:NAME.
+- warrant/across.py:101-111 keeps store=self.name in headers and per-record verdict rows; identity is added beside it.
+- warrant/across.py:290-296 keys root/lens operands by the input names, and answer() passes names at line 330.
+
+Expected to close D: use the root identity as the source key in across and resolve, retaining registration names/addresses as locations. Identical snapshots of one identity at two locations must not duplicate a logical source or its citation counts. If snapshots or receiver rules differ for one identity, represent those differences explicitly; this counterexample does not require collapsing different verdicts. Stores with no identity can retain a location-based fallback. No particular new citation syntax is required by this verdict. T's disclosed residual that resolve rows remain name-based does not discharge D's explicit reader-keying requirement.
+
+Verification:
+- Confirmed HEAD=M, origin=s0fractal/warrant, initially clean worktree, and roadmap due --actor codex lists exactly D/T with the supplied evidence and no requirements.
+- MCP workspace identifies signer codex with roadmap/acceptor; context says T guard PENDING, short=1, open=[], no attests or challenges.
+- Read D/T and all four evidence records, verified each named commit's tree and ancestry at M, read PRs #444/#445/#447/#449 and their implementation commits, inspected claims V3-14-51..55 and the current code/tests/mutants.
+- tools_test identity_cases,resolve_cases: 5 cases passed (ID1,ID2,RV1-RV3).
+- agent_test across_cases,overlay_cases: 32 cases passed (X01-X24 including X04b, OV1-OV7).
+- impl_js_test browser_identity_cases: J24/J25 passed under Node; invoked directly with world.finish(), no skip.
+- tests/mutants.py selected T281-T288,T290-T291: 10/10 KILLED by their named cases. Harness copies/TMPDIR relocated outside the worktree; external copies were given the checkout's Git pointer so baseline sections can inspect HEAD. An initial attempt without that pointer was BASELINE_RED (missing Git metadata), no mutant credited in that attempt. Final run passed baseline and killed all ten.
+- roadmap check: 102 lineages, 0 problems. claims check: 143 live claims, 0 problems.
+- Full suites, full mutant matrix, and the full JavaScript differential suite were not run. Browser mutant T289 is absent from the current harness and was not run. No checker key was read and no signed replay was run.
+
+Reproduction from M's checkout (use an external scratch directory for TMPDIR):
+
+```sh
+TMPDIR=/path/to/scratch PYTHONDONTWRITEBYTECODE=1 python3 -B /path/to/identity_key_probe.py
+```
+
+Save the following as identity_key_probe.py:
+
+```python
+"""Run from the reviewed checkout: python3 /path/to/identity_key_probe.py."""
+import json
+import shutil
+import sys
+from pathlib import Path
+
+sys.path[:0] = [str(Path.cwd()), str(Path.cwd() / "tests")]
+from world import Repo
+from warrant import across as A, gate as GT, home as H, resolve as RS
+
+r = Repo()
+r.put("alice", "schema", GT.RULES_SCHEMA)
+genesis = r.put("bob", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES)
+missing = "ab" * 32
+r.entity("alice", "goal@1", {"state": "open", "key": "Q1", "text": "one citation"}, refs=[missing])
+one = H.add_repository(H.empty(), str(r.root), "first")
+mirror = Repo()
+shutil.copytree(r.dot, mirror.dot, dirs_exist_ok=True)
+assert r.store.snapshot().digest == mirror.store.snapshot().digest
+two = H.add_repository(one, str(mirror.root), "second")
+assert H.problem(two) is None
+
+single = RS.answer(one)
+duplicate = RS.answer(two)
+across = A.answer(A.home_readings(two), {"query": "stores"})
+home = H.listing(two)
+result = {
+    "genesis": genesis,
+    "home": [{k: row[k] for k in ("name", "identity", "same")} for row in home],
+    "resolve_single_counts": single["counts"],
+    "resolve_duplicate_counts": duplicate["counts"],
+    "resolve_duplicate_identities": duplicate["identities"],
+    "resolve_duplicate_missing_rows": [row for row in duplicate["rows"] if row["id"] == missing],
+    "across_store_keys": [{k: row[k] for k in ("store", "identity")} for row in across["stores"]],
+}
+assert all(row["identity"] == genesis for row in home)
+assert duplicate["counts"]["MISSING"] == 2 * single["counts"]["MISSING"] == 2
+assert [row["store"] for row in across["stores"]] == ["first", "second"]
+assert all(row["identity"] == genesis for row in across["stores"])
+print(json.dumps(result, indent=2))
+print("REPRODUCED: Home identifies one store; resolve counts its one missing citation twice and across keeps alias store keys.")
+```
+
+Observed output at M:
+
+```text
+{
+  "genesis": "87d378c0630c3febb2d4c632c7bdc0724b9f976340ff449a84fedecee683da29",
+  "home": [
+    {
+      "name": "first",
+      "identity": "87d378c0630c3febb2d4c632c7bdc0724b9f976340ff449a84fedecee683da29",
+      "same": [
+        "second"
+      ]
+    },
+    {
+      "name": "second",
+      "identity": "87d378c0630c3febb2d4c632c7bdc0724b9f976340ff449a84fedecee683da29",
+      "same": [
+        "first"
+      ]
+    }
+  ],
+  "resolve_single_counts": {
+    "PRESENT": 6,
+    "RESOLVED": 0,
+    "LOCATED": 0,
+    "MISSING": 1
+  },
+  "resolve_duplicate_counts": {
+    "PRESENT": 12,
+    "RESOLVED": 0,
+    "LOCATED": 0,
+    "MISSING": 2
+  },
+  "resolve_duplicate_identities": {
+    "first": "87d378c0630c3febb2d4c632c7bdc0724b9f976340ff449a84fedecee683da29",
+    "second": "87d378c0630c3febb2d4c632c7bdc0724b9f976340ff449a84fedecee683da29"
+  },
+  "resolve_duplicate_missing_rows": [
+    {
+      "id": "abababababababababababababababababababababababababababababababab",
+      "state": "MISSING",
+      "where": null,
+      "cited_by": [
+        "first"
+      ]
+    },
+    {
+      "id": "abababababababababababababababababababababababababababababababab",
+      "state": "MISSING",
+      "where": null,
+      "cited_by": [
+        "second"
+      ]
+    }
+  ],
+  "across_store_keys": [
+    {
+      "store": "first",
+      "identity": "87d378c0630c3febb2d4c632c7bdc0724b9f976340ff449a84fedecee683da29"
+    },
+    {
+      "store": "second",
+      "identity": "87d378c0630c3febb2d4c632c7bdc0724b9f976340ff449a84fedecee683da29"
+    }
+  ]
+}
+REPRODUCED: Home identifies one store; resolve counts its one missing citation twice and across keeps alias store keys.
+```
