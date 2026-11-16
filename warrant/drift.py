@@ -54,6 +54,7 @@ from .pins import verdict as _verdict
 from .repo import Failed, Repo, dump, env_root, git, main
 
 STALE = "STALE"
+PINS_NOT_CHECKED = "PINS_NOT_CHECKED"   # reliance with no checkout beside the store (docs/V3.md §10)
 RANK = {"UNCHANGED": 0, "CHANGED": 1, "UNKNOWN": 2}     # the answer shown: fresh if any acceptance is, else what can be said
 HERE = "."                          # this checkout's store in an answer's identity when Home does not register it: no Home name
 
@@ -115,18 +116,34 @@ def drift(rep, root, at="HEAD"):
     except subprocess.CalledProcessError:
         head = {}
     where = paths_of(head)
-    out, memo, live = {}, {}, C.live(rep)
-    for L in sorted(rep["lineages"]):
-        lin = rep["lineages"][L]
-        eff = lin["effective"]
-        if not done.get(eff) or (lin["schema"] == C.CLAIM and L not in live):
-            continue
+    out, memo = {}, {}
+    for L in sorted(covered(rep, done)):
+        eff = rep["lineages"][L]["effective"]
         seen = [(x, compare(root, x, files, head, where, at, memo) if rule == C.CLOSURE else
                  [("UNKNOWN", "", "the acceptance names its test and mutated files, not the import closure they ran")])
                 for x, files, rule in done[eff]]
         x, rows = min(seen, key=lambda s: RANK[_verdict(s[1])])
         out[L] = {"id": _name(rep, L, eff), "version": eff, "verdict": _verdict(rows), "commit": x,
                   "files": [{"verdict": v, "path": p, "detail": d} for v, p, d in rows]}
+    return out
+
+
+def covered(rep, done=None):
+    """The lineages the freshness gate covers: each whose effective version has a pinned acceptance (`pinned`), a claim
+    only while it is not retired. One predicate with site/reader.mjs covered()."""
+    done = pinned(rep) if done is None else done
+    live = C.live(rep)
+    return {L for L, lin in rep["lineages"].items()
+            if done.get(lin["effective"]) and not (lin["schema"] == C.CLAIM and L not in live)}
+
+
+def not_checked(rep):
+    """`rep` read with no checkout beside it (docs/V3.md §10): the reliance of each lineage the gate covers that the
+    engine reads ELIGIBLE is set to PINS_NOT_CHECKED, since whether its acceptances still name the bytes they accepted
+    needs a tree nobody compared. Returns those lineages."""
+    out = sorted(L for L in covered(rep) if rep["lineages"][L]["reliance"] == "ELIGIBLE")
+    for L in out:
+        rep["lineages"][L]["reliance"] = PINS_NOT_CHECKED
     return out
 
 

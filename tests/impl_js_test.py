@@ -1011,6 +1011,7 @@ def main():
     browser_bridge_cases()
     browser_rules_cases()
     browser_receipts_cases()
+    browser_pins_vector_cases()
     frame_parity_cases()
     if a.limits:
         limit_cases(tally)
@@ -1823,6 +1824,28 @@ console.log(JSON.stringify({{ key: GATE.key, store: GATE.store,
           and got.get("two_names") is False and got.get("a_role") is False and got.get("not_receipts") == [None] * 6
           and f"`{got.get('key')}`" in docs and got.get("store") == "https://raw.githubusercontent.com/s0fractal/warrant/receipts/"
           and "with: withOf(p)," in page and "? [GATE.store] : []" in page, got)
+
+
+# ---------------------------------------------------------------- J23: the vector every reader must pass (docs/V3.md §10)
+def browser_pins_vector_cases():
+    """tests/vectors/pins-not-checked.json read by the browser's reader over HTTP with no comparison asked (no --pins):
+    each lineage the freshness gate covers reads PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance,
+    as the Python agent reads it (agent_test A45)."""
+    vec = json.loads((ROOT / "tests" / "vectors" / "pins-not-checked.json").read_text())
+    with tempfile.TemporaryDirectory() as d:
+        dot = Path(d) / ".warrant"
+        dot.mkdir()
+        (dot / "records.jsonl").write_text("\n".join(vec["lines"]) + "\n")
+        (dot / "v3.json").write_text(json.dumps(vec["v3"]))
+        srv, base = _serve(Path(d))
+        try:
+            _, js = _reader(base)
+        finally:
+            srv.shutdown()
+    shown = {x["id"]: x["reliance"] for x in js.get("rows", [])}
+    check("J23 the browser's reader passes tests/vectors/pins-not-checked.json: read with no pins compared, each lineage "
+          "the freshness gate covers is PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance",
+          shown == vec["expect"], {L[:12]: (shown.get(L), w) for L, w in vec["expect"].items()} or js)
 
 
 # ---------------------------------------------------------------- J21: the publisher's rules changed (stage 2a)

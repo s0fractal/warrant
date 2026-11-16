@@ -69,12 +69,15 @@ def _assess(ws, snap=None):
 
 def _report(ws, view):
     """The view's report; in a repository's checkout, a claim whose claims checker acceptances all name other bytes
-    than its head's reads STALE, not ELIGIBLE (warrant.drift, G14)."""
+    than its head's reads STALE, not ELIGIBLE (warrant.drift, G14). A workspace of a store alone has no tree to compare
+    the pins with: a lineage the gate covers reads PINS_NOT_CHECKED, never ELIGIBLE (docs/V3.md §10)."""
     rep = view.report()
+    rep["_recs"], rep["_basis"] = view.recs, view.basis
     if ws.repo is not None:
-        rep["_recs"], rep["_basis"] = view.recs, view.basis
         D.gate(rep, ws.repo)
-        del rep["_recs"], rep["_basis"]
+    else:
+        D.not_checked(rep)
+    del rep["_recs"], rep["_basis"]
     return rep
 
 

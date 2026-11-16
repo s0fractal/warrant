@@ -360,6 +360,9 @@ MUTANTS = [
     ("T272", "warrant/shapes.py", '    if not all(assigned14(ord(c)) for c in v):\n        return "must use only code points assigned in Unicode 14.0.0"\n    if not unicodedata.is_normalized("NFC", v):\n        return "must be in Unicode NFC"\n', '    if not unicodedata.is_normalized("NFC", v):\n        return "must be in Unicode NFC"\n    if not all(assigned14(ord(c)) for c in v):\n        return "must use only code points assigned in Unicode 14.0.0"\n', SHAPES_TEST, ["S9"]),
     ("T273", "warrant_agent/api.py", 'data = G.grounded(rep, i, view.recs) if op == "grounded" else getattr(G, op)(rep, i)', 'data = getattr(G, op)(rep, i)', AGENT, ["A44"]),
     ("T274", "warrant/graph.py", '    recs = recs if recs is not None else rep.get("_recs") or {}\n\n    def grounds(v):', '    recs = rep.get("_recs") or {}\n\n    def grounds(v):', AGENT, ["A44"]),
+    ("T275", "warrant/drift.py", '        rep["lineages"][L]["reliance"] = PINS_NOT_CHECKED\n', '        pass\n', AGENT, ["A45"]),
+    ("T276", "warrant_agent/api.py", '    else:\n        D.not_checked(rep)\n', '', AGENT, ["A45"]),
+    ("T277", "warrant/drift.py", 'if done.get(lin["effective"]) and not (lin["schema"] == C.CLAIM and L not in live)}', 'if done.get(lin["effective"])}', AGENT, ["A45"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),
@@ -368,7 +371,7 @@ MUTANTS = [
     ("T185", "warrant/drift.py", '        elif isinstance(b.get("files"), dict) and counted(rep, r):', '        elif False:', TOOLS, ["DR30"]),
     ("T186", "warrant/cli.py", '    if a.as_of is None and Path(store).name == ".warrant":\n        from . import drift as D\n        view = E.View(', '    if False:\n        from . import drift as D\n        view = E.View(', TOOLS, ["DR30"]),
     ("T187", "warrant/cli.py", '    if a.as_of is None and Path(store).name == ".warrant":\n        from . import drift as D\n        rep["_recs"]', '    if a.as_of is None and Path(store).name == ".warrant" and (root / ".warrant" / "claims.json").is_file():\n        from . import drift as D\n        rep["_recs"]', TOOLS, ["DR30"]),
-    ("T188", "warrant/drift.py", '        if not done.get(eff) or (lin["schema"] == C.CLAIM and L not in live):', '        if not done.get(eff) or L not in live:', TOOLS, ["DR30"]),
+    ("T188", "warrant/drift.py", 'if done.get(lin["effective"]) and not (lin["schema"] == C.CLAIM and L not in live)}', 'if done.get(lin["effective"]) and L in live}', TOOLS, ["DR30"]),
     ("T194", "warrant/drift.py", '        elif isinstance(b.get("files"), dict) and counted(rep, r):', '        elif isinstance(b.get("files"), dict):', TOOLS, ["DR32"]),
     ("T195", "warrant/drift.py", 'and r["actor"] in v.get("accepted_by", [])\n', 'and True\n', TOOLS, ["DR32"]),
     ("T189", "warrant/entry.py", '        elif found.group(0) != marked().rstrip("\\n"):', '        elif False:', TOOLS, ["IN2"]),

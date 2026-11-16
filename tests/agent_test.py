@@ -13,9 +13,11 @@ import shutil
 import subprocess
 import sys
 import threading
+import tempfile
 import time
+from pathlib import Path
 
-from world import KEYS, ROLES, Repo, check, run_sections
+from world import KEYS, ROLES, ROOT, Repo, check, run_sections
 
 from warrant import across as A
 from warrant import bootstrap as B
@@ -146,7 +148,7 @@ def operations():
           and dst.report()["lineages"][o]["reliance"] == "CHALLENGED" and rp in dst.store.snapshot().lines
           and without.report()["lineages"][o]["reliance"] == "ELIGIBLE",
           (alone.get("roots"), dst.report()["lineages"][o]["reliance"]))
-    words = set(E.GUARDS) | set(E.RELIANCE) | {D.STALE} | set(E.BASES) | set(E.PROBLEMS) | set(E.REJECTIONS) | set(ER.CODES) | {"OK", "UNATTESTED"}
+    words = set(E.GUARDS) | set(E.RELIANCE) | {D.STALE, D.PINS_NOT_CHECKED} | set(E.BASES) | set(E.PROBLEMS) | set(E.REJECTIONS) | set(ER.CODES) | {"OK", "UNATTESTED"}
     check("A14 the glossary has an entry for every word the engine and the interface answer with", words <= set(GL.TERMS),
           sorted(words - set(GL.TERMS)))
     g1 = ok(api.call(cfg, "graph", {"workspace": "w", "op": "path", "target": done}))
@@ -178,6 +180,21 @@ def operations():
           "without the records reads it not grounded (Codex f9698537 on #426)",
           ans.get("data", {}).get("grounded") is True and ans.get("data", {}).get("closure") == 1
           and G.grounded(met.report(), d1)["grounded"] is False, ans.get("data"))   # a report with no records: the old CYCLE
+    vec = json.loads((ROOT / "tests" / "vectors" / "pins-not-checked.json").read_text())
+    with tempfile.TemporaryDirectory() as vd:
+        vdir = Path(vd)
+        (vdir / ".warrant").mkdir()
+        (vdir / ".warrant" / "records.jsonl").write_text("\n".join(vec["lines"]) + "\n")
+        (vdir / "trust.json").write_text(json.dumps(vec["v3"]["trust"]))
+        (vdir / "profile.json").write_text(json.dumps(vec["v3"]["profile"]))
+        vcfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {
+            "store": str(vdir / ".warrant"), "trust": str(vdir / "trust.json"), "profile": str(vdir / "profile.json"), "operations": ["context"]}}})
+        got = ok(api.call(vcfg, "context", {"workspace": "w", "targets": list(vec["expect"])})).get("targets", {})
+    shown = {L: (got.get(L) or {}).get("lineage", {}).get("reliance") for L in vec["expect"]}
+    check("A45 a workspace of a store alone (no checkout beside it) passes tests/vectors/pins-not-checked.json: each "
+          "lineage the freshness gate covers reads PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance "
+          "(docs/V3.md §10)", shown == vec["expect"] and "PINS_NOT_CHECKED" in shown.values() and "ELIGIBLE" in shown.values(),
+          {L[:12]: (shown[L], vec["expect"][L]) for L in vec["expect"]})
     deep = Repo()
     prev = None
     for n in range(LIMITS["requires"] + 20):
