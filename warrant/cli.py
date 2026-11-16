@@ -250,7 +250,7 @@ def status(a):
         by, state = lineages.setdefault(lin["schema"], {}), lin["state"] or "none"     # none: no effective version yet
         by[state] = by.get(state, 0) + 1
         reliance[lin["reliance"]] = reliance.get(lin["reliance"], 0) + 1
-    return {"repository": name, "store": store, "snapshot": rep["snapshot"], "assessment": rep["assessment"],
+    return {"repository": name, "identity": G.identity(rep), "store": store, "snapshot": rep["snapshot"], "assessment": rep["assessment"],
             "trusted": sorted(trust.get("keys", {})), "roles": {r: sorted(a) for r, a in sorted(profile.get("roles", {}).items())},
             "records": len(snap.lines), "blobs": len(snap.blobs), "canonical": rep["canonical"],
             "completeness": rep["completeness"], "rejected": len(rep["rejected"]),
@@ -268,7 +268,9 @@ def _counts(d):
 
 def render(st):
     """`status` for a person: one line per fact, the same facts as its --json."""
+    ident = st["identity"]
     rows = [("repository", st["repository"] or "(no repository named)"),
+            ("identity", f"{ident['identity'][:12]} (the genesis of its rules@1)" if ident["identity"] else ident["why"]),
             ("store", f"{st['store']} · snapshot {st['snapshot'][:12]}"),
             ("records", f"{st['records']} · blobs {st['blobs']} · {'canonical' if st['canonical'] else 'NOT canonical'}"
                         f" · rejected {st['rejected']} · completeness {st['completeness']}"),

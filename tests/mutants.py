@@ -366,6 +366,9 @@ MUTANTS = [
     ("T278", "warrant/roadmap.py", '    schema = OBLIGATION2 if OBLIGATION2 in rep["schemas"] else OBLIGATION\n', '    schema = OBLIGATION\n', TOOLS, ["P05"]),
     ("T279", "warrant/roadmap.py", '    g = rep["_recs"][rep["schemas"][schema]]["body"]["states"].get(state) if schema in rep["schemas"] else None\n', '    g = None\n', TOOLS, ["P05"]),
     ("T280", "warrant/gate.py", 'due_for(rep, self.profile, actor, ("goal@1", "obligation@1", "obligation@2"))', 'due_for(rep, self.profile, actor, ("goal@1", "obligation@1"))', GATE, ["E98"]),
+    ("T281", "warrant/graph.py", '    if len(roots) == 1:\n', '    if roots:\n', TOOLS, ["ID1"]),
+    ("T282", "warrant/graph.py", '    roots = sorted(L for L, lin in rep["lineages"].items() if lin["schema"] == RULES)\n', '    roots = sorted(rep["lineages"])[:1]\n', TOOLS, ["ID1"]),
+    ("T283", "warrant/across.py", '"problems": len(rep["problems"]), "identity": G.identity(rep)["identity"]}', '"problems": len(rep["problems"]), "identity": None}', AGENT, ["X04b"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),

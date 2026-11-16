@@ -1742,6 +1742,35 @@ def ledger_cases():
           partial[1] and full[1], (partial[0], full[0]))
 
 
+def identity_cases():
+    """A store's identity (obligation ec6d1ebe): the root of its one rules@1 lineage, never its self-given name nor its
+    earliest record by time."""
+    from warrant import gate as GT
+    from warrant import graph as G
+
+    def rules_store(n, name="s0fractal/warrant"):
+        r = Repo(name=name)
+        if n:
+            r.put("alice", "schema", GT.RULES_SCHEMA)
+        doc = json.loads((r.dot / "v3.json").read_text())
+        roots = [r.put("bob", "entity", dict(doc, state="in force"), GT.RULES) for _ in range(n)]
+        return r, roots
+    one, (g,) = rules_store(1)
+    none, _ = rules_store(0)
+    two, _ = rules_store(2)
+    copy, _ = rules_store(0, name="s0fractal/warrant")          # the same self-given name, no genesis
+    early = one.put("carol", "entity", {"state": "open", "statement": "dated first", "serves": []}, "obligation@1", at=1)
+    ids = [G.identity(RP.Repo(x.root).report()) for x in (one, none, two, copy)]
+    _, out = cli(one.root, "status", "--json")
+    st = json.loads(out) if out.strip().startswith("{") else {}
+    check("ID1 a store's identity is the root of its one rules@1 lineage, and stays it when a record dated earlier than "
+          "every other is appended; a store with no rules@1 lineage, or two, has none and says why; one that copies the "
+          "self-given repository name but not the genesis has none; `warrant status` shows it",
+          ids[0] == {"identity": g, "by": "rules@1"} and early and all(x["identity"] is None and x["why"] for x in ids[1:])
+          and "no rules@1 genesis" in ids[1]["why"] and "2 rules@1 lineages" in ids[2]["why"]
+          and st.get("identity", {}).get("identity") == g, (ids, st.get("identity")))
+
+
 def grounded_cases():
     """warrant.graph.grounded: minds' Grounded over a report. A lineage is ELIGIBLE on a ground that is not: only the
     transitive answer says so."""
@@ -2813,6 +2842,7 @@ if __name__ == "__main__":
         differential_cases,
         ledger_cases,
         grounded_cases,
+        identity_cases,
         observer_cases,
         merged_cases,
         voices_cases,

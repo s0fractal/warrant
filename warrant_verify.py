@@ -31,7 +31,7 @@ import types
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
     "warrant/jcs.py": "1caa6890ea01355224cb4dd4010777b388b51a2b3e5bc405192eeff717b3f9d3",
-    "warrant/graph.py": "408df6080c14856612a5c92f82c933923914baf2a897b97a43d0e10af11c9ae5",
+    "warrant/graph.py": "87df7abf593fafed8f1fcdf4e1ea10eb5faf696c87d3238149ebfdc349b51b64",
     "warrant/shapes.py": "f75aaec6bd7916c000115a42c4192b8bc0312ed3d7ca630174b0c74c601f5a72",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
@@ -199,6 +199,7 @@ call the same ones. Every state shown is the report's, never recomputed.
   delta(rep0, rep1)        nodes added and removed, lineages whose state or reliance changed
   impact(rep0, rep1)       the lineages the changed records bear on, and what rests on those
   ledger(rep, recs)        the witness ledger: per actor, acceptances later refuted, challenges that replayed
+  identity(rep)            the store's identity: the root of its one rules@1 lineage, or why it has none
   grounded(rep, id, recs)  whether a version stands on ground: it, and every entity version it rests on by `refs`
                            and `requires`, transitively, is the effective version of an ELIGIBLE lineage
   answer(rep, query, data, adapter)   {root, lens, query, data}: the same lens over the same root gives
@@ -418,6 +419,23 @@ def _cites(recs, x, y, memo):
                 break
         memo[key] = seen is None
     return memo[key]
+
+RULES = "rules@1"
+
+
+def identity(rep):
+    """A store's identity (obligation ec6d1ebe, docs/V3.md §14): the root of its one `rules@1` lineage, the genesis of
+    the publisher's rules (stage 2a), a record that says whose rules these are. {"identity": id, "by": "rules@1"}, or
+    {"identity": None, "why": ...} when the store counts no such lineage, or more than one. Not the first record by
+    time: anyone may append a record dated earlier, and the store's name would move. Not the `repository` string of
+    v3.json: a store gives itself that, and another can copy it. A store that copies the genesis record claims to
+    continue those rules, as a minds chain that copies a genesis does; the reader sees whose keys signed it."""
+    roots = sorted(L for L, lin in rep["lineages"].items() if lin["schema"] == RULES)
+    if len(roots) == 1:
+        return {"identity": roots[0], "by": RULES}
+    return {"identity": None, "why": f"{len(roots)} {RULES} lineages: the store names its rules by none" if roots
+            else f"no {RULES} genesis: the store is named only by where it is read"}
+
 
 def grounded(rep, i, recs=None):
     """Whether entity version `i` is GROUNDED (minds' Grounded, proofs/Vars1/Grounded.lean, read over a Warrant report):

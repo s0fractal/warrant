@@ -707,6 +707,17 @@ def across_cases():
           and keys == {"a": [KEYS["alice"].public], "c": [KEYS["eve"].public]} and counts["c"] == {} and counts["a"]
           and next((s for s in out.get("stores", []) if s["store"] == "c"), {}).get("rejected", 0) >= 1, out.get("stores"))
 
+    # X04b: each store's identity, the root of its one rules@1 lineage (obligation ec6d1ebe), beside its self-given name
+    from warrant import gate as GT
+    ruled = Repo(name="s0fractal/third")                       # the same self-given name as c, with a genesis
+    ruled.put("alice", "schema", GT.RULES_SCHEMA)
+    genesis = ruled.put("bob", "entity", dict(json.loads((ruled.dot / "v3.json").read_text()), state="in force"), GT.RULES)
+    heads = {s["store"]: s for s in _ans(_stores(("c", c), ("g", ruled)), {"query": "stores"}).get("stores", [])}
+    check("X04b `across` names each store's identity beside the name it gives itself: two stores both called "
+          "s0fractal/third, one with a rules@1 genesis (its identity) and one without (none)",
+          heads.get("g", {}).get("identity") == genesis and "identity" in heads.get("c", {}) and heads["c"]["identity"] is None
+          and heads["g"].get("repository") == heads["c"].get("repository"), heads)
+
     # X05-X06: stores that cannot be read
     broken = Repo(name="s0fractal/broken")
     (broken.dot / "v3.json").write_text("{")
