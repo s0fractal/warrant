@@ -36,7 +36,7 @@ DIGESTS = {
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
-    "warrant/graph.py": "0723ff1ec6d8c62ca67fbfd05782a5a6883eec92146ef32caf1cdda6f9f891a2",
+    "warrant/graph.py": "05782a7ce980e6b5070b8651030212c6a95b65bf6c89266f73f8f5a354e1240c",
     "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
     "warrant/verify.py": "482b241a1a287f60d8017edf4adcc47ef90935dc700704c65c164ef4f2536553",
@@ -978,13 +978,14 @@ def frontier(rep, profile, actor, recs=None):
 
 
 DECLINE = "decline"
+BLANK = " \t\n\r\f\v"        # a reason of these alone names none: ASCII only, one rule with site/reader.mjs (Codex on #450)
 
 
 def declined_by(rep, nodes, into, actor, recs=None):
     """[{version, lineage, schema, decline, reason}], sorted: each lineage's latest version whose body asks `actor`
     (`opened.for`) and that `actor` answered with an attest of verdict `decline`: "I cannot", apart from no answer.
     Any attest or challenge answers an ask (asked_of); a decline is the answer that says it settles nothing, and with
-    why (`reason`, a non-empty string, else None: a decline that names no reason is shown as one). No guard counts it:
+    why (`reason`, a string with a character outside BLANK, else None: a decline that names no reason is shown as one). No guard counts it:
     a guard waits for the verdict its match names (accept, reproduces), and decline is none of them."""
     recs = recs if recs is not None else rep.get("_recs") or {}
     out = []
@@ -997,7 +998,7 @@ def declined_by(rep, nodes, into, actor, recs=None):
             if rel == "attest" and nodes[a]["actor"] == actor and body.get("verdict") == DECLINE:
                 reason = body.get("reason")
                 out.append({"version": v, "lineage": root, "schema": lin["schema"], "decline": a,
-                            "reason": reason if isinstance(reason, str) and reason.strip() else None})
+                            "reason": reason if isinstance(reason, str) and reason.strip(BLANK) else None})
                 break
     return out
 

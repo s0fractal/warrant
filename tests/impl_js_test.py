@@ -2384,6 +2384,11 @@ def browser_frontier_cases():
     f.attest("carol", cannot, verdict="decline", reason="no tools here")
     mute = f.entity("alice", "goal@1", {"state": "open", "key": "Q6", "text": "declined, no reason", "opened": {"for": "carol"}})
     f.attest("carol", mute, verdict="decline")
+    odd = {}                                       # code points trim() and strip() disagree on (Codex on #450)
+    for k, ch in enumerate(("\u0085", "\u001c", "\ufeff", "\u00a0", " \t\n")):
+        q = f.entity("alice", "goal@1", {"state": "open", "key": f"Q{7 + k}", "text": "odd reason", "opened": {"for": "carol"}})
+        f.attest("carol", q, verdict="decline", reason=ch)
+        odd[q] = None if ch == " \t\n" else ch
     actors = ["alice", "bob", "carol", "dave", "eve", "nobody", "bo"]       # "bo": a prefix of a role holder, no holder
     srvs, (bf,) = _serve_many(f.root)
     try:
@@ -2412,7 +2417,7 @@ def browser_frontier_cases():
           and replaced not in may and newer not in py["alice"]["pending"] and py["nobody"]["roles"] == []
           and forged not in json.dumps(bob)
           and [x["version"] for x in py["carol"].get("asked", [])] == [asks] and py["alice"].get("asked") == []
-          and sorted((x["version"], x["reason"]) for x in py["carol"].get("declined", [])) == sorted([(cannot, "no tools here"), (mute, None)]), py)
+          and sorted((x["version"], x["reason"]) for x in py["carol"].get("declined", [])) == sorted([(cannot, "no tools here"), (mute, None), *odd.items()], key=str), py)
     check("J15 differential: the reader's frontier (reader.mjs --actor) equals warrant.graph.frontier for every actor of "
           "the fixture, an actor with no role, a name no profile holds and a prefix of a role holder's name included, "
           "member for member",

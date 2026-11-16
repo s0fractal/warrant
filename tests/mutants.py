@@ -375,7 +375,7 @@ MUTANTS = [
     ("T287", "warrant/home.py", '        row.update({"same": same} if same else {})\n', '        pass\n', TOOLS, ["RV3"]),
     ("T288", "warrant/home.py", '            row["identity"] = identity_of(store_of(doc, name), trust, profile)\n', '            row["identity"] = None\n', TOOLS, ["RV3"]),
     ("T292", "warrant/graph.py", 'if rel == "attest" and nodes[a]["actor"] == actor and body.get("verdict") == DECLINE:', 'if rel == "attest" and nodes[a]["actor"] == actor:', TOOLS, ["FA4"]),
-    ("T293", "warrant/graph.py", '"reason": reason if isinstance(reason, str) and reason.strip() else None})', '"reason": reason})', TOOLS, ["FA4"]),
+    ("T293", "warrant/graph.py", '"reason": reason if isinstance(reason, str) and reason.strip(BLANK) else None})', '"reason": reason})', TOOLS, ["FA4"]),
     ("T294", "warrant/review.py", '    return DENIED if JAIL_DENIED.search(out) else "no_result"\n', '    return "no_result"\n', TOOLS, ["R03b"]),
     ("T295", "warrant/review.py", '        if verdict == DENIED:\n', '        if False:\n', TOOLS, ["R08b"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is

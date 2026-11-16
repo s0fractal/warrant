@@ -1537,8 +1537,8 @@ function askedOf(r, byRoot, author, acted, actor) {
 }
 
 // warrant/graph.py declined_by: each lineage's latest version whose body asks the actor and that the actor answered
-// with an attest of verdict `decline` ("I cannot", apart from no answer), with its reason (a non-empty string, else
-// null). Edges in Python's order: by (rel, from), the first decline found.
+// with an attest of verdict `decline` ("I cannot", apart from no answer), with its reason (a string with a character
+// outside ASCII's " \t\n\r\f\v", graph.py BLANK, else null: not trim(), whose whitespace is not Python's strip()). Edges in Python's order: by (rel, from), the first decline found.
 function declinedBy(r, byRoot, author, actor) {
   const into = new Map();
   for (const [a, rel, b] of r.rep.graph.edges) if (rel === "attest") (into.get(b) ?? into.set(b, []).get(b)).push(a);
@@ -1549,7 +1549,7 @@ function declinedBy(r, byRoot, author, actor) {
     const a = (into.get(v) ?? []).slice().sort(cmp).find((x) => author.get(x) === actor && r.recs.get(x)?.body?.verdict === "decline");
     if (a === undefined) continue;
     const reason = r.recs.get(a).body.reason;
-    out.push({ version: v, lineage: root, schema: lin.schema, decline: a, reason: typeof reason === "string" && reason.trim() ? reason : null });
+    out.push({ version: v, lineage: root, schema: lin.schema, decline: a, reason: typeof reason === "string" && !/^[ \t\n\r\f\v]*$/.test(reason) ? reason : null });
   }
   return out;
 }

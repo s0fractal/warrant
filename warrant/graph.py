@@ -113,13 +113,14 @@ def frontier(rep, profile, actor, recs=None):
 
 
 DECLINE = "decline"
+BLANK = " \t\n\r\f\v"        # a reason of these alone names none: ASCII only, one rule with site/reader.mjs (Codex on #450)
 
 
 def declined_by(rep, nodes, into, actor, recs=None):
     """[{version, lineage, schema, decline, reason}], sorted: each lineage's latest version whose body asks `actor`
     (`opened.for`) and that `actor` answered with an attest of verdict `decline`: "I cannot", apart from no answer.
     Any attest or challenge answers an ask (asked_of); a decline is the answer that says it settles nothing, and with
-    why (`reason`, a non-empty string, else None: a decline that names no reason is shown as one). No guard counts it:
+    why (`reason`, a string with a character outside BLANK, else None: a decline that names no reason is shown as one). No guard counts it:
     a guard waits for the verdict its match names (accept, reproduces), and decline is none of them."""
     recs = recs if recs is not None else rep.get("_recs") or {}
     out = []
@@ -132,7 +133,7 @@ def declined_by(rep, nodes, into, actor, recs=None):
             if rel == "attest" and nodes[a]["actor"] == actor and body.get("verdict") == DECLINE:
                 reason = body.get("reason")
                 out.append({"version": v, "lineage": root, "schema": lin["schema"], "decline": a,
-                            "reason": reason if isinstance(reason, str) and reason.strip() else None})
+                            "reason": reason if isinstance(reason, str) and reason.strip(BLANK) else None})
                 break
     return out
 
