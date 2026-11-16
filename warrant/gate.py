@@ -1113,6 +1113,18 @@ def _reacted(b, gh, since):
     return newest
 
 
+BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"      # the workflow bot's author address
+
+
+def _bot_merge(root, x):
+    """Whether merge `x`'s author is the workflow's bot, as the commit itself says. Skipping one can only lose a sign,
+    never make one: thirty of the gate's own merges since the owner's last one read him away (2026-11-16: his merge of
+    #415 was the 32nd back, 13 days inside his 14)."""
+    head = objects(root, [x])[x].decode(errors="replace").partition("\n\n")[0]
+    author = next((ln for ln in head.splitlines() if ln.startswith("author ")), "")
+    return f"<{BOT_EMAIL}>" in author.split()
+
+
 def presence_until(root, b, gh, now=None):
     """Until when the owner counts as present (seconds since the epoch), or None: `days` after his newest sign at or
     after `since` and within `days`: a merge into the base made on GitHub under the `presence` login (its author, with
@@ -1129,8 +1141,8 @@ def presence_until(root, b, gh, now=None):
     for x, parents, when, _ in first_parent(root, b.commit):
         if when < since or asked >= 30:
             break
-        if len(parents) != 2:
-            continue
+        if len(parents) != 2 or _bot_merge(root, x):
+            continue                # the gate's own merges are never his sign: they ask GitHub nothing and count nothing
         asked += 1
         try:
             c = gh.commit(x)
