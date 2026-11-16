@@ -374,6 +374,8 @@ MUTANTS = [
     ("T286", "warrant/resolve.py", '            self.identity = G.identity(E.View(self.snap, trust, profile).report(), self.snap)["identity"]\n', '            self.identity = None\n', TOOLS, ["RV3"]),
     ("T287", "warrant/home.py", '        row.update({"same": same} if same else {})\n', '        pass\n', TOOLS, ["RV3"]),
     ("T288", "warrant/home.py", '            row["identity"] = identity_of(store_of(doc, name), trust, profile)\n', '            row["identity"] = None\n', TOOLS, ["RV3"]),
+    ("T294", "warrant/review.py", '    return DENIED if JAIL_DENIED.search(out) else "no_result"\n', '    return "no_result"\n', TOOLS, ["R03b"]),
+    ("T295", "warrant/review.py", '        if verdict == DENIED:\n', '        if False:\n', TOOLS, ["R08b"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
     ("T239", ".github/workflows/voice-bridge.yml", '          tries=8\n', '          tries=1\n', TOOLS, ["BR7"]),
     ("T240", ".github/workflows/voice-bridge.yml", '            if git -C "$dir" diff --cached --quiet; then break; fi   # this issue was filed by an earlier run\n', '', TOOLS, ["BR7"]),

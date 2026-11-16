@@ -298,7 +298,11 @@ root, `head --pr N` a version naming the commit to review (the `HEAD` of the che
 The reviewer accepts the head version or files `finding@1` challenges against it, through MCP
 (integrations/warrant-review/skills/warrant-review/SKILL.md). The review replay checker runs each
 finding's test at each later head and attests the result; `review.py verify` in CI re-executes those
-new since the base. After a merge, `review.py merged --pr N --merge SHA` files the observation.
+new since the base. A run its jail refused (the waker's sandbox denies all network, so a test that serves the reader
+over 127.0.0.1 cannot bind there) is no observation and is not filed: filed as `no_result`, CI's re-execution with a
+network got a result, and each later head of #449 was replayed into `REPLAY_DIFFERS` again. Such a finding has no
+replay from this checker: the run prints `not run`, and whether its test reproduces is shown only by running it
+elsewhere. After a merge, `review.py merged --pr N --merge SHA` files the observation.
 
 ### The gate's receipts
 
