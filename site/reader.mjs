@@ -47,7 +47,7 @@
 // watched ones and moved (toward: the cone, for attention, never for the outcome).
 //
 // Where the bytes of a cited id are (resolved(), `--resolve`): here, in a store read beside, missing, or not fetched.
-import { assessPrepared, canon, canonStr, cmp, codeIdentity, hex64, loadsLenient, prepare, Refused, utf16 } from "./warrant.mjs";
+import { assessPrepared, canon, canonStr, cmp, codeIdentity, hex64, loadsLenient, prepare, Refused, utf16, verifySig } from "./warrant.mjs";
 
 
 export const MIGRATION = "migration@1";
@@ -142,8 +142,36 @@ export async function read(store, rules, backend, source) {
   const rep = assessPrepared(prep);
   const recs = new Map();
   for (const [id, envs] of prep.snap.lines) recs.set(id, envs[0].record);
-  return { rep, recs, store, whose: rules.whose, rules: { trust: rules.trust, profile: rules.profile } };
+  const identity = await storeIdentity(rep, prep.snap.lines, backend);
+  return { rep, recs, store, identity, whose: rules.whose, rules: { trust: rules.trust, profile: rules.profile } };
 }
+
+// A store's identity, as warrant/graph.py identity gives it (docs/V3.md §14, obligation ec6d1ebe): the root of its one
+// rules@1 lineage, when an envelope of that root is signed by a key the root's own body binds to its author (not
+// v3.json's trust: a store gives itself that); else {identity: null, why}. `lines` the snapshot's {id: [envelope]}.
+export async function storeIdentity(rep, lines, backend) {
+  const roots = Object.keys(rep.lineages).filter((L) => rep.lineages[L].schema === RULES).sort(utf16);
+  if (roots.length !== 1) {
+    return { identity: null, why: roots.length ? `${roots.length} ${RULES} lineages: the store names its rules by none`
+                                              : `no ${RULES} genesis: the store is named only by where it is read` };
+  }
+  const root = roots[0], msg = new TextEncoder().encode(SIG_DOMAIN);
+  const signed = new Uint8Array([...msg, ...hexToBytes(root)]);
+  for (const env of lines.get(root) ?? []) {
+    const rec = env?.record ?? {}, sig = env?.sig, trust = rec.body?.trust;
+    const keys = isPlain(trust) && isPlain(trust.keys) && Object.hasOwn(trust.keys, rec.actor) ? trust.keys[rec.actor] : null;
+    if (!isPlain(sig) || !Array.isArray(keys)) continue;
+    for (const k of keys) {
+      if (typeof k !== "string" || !hex64(k)) continue;
+      if (await verifySig(backend, k, sig.ed25519, signed) && sig.key === await backend.sha256(hexToBytes(k))) return { identity: root, by: RULES };
+    }
+  }
+  return { identity: null, why: `the ${RULES} genesis ${root.slice(0, 12)} is signed by no key its body binds to its author: a copy re-signed elsewhere names no store` };
+}
+
+const SIG_DOMAIN = "warrant-sig-v3:";                    // records.SIG_DOMAIN: what a record's signature signs, before its id
+const isPlain = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+const hexToBytes = (h) => Uint8Array.from(h.match(/../g), (b) => parseInt(b, 16));
 
 export const PINS_NOT_CHECKED = "PINS_NOT_CHECKED";
 
@@ -332,9 +360,10 @@ export async function readOthers(addresses, backend, source, { fetcher = globalT
     try {
       const store = await fetchStore(address, backend, { fetcher });
       const r = await read(store, receiver(store.doc, null), backend, source);
-      return { address, name: typeof store.doc.repository === "string" ? store.doc.repository : address, doc: store.doc, r, why: null };
+      return { address, name: typeof store.doc.repository === "string" ? store.doc.repository : address, identity: r.identity.identity,
+               doc: store.doc, r, why: null };
     } catch (e) {
-      return { address, name: address, r: null, why: String(e?.message ?? e) };
+      return { address, name: address, identity: null, r: null, why: String(e?.message ?? e) };
     }
   }));
 }
@@ -535,6 +564,7 @@ export function summary(r) {
   }
   return {
     repository: typeof store.doc.repository === "string" ? store.doc.repository : null,
+    identity: r.identity ?? null,                               // warrant status's: the root of its one self-signed rules@1 lineage
     root: store.mode === "full" ? rep.snapshot : null,          // the store's root only when every named blob was read
     assessment: rep.assessment, code: rep.code, as_of: rep.as_of, rules: r.whose,
     records: r.recs.size, signed: rep.basis.SIGNED, migrated: rep.basis.MIGRATED,
@@ -564,7 +594,7 @@ const NOT_CHECKED_COMPARED = [
 function othersSummary(r) {
   const { voices, left } = outside(r);
   const n = [...voices.values()].reduce((k, xs) => k + xs.length, 0);
-  return { stores: r.others.map((o) => ({ address: o.address, name: o.name, read: o.r !== null, why: o.why,
+  return { stores: r.others.map((o) => ({ address: o.address, name: o.name, identity: o.identity ?? null, read: o.r !== null, why: o.why,
                                            records: o.r ? o.r.recs.size : null, rules: o.r ? "its own" : null })),
            voices: n, counted: 0, left_out: [...left.values()].reduce((k, x) => k + x, 0),
            lineages: Object.keys(r.rep.lineages).filter((L) => outsideOf(r, L).voices.length).length };

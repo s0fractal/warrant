@@ -86,7 +86,7 @@ function drawOthers(s) {
   if (!s.others) return [];
   const o = s.others;
   return [
-    fact("other stores", el("ul", {}, o.stores.map((x) => el("li", {}, `${x.name} · ${x.address} · `,
+    fact("other stores", el("ul", {}, o.stores.map((x) => el("li", {}, `${x.name} · ${x.identity ? `identity ${x.identity.slice(0, 12)}` : "no identity"} · ${x.address} · `,
       x.read ? `read, ${x.records} records, under its own rules` : el("strong", { text: `not read: ${x.why}` }))))),
     fact("voices from outside", `${o.voices} on ${o.lineages} lineage(s), counted by this store's rules: none`
       + (o.left_out ? ` · ${o.left_out} left out (their own store rejects them)` : "")),
@@ -133,6 +133,8 @@ function drawFloor() {
   fill(box,
     el("h2", { text: s.repository || "A store with no name" }),
     el("dl", { class: "facts" },
+      fact("identity", s.identity?.identity ? `${short(s.identity.identity)}: the genesis of its rules, signed by the key it names`
+                                            : `none (${s.identity?.why ?? "not read"}): the name above is one the store gives itself`),
       fact("rules", s.rules === "reader" ? "yours (the trust and profile you gave)" : "the publisher's own (.warrant/v3.json): under other rules the same bytes give other answers"),
       fact("records", `${s.records} · signed ${s.signed} · vouched for by a migration ${s.migrated} · rejected ${s.rejected}`),
       fact("root", s.root ? short(s.root) : "not computed: the root covers every blob, and only the migration maps were fetched",
