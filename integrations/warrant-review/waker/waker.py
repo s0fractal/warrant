@@ -644,8 +644,8 @@ class Waker:
         doc["attempts"].append({"at": iso(t), "finished": t, "ok": ok, "line": line, **({"skipped": True} if skipped else {}),
                                 **({"denied": denied} if denied else {})})
         p.write_text(json.dumps(doc, indent=1))
-        if ok and not denied:           # a partial replay covers no other head's (Codex 4ce02a05)
-            self.cover(a)
+        if ok:                          # a partial one covers too, saying so: nothing is left stranded (Codex on #495)
+            self.cover(a, denied)
         return pushed, line
 
     def replay_memo(self, a):
@@ -697,7 +697,7 @@ class Waker:
                 best = (done[-1].get("finished", 0), done[-1].get("denied") or [])
         return best[1]
 
-    def cover(self, a):
+    def cover(self, a, denied=()):
         """A replay completed at `a`'s head replays every finding of its store at each of its heads: the
         incomplete replays of the same pull request at other heads are covered by it."""
         for p in (self.home / "replays").glob(f"{number(a['pr'])}-*.json"):
@@ -705,6 +705,8 @@ class Waker:
             last = doc["attempts"][-1]
             if doc.get("head") != a["head"] and not last.get("ok") and not last.get("skipped") and not doc.get("covered_by"):
                 doc["covered_by"] = a["head"]
+                if denied:                  # by a partial replay: its denied findings stay unobserved (denied_of)
+                    doc["covered_partially"] = list(denied)
                 p.write_text(json.dumps(doc, indent=1))
 
     def discard(self, wt, work):
