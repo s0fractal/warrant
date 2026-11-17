@@ -583,6 +583,7 @@ def drift_cases():
     lens1 = A.answer(A.home_readings(home), {"query": "stores"})["lens"]
     ctx = api.call(agent(r), "context", {"workspace": "w", "targets": [L]})
     seen = ctx.get("ok", {}).get("targets", {}).get(L, {}).get("lineage", {}).get("reliance")
+    ctx_drift = ctx.get("ok", {}).get("targets", {}).get(L, {}).get("drift")
     text = D.lines({L: d1})
     shown = CL.view(RP.Repo(r.root).report(), r.root)
     CL.replay(RP.Repo(r.root), CHECKER_KEY)
@@ -592,7 +593,7 @@ def drift_cases():
           "in claims view and in the agent's context, until the claims checker accepts it again (G14 obligation 055751e2); the "
           "acceptance names the files it ran on", set(pin or {}) == {"lib/code.py", "tests/q_test.py"}
           and d0.get("verdict") == "UNCHANGED" and rel0 == "ELIGIBLE" and d1.get("verdict") == "CHANGED" and rel1 == D.STALE
-          and seen == D.STALE and f"; {D.STALE}; leaf `{rep['lineages'][L]['leaf'] or L}`)" in shown and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE",
+          and seen == D.STALE and ctx_drift == "CHANGED" and f"; {D.STALE}; leaf `{rep['lineages'][L]['leaf'] or L}`)" in shown and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE",
           (pin, d0, rel0, d1, rel1, seen, d2, rel2))
     check("DR16 `across` reads a stale claim STALE as context does, through Home and through the agent, and its lens binds the "
           "tree it read: the same store answers differently at two heads", far == (D.STALE, D.STALE) and lens0 != lens1, (far, lens0, lens1))

@@ -74,7 +74,10 @@ out, so `seen` never makes a valid acceptance invalid; an actor whose challenge 
 cannot grow it. The signer accepts within that horizon, not over all there is; no guard reads it.
 `context` gives each target's `horizons`: for each attest on it that names a `seen`, {root, unseen},
 the counted challenges against the target now that it does not list (filed after it, or outside its
-view); None for one that names none, which says nothing of what it saw. `commit` takes that record back unchanged: it signs it and appends it as a
+view); None for one that names none, which says nothing of what it saw. For a version it also gives
+`grounded` ({grounded, failing (the first eight, each with why), failing_count}: whether it and all it rests
+on are effective and ELIGIBLE, `warrant.graph.grounded`) and, for a pinned lineage the freshness gate read,
+`drift` (its verdict on the pinned bytes): what `lineage.reliance` alone does not say. `commit` takes that record back unchanged: it signs it and appends it as a
 compare-and-swap on the signer's head (a stale `prev` is `CHAIN_MOVED`: prepare again). Refusals are
 `{"error": CODE, "message"}`; `explain` has every code.
 

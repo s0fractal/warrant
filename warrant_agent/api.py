@@ -148,6 +148,12 @@ def context(cfg, req):
         cap["attests"] = sorted(a for rel, a in into.get(i, []) if rel == "attest")
         cap["horizons"] = {a: G.horizon(rep, a, view.recs) for a in cap["attests"]}    # None: it names no horizon
         cap["challenges"] = {c: rep["challenges"][c] for rel, c in into.get(i, []) if rel == "challenge"}
+        if i in rep["versions"]:          # what its reliance does not say: whether it rests on ground, and its pins
+            g = G.grounded(rep, i, view.recs)
+            cap["grounded"] = {"grounded": g["grounded"], "failing": g["failing"][:8], "failing_count": len(g["failing"])}
+            lin = rep["lineages"][G.lineage_of(rep, i)]
+            if "drift" in lin:
+                cap["drift"] = lin["drift"]
         if i in rep["rejected"]:
             cap["rejected"] = rep["rejected"][i]
         caps[i] = cap
