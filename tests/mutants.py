@@ -375,7 +375,7 @@ MUTANTS = [
     ("T287", "warrant/home.py", '        row.update({"same": same} if same else {})\n', '        pass\n', TOOLS, ["RV3"]),
     ("T288", "warrant/home.py", '            row["identity"] = identity_of(store_of(doc, name), trust, profile)\n', '            row["identity"] = None\n', TOOLS, ["RV3"]),
     ("T297", "warrant/graph.py", '    return {"root": rep["snapshot"], "challenges": counted_against(rep, target)}', '    return {"root": rep["snapshot"], "challenges": []}', AGENT, ["A46"]),
-    ("T298", "warrant_agent/api.py", '        if kind == "attest" and body.get("verdict") == "accept" and req.get("schema") is None:\n', '        if False:\n', AGENT, ["A46"]),
+    ("T298", "warrant_agent/api.py", '    if kind == "attest" and body.get("verdict") == "accept" and req.get("schema") is None:\n', '    if False:\n', AGENT, ["A46"]),
     ("T299", "warrant/graph.py", '"unseen": [c for c in counted_against(rep, t) if c not in listed]}', '"unseen": counted_against(rep, t)}', AGENT, ["A47"]),
     ("T300", "warrant/cli.py", '    if body.get("verdict") != "accept":\n        return body\n    store = store_dir(a)\n', '    return body\n    store = store_dir(a)\n', AGENT, ["R01"]),
     ("T301", "warrant/graph.py", 'if x["target"] == target and x["counted"])', 'if x["target"] == target)', AGENT, ["A46"]),

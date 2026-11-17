@@ -379,6 +379,19 @@ def _schema_problems(view, r):
     return out
 
 
+def _aimed(snap, view, req, body, refs):
+    """(body, refs) of an attest or a challenge with its target resolved, in both; an acceptance with no schema also
+    with the horizon it accepts within (graph.with_seen); a schema's closed body is left as given."""
+    kind = req["kind"]
+    if kind not in ("attest", "challenge"):
+        return body, refs
+    t = _resolve(snap, req.get("target") or body.get("target") or "")
+    body = dict(body, target=t)
+    if kind == "attest" and body.get("verdict") == "accept" and req.get("schema") is None:
+        body = G.with_seen(view.report(), body)
+    return body, refs + [t]
+
+
 def prepare(cfg, req):
     _closed(req, ("workspace", "kind", "body"), ("schema", "target", "lineage", "refs", "guard"))
     ws = cfg.workspace(req["workspace"])
@@ -387,12 +400,7 @@ def prepare(cfg, req):
     snap, view, trust, profile = _assess(ws)
     kind, body = req["kind"], req["body"]
     need(kind in R.KINDS and isinstance(body, dict), "BAD_REQUEST", f"kind is one of {list(R.KINDS)}; body an object")
-    refs = list(req.get("refs") or [])
-    if kind in ("attest", "challenge"):
-        t = _resolve(snap, req.get("target") or body.get("target") or "")
-        body, refs = dict(body, target=t), refs + [t]
-        if kind == "attest" and body.get("verdict") == "accept" and req.get("schema") is None:
-            body = G.with_seen(view.report(), body)     # the horizon it accepts within; a schema's closed body: as given
+    body, refs = _aimed(snap, view, req, body, list(req.get("refs") or []))
     schema, guard = req.get("schema"), req.get("guard")
     s = view.schemas.get(schema) if isinstance(schema, str) else None
     if s is not None:
