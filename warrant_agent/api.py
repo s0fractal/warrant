@@ -492,7 +492,7 @@ def commit(cfg, req):
 
 def explain(cfg, req):
     _closed(req, ("word",))
-    need(isinstance(req["word"], str) and req["word"] in GL.TERMS, "NOT_FOUND", "no such word in the glossary")
+    need(isinstance(req["word"], str) and req["word"] in GL.TERMS, "NOT_FOUND", "not a status word this interface answers with; the project's other words (lens, scene, overlay, commons, voice, fragile, desk, horizon, ...) are in docs/GLOSSARY.md")
     return GL.explain(req["word"])
 
 
