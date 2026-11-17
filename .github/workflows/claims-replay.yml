@@ -1,8 +1,11 @@
 # The claims checker after merges (owner, 2026-11-13): on a runner, under the key claims-key.yml made, at master's
 # tip, `warrant.claims replay` runs again only the claims none of whose acceptances names the files this commit holds
 # for them (the import closure of their witnesses and mutants, docs/V3.md §15), and accepts what held. Its
-# acceptances go to a pull request of verdicts only from claims/verdicts/<commit>, which CI re-executes at the commit
-# each names (`claims verify`) and the merge gate merges (its verdicts-only rule). Nothing is pushed to master.
+# acceptances go to its own store (owner, 2026-11-17: each model files in a store of its own): the branch
+# stores/claims-checker, which .warrant/sources.json names, so the repository reads them beside its own records
+# (warrant/sources.py) with no pull request per run and no growth of master's store. Nothing is pushed to master; the
+# store branch only moves forward (no force), and a reader counts its records only as signed by the key the trust
+# binds to claims-checker, so whoever can push there can withhold acceptances, never forge one.
 #
 # The seed is in the environment of a job that runs master's tests: whoever can change master's code can read it.
 # That is the gate's guard, the same as for every check; the key signs only `claims-checker` acceptances, which CI
@@ -31,9 +34,7 @@ jobs:
     environment: claims
     timeout-minutes: 300
     permissions:
-      contents: write          # the branch of verdicts
-      pull-requests: write     # its pull request
-      actions: write           # dispatching ci.yml on it: a pull request opened with GITHUB_TOKEN starts no workflow
+      contents: write          # the checker's store branch (stores/claims-checker)
     env:
       GIT_AUTHOR_NAME: claims-checker
       GIT_AUTHOR_EMAIL: claims-checker@invalid
@@ -78,36 +79,30 @@ jobs:
             unchanged
             exit 0
           fi
-          # one pull request of acceptances at a time: a second at a newer tip, before the first merged, would accept
-          # the same versions again. Only a branch of this repository counts: a fork's pull request named
-          # claims/verdicts/* must not stop the checker (Codex on #367)
-          open_=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq "[.[] | select(.head.ref | startswith(\"claims/verdicts/\")) | select(.head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number] | length")
-          if [ "$open_" != "0" ]; then
-            echo "a pull request of acceptances is open: nothing replayed until it merges" | tee -a "$GITHUB_STEP_SUMMARY"
-            unchanged
-            exit 0
+          # the checker's own store, checked out inside this one (build/ is ignored), or begun empty
+          src=stores/claims-checker
+          if git ls-remote --exit-code --heads origin "$src" >/dev/null; then
+            git fetch -q origin "+refs/heads/$src:refs/remotes/origin/$src"
+            git worktree add -q -B "$src" "build/$src" "refs/remotes/origin/$src"
+          else
+            git worktree add -q --orphan -b "$src" "build/$src"
           fi
-          if git ls-remote --exit-code --heads origin "claims/verdicts/${tip:0:12}" >/dev/null; then
-            echo "claims/verdicts/${tip:0:12} exists already: nothing to do at this commit" | tee -a "$GITHUB_STEP_SUMMARY"
+          mkdir -p "build/$src/.warrant/blobs"
+          touch "build/$src/.warrant/records.jsonl"
+          printf '%s\n' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.claims replay --key - --into "build/$src" | tee -a "$GITHUB_STEP_SUMMARY"
+          git diff --quiet -- .warrant      # nothing of this run lands in master's store
+          if [ ! -s "build/$src/.warrant/records.jsonl" ] || [ -z "$(git -C "build/$src" status --porcelain --untracked-files=all -- .warrant)" ]; then
             unchanged
-            exit 0
+          else
+            echo "changed=1" >> "$GITHUB_OUTPUT"
           fi
-          printf '%s\n' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.claims replay --key - | tee -a "$GITHUB_STEP_SUMMARY"
-          rm -rf build
-          if git diff --quiet -- .warrant; then unchanged; else echo "changed=1" >> "$GITHUB_OUTPUT"; fi
-      - name: A pull request of the acceptances only
+      - name: Push the acceptances to the checker's store
         if: steps.replay.outputs.changed == '1'
         env:
-          GH_TOKEN: ${{ github.token }}
           TIP: ${{ steps.replay.outputs.tip }}
         run: |
           set -euo pipefail
-          branch="claims/verdicts/${TIP:0:12}"
-          [ -z "$(git status --porcelain --untracked-files=all -- . ':!.warrant')" ]
-          git switch -q -c "$branch"
+          cd build/stores/claims-checker
           git add .warrant
           git commit -q -m "claims-checker: acceptances at ${TIP:0:12}"
-          git push -q origin "$branch"
-          gh pr create --base master --head "$branch" --title "claims-checker: acceptances at ${TIP:0:12}" \
-            --body "The claims checker's acceptances at $TIP, made by claims-replay.yml on a runner. CI re-executes each at that commit (claims verify); the merge gate merges verdicts only."
-          gh workflow run ci.yml --ref "$branch"
+          git push -q origin HEAD:refs/heads/stores/claims-checker      # a fast-forward, or refused
