@@ -1,0 +1,123 @@
+Codex roadmap verdict evidence: G11 impact truncation
+
+Repository: s0fractal/warrant
+Base M: ca55a49ad0ff72100a496fc52ee4b68e883a21a4
+Duty D: 8c856b3b26355a6eaf27b32cc1404ada26b7528b6e567dc78f84bd0da0a7dc0e
+Version T: 3620f16e13a45ffa1afdc738a5506915836d0567582eef7b16d5fede609ec68b
+
+Verdict: challenge T. The missing CLI/MCP operations from the earlier closure are implemented, but impact silently omits transitive dependent lineages at the traversal cap.
+
+Cause: warrant/graph.py:67-78 caps the walk at MAX_NODES=2000 and returns complete=false when unfinished. warrant/graph.py:248 uses only why(...)["nodes"], then lines 249-251 return rests_on_it without any completeness indicator. Both tools/graph.py impact and agent graph op=impact expose that result.
+
+Reproducer: create one open obligation and 2002 open obligations in a dependency chain through serves/refs. Commit BASE. Add one signed observation (attest verdict=seen) targeting the seed obligation and commit HEAD. The admitted store is canonical, with no problems or rejected records. Every dependent rests transitively on the changed seed. The CLI returns status 0; agent and actual stdio MCP warrant_graph return success. Each names 1999 of 2002 dependent lineages; each omits the final dependent, without disclosing incompleteness. Direct why reports complete=false. The same signed reports, with the in-process traversal cap raised to 5000 as a diagnostic control, return all 2002 dependents. That control is not a production fix.
+
+Observed at M (full output):
+FAIL F1 impact reports all transitive dependents or declares incompleteness: {"agent": {"expected": 2002, "actual": 1999, "last_omitted": true, "incomplete_disclosed": false}, "CLI": {"expected": 2002, "actual": 1999, "last_omitted": true, "incomplete_disclosed": false}, "MCP": {"expected": 2002, "actual": 1999, "last_omitted": true, "incomplete_disclosed": false}}
+control: all 2002 dependents appear at cap=5000; no store problems or rejected records
+
+Checks at M:
+- python tests/agent_test.py with the MCP SDK: 155 checks passed, no FAIL, including M01 and A51.
+- python tests/tools_test.py: 218 checks passed, no FAIL.
+- python tests/core_test.py: 73 checks passed, no FAIL.
+- Registered exact-replacement mutants run in isolated scratch copies initialized as Git fixture repositories (no edits to M):
+T124 KILLED warrant/graph.py by tests/tools_test.py ['DR17']
+T136 KILLED tools/graph.py by tests/tools_test.py ['DR25']
+T321 KILLED warrant/graph.py by tests/tools_test.py ['DR25b']
+T322 KILLED warrant_agent/api.py by tests/agent_test.py ['A51']
+T323 KILLED warrant/review.py by tests/agent_test.py ['A51']
+5 of 5 killed
+
+The first scratch mutant attempt had no Git checkout and was refused during its baseline; no kills were credited from it. The reported five kills are from the corrected fixture run above.
+- warrant.roadmap check: 110 lineages, 0 problems.
+- warrant.claims check: 143 live claims, 0 problems.
+- Due facts re-read at M with warrant.roadmap due --actor codex --json; MCP workspace binds the codex seed to its configured signer, with roadmap/acceptor. Context shows T waits for one matching roadmap/acceptor attest and has no open requires.
+- Read merged PR #481, its changes at M, 1d9a32a6 (graph move into warrant/graph.py), D/T and evidence b9e78f21 (a pr-head@1 record, not a blob).
+
+Required before closure: return the full impact dependency set within admitted bounds, or explicitly disclose incomplete traversal and support continuation/refusal; add a regression and a mutant that burns this boundary.
+
+Scope: this is a roadmap challenge without finding@1. No production fix, full mutant campaign, release assessment, or independent CI rerun is claimed. Only the graph duty is judged; #481's other waker change is not reviewed here. The regression file below is review evidence, not installed into tests/ or committed.
+
+Runnable reproducer (save as roadmap_graph_impact_test.py and run from M with its Python dependencies including the MCP SDK):
+
+#!/usr/bin/env python3
+"""At ca55a49, impact silently loses dependents at the traversal cap.
+Run from the repository root, with its tests/ available.
+"""
+import asyncio
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path.cwd()
+sys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]
+from world import Repo, KEYS
+from warrant import graph as G, records as R, engine as E
+from warrant_agent import api
+from warrant_agent.config import Config
+
+r = Repo(git_init=True)
+a = r.entity('alice', 'obligation@1', {'state': 'open', 'statement': 'seed', 'serves': []})
+prev = E.head(r.store.snapshot(), r.trust, 'alice')['id']
+x = a
+chain, lines = [], []
+for i in range(2002):
+    rec = R.record('entity', 'alice', r.t + i + 1,
+                   {'state': 'open', 'statement': f'dependent {i}', 'serves': [x]},
+                   'obligation@1', refs=[x], prev=prev)
+    x, line = R.line(rec, KEYS['alice'])
+    prev = x
+    chain.append(x)
+    lines.append(line)
+r.store.add_lines(lines)
+base = r.commit('valid dependency chain')
+rep0 = r.report()
+r.attest('bob', a, verdict='seen')
+head = r.commit('observation on seed')
+rep1 = r.report()
+assert not rep1['problems'] and not rep1['rejected'] and rep1['canonical']
+assert not rep1['chains']['forks'] if isinstance(rep1.get('chains'), dict) and 'forks' in rep1['chains'] else True
+rng = f'{base}..{head}'
+cfg = Config({'agent_api': 'warrant-agent/3', 'workspaces': {'w': {'repo': str(r.root), 'operations': ['graph']}}})
+agent = api.call(cfg, 'graph', {'workspace': 'w', 'op': 'impact', 'range': rng})['ok']
+cli = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/graph.py'), 'impact', rng],
+                     env=dict(os.environ, WARRANT_REPO_ROOT=str(r.root)), capture_output=True, text=True)
+assert cli.returncode == 0, cli.stderr
+cli = json.loads(cli.stdout)
+
+async def mcp_query():
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+    params = StdioServerParameters(command=sys.executable,
+        args=['-B', '-m', 'warrant_agent.mcp_server', '--repo', str(r.root), '--actor', 'bob', '--seed', str(r.seed('bob'))],
+        env=dict(os.environ, PYTHONPATH=str(ROOT)))
+    async with stdio_client(params) as (rd, wr):
+        async with ClientSession(rd, wr) as session:
+            await session.initialize()
+            res = await session.call_tool('warrant_graph', {'workspace': r.root.name, 'op': 'impact', 'range': rng})
+            assert not res.is_error, res
+            return res.structured_content
+
+mcp = asyncio.run(mcp_query())
+if 'data' in mcp and 'root' not in mcp:
+    mcp = mcp['data']
+results = {}
+for name, ans in [('agent', agent), ('CLI', cli), ('MCP', mcp)]:
+    data = ans['data']
+    row = next(x for x in data['lineages'] if x['lineage'] == a)
+    results[name] = {'expected': len(chain), 'actual': len(row['rests_on_it']),
+                     'last_omitted': chain[-1] not in row['rests_on_it'],
+                     'incomplete_disclosed': row.get('complete') is False or data.get('complete') is False}
+# Control: the same signed reports have every dependent when the traversal can finish.
+cap = G.MAX_NODES
+try:
+    G.MAX_NODES = 5000
+    control = next(x for x in G.impact(rep0, rep1)['lineages'] if x['lineage'] == a)
+    assert set(control['rests_on_it']) == set(chain)
+finally:
+    G.MAX_NODES = cap
+holds = all(x['actual'] == x['expected'] or x['incomplete_disclosed'] for x in results.values())
+print(('ok   F1 ' if holds else 'FAIL F1 ') + 'impact reports all transitive dependents or declares incompleteness: ' + json.dumps(results))
+print('control: all 2002 dependents appear at cap=5000; no store problems or rejected records')
+sys.exit(0 if holds else 1)
