@@ -1013,6 +1013,7 @@ def main():
     repo = repo_cases(tally, a)
     second_client_cases()
     browser_reader_cases()
+    browser_sources_cases()
     browser_pins_cases()
     browser_others_cases()
     browser_changes_cases()
@@ -1172,6 +1173,63 @@ def _serve_failing(directory, failing):
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Failing, directory=str(directory)))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, f"http://127.0.0.1:{srv.server_address[1]}/"
+
+
+def browser_sources_cases():
+    """The browser's reader reads the sources a store declares (.warrant/sources.json, warrant/sources.py) as the Python
+    reader does: a source's records by its actors join the store's, in canonical order, under the store's receiver;
+    others there are left out and counted; a source not served where the reader can find it is named, not read as
+    empty; a malformed declaration is refused."""
+    from warrant.store import Snapshot, _line_id
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+    side = Repo()
+    side.put("bob", "attest", {"target": d, "verdict": "accept"}, refs=[d])
+    side.entity("eve", "obligation@1", {"state": "open", "statement": "not bob's", "serves": []})
+    decl = {"warrant": "sources/1", "sources": [{"name": "bob", "ref": "refs/heads/stores/bob", "actors": ["bob"]}]}
+    (r.dot / "sources.json").write_text(json.dumps(decl))
+    mine = (r.dot / "records.jsonl").read_bytes().splitlines(keepends=True)
+    theirs = [ln for ln in (side.dot / "records.jsonl").read_bytes().splitlines(keepends=True) if json.loads(ln)["record"]["actor"] == "bob"]
+    union = Snapshot(sorted(set(mine) | set(theirs), key=_line_id), {})
+    cfg = json.loads((r.dot / "v3.json").read_text())
+    py = E.View(union, cfg["trust"], cfg["profile"], None).report()
+    wm = ROOT / "site" / "warrant.mjs"
+    srv, base = _serve(r.root)
+    srv2, base2 = _serve(side.root)
+    def js(mapping):
+        code = ("import * as R from %s; import { nodeBackend } from %s; import fs from 'node:fs';"
+                " const b = await nodeBackend(); const src = new Uint8Array(fs.readFileSync(%s));"
+                " try { const store = await R.fetchStore(%s, b, { sourceBase: () => %s });"
+                " const r = await R.read(store, R.receiver(store.doc, null), b, src);"
+                " process.stdout.write(JSON.stringify({summary: R.summary(r), states: Object.fromEntries(Object.entries(r.rep.lineages).map(([k, v]) => [k, v.state]))}));"
+                " } catch (e) { process.stdout.write(JSON.stringify({refused: String(e.message)})); }") % (
+            json.dumps(READER.as_uri()), json.dumps(wm.as_uri()), json.dumps(str(wm)), json.dumps(base), mapping)
+        p = subprocess.run([NODE, "--input-type=module", "-e", code], capture_output=True, text=True, check=False, timeout=600)
+        return json.loads(p.stdout) if p.returncode == 0 and p.stdout else {"crash": p.stderr[-300:]}
+    try:
+        got = js(json.dumps(base2))
+        gone = js("null")
+        (r.dot / "sources.json").write_text(json.dumps(dict(decl, sources=[dict(decl["sources"][0], ref="HEAD")])))
+        bad = js(json.dumps(base2))
+    finally:
+        srv.shutdown()
+        srv2.shutdown()
+    s = got.get("summary") or {}
+    src = (s.get("sources") or [{}])[0]
+    check("JR1 a declared source's records by its actors join the store's in the browser's reader as in the Python one: "
+          "bob's acceptance there closes alice's obligation here; every lineage's state is the engine's over the union, "
+          "the union is in canonical order, eve's line there is left out and counted",
+          got.get("states") == {L: x["state"] for L, x in py["lineages"].items()} and got["states"].get(o) == "done"
+          and s.get("canonical") is True and s.get("records") == len(union.lines)
+          and src.get("records") == 1 and src.get("left_out") == len((side.dot / "records.jsonl").read_bytes().splitlines()) - 1,
+          (got.get("states"), src, s.get("canonical"), got.get("crash")))
+    g = ((gone.get("summary") or {}).get("sources") or [{}])[0]
+    check("JR2 a source not served where the reader can find it is named (base null, no records), and the store reads "
+          "as its own records alone: the obligation stays open",
+          g.get("base") is None and g.get("records") == 0 and (gone.get("states") or {}).get(o) == "open", (g, gone.get("crash")))
+    check("JR3 a malformed declaration (a ref outside refs/heads and refs/warrant) is refused, as SRC.declared refuses it",
+          "refused" in bad and "source" in bad["refused"], bad)
 
 
 def browser_reader_cases():

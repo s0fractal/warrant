@@ -142,6 +142,8 @@ function drawFloor() {
       fact("root", s.root ? short(s.root) : "not computed: the root covers every blob, and only the migration maps were fetched",
            s.root ? null : " ", s.root ? null : link("fetch every blob", { full: true })),
       fact("blobs", `${s.blobs.read} read of ${s.blobs.asked} asked for` + (s.blobs.missing ? ` · ${s.blobs.missing} named and not served` : "")),
+      ...(s.sources ?? []).map((x) => fact("source", `${x.name} at ${x.ref}: ` + (x.base === null ? "not served where this reader can find it"
+        : `${x.records} record(s) by its actors` + (x.left_out ? `, ${x.left_out} by others left out` : "")))),
       fact("completeness", `${s.completeness}: no store can show that it holds everything said about its records`),
       fact("reliance", counts(s.reliance)),
       s.pins ? fact("pins", pinsLine(s.pins)) : [],

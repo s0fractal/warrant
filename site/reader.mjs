@@ -47,7 +47,7 @@
 // watched ones and moved (toward: the cone, for attention, never for the outcome).
 //
 // Where the bytes of a cited id are (resolved(), `--resolve`): here, in a store read beside, missing, or not fetched.
-import { assessPrepared, canon, canonStr, cmp, codeIdentity, hex64, loadsLenient, prepare, Refused, utf16, verifySig } from "./warrant.mjs";
+import { assessPrepared, canon, canonStr, cmp, codeIdentity, hex64, isActor, loadsLenient, prepare, Refused, utf16, verifySig } from "./warrant.mjs";
 
 
 export const MIGRATION = "migration@1";
@@ -100,19 +100,81 @@ async function named(lines, backend) {
   return { all, maps };
 }
 
-// {lines, blobs, doc, missing, mode, asked}: the store at `base`, its blobs by `mode` ("quick" | "full").
-export async function fetchStore(base, backend, { full = false, fetcher = globalThis.fetch } = {}) {
+// The sources a .warrant/sources.json names (warrant/sources.py declared): [{name, ref, actors}], [] when none; a
+// malformed declaration is refused, as the Python reader refuses it.
+const SRC_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/, SRC_REF = /^refs\/(heads|warrant)\/[A-Za-z0-9._/-]{1,200}$/;
+export function declaredSources(doc) {
+  if (doc === null || doc === undefined) return [];
+  const ok = isPlain(doc) && doc.warrant === "sources/1" && Object.keys(doc).every((k) => k === "warrant" || k === "sources");
+  if (!ok) throw new Refused(".warrant/sources.json is a sources/1 document {warrant, sources}");
+  const xs = doc.sources ?? [];
+  if (!Array.isArray(xs)) throw new Refused("sources is a list");
+  const seen = new Set();
+  for (const x of xs) {
+    const good = isPlain(x) && Object.keys(x).sort().join() === "actors,name,ref" && typeof x.name === "string" && SRC_NAME.test(x.name)
+      && typeof x.ref === "string" && SRC_REF.test(x.ref) && !x.ref.includes("..")
+      && Array.isArray(x.actors) && x.actors.length > 0 && x.actors.every(isActor) && !seen.has(x.name);
+    if (!good) throw new Refused(`a source is {name, ref, actors} with a unique name, a refs/heads or refs/warrant ref and actor ids`);
+    seen.add(x.name);
+  }
+  return xs;
+}
+
+// Where a source's ref is served beside `root`: on raw.githubusercontent.com, the same repository at that ref; anywhere
+// else nowhere this reader can know (null), unless the caller says (`sourceBase(ref, root)`).
+export function rawSourceBase(ref, root) {
+  const m = /^https:\/\/raw\.githubusercontent\.com\/([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100})\//.exec(root);
+  return m ? `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${ref}/` : null;
+}
+
+// {lines, blobs, doc, missing, mode, asked, sources}: the store at `base`, its blobs by `mode` ("quick" | "full"), with
+// beside its own lines each declared source's lines by that source's actors only (warrant/sources.py): a source decides
+// nothing by being read, a line by another actor there is left out and counted, a source not served is named, never
+// read as empty.
+export async function fetchStore(base, backend, { full = false, fetcher = globalThis.fetch, sourceBase = rawSourceBase } = {}) {
   const root = base.endsWith("/") ? base : base + "/";
   const config = await get(root + ".warrant/v3.json", fetcher);
   if (config === null) throw new Refused(`${root}: no .warrant/v3.json`);
   let doc;
   try { doc = loadsLenient(new TextDecoder().decode(config)); } catch { throw new Refused(`${root}.warrant/v3.json: not JSON`); }
-  const lines = split((await get(root + ".warrant/records.jsonl", fetcher)) || new Uint8Array());
+  const own = split((await get(root + ".warrant/records.jsonl", fetcher)) || new Uint8Array());
+  const srcRaw = await get(root + ".warrant/sources.json", fetcher);
+  let srcDoc = null;
+  if (srcRaw !== null) {
+    try { srcDoc = JSON.parse(new TextDecoder().decode(srcRaw)); } catch { throw new Refused(`${root}.warrant/sources.json: not JSON`); }
+  }
+  const dec = new TextDecoder(), byText = new Map(own.map((l) => [dec.decode(l), l])), sources = [], bases = [];
+  for (const s of declaredSources(srcDoc)) {
+    const at = sourceBase(s.ref, root);
+    const raw = at === null ? null : await get(at + ".warrant/records.jsonl", fetcher);
+    let records = 0, left = 0;
+    for (const l of raw === null ? [] : split(raw)) {
+      let actor = null;
+      try { actor = JSON.parse(dec.decode(l)).record.actor; } catch { /* unreadable: not this source's actor's */ }
+      if (s.actors.includes(actor)) { records++; byText.set(dec.decode(l), l); } else left++;
+    }
+    if (raw !== null) bases.push(at);
+    sources.push({ name: s.name, ref: s.ref, base: raw === null ? null : at, records, left_out: left });
+  }
+  // one snapshot in canonical order (store.py _line_id: the record's id, then the line), as the Python union is
+  let lines = [...byText.values()];
+  if (lines.length !== own.length) {
+    const key = async (l) => {
+      try { const r = JSON.parse(dec.decode(l)).record; return isPlain(r) ? await backend.sha256(canon(r)) : ""; } catch { return ""; }
+    };
+    const bytesKey = (b) => { let x = ""; for (let i = 0; i < b.length; i += 8192) x += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); return x; };
+    const keyed = await Promise.all(lines.map(async (l) => [await key(l), bytesKey(l), l]));     // the line's bytes, as Python sorts them
+    keyed.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+    lines = keyed.map((x) => x[2]);
+  }
   const { all, maps } = await named(lines, backend);
   const wanted = [...(full ? all : maps)].sort(utf16), got = new Array(wanted.length);
   let next = 0;
   const worker = async () => {             // 16 requests at a time; the results are put back in order
-    while (next < wanted.length) { const k = next++; got[k] = await get(root + ".warrant/blobs/" + wanted[k], fetcher); } // NOSONAR S9382: one request after another within a worker, 16 workers at once
+    while (next < wanted.length) { // NOSONAR S9382: one request after another within a worker, 16 workers at once
+      const k = next++;
+      for (const at of [root, ...bases]) { got[k] = await get(at + ".warrant/blobs/" + wanted[k], fetcher); if (got[k] !== null) break; } // NOSONAR S9382
+    }
   };
   await Promise.all(Array.from({ length: 16 }, worker));
   const hashes = await Promise.all(got.map((b) => (b === null ? null : backend.sha256(b))));
@@ -122,7 +184,7 @@ export async function fetchStore(base, backend, { full = false, fetcher = global
     if (hashes[k] !== wanted[k]) throw new Refused(`the transport altered blob ${wanted[k]}: its bytes do not hash to its name`);
     blobs.set(wanted[k], got[k]);
   }
-  return { lines, blobs, doc, missing, mode: full ? "full" : "quick", asked: wanted.length, base: root };
+  return { lines, blobs, doc, missing, mode: full ? "full" : "quick", asked: wanted.length, base: root, sources };
 }
 
 // The receiver's rules: the reader's own {trust, profile} when given, else the publisher's own (its v3.json).
@@ -598,6 +660,7 @@ export function summary(r) {
     not_checked: r.compared ? NOT_CHECKED_COMPARED : ["pins: whether an acceptance still names a checkout's bytes (STALE) needs Git objects; such a lineage reads PINS_NOT_CHECKED here, never ELIGIBLE"],
     ...(r.compared ? { pins: pinsSummary(r.compared) } : {}),       // only when asked: without it the summary is as it was
     ...(r.others ? { others: othersSummary(r) } : {}),
+    ...(store.sources?.length ? { sources: store.sources } : {}),     // only when the store declares any: else as it was
     ...(r.overlay ? { overlay: overlaySummary(r.overlay) } : {}),
     cited: citedCounts(r),                                        // resolved(): where the bytes of every cited id are
     ...(rulesVersion(r) ? { publisher_rules: rulesVersion(r) } : {}),   // only a store that records its rules (stage 2a)
