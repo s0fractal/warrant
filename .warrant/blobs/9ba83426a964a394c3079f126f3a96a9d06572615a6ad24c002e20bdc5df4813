@@ -1,0 +1,218 @@
+# Codex roadmap challenge: solo waives an open prerequisite
+
+D: 549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f (G10)
+T: 2cf6c54be40fb31c904cc294147b7539651ac14e13c75be169f5c5ef011f7aca
+M: 690a698505bed257edb9137c57ba56ccdcaf48c8
+Original reproduction: 8278d4a341004412e4dcb2207bf221302c38e730 (#350).
+
+P2: a solo merge discards an open guard.requires, not just a missing acceptance.
+
+At M, warrant/gate.py:1048-1060 reports both missing acceptance and unmet prerequisites
+as NO_ACCEPT. _solo_window (921-935) and _watched (951-990) treat NO_ACCEPT as
+waivable. _review (908-909) calls _solo, which removes that reason (912-918).
+Thus a head whose guard is PENDING solely because its required obligation is open
+is merge eligible, even with the review quorum already satisfied (short=0).
+This contradicts docs/V3.md section 6 and section 14's solo rule: only the missing
+acceptance is waived, not an unclosed requirement. The engine's guard is correct;
+the gate discards its refusal. The case uses authentic deterministic fixture
+signatures, an open obligation already on the base, a pr/acceptor author, a legal
+stronger head guard, an add-only tail of that PR's head versions and acceptances,
+and green checks. No malformed input, forged role, or unrelated tail is needed.
+
+With this checkout's real merge.json, renamed fixture actors with the same two
+pr/acceptor roles, all six combinations of ordinary/watched/constitutional and
+owner present/away are eligible while the head guard is PENDING, open nonempty,
+and short=0. For the two tier tests only code.py is added to the tested tier's
+paths so the fixture exercises it; away uses 169 hours since green checks,
+present uses 1 second. The ordinary tests use the actual policy unchanged.
+
+Controls: no solo blocks the open prerequisite; closing it permits the accepted
+head. As an unsigned diagnostic only, adding a separate OPEN_REQUIREMENT refusal
+when v['open'] is nonempty in _verdict on an isolated copy makes every regression
+case pass. No fix was applied to the review worktree. A repair must preserve the
+requirement refusal through every solo route, with a regression and killing mutant
+in an ordinary constitutional PR; the actual repair is outside this verdict.
+
+Verified: due --actor codex matches D/T at M; MCP context says PENDING only the
+roadmap/acceptor attest, requires=[], no challenge. Signer codex and roles were
+checked by MCP under this worktree's bindings. Read the five named files' diff
+9e183284..8278d4a3, #350/#356/#365/#490/#502 metadata and descriptions from GitHub,
+7ebf68c7, the current gate and regression cases (including RC12/RC13). Both cited
+evidence IDs are records, not blobs: d0ff0fb7 names #365's head at 820c96d6, and
+dfd280c0 is #502's PR root. Their records were read via MCP context.
+
+Passed at M: entire gate_test.py and tools_test.py; roadmap check (110 lineages,
+0 problems); claims check (143 live, 0 problems). Mutants G59-G70, G85-G86,
+G93-G97, G131, G133, G141-G144: 25/25 KILLED by their named cases. Harness copies
+and fixture homes were redirected outside the worktree into this review's working
+directory. This is not a claim that the entire repository or all mutants passed.
+No signed checker replay, GitHub approval, merge, commit, push, or PR was performed.
+
+The previous findings' supplied regression cases pass; this is a distinct boundary
+of the #350 solo rule, not a claim that RC13 still fails. T's named residuals about
+changed-again files, engine reading of reverted rules, and availability do not
+describe an unchanged open prerequisite being silently waived.
+
+## Runnable regression
+
+Run the following as a Python file from the reviewed repository root, with TMPDIR
+set to a review-local working directory. It uses only tests/world.py fixture keys.
+Exit 1 at both commits is the expected reproduction; controls print ok and the
+two defect cases print FAIL. The same file runs against the archived #350 tree.
+
+```python
+#!/usr/bin/env python3
+"""Regression: solo windows must not discharge a head's open guard.requires.
+Run from the reviewed repository root with its tests/ directory available.
+Fixture actors use tests/world.py deterministic keys, never operator identities.
+"""
+import json
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / 'tests'))
+from gate_test import PR, MERGE, NOW, green, git
+from warrant import gate as GT
+
+
+def fixture(merge, accepted=False, close=False):
+    def setup(p):
+        p.r.profile['roles']['pr/acceptor'] = ['alice', 'bob']
+        p.r.write_config()
+        p.required = p.r.entity('alice', 'obligation@1', {
+            'state': 'open', 'statement': 'prerequisite before merge', 'serves': []})
+    p = PR(accept=False, merge=merge, before_base=setup)
+    p.head_v = p.r.entity('alice', 'pr-head@1', {
+        'state': 'head', 'commit': p.x,
+        'tree': git(p.r.root, 'rev-parse', f'{p.x}^{{tree}}')},
+        lineage=p.head_v, requires=[p.required])
+    if accepted:
+        p.r.attest('bob', p.head_v)
+    if close:
+        done = p.r.entity('alice', 'obligation@1', {
+            'state': 'done', 'statement': 'prerequisite before merge', 'serves': []},
+            lineage=p.required)
+        p.r.attest('bob', done)
+        # The prerequisite's closure is part of X, not an unrelated post-X tail.
+        p.x = p.r.commit('prerequisite completed in change')
+        p.head_v = p.r.entity('alice', 'pr-head@1', {
+            'state': 'head', 'commit': p.x,
+            'tree': git(p.r.root, 'rev-parse', f'{p.x}^{{tree}}')},
+            lineage=p.head_v, requires=[p.required])
+        if accepted:
+            p.r.attest('bob', p.head_v)
+    h = p.r.commit('head with prerequisite')
+    return p, h
+
+
+def main():
+    failures = 0
+    solo = dict(MERGE, solo={'window_hours': 0, 'veto_role': 'pr/owner'})
+    # Two controls isolate the new solo waiver from normal guard assessment.
+    for label, merge, accepted, close, want in [
+        ('control_no_solo', MERGE, True, False, False),
+        ('control_closed', solo, True, True, True),
+        ('ordinary_unaccepted', solo, False, False, False),
+        ('ordinary_accepted', solo, True, False, False),
+    ]:
+        p, h = fixture(merge, accepted=accepted, close=close)
+        a = p.assess(checks=green(h, completed=NOW - 1), now=NOW)
+        v = p.r.report()['versions'][p.head_v]
+        passed = a.eligible == want
+        failures += not passed
+        print(('ok   ' if passed else 'FAIL ') + label + ' ' + json.dumps({
+            'eligible': a.eligible, 'expected_eligible': want, 'guard': v,
+            'solo': a.facts.get('solo'), 'reasons': a.reasons}, sort_keys=True))
+    return 1 if failures else 0
+
+if __name__ == '__main__':
+    sys.exit(main())
+
+```
+
+## At M
+
+```text
+ok   control_no_solo {"eligible": false, "expected_eligible": false, "guard": {"accepted_by": ["bob"], "challenged_by": [], "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "roles": ["pr/acceptor"], "short": 0, "waiting": ["requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]}, "reasons": [["NO_ACCEPT", "the head version 2efc3d93e5ee is PENDING: requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]], "solo": null}
+ok   control_closed {"eligible": true, "expected_eligible": true, "guard": {"accepted_by": ["bob"], "challenged_by": [], "guard": "MET", "open": [], "roles": ["pr/acceptor"], "short": 0, "waiting": []}, "reasons": [], "solo": null}
+FAIL ordinary_unaccepted {"eligible": true, "expected_eligible": false, "guard": {"accepted_by": [], "challenged_by": [], "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "roles": ["pr/acceptor"], "short": 1, "waiting": ["1 attest(s) by pr/acceptor matching {\"verdict\":\"accept\"}", "requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]}, "reasons": [], "solo": true}
+FAIL ordinary_accepted {"eligible": true, "expected_eligible": false, "guard": {"accepted_by": ["bob"], "challenged_by": [], "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "roles": ["pr/acceptor"], "short": 0, "waiting": ["requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]}, "reasons": [], "solo": true}
+```
+
+## At #350 merge
+
+```text
+ok   control_no_solo {"eligible": false, "expected_eligible": false, "guard": {"accepted_by": ["bob"], "challenged_by": [], "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "roles": ["pr/acceptor"], "short": 0, "waiting": ["requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]}, "reasons": [["NO_ACCEPT", "the head version 2efc3d93e5ee is PENDING: requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]], "solo": null}
+ok   control_closed {"eligible": true, "expected_eligible": true, "guard": {"accepted_by": ["bob"], "challenged_by": [], "guard": "MET", "open": [], "roles": ["pr/acceptor"], "short": 0, "waiting": []}, "reasons": [], "solo": true}
+FAIL ordinary_unaccepted {"eligible": true, "expected_eligible": false, "guard": {"accepted_by": [], "challenged_by": [], "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "roles": ["pr/acceptor"], "short": 1, "waiting": ["1 attest(s) by pr/acceptor matching {\"verdict\":\"accept\"}", "requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]}, "reasons": [], "solo": true}
+FAIL ordinary_accepted {"eligible": true, "expected_eligible": false, "guard": {"accepted_by": ["bob"], "challenged_by": [], "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "roles": ["pr/acceptor"], "short": 0, "waiting": ["requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]}, "reasons": [], "solo": true}
+```
+
+## Tier probes at M
+
+```text
+{"eligible": true, "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "present": false, "reasons": [], "short": 0, "solo": true, "tier": "ordinary"}
+{"eligible": true, "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "present": true, "reasons": [], "short": 0, "solo": true, "tier": "ordinary"}
+{"eligible": true, "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "present": false, "reasons": [], "short": 0, "solo": true, "tier": "watched"}
+{"eligible": true, "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "present": true, "reasons": [], "short": 0, "solo": true, "tier": "watched"}
+{"eligible": true, "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "present": false, "reasons": [], "short": 0, "solo": true, "tier": "constitutional"}
+{"eligible": true, "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "present": true, "reasons": [], "short": 0, "solo": true, "tier": "constitutional"}
+```
+
+## Diagnostic control on isolated copy
+
+```text
+ok   control_no_solo {"eligible": false, "expected_eligible": false, "guard": {"accepted_by": ["bob"], "challenged_by": [], "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "roles": ["pr/acceptor"], "short": 0, "waiting": ["requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]}, "reasons": [["OPEN_REQUIREMENT", "unclosed prerequisite"], ["NO_ACCEPT", "the head version 2efc3d93e5ee is PENDING: requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]], "solo": null}
+ok   control_closed {"eligible": true, "expected_eligible": true, "guard": {"accepted_by": ["bob"], "challenged_by": [], "guard": "MET", "open": [], "roles": ["pr/acceptor"], "short": 0, "waiting": []}, "reasons": [], "solo": null}
+ok   ordinary_unaccepted {"eligible": false, "expected_eligible": false, "guard": {"accepted_by": [], "challenged_by": [], "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "roles": ["pr/acceptor"], "short": 1, "waiting": ["1 attest(s) by pr/acceptor matching {\"verdict\":\"accept\"}", "requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]}, "reasons": [["OPEN_REQUIREMENT", "unclosed prerequisite"], ["NO_ACCEPT", "the head version 582336031a49 is PENDING: 1 attest(s) by pr/acceptor matching {\"verdict\":\"accept\"}; requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]], "solo": null}
+ok   ordinary_accepted {"eligible": false, "expected_eligible": false, "guard": {"accepted_by": ["bob"], "challenged_by": [], "guard": "PENDING", "open": ["7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3"], "roles": ["pr/acceptor"], "short": 0, "waiting": ["requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]}, "reasons": [["OPEN_REQUIREMENT", "unclosed prerequisite"], ["NO_ACCEPT", "the head version 582336031a49 is PENDING: requires 7d27f9fac1d249eca7a16685755a19fe57222a9fcb51026852e43e0e5b1aa5c3 closed"]], "solo": null}
+```
+
+## Additional tier probe script
+
+```python
+import copy, importlib.util, json
+from pathlib import Path
+s=importlib.util.spec_from_file_location('probe',Path(__file__).with_name('required_merge_test.py'))
+p=importlib.util.module_from_spec(s);s.loader.exec_module(p)
+policy=json.loads(Path('.warrant/merge.json').read_text())
+for tier in ('ordinary','watched','constitutional'):
+    for present in (False,True):
+        m=copy.deepcopy(policy)
+        if tier!='ordinary': m[tier]['paths'].append('code.py')
+        obj,h=p.fixture(m,accepted=True)
+        a=obj.assess(checks=p.green(h,completed=p.NOW-(1 if present else 169*3600)),now=p.NOW,present=present)
+        v=obj.r.report()['versions'][obj.head_v]
+        print(json.dumps({'tier':tier,'present':present,'eligible':a.eligible,'reasons':a.reasons,'solo':a.facts.get('solo'),'open':v['open'],'short':v['short'],'guard':v['guard']},sort_keys=True))
+
+```
+
+## Mutants
+
+```text
+G59 KILLED warrant/gate.py by tests/gate_test.py ['E56', 'E62', 'E64']
+G60 KILLED warrant/gate.py by tests/gate_test.py ['E63']
+G62 KILLED warrant/gate.py by tests/gate_test.py ['E64']
+G61 KILLED warrant/gate.py by tests/gate_test.py ['E64']
+G65 KILLED warrant/gate.py by tests/gate_test.py ['E62']
+G63 KILLED warrant/gate.py by tests/gate_test.py ['E65']
+G66 KILLED warrant/gate.py by tests/gate_test.py ['E66']
+G64 KILLED warrant/gate.py by tests/gate_test.py ['E65']
+G70 KILLED warrant/gate.py by tests/gate_test.py ['E61', 'E65']
+G85 KILLED warrant/gate.py by tests/gate_test.py ['E74']
+G67 KILLED warrant/gate.py by tests/gate_test.py ['E66']
+G68 KILLED warrant/gate.py by tests/gate_test.py ['E66']
+G86 KILLED warrant/gate.py by tests/gate_test.py ['E75']
+G93 KILLED warrant/gate.py by tests/gate_test.py ['E80']
+G96 KILLED warrant/gate.py by tests/gate_test.py ['E83']
+G69 KILLED warrant/gate.py by tests/gate_test.py ['E64']
+G94 KILLED warrant/gate.py by tests/gate_test.py ['E81']
+G95 KILLED warrant/gate.py by tests/gate_test.py ['E82']
+G97 KILLED warrant/gate.py by tests/gate_test.py ['E70']
+G131 KILLED warrant/gate.py by tests/gate_test.py ['RC2']
+G133 KILLED warrant/gate.py by tests/gate_test.py ['RC9']
+G144 KILLED warrant/gate.py by tests/gate_test.py ['RC13']
+G141 KILLED warrant/gate.py by tests/gate_test.py ['RC12']
+G142 KILLED warrant/gate.py by tests/gate_test.py ['RC12']
+G143 KILLED warrant/gate.py by tests/gate_test.py ['RC12']
+25 of 25 killed
+```
