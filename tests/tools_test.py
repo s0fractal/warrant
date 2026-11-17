@@ -2943,6 +2943,14 @@ def schemas_due_cases():
           sch in before["schemas_pending"] and bob == [(sch, "schema", True)] and alice == [] and carol == []
           and sch in [d["version"] for d in GT.schemas_due(before, r.profile, "bob")]
           and sch not in [d["version"] for d in GT.schemas_due(before, r.profile, "alice")], (bob, alice, carol))
+    from warrant import graph as G
+    view = E.View(r.store.snapshot(), r.trust, r.profile)
+    fr = {a: G.frontier(view.report(), r.profile, a, view.recs)["schemas"] for a in ("alice", "bob", "carol")}
+    check("SD3 the frontier lists the schema a schema/author may back by the gate's own rule (schemas_due): bob's, not "
+          "the filer's, not carol's, who holds no such role",
+          {"version": sch, "name": "thing@1"} in fr["bob"] and sch not in [x["version"] for x in fr["alice"]] and fr["carol"] == []
+          and all([d["version"] for d in GT.schemas_due(before, r.profile, a)] == [x["version"] for x in fr[a]]
+                  for a in fr), fr)
     r.attest("bob", sch)
     after = rep()
     r2 = repo()

@@ -36,7 +36,7 @@ DIGESTS = {
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "3a9e6be0c566cb716263e7e93105b7d485a7b02446639fe0887031bdb0a83952",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
-    "warrant/graph.py": "2554e61431dce2caadbd80222065cb62d4624b6fd21cfc6b62d873f6a31ab198",
+    "warrant/graph.py": "8b9630fdc9c239d974795bcc208bd1b9c207d612b9e04e1a6b438da1e3aca567",
     "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
     "warrant/verify.py": "482b241a1a287f60d8017edf4adcc47ef90935dc700704c65c164ef4f2536553",
@@ -997,7 +997,19 @@ def frontier(rep, profile, actor, recs=None):
     asked = [{"version": v, "lineage": root, "schema": rep["lineages"][root]["schema"]}
              for root, v in asked_of(rep, nodes, acted, actor, recs)]
     return {"actor": actor, "roles": sorted(roles), "attest": attest, "pending": pending, "challenged": challenged,
-            "asked": asked, "declined": declined_by(rep, nodes, into, actor, recs)}
+            "asked": asked, "declined": declined_by(rep, nodes, into, actor, recs),
+            "schemas": schemas_waiting(rep, roles, nodes, acted, actor)}
+
+
+def schemas_waiting(rep, roles, nodes, acted, actor):
+    """The schema records short of their quorum (the report's `schemas_pending`) that `actor` may back: it holds
+    schema/author, did not file the record and has neither attested nor challenged it. The rule of
+    warrant.gate.schemas_due, which wakes the actor on them (SD3 holds the two equal); without it a schema waiting for
+    its second author was due at the gate and missing from every frontier, the agent's and the reader's."""
+    if "schema/author" not in roles:
+        return []
+    return [{"version": i, "name": p["name"]} for i, p in sorted(rep.get("schemas_pending", {}).items())
+            if actor not in p["backed_by"] and i not in acted and nodes[i]["actor"] != actor]
 
 
 DECLINE = "decline"

@@ -109,7 +109,19 @@ def frontier(rep, profile, actor, recs=None):
     asked = [{"version": v, "lineage": root, "schema": rep["lineages"][root]["schema"]}
              for root, v in asked_of(rep, nodes, acted, actor, recs)]
     return {"actor": actor, "roles": sorted(roles), "attest": attest, "pending": pending, "challenged": challenged,
-            "asked": asked, "declined": declined_by(rep, nodes, into, actor, recs)}
+            "asked": asked, "declined": declined_by(rep, nodes, into, actor, recs),
+            "schemas": schemas_waiting(rep, roles, nodes, acted, actor)}
+
+
+def schemas_waiting(rep, roles, nodes, acted, actor):
+    """The schema records short of their quorum (the report's `schemas_pending`) that `actor` may back: it holds
+    schema/author, did not file the record and has neither attested nor challenged it. The rule of
+    warrant.gate.schemas_due, which wakes the actor on them (SD3 holds the two equal); without it a schema waiting for
+    its second author was due at the gate and missing from every frontier, the agent's and the reader's."""
+    if "schema/author" not in roles:
+        return []
+    return [{"version": i, "name": p["name"]} for i, p in sorted(rep.get("schemas_pending", {}).items())
+            if actor not in p["backed_by"] and i not in acted and nodes[i]["actor"] != actor]
 
 
 DECLINE = "decline"
