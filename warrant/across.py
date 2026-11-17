@@ -34,7 +34,7 @@ from . import graph as G
 from . import home as H
 from . import jcs as C
 from . import shapes as S
-from .store import Refused, Store, confined
+from .store import Refused, Snapshot, Store, confined
 
 FORMAT = "across/1"
 QUERIES = ("stores", "actor", "open", "challenges", "rests")
@@ -81,10 +81,13 @@ class Reading:
 
     def __init__(self, name, read, root=None):
         self.name, self.why, self.view, self.rep, self.repository, self.root = name, None, None, None, None, root
+        self.identity, self.key, self.names = None, name, [name]
         try:
             snap, trust, profile, self.repository = read()
             self.view = E.View(snap, trust, profile)
             self.rep = self.view.report()
+            self.identity = G.identity(self.rep, snap)["identity"]
+            self.key = f"rules@1:{self.identity}" if self.identity else name
             if root is not None:
                 self.rep["_recs"], self.rep["_basis"] = self.view.recs, self.view.basis
                 D.gate(self.rep, root)
@@ -102,7 +105,8 @@ class Reading:
         rep = self.rep
         out = {"store": self.name, "root": rep["snapshot"], "as_of": rep["as_of"], "assessment": rep["assessment"], "trust": rep["trust"],
                "profile": rep["profile"], "records": len(self.view.recs), "rejected": len(rep["rejected"]),
-               "problems": len(rep["problems"]), "identity": G.identity(rep, self.view.snap)["identity"]}
+               "problems": len(rep["problems"]), "identity": self.identity}
+        out |= {"read_as": self.names} if len(self.names) > 1 else {}
         return out | ({"repository": _short(self.repository)} if isinstance(self.repository, str) else {})
 
     def verdict(self, i):
@@ -297,11 +301,41 @@ def identity(reps, unavailable, code, adapter, query):
     return root, lens
 
 
+def _compose(snaps):
+    """One snapshot of every line of `snaps` once, in canonical order, and all their blobs (as warrant_agent.overlay)."""
+    return Snapshot(sorted({raw for s in snaps for raw in s.raw}), {h: b for s in snaps for h, b in s.blobs.items()})
+
+
+def united(readings):
+    """`readings` with each store read once (obligation ec6d1ebe; Codex on its closure): readings of one identity
+    (warrant.graph.identity) under one trust and profile are one reading of their records united,
+    named by the first of their names, `read_as` all of them; the answer keys it by `rules@1:<identity>`. A store with
+    no identity, or one store read under other rules, stays as read: other rules are another reading."""
+    groups, out = {}, []
+    for x in readings:
+        if x.why is None and x.identity is not None:
+            groups.setdefault((x.identity, C.doc_id(x.view.trust), C.doc_id(x.view.profile)), []).append(x)
+        else:
+            out.append(x)
+    for xs in groups.values():
+        xs = sorted(xs, key=lambda x: x.name)
+        if len(xs) == 1:
+            out.append(xs[0])
+            continue
+        first = xs[0]
+        one = Reading(first.name, lambda xs=xs, f=first: (_compose([x.view.snap for x in xs]), f.view.trust,
+                                                          f.view.profile, f.repository), first.root)
+        one.names = [x.name for x in xs]
+        out.append(one)
+    return out
+
+
 def answer(readings, q, budget=BUDGET, adapter=None):
     """The answer to `q` over `readings`: one result within `budget` bytes, with `next` when more rows remain. The same
     lens over the same root gives the same bytes."""
     _closed(q)
     budget = min(budget, q.get("max_bytes", budget))
+    readings = united(readings)
     read = sorted((x for x in readings if x.why is None), key=lambda x: x.name)
     unavailable = [{"store": x.name, "why": _short(x.why)} for x in sorted(readings, key=lambda x: x.name) if x.why]
     stores = [x.header() for x in read]
@@ -327,7 +361,7 @@ def answer(readings, q, budget=BUDGET, adapter=None):
     code = read[0].rep["code"] if read else E.code_identity()
     out = {"warrant": FORMAT, "completeness": "UNATTESTED", "untrusted": True, "query": query, "stores": stores,
            "unavailable": unavailable, "total": len(ids), "offset": q.get("offset", 0), "next": len(ids), **extra, "nodes": [],
-           **dict(zip(("root", "lens"), identity({x.name: x.rep for x in read}, unavailable, code, adapter, query)))}
+           **dict(zip(("root", "lens"), identity({x.key: x.rep for x in read}, unavailable, code, adapter, query)))}
     used, pos = _dumped(out), out["offset"]
     if used > budget:
         raise Refusal("RESOURCE_LIMIT", f"the answer's header is {used} bytes; {budget} are allowed")

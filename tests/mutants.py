@@ -285,7 +285,7 @@ MUTANTS = [
     ("T179", "warrant/resolve.py", '                if _sha(data) != i:\n                    raise Mismatch', '                if False:\n                    raise Mismatch', TOOLS, ["RV2"]),
     ("T180", "warrant/resolve.py", '        got = p.in_git(i)\n        if got:\n            return got', '        got = None\n        if got:\n            return got', TOOLS, ["RV1"]),
     ("T181", "warrant/resolve.py", '        got = p.bytes_of(i)\n        if got:\n            return "RESOLVED", got[1]', '        got = None\n        if got:\n            return "RESOLVED", got[1]', TOOLS, ["RV1"]),
-    ("T182", "warrant/resolve.py", '    if home is not None and home.holds(i):', '    if False:', TOOLS, ["RV1"]),
+    ("T182", "warrant/resolve.py", '        if p.holds(i):\n            return "PRESENT"', '        if False:\n            return "PRESENT"', TOOLS, ["RV1"]),
     # the bridge (warrant/bridge.py): an issue through the form becomes one record in the bridge's own store, and nothing else does
     ("T221", "warrant/bridge.py", ' and event.get("action") == "opened"):', '):', TOOLS, ["BR3"]),
     ("T222", "warrant/bridge.py", ' or "pull_request" in issue:', ':', TOOLS, ["BR3"]),
@@ -368,7 +368,7 @@ MUTANTS = [
     ("T280", "warrant/gate.py", 'due_for(rep, self.profile, actor, ("goal@1", "obligation@1", "obligation@2"))', 'due_for(rep, self.profile, actor, ("goal@1", "obligation@1"))', GATE, ["E98"]),
     ("T281", "warrant/graph.py", '    if len(roots) != 1:\n', '    if not roots:\n', TOOLS, ["ID1"]),
     ("T282", "warrant/graph.py", '    roots = sorted(L for L, lin in rep["lineages"].items() if lin["schema"] == RULES)\n', '    roots = sorted(rep["lineages"])[:1]\n', TOOLS, ["ID1"]),
-    ("T283", "warrant/across.py", '"problems": len(rep["problems"]), "identity": G.identity(rep, self.view.snap)["identity"]}', '"problems": len(rep["problems"]), "identity": None}', AGENT, ["X04b"]),
+    ("T283", "warrant/across.py", '            self.identity = G.identity(self.rep, snap)["identity"]\n', '            self.identity = None\n', AGENT, ["X04b"]),
     ("T284", "warrant/graph.py", '    if not any(_self_signed(root, env) for env in snap.lines.get(root, [])):\n', '    if False:\n', TOOLS, ["ID2"]),
     ("T285", "warrant/graph.py", '    keys = keys.get(rec.get("actor")) if isinstance(keys, dict) else None\n', '    keys = sum(keys.values(), []) if isinstance(keys, dict) else None\n', TOOLS, ["ID2"]),
     ("T286", "warrant/resolve.py", '            self.identity = G.identity(E.View(self.snap, trust, profile).report(), self.snap)["identity"]\n', '            self.identity = None\n', TOOLS, ["RV3"]),
@@ -386,6 +386,9 @@ MUTANTS = [
     ("T290", "warrant_agent/overlay.py", '    return f"rules@1:{i}" if i else name\n', '    return name\n', AGENT, ["OV7"]),
     ("T291", "warrant_agent/overlay.py", '        keyed.setdefault(key(n, identities), set()).update(s.lines)\n', '        keyed.setdefault(n, set()).update(s.lines)\n', AGENT, ["OV7"]),
     ("T296", "warrant/gate.py", '        if len(parents) != 2 or _bot_merge(root, x):\n', '        if len(parents) != 2:\n', GATE, ["E72b"]),
+    ("T304", "warrant/resolve.py", 'out.setdefault(f"rules@1:{p.identity}" if p.identity else p.name, [])', 'out.setdefault(p.name, [])', TOOLS, ["RV4"]),
+    ("T305", "warrant/across.py", '    readings = united(readings)\n', '', TOOLS, ["RV4"]),
+    ("T306", "warrant/across.py", 'identity({x.key: x.rep for x in read}', 'identity({x.name: x.rep for x in read}', TOOLS, ["RV4"]),
     ("T294", "warrant/review.py", '    return DENIED if JAIL_DENIED.search(out) else "no_result"\n', '    return "no_result"\n', TOOLS, ["R03b"]),
     ("T295", "warrant/review.py", '        if verdict == DENIED:\n', '        if False:\n', TOOLS, ["R08b"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is
