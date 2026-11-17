@@ -18,6 +18,8 @@ of it (Python API, CLI, stdio MCP).
   one obligation, its closure, an acceptance, a challenge; every command and
   output on the page is run by CI.
 - Specification: [docs/V3.md](https://github.com/s0fractal/warrant/blob/master/docs/V3.md)
+- What a store proves, and what it does not: [docs/TRUST.md](https://github.com/s0fractal/warrant/blob/master/docs/TRUST.md)
+- The words: [docs/GLOSSARY.md](https://github.com/s0fractal/warrant/blob/master/docs/GLOSSARY.md); what is where in this repository: [docs/LAYOUT.md](https://github.com/s0fractal/warrant/blob/master/docs/LAYOUT.md)
 - Agents (Python API, CLI, stdio MCP): [AGENT.md](https://github.com/s0fractal/warrant/blob/master/docs/AGENT.md)
 - What earlier generations were, and where they live: [HISTORY.md](https://github.com/s0fractal/warrant/blob/master/docs/HISTORY.md)
 
