@@ -450,10 +450,30 @@ def drift_repo():
 
 
 def gated(r, L):
-    """(drift answer, reliance) of claim lineage L at r's head."""
+    """(drift answer, reliance) of claim lineage L at r's head: the reliance the gate sets, which reads no history, and
+    the answer `warrant drift` gives, which does; their verdicts are one (DR33)."""
     rep = RP.Repo(r.root).report()
-    d = D.gate(rep, r.root)
+    g = D.gate(rep, r.root)
+    d = D.drift(rep, r.root)
+    check("DR33 the gate's verdicts are the drift answer's, read with no history: no `log` or `rev-list` runs for it",
+          {k: x["verdict"] for k, x in g.items()} == {k: x["verdict"] for k, x in d.items()} and gate_reads(r) == [],
+          (g, d))
     return d.get(L, {}), rep["lineages"][L]["reliance"]
+
+
+def gate_reads(r):
+    """The history commands (`log`, `rev-list`) the gate runs reading r at its head."""
+    from warrant import pins as PN
+    ran, real = [], PN.git
+    def spy(root, *a, raw=False):
+        ran.extend(x for x in a if x in ("log", "rev-list"))
+        return real(root, *a, raw=raw)
+    PN.git = spy
+    try:
+        D.gate(RP.Repo(r.root).report(), r.root)
+    finally:
+        PN.git = real
+    return ran
 
 
 def pinned_by_lead():
