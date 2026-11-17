@@ -385,6 +385,34 @@ def checker_cases():
     check("C13 an acceptance holds for its commit: the view says whether it is at this tree, and the checker accepts again "
           "at a tree none of its acceptances is at", "checked at this tree" in view and "not this tree" in stale and len(third) == 1,
           (view[-300:], stale[-300:], third))
+    # the switch to its own store (stores/claims-checker), racing a last acceptance filed here: its chain forks across
+    # the two stores, and its next run there takes the branch left here in (a `joined` attest), so no fork stays open
+    from warrant import chains as CH
+    r = checker_repo()
+    rp = RP.Repo(r.root)
+    L = claim(r)
+    r.commit("a claim")
+    own = r.root.parent / (r.root.name + "-checker-store")
+    git(r.root, "worktree", "add", "-q", "--orphan", "-b", "stores/claims-checker", str(own))
+    (own / ".warrant").mkdir()
+    (own / ".warrant" / "records.jsonl").write_bytes(b"")
+    there = rp.file(CL.CHECKER, CHECKER_KEY, [R.record("attest", CL.CHECKER, 0, {"verdict": "joined", "target": L}, refs=[L])],
+                    into=str(own / ".warrant"))
+    put_as(r, CL.CHECKER, {"target": L, "verdict": "accept"}, [L])            # here, from the head this store has
+    r.commit("a last acceptance here")
+    git(own, "add", ".warrant")
+    git(own, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "its store")
+    (r.dot / "sources.json").write_text(json.dumps({"warrant": "sources/1", "sources": [
+        {"name": "claims-checker", "ref": "refs/heads/stores/claims-checker", "actors": [CL.CHECKER]}]}))
+    r.commit("its store is a source")
+    before = [f for f in CH.forks(rp.view())["open"] if f[0] == CL.CHECKER]
+    CL.replay(rp, CHECKER_KEY, into=str(own / ".warrant"))
+    git(own, "add", ".warrant")
+    git(own, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "its next run")
+    after = [f for f in CH.forks(rp.view())["open"] if f[0] == CL.CHECKER]
+    check("C30 a run into its own store takes in the branch of its chain left in the repository's store: a fork open "
+          "before (a last acceptance raced the switch) is joined after",
+          bool(there) and len(before) == 1 and after == [], (there, before, after))
     r = checker_repo()
     rp = RP.Repo(r.root)
     L = claim(r, witnesses=["q_test:Q1", "q_test:Q2"], mutants=["Z1", "Z2"])
