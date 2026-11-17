@@ -129,22 +129,118 @@ def seen_body(a, body):
     return G.with_seen(E.View(Store(store).snapshot(), trust, profile).report(), body)
 
 
+def schema_of(a, name):
+    """The body of schema `name` as this store reads it: the counted one under its receiver, else (no rules to read it
+    by, --trust alone) the newest schema record of that name in the store; None when there is none."""
+    store = store_dir(a)
+    snap = Store(store).snapshot()
+    try:
+        trust, profile = receiver(a, store)[:2]
+        return E.View(snap, trust, profile).schemas.get(name)
+    except Refused:
+        rows = [e[0]["record"] for e in snap.lines.values()]
+        named = sorted((r["at"], r["body"]) for r in rows if r.get("kind") == "schema" and (r.get("body") or {}).get("name") == name)
+        return named[-1][1] if named else None
+
+
 def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
     if kind == "schema" and E._schema_problem(body):     # it would lie in the store for good and never count
         raise Refused(f"SCHEMA_NOT_COUNTED: {E._schema_problem(body)}")
+    if kind == "entity" and schema and isinstance(body, dict):
+        # as the agent's prepare does: the schema's minimal guard for the state when none is named (a closing version
+        # with no guard is never effective and waits for nobody), and the references its typed fields name
+        s = schema_of(a, schema)
+        if s is not None:
+            if guard is None and isinstance(s.get("states"), dict):
+                guard = s["states"].get(body.get("state"))
+            refs = sorted(set(refs) | R.body_refs(s.get("fields") or {}, body))
     key, trust = signer(a, kind)
     at = a.at if a.at is not None else int(time.time())
     r = R.record(kind, a.actor, at, body, schema=schema, lineage=lineage, refs=refs, guard=guard)
     return Store(store_dir(a)).append(r, key, trust, expect_head=a.expect_head)
 
 
+LOOP_HELP = {
+    "review": "the pull request review loop as records: open, head, a finding's replay",
+    "gate": "the merge gate: which pull requests a recorded acceptance makes mergeable",
+    "claims": "a specification's sentences as claims, their tests and mutants, and the checker that accepts them",
+    "roadmap": "goals and obligations: what is open, what is due for whom, close and release",
+    "drift": "which accepted claims name bytes the checkout no longer holds",
+    "snapshot": "Merkle roots of the store and witnesses over them",
+}
+HELP = {
+    "init": "make a store here (.warrant/, with AGENTS.md and the MCP server for agents), or --store DIR",
+    "key": "make a signing key (an Ed25519 seed) at --out",
+    "trust": "write a trust file binding each key to its actor (--bind ACTOR=SEED)",
+    "bootstrap": "file the five schemas (claim, goal, obligation, pull request head, finding) as --actor",
+    "put": "file one record (--kind entity|schema|attest|challenge); the schema's guard for its state by default",
+    "attest": "file an attest on a record, an acceptance by default (--body '{\"verdict\": ...}')",
+    "blob": "store a file's bytes by their hash, for records to cite",
+    "assess": "the whole report as JSON: every lineage, version, guard and challenge under this receiver",
+    "fmt": "sort the store's records into canonical order",
+    "status": "where the store stands, in a few lines (--actor A: what waits for A)",
+    "join": "take the actor's forked chain in (one `joined` attest per loose tip)",
+    "show": "one record in plain words: its lineage, state, what its guard waits for, who accepted, who objected",
+}
+
+
+def show(a):
+    """`show ID`: one record as this receiver reads it, in plain words (--json: the same as data)."""
+    store = store_dir(a)
+    trust, profile = receiver(a, store)[:2]
+    snap = Store(store).snapshot()
+    view = E.View(snap, trust, profile)
+    rep = view.report()
+    ids = [i for i in list(snap.lines) + list(snap.blobs) if i.startswith(a.id)]
+    if len(set(ids)) != 1:
+        raise Refused(f"{a.id[:64]!r} names {len(set(ids))} records or blobs in this store")
+    i = ids[0]
+    r = view.recs.get(i)
+    out = {"id": i, "kind": r["kind"] if r else "blob", "schema": r.get("schema") if r else None,
+           "actor": r.get("actor") if r else None, "body": r.get("body") if r else None}
+    if i in rep["versions"]:
+        root = G.lineage_of(rep, i)
+        lin, v = rep["lineages"][root], rep["versions"][i]
+        out["lineage"] = {"root": root, "state": lin["state"], "reliance": lin["reliance"], "leaf": lin["leaf"],
+                          "effective": lin["effective"]}
+        out["guard"] = {"guard": v["guard"], "waiting": v["waiting"], "accepted_by": v["accepted_by"]}
+        g = G.grounded(rep, i, view.recs)
+        out["grounded"] = g["grounded"]
+    out["challenges"] = [{"id": c, "actor": view.recs[c]["actor"], "counted": x["counted"],
+                          "statement": str((view.recs[c].get("body") or {}).get("statement", ""))[:200]}
+                         for c, x in sorted(rep["challenges"].items()) if x["target"] == i and c in view.recs]
+    return out
+
+
+def show_text(x):
+    """`show` for a person."""
+    who = f" by {x['actor']}" if x["actor"] else ""
+    rows = [f"{x['id'][:12]}  {x['kind']}{' ' + x['schema'] if x['schema'] else ''}{who}"]
+    b = x["body"] or {}
+    for k in ("statement", "text", "title", "verdict", "reason"):
+        if isinstance(b.get(k), str):
+            rows.append(f"  {k}: {b[k][:300]}")
+    if "lineage" in x:
+        lin, g = x["lineage"], x["guard"]
+        here = "this version" if lin["leaf"] == x["id"] else f"leaf {str(lin['leaf'])[:12]}"
+        rows.append(f"  lineage {lin['root'][:12]}: {lin['state'] or 'no effective version yet'}, {lin['reliance']} ({here})")
+        rows.append(f"  guard: {g['guard']}" + (f", waits for {'; '.join(g['waiting'])}" if g["waiting"] else "")
+                    + (f"; accepted by {', '.join(g['accepted_by'])}" if g["accepted_by"] else ""))
+        rows.append(f"  grounded: {'yes' if x['grounded'] else 'no: it, or something it rests on, is not yet effective and ELIGIBLE'}")
+    for c in x["challenges"]:
+        rows.append(f"  challenged by {c['actor']} ({'counted' if c['counted'] else 'not counted here'}): {c['statement']}")
+    return "\n".join(rows) + "\n"
+
+
 def _parser():
-    p = argparse.ArgumentParser(prog="warrant")
+    p = argparse.ArgumentParser(prog="warrant", description=(
+        "Warrant keeps work as signed records: what a thing is, who accepted it, who objected. Each reader judges "
+        "the same bytes under its own trust and profile and gets one answer: what may be relied on now, and what "
+        "still waits, for whom. Start: `warrant init`, then QUICKSTART.md."))
     sub = p.add_subparsers(dest="cmd", required=True)
-    cmds = {n: sub.add_parser(n) for n in ("init", "key", "trust", "bootstrap", "put", "attest", "blob", "assess", "fmt",
-                                           "status", "join")}
+    cmds = {n: sub.add_parser(n, help=h) for n, h in HELP.items()}
     for n in LOOP:
-        sub.add_parser(n, help=f"python -m warrant.{n} (its own arguments)", add_help=False)
+        sub.add_parser(n, help=LOOP_HELP.get(n, f"python -m warrant.{n}") + " (its own arguments)", add_help=False)
     sub.add_parser("verify", help="may this receiver rely on a package it was handed? (python -m warrant.verify, its own arguments)",
                    add_help=False)
     sub.add_parser("resolve", help="where the bytes each cited hash names are, over Home (python -m warrant.resolve)",
@@ -152,7 +248,7 @@ def _parser():
     sub.add_parser("say", help="a voice on a record, under one's own key, with no rights against it (warrant init --voices)",
                    add_help=False)
     for n, c in cmds.items():
-        if n not in ("key", "trust", "init"):
+        if n not in ("key", "trust", "init"):     # show among them: it reads a store
             g = c.add_mutually_exclusive_group()
             g.add_argument("--store")
             g.add_argument("--repo", help="a repository registered in Home (warrant home)")
@@ -205,6 +301,13 @@ def _parser():
         c.add_argument("--profile")
         c.add_argument("--as-of", type=int)
     cmds["assess"].add_argument("--lineage")
+    for n in ("put", "attest"):
+        cmds[n].add_argument("--id", action="store_true", help="print the new record's id alone")
+    c = cmds["show"]
+    c.add_argument("id", help="a record or blob id, or 8 or more of its first hex digits")
+    c.add_argument("--trust")
+    c.add_argument("--profile")
+    c.add_argument("--json", action="store_true")
     cmds["status"].add_argument("--actor", help="also what waits for this actor")
     cmds["status"].add_argument("--json", action="store_true")
     return p
@@ -494,6 +597,10 @@ def main(argv=None):
             out = {"record": put(a, "attest", seen_body(a, dict(a.body, target=a.target)), refs=[a.target])}
         elif a.cmd == "blob":
             out = {"blob": Store(store_dir(a)).put_blob(Path(here(a.file)).read_bytes())}
+        elif a.cmd == "show":
+            x = show(a)
+            sys.stdout.write(json.dumps(x, indent=1, sort_keys=True) + "\n" if a.json else show_text(x))
+            return 0
         elif a.cmd == "fmt":
             s = Store(store_dir(a))
             s.add_lines([])
@@ -505,7 +612,13 @@ def main(argv=None):
 
         print(f"REFUSED {e}", file=sys.stderr)
         return 2
+    if getattr(a, "id", False) is True and isinstance(out.get("record"), str):
+        print(out["record"])                # --id: the new record's id alone, for a shell to keep
+        return 0
     print(json.dumps(out, indent=1, sort_keys=True))
+    if a.cmd == "init" and not a.voices and sys.stderr.isatty():
+        print("next: `warrant key --out me.key`, bind it in .warrant/v3.json (`warrant trust`), `warrant bootstrap`, "
+              "then `warrant put` and `warrant show ID`; the 15-minute walk: QUICKSTART.md", file=sys.stderr)
     return 0
 
 

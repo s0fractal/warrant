@@ -1322,6 +1322,39 @@ def cli(cwd, *argv):
     return code, out.getvalue()
 
 
+def first_contact_cases():
+    """The command for a newcomer (the stranger walk of 2026-11-17): `put` takes the schema's guard for the state and
+    its typed references when none is named, `--id` prints the id alone, `show` says where a record stands in plain
+    words, and every subcommand has a line of help."""
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    old_key = os.environ.get("WARRANT_KEY")
+    os.environ["WARRANT_KEY"] = KEYS["alice"].seed_hex()     # a seed named by --key lies in the operator's home
+    try:
+        code, out = cli(r.root, "put", "--actor", "alice", "--at", str(r.t + 1), "--id", "--kind", "entity", "--schema",
+                        "obligation@1", "--lineage", o, '{"state": "done", "statement": "s", "serves": []}')
+    finally:
+        if old_key is None:
+            os.environ.pop("WARRANT_KEY", None)
+        else:
+            os.environ["WARRANT_KEY"] = old_key
+    d = out.strip()
+    rec = RP.Repo(r.root).report()["_recs"].get(d) or {}
+    from warrant import bootstrap as WB
+    want = next(x for x in WB.SCHEMAS if x["name"] == "obligation@1")["states"]["done"]
+    _, text = cli(r.root, "show", d)
+    _, js = cli(r.root, "show", d[:10], "--json")
+    x = json.loads(js or "{}")
+    _, helped = cli(r.root, "--help")
+    check("FC1 `put` with a schema and no --guard files the schema's guard for the state; --id prints the new id alone",
+          code == 0 and len(d) == 64 and rec.get("guard") == want, (code, out, rec.get("guard")))
+    check("FC2 `show ID` names the record, its lineage's state and reliance, and what its guard waits for, in plain words; "
+          "--json gives the same as data, and a prefix finds it",
+          "waits for 1 attest(s) by roadmap/acceptor" in text and "lineage " in text and x.get("id") == d
+          and x.get("guard", {}).get("guard") == "PENDING" and x.get("lineage", {}).get("root") == o, (text, x))
+    check("FC3 every subcommand of `warrant --help` has a line of help", all(f"    {n} " in helped for n in CLI.HELP), helped[-400:])
+
+
 def chain_join_cases():
     """A writer's chain forks taken in by its own `joined` attests (warrant.chains, `warrant join`)."""
     r = Repo()
@@ -3148,6 +3181,7 @@ if __name__ == "__main__":
         schemas_due_cases,
         status_brakes_cases,
         sources_cases,
+        first_contact_cases,
         across_checkout_cases,
         cli_cases,
         chain_join_cases,
