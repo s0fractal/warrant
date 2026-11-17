@@ -379,6 +379,9 @@ MUTANTS = [
     ("T290", "warrant_agent/overlay.py", '    return f"rules@1:{i}" if i else name\n', '    return name\n', AGENT, ["OV7"]),
     ("T291", "warrant_agent/overlay.py", '        keyed.setdefault(key(n, identities), set()).update(s.lines)\n', '        keyed.setdefault(n, set()).update(s.lines)\n', AGENT, ["OV7"]),
     ("T296", "warrant/gate.py", '        if len(parents) != 2 or _bot_merge(root, x):\n', '        if len(parents) != 2:\n', GATE, ["E72b"]),
+    ("T304", "warrant/resolve.py", 'out.setdefault(f"rules@1:{p.identity}" if p.identity else p.name, [])', 'out.setdefault(p.name, [])', TOOLS, ["RV4"]),
+    ("T305", "warrant/across.py", '    readings = united(readings)\n', '', TOOLS, ["RV4"]),
+    ("T306", "warrant/across.py", 'identity({x.key: x.rep for x in read}', 'identity({x.name: x.rep for x in read}', TOOLS, ["RV4"]),
     ("T294", "warrant/review.py", '    return DENIED if JAIL_DENIED.search(out) else "no_result"\n', '    return "no_result"\n', TOOLS, ["R03b"]),
     ("T295", "warrant/review.py", '        if verdict == DENIED:\n', '        if False:\n', TOOLS, ["R08b"]),
     # the bridge's workflow step, run as written (BR7): a refused push is tried again from the branch as it is

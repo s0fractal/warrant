@@ -118,15 +118,25 @@ def places(doc):
     return out, unavailable
 
 
+def stores(ps):
+    """The places of each store (obligation ec6d1ebe; Codex on its closure): places of one identity are one store,
+    keyed `rules@1:<identity>`, whose citations count once; a place with no identity is a store by its name."""
+    out = {}
+    for p in ps:
+        out.setdefault(f"rules@1:{p.identity}" if p.identity else p.name, []).append(p)
+    return out
+
+
 def state(i, home, others):
-    """(state, where) of `i` cited from store `home`."""
-    if home is not None and home.holds(i):
-        return "PRESENT", f"store:{home.name}"
+    """(state, where) of `i` cited from store `home`, the places of one store (none for an id asked for)."""
+    for p in home:
+        if p.holds(i):
+            return "PRESENT", f"store:{p.name}"
     for p in others:
         got = p.bytes_of(i)
         if got:
             return "RESOLVED", got[1]
-    for p in [home, *others] if home is not None else others:
+    for p in [*home, *others]:
         got = p.in_git(i)
         if got:
             return got
@@ -140,17 +150,18 @@ def answer(doc, ids=None):
     rows, counts = [], dict.fromkeys(STATES, 0)
     if ids:
         for i in sorted(set(ids)):
-            s, where = state(i, None, ps)
+            s, where = state(i, [], ps)
             rows.append({"id": i, "state": s, "where": where, "cited_by": sorted(p.name for p in ps
                                                                                   if any(i in cited(r) for r in p.records.values()))})
             counts[s] += 1
     else:
-        for p in ps:
-            for i in sorted(set().union(*(cited(r) for r in p.records.values())) if p.records else set()):
-                s, where = state(i, p, [q for q in ps if q is not p])
+        for _, home in sorted(stores(ps).items()):
+            recs = [r for p in home for r in p.records.values()]
+            for i in sorted(set().union(*(cited(r) for r in recs)) if recs else set()):
+                s, where = state(i, home, [q for q in ps if q not in home])
                 counts[s] += 1
                 if s != "PRESENT":
-                    rows.append({"id": i, "state": s, "where": where, "cited_by": [p.name]})
+                    rows.append({"id": i, "state": s, "where": where, "cited_by": [p.name for p in home]})
     root = C.doc_id({"stores": {p.name: p.snap.digest for p in ps}, "git": {p.name: p.tips for p in ps if p.tips},
                      "unavailable": unavailable})
     lens = C.doc_id({"code": E.code_identity(), "query": {"ids": sorted(set(ids or []))}})

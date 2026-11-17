@@ -1937,6 +1937,16 @@ def resolve_cases():
           ids == {"a": g, "again": g, "b": None} and rows["a"].get("identity") == g and rows["a"].get("same") == ["again"]
           and rows["again"].get("same") == ["a"] and rows["b"].get("identity") is None and "same" not in rows["b"],
           (ids, rows))
+    from warrant import across as AC
+    once = H.add_repository(H.add_repository(H.empty(), str(a.root), "a"), str(b.root), "b")
+    c1, c2 = RS.answer(once)["counts"], RS.answer(twice)["counts"]
+    renamed = H.add_repository(H.add_repository(H.empty(), str(a.root), "zz"), str(b.root), "b")
+    s1, s2, s3 = (AC.answer(AC.home_readings(d), {"query": "stores"}) for d in (once, twice, renamed))
+    check("RV4 one store registered twice counts once (Codex on ec6d1ebe's closure): resolve counts its citations once, "
+          "and across reads it as one store, its names under `read_as`, with the root and lens of the store read once under "
+          "any name",
+          c1 == c2 and [x["store"] for x in s2["stores"]] == ["a", "b"] and s2["stores"][0].get("read_as") == ["a", "again"]
+          and (s1["root"], s1["lens"]) == (s2["root"], s2["lens"]) == (s3["root"], s3["lens"]), (c1, c2, s2["stores"]))
 
 def voices_cases():
     """W4's stranger path in the core command: `warrant init --voices` and `warrant say`, with nothing but the package."""

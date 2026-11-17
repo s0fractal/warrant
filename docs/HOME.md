@@ -137,8 +137,12 @@ name in another store of Home, or in a registered clone's minds chain: `refs/var
 `cas/atoms/`, named by the sha256 of their bytes), `LOCATED` (a tree names the path, the object is absent here) or
 `MISSING`. Where the bytes are is not whether they changed (that is `drift`'s). Bytes that do not hash to their name are
 refused (`BYTES_MISMATCH`), never `MISSING`. Nothing is executed or written; the answer binds what it read (`root`,
-`lens`) and says `completeness: UNATTESTED`. A store names itself by the `repository` string it gives itself, which is no
-identity: a store named by its root record is an obligation of stage 2.
+`lens`) and says `completeness: UNATTESTED`. A store's `repository` string is one it gives itself, which is no
+identity: each store is named by its identity (`identities`, the root of its one self-signed rules@1 lineage,
+warrant.graph.identity), and the places of one identity are one store, whose citations count once and whose own
+holdings are `PRESENT` wherever of them they lie. `across` reads them as one store too: under one trust and profile,
+their records united, named by the first of their names with all of them under `read_as`, and keyed by
+`rules@1:<identity>` in its `root` and `lens`, so two Homes that name one store differently bind it alike.
 
 Measured on 2026-11-13 over the seven stores of this Home: 4198 cited ids `PRESENT`, 3 `RESOLVED` (the cells of the minds
 chain a goal of minds cites), 2 `MISSING` (no store and no history holds them), 0 `LOCATED`. Its one live consumer is
