@@ -1,0 +1,117 @@
+Codex roadmap verdict evidence
+
+Base M: 88318ce26510587a3950b18a13b2494e24030108
+Duty D: 8f3e08333f0f26c1d8dc784c2f2da5e89d0320e341f0a5459b7b981c150a59b4
+Version T: c623b7ebf0fc8bd2d6cf16f4b37f0f80d237c4f9bb83362cf5a6de0e25462e6f
+
+Verdict: challenge. The review replay retry is still prematurely exhausted after checker-change skips.
+
+Checked HEAD, origin, clean initial worktree, and warrant.roadmap due --actor codex --json at M: all supplied identifiers, statement, evidence, refs, subject and requires matched. MCP context reads T as the leaf of D, PENDING for one roadmap/acceptor acceptance, with no open requirements or challenge on T. Read docs/AGENT.md, docs/V3.md and docs/REPOSITORY.md; inspected review record creation, finding selection and execution, projections, the witness ledger, and the waker's replay and publication paths. T's evidence b9e78f21ddac950c99cadb4c77393b0a921f3d635c8588c0fc8cdfe137a49f44 is the pr-head@1 root of #481, not a blob. Read that record and the merged code at M, the #477 and #481 diffs, #204 history, and GitHub metadata/descriptions for all three PRs. Their descriptions are claims, not review evidence on their own.
+
+Counterexample (P2): integrations/warrant-review/waker/waker.py:643 appends skipped attempts to the same attempts list. replay_state at lines 663 and 672-677 counts all of them toward MAX_TRIES and its exponential backoff. After two skips at successive bases and adoption of the checker at a third base, the first actual checker failure (injected exit 75) is immediately 'gave up', reporting '3 checker runs failed'. pending(..., base) is false; no retry occurs even after 100*BACKOFF. wake_after_replay wakes the reviewer with that inflated gap. The queued successful retry is never called. Skips are not checker failures: the skipped attempts explicitly say the checker could not run, and the module says they cover nothing. This leaves the head without a replay after only one actual failed run, despite T claiming bounded retries after checker failures.
+
+The probe uses real Waker.replay, replay_state, replay_memo, pending and wake_after_replay, with filesystem memos. Only the external checker outcomes, seed lookup, clock and reviewer wake are stubbed; it reads no key and signs nothing. Its control has one failure with no prior skips: it waits, remains pending, does not wake, retries and completes. A diagnostic copy with one inserted line filtering skipped attempts immediately before the MAX_TRIES check makes the same F1 pass; no production file is edited. This diagnostic establishes the bookkeeping cause, not a reviewed repair.
+
+Reproduce from M, placing the script below in a scratch directory and pointing TMPDIR there:
+  PYTHONDONTWRITEBYTECODE=1 TMPDIR=<scratch> python3 skip_budget_probe.py <checkout-at-M>
+Expected at M: C1 passes, F1 fails, process exit 1.
+
+Validation: tools_test.py completed with 'all passed' on an exact Git archive of M with read-only access to M's Git objects; plugin test_plugin.py: 44 PASS / 0 FAIL (including optional MCP case C8); official mutant harness with scratch copies redirected outside the verdict worktree: P43, P44, P45 all KILLED on W26/W27 (3/3); warrant.roadmap check: 110 lineages, 0 problems; warrant.claims check: 143 live, 0 problems. An initial tools run in the archive without Git metadata stopped in an unrelated Git-tree check; after attaching the archive to M's objects, the complete suite passed. No live checker/replayer seed was read, and no signed live replay was run. No full mutant campaign or full CI rerun was performed. The challenge concerns this retry counterexample; it does not claim other review-loop behavior is absent.
+
+Probe source:
+```python
+"""Unsigned counterexample at M; run with the checkout root as argv[1].
+
+Only the checker's outcomes are injected. Waker.replay, replay_state, pending,
+and wake_after_replay are the real implementations. No key is read or used.
+"""
+import importlib.util
+import json
+import sys
+import tempfile
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+spec = importlib.util.spec_from_file_location("waker", root / "integrations/warrant-review/waker/waker.py")
+W = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(W)
+
+
+def scenario(skips):
+    home = Path(tempfile.mkdtemp(prefix="skip-budget-"))
+    (home / "replays").mkdir()
+    w = object.__new__(W.Waker)
+    w.home = home
+    now = [100000]
+    w.clock = lambda: now[0]
+    w.tree = lambda base: root
+    w.seed = lambda code: ("fixture-no-signer", object())
+    w.cover = lambda a: None
+    calls, wakes = [], []
+    outcomes = ["skip"] * skips + ["fail", "success"]
+
+    def injected(a, base, actor, unused):
+        outcome = outcomes[len(calls)]
+        calls.append(outcome)
+        if outcome == "skip":
+            raise W.Skipped("replay skipped: #4 changes the checker; it replays once adopted")
+        if outcome == "fail":
+            raise RuntimeError("the checker exited 75: injected transient failure")
+        return False, "replay: nothing to replay"
+
+    def wake(a, detail):
+        wakes.append(detail)
+        return False, "woken"
+
+    w._replay, w.wake = injected, wake
+    a = {"pr": 4, "head": "d" * 40, "branch": "topic"}
+    states = []
+    for i in range(skips):
+        base = format(i + 1, "040x")
+        w.replay(a, base)
+        _, memo = w.replay_memo(a)
+        states.append(w.replay_state(memo, base)[0])
+    base = "c" * 40  # the checker has now been adopted
+    w.replay(a, base)
+    _, memo = w.replay_memo(a)
+    after_failure = w.replay_state(memo, base)
+    pending_after_failure = w.pending(4, base)
+    W.wake_after_replay(w, a)
+    now[0] += 100 * W.BACKOFF  # beyond even an incorrectly enlarged backoff
+    w.replay(a, base)
+    _, memo = w.replay_memo(a)
+    return {"skip_states": states, "checker_outcomes": calls,
+            "after_failure": after_failure, "pending_after_failure": pending_after_failure,
+            "after_backoff": w.replay_state(memo, base), "wake_gaps": wakes}
+
+
+control, skipped = scenario(0), scenario(2)
+print("control:", json.dumps(control, sort_keys=True))
+print("two_skips:", json.dumps(skipped, sort_keys=True))
+control_ok = (control["checker_outcomes"] == ["fail", "success"]
+              and control["after_failure"][0] == "waiting"
+              and control["pending_after_failure"] and control["wake_gaps"] == []
+              and control["after_backoff"][0] == "done")
+print(("ok   " if control_ok else "FAIL ") + "C1 no-skip transient failure retries successfully")
+retry_ok = (skipped["checker_outcomes"] == ["skip", "skip", "fail", "success"]
+            and skipped["pending_after_failure"] and skipped["wake_gaps"] == []
+            and skipped["after_backoff"][0] == "done")
+print(("ok   " if retry_ok else "FAIL ") + "F1 skipped runs must not exhaust the checker failure budget")
+sys.exit(0 if control_ok and retry_ok else 1)
+```
+
+Observed at M:
+```text
+control: {"after_backoff": ["done", "replay: nothing to replay"], "after_failure": ["waiting", "replay incomplete: run 1 failed (replay failed: the checker exited 75: injected transient failure); retry after 1970-01-02T04:01:40+00:00"], "checker_outcomes": ["fail", "success"], "pending_after_failure": true, "skip_states": [], "wake_gaps": []}
+two_skips: {"after_backoff": ["gave up", "replay incomplete: 3 checker runs failed, the last: replay failed: the checker exited 75: injected transient failure"], "after_failure": ["gave up", "replay incomplete: 3 checker runs failed, the last: replay failed: the checker exited 75: injected transient failure"], "checker_outcomes": ["skip", "skip", "fail"], "pending_after_failure": false, "skip_states": ["skipped", "skipped"], "wake_gaps": ["replay incomplete: 3 checker runs failed, the last: replay failed: the checker exited 75: injected transient failure"]}
+ok   C1 no-skip transient failure retries successfully
+FAIL F1 skipped runs must not exhaust the checker failure budget
+```
+
+Diagnostic-copy output (skips filtered from failure count before MAX_TRIES):
+```text
+control: {"after_backoff": ["done", "replay: nothing to replay"], "after_failure": ["waiting", "replay incomplete: run 1 failed (replay failed: the checker exited 75: injected transient failure); retry after 1970-01-02T04:01:40+00:00"], "checker_outcomes": ["fail", "success"], "pending_after_failure": true, "skip_states": [], "wake_gaps": []}
+two_skips: {"after_backoff": ["done", "replay: nothing to replay"], "after_failure": ["waiting", "replay incomplete: run 1 failed (replay failed: the checker exited 75: injected transient failure); retry after 1970-01-02T04:01:40+00:00"], "checker_outcomes": ["skip", "skip", "fail", "success"], "pending_after_failure": true, "skip_states": ["skipped", "skipped"], "wake_gaps": []}
+ok   C1 no-skip transient failure retries successfully
+ok   F1 skipped runs must not exhaust the checker failure budget
+```
