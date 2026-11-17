@@ -898,6 +898,7 @@ MUTANTS = [
     ("P40", "integrations/warrant-review/waker/waker.py", ' or (c.get("asked") and isinstance(b.get("verdict"), str))', '', WAKER, ["W23"]),
     ("P41", "integrations/warrant-review/waker/waker.py", '    if c.get("asked"):                   # a question addressed to Codex', '    if False:                   # a question addressed to Codex', WAKER, ["W23"]),
     ("P42", "integrations/warrant-review/waker/waker.py", '        or (t in asked and binds(rec, {"closure": t, "asked": True})))\n', '        or False)\n', WAKER, ["W24"]),
+    ("P43", "integrations/warrant-review/waker/waker.py", "            if base is not None and doc.get(\"base\") != base:", "            if False:", WAKER, ["W26"]),
     ("P13", "integrations/warrant-review/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
     # warrant verify (warrant/verify.py, docs/VERIFY.md): a package assessed alone; the one-file verifier and its build
     ("UM01", VF, '"rely": bool(roots) and all(r["rely"] for r in roots.values())',
