@@ -113,6 +113,20 @@ def join(a):
     return s.extend([dict(r, at=at) for r in recs], key, trust, expect_head=h)
 
 
+def seen_body(a, body):
+    """An acceptance with what its signer's view held of the target (warrant.graph.seen_of), as the agent interface's
+    prepare gives it (warrant.graph.with_seen); any other verdict, or a store with no rules to read it by (--trust
+    without --profile, and no v3.json), as given."""
+    if body.get("verdict") != "accept":
+        return body
+    store = store_dir(a)
+    try:
+        trust, profile = receiver(a, store)[:2]
+    except Refused:                  # no rules to read the store by (--trust alone): it names no horizon
+        return body
+    return G.with_seen(E.View(Store(store).snapshot(), trust, profile).report(), body)
+
+
 def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
     if kind == "schema" and E._schema_problem(body):     # it would lie in the store for good and never count
         raise Refused(f"SCHEMA_NOT_COUNTED: {E._schema_problem(body)}")
@@ -442,7 +456,7 @@ def main(argv=None):
         elif a.cmd == "join":
             out = {"joined": join(a)}
         elif a.cmd == "attest":
-            out = {"record": put(a, "attest", dict(a.body, target=a.target), refs=[a.target])}
+            out = {"record": put(a, "attest", seen_body(a, dict(a.body, target=a.target)), refs=[a.target])}
         elif a.cmd == "blob":
             out = {"blob": Store(store_dir(a)).put_blob(Path(here(a.file)).read_bytes())}
         elif a.cmd == "fmt":

@@ -66,7 +66,15 @@ identity `A`'s (docs/HOME.md).
 
 `prepare` fills in the signer, the time, `prev`, `target` (in the body and in `refs`) and the
 references the schema's typed fields name; for an entity with no `guard`, the schema's minimal guard
-for its state. `commit` takes that record back unchanged: it signs it and appends it as a
+for its state; for an acceptance (an attest of verdict `accept`) with no `seen` and no schema, what
+this view held of its target: `seen` {`root`, the snapshot its report read; `challenges`, the counted
+challenges against the target in it} (`warrant.graph.with_seen`; `warrant attest` fills it the same
+way). A schema's closed body is left as given, and a list that would not fit the body limit is left
+out, so `seen` never makes a valid acceptance invalid; an actor whose challenge does not count here
+cannot grow it. The signer accepts within that horizon, not over all there is; no guard reads it.
+`context` gives each target's `horizons`: for each attest on it that names a `seen`, {root, unseen},
+the counted challenges against the target now that it does not list (filed after it, or outside its
+view); None for one that names none, which says nothing of what it saw. `commit` takes that record back unchanged: it signs it and appends it as a
 compare-and-swap on the signer's head (a stale `prev` is `CHAIN_MOVED`: prepare again). Refusals are
 `{"error": CODE, "message"}`; `explain` has every code.
 
