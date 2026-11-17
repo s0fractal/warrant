@@ -112,7 +112,7 @@ async function drawReleases(plan, list, id) {
   const head = [el("h2", { text: "Published releases" }), el("p", { class: "small", text: "Read from where they are published; not verified here. Each is the release its publisher's index names, as of the time it gives: a newer release may exist on the chain and not be published yet." })];
   fill(box, head, entries.map((e) => el("article", { class: "desk-store" }, el("h2", { text: e.name }), el("p", { class: "small", text: "reading …" }))));
   box.hidden = false;
-  const fetcher = (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+  const fetcher = (u) => fetch(u, { cache: "no-cache", credentials: "omit", referrerPolicy: "no-referrer" });
   const got = await desk.readReleases(entries, { fetcher });
   if (id !== ctx.run) return;
   fill(box, head, got.map(releaseArticle));
@@ -202,7 +202,7 @@ function drawEditor() {
 // The text of stores.json beside this page, or null and why.
 async function defaultList() {
   try {
-    const r = await fetch(new URL("./" + desk.LIST, import.meta.url), { cache: "no-store", credentials: "omit" });
+    const r = await fetch(new URL("./" + desk.LIST, import.meta.url), { cache: "no-cache", credentials: "omit" });
     return r.ok ? { text: await r.text(), why: null } : { text: null, why: `${desk.LIST}: HTTP ${r.status}` };
   } catch (e) { return { text: null, why: `${desk.LIST}: not fetched (${e?.message ?? e})` }; }
 }
@@ -225,7 +225,7 @@ async function run() {
   say(`Reading ${ctx.plan.stores.length} store(s) …` + (why.length ? ` (${why.join("; ")})` : ""));
   ctx.backend = webBackend();
   ctx.source = new Uint8Array(await (await fetch(new URL("./warrant.mjs", import.meta.url))).arrayBuffer());
-  const fetcher = (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+  const fetcher = (u) => fetch(u, { cache: "no-cache", credentials: "omit", referrerPolicy: "no-referrer" });
   const started = performance.now();
   // each block is drawn as its store answers, in the list's order: a placeholder holds the place of the others
   ctx.plan.stores.forEach((s, k) => section("stores").append(el("article", { class: "desk-store", id: `store-${k}` }, el("h2", { text: s.name }), el("p", { class: "small", text: "reading …" }))));

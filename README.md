@@ -105,7 +105,8 @@ lets `warrant init` leave the next agent the entry the adoption experiment measu
   (docs/HISTORY.md).
 - **Review.** Pull requests are reviewed by a model reviewer through the
   repository's review loop (signed records in the same store); no external
-  security audit is recorded. There is one implementation, this Python one.
+  security audit is recorded. The assessment has two implementations, this Python
+  one and the JavaScript one in `site/`, held byte for byte to it; the rest has one.
 
 ## Limits
 
@@ -115,7 +116,7 @@ lineage depth, the depth of lineages requiring lineages): beyond one it is
 refused, never answered in part. Not in this version: grants, schedules,
 triggers, observe and compute conditions (a checker actor's attestation replaces
 them), a merge rule for a forked lineage, threshold adoption, key rotation, and
-any implementation besides this one. docs/V3.md §11 says what was dropped from
+an implementation of anything but the assessment besides this one. docs/V3.md §11 says what was dropped from
 Warrant 2 and why; §12 what is open.
 
 ## The repository

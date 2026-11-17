@@ -611,7 +611,7 @@ async function run() {
   try {
     const backend = webBackend();
     const started = performance.now();
-    const fetcher = (u) => fetch(u, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+    const fetcher = (u) => fetch(u, { cache: "no-cache", credentials: "omit", referrerPolicy: "no-referrer" });
     const tree = memoFetch(fetcher);                     // pins of now and of the past: one fetch each
     const store = await fetchStore(base, backend, { full: p.full, fetcher });
     say(`Assessing ${store.lines.length} lines …`);
