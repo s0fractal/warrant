@@ -971,11 +971,14 @@ def drift_impact_cases():
     _, droots, dq, dd = TG.ask(RP.Repo(r.root), "delta", [f"{base}..{head}"])
     rep_b, rep_h = (RP.Repo(r.root).report(GT.store_at(r.root, c)[0]) for c in (base, head))
     _, _, eq, dots = TG.ask(RP.Repo(r.root), "export", ["--format", "dot"])
+    _, _, jq0, js0 = TG.ask(RP.Repo(r.root), "export", [])
+    _, _, jq1, js1 = TG.ask(RP.Repo(r.root), "export", ["--format", "json"])
     graph_h = RP.Repo(r.root).report()["graph"]
     check("DR25b `tools/graph.py delta BASE..HEAD` is warrant.graph.delta of the two commits' stores (its query names both "
           "commits), and `export --format dot` names every node and edge of the record graph as Graphviz text",
           dd == G.delta(rep_b, rep_h) and dq == {"op": "delta", "range": f"{base}..{head}"} and droots == {"base": base, "head": head}
           and eq == {"op": "export", "format": "dot"} and dots.startswith("digraph warrant {\n") and dots.endswith("}\n")
+          and js0 == js1 == RP.Repo(r.root).report()["graph"] and jq0 == jq1 == {"op": "export", "format": "json"}
           and all(f'"{n[0]}" [label=' in dots for n in graph_h["nodes"]) and all(f'"{a}" -> "{b}" [label="{rel}"]' in dots for a, rel, b in graph_h["edges"]),
           (dq, dots[:200]))
     views = TG.render(RP.Repo(r.root))

@@ -818,7 +818,10 @@ def rules_reasons(root, b, head, rep, revert=()):
         out.append(("RULES_PROJECTION", f"{RULES_FILE} at the head is not the {RULES} version in force, {now[:12]}: the "
                     "file changed without a version of the rules, or a version names other rules than the file"))
     undone = before in void and now == _yielded(rep, before, void)     # a revert puts the version it succeeded back
-    if now != before and rep["_recs"][now].get("lineage") != before and not undone:
+    # after a revert the next version continues the lineage's tip, a void version: what it succeeds, past the void
+    # ones, is the version in force (Codex 00865508)
+    succeeds = _yielded(rep, rep["_recs"][now].get("lineage"), void) if now != before else before
+    if now != before and succeeds != before and not undone:
         out.append(("RULES_CHAIN", f"the {RULES} version in force at the head, {now[:12]}, does not succeed the base's, "
                     f"{before[:12]}"))
     role = (b.gate.get(CONSTITUTIONAL) or {}).get("veto_role", "pr/owner")

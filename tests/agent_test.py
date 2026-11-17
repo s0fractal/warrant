@@ -114,12 +114,14 @@ def graph_range_cases():
     imp, dl = (ok(api.call(cfg, "graph", {"workspace": "w", "op": op, "range": rng})) for op in ("impact", "delta"))
     reps = [RP.Repo(repo.root).report(GT.store_at(repo.root, c)[0]) for c in (base, head)]
     dot = ok(api.call(cfg, "graph", {"workspace": "w", "op": "export", "format": "dot"}))
+    plain, asked = (ok(api.call(cfg, "graph", dict({"workspace": "w", "op": "export"}, **kw))) for kw in ({}, {"format": "json"}))
     bad = api.call(cfg, "graph", {"workspace": "w", "op": "delta", "range": "nothing"})
     check("A51 graph op=impact and op=delta read the two commits' stores under the workspace's receiver (the root names "
           "both); op=export gives DOT on request; a range that is not BASE..HEAD is refused",
           dl.get("data") == G.delta(*reps) and [x["lineage"] for x in imp.get("data", {}).get("lineages", [])] == [o]
           and dl.get("root", {}).get("base") == base and dl.get("root", {}).get("head") == head
           and done in dl.get("data", {}).get("added", []) and str(dot.get("data", "")).startswith("digraph warrant {")
+          and plain.get("data") == asked.get("data") == RP.Repo(repo.root).report()["graph"]
           and bad.get("error") == "BAD_REQUEST", (imp, dl.get("root"), bad))
 
 

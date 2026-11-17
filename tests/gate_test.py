@@ -1416,7 +1416,7 @@ def rules_revert_cases():
     git(r.root, "checkout", "-q", "-b", "feature")
     r.profile["roles"]["replayer"] = sorted(set(r.profile["roles"]["replayer"]) | {"eve"})
     r.write_config()
-    r.put("bob", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES, lineage=g)
+    n1 = r.put("bob", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES, lineage=g)
     v = r.entity("alice", "pr-head@1", {"state": "open", "repository": REPO, "pr": 7, "title": "t"})
     r.commit("the rules change and its version")
     git(r.root, "checkout", "-q", "master")
@@ -1440,6 +1440,18 @@ def rules_revert_cases():
     later = GT.assess(r.root, after, {"number": 9, "state": "open", "draft": False, "base": "master", "head": lh, "labels": [],
                                       "branch": "later", "head_repo": REPO, "author": "alice"}, green(lh))
     lrules = {c for c in codes(later) if c.startswith("RULES_")}
+    git(r.root, "checkout", "-q", "-b", "next-rules", after)
+    r.profile["roles"]["replayer"] = sorted(set(r.profile["roles"]["replayer"]) | {"frank"})
+    r.write_config()
+    r.put("bob", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES, lineage=n1)
+    r.entity("alice", "pr-head@1", {"state": "open", "repository": REPO, "pr": 10, "title": "next rules"})
+    nh = r.commit("a legitimate rules change after the revert, continuing the lineage's tip")
+    nxt = GT.assess(r.root, after, {"number": 10, "state": "open", "draft": False, "base": "master", "head": nh, "labels": [],
+                                    "branch": "next-rules", "head_repo": REPO, "author": "alice"}, green(nh))
+    nrules = {c for c in codes(nxt) if c.startswith("RULES_")}
+    check("RC13 after the revert a legitimate rules change, its version continuing the lineage's tip (the void one), "
+          "raises no rules reason: it succeeds, past the void version, the version in force (Codex 00865508)",
+          nrules == set(), (sorted(nrules), nxt.reasons))
     check("RC12 the gate's exact revert of a merge that brought a rules@1 version raises no rules reason (the version is "
           "void in the gate's reading, the one it succeeded in force again), and a later pull request that leaves the "
           "rules alone raises none either", rules == set() and lrules == set() and a.facts.get("revert") == merge,
