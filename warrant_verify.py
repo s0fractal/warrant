@@ -36,7 +36,7 @@ DIGESTS = {
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "3a9e6be0c566cb716263e7e93105b7d485a7b02446639fe0887031bdb0a83952",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
-    "warrant/graph.py": "f89224ae6d0f337ceaf21d71306c78569f3112ac34a4c7cf3e32e8a8912874a7",
+    "warrant/graph.py": "25411d475f9dd8036fccd0ddfd6ad7fd6222a79d75c357882fcf308d74b2af5f",
     "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
     "warrant/verify.py": "482b241a1a287f60d8017edf4adcc47ef90935dc700704c65c164ef4f2536553",
@@ -1133,9 +1133,11 @@ def impact(rep0, rep1):
     for L in sorted(touched):
         rep = rep1 if L in rep1["lineages"] else rep0
         lin = rep["lineages"][L]
-        rests = sorted({lineage_of(rep, n["id"]) for n in why(rep, L)["nodes"]} - {None, L})
+        w = why(rep, L)
+        rests = sorted({lineage_of(rep, n["id"]) for n in w["nodes"]} - {None, L})
+        # `complete` false: the walk stopped at MAX_NODES and more rests on it than listed (Codex 78eb7170)
         out.append({"lineage": L, "schema": lin["schema"], "state": lin["state"], "reliance": lin["reliance"],
-                    "gone": L not in rep1["lineages"], "rests_on_it": rests})
+                    "gone": L not in rep1["lineages"], "rests_on_it": rests, "complete": w["complete"]})
     return {"delta": d, "lineages": out}
 
 

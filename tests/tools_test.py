@@ -1586,6 +1586,22 @@ def impact_cases():
         got = next(e for e in G.impact(rep0, rep1)["lineages"] if e["lineage"] == x)
     except (KeyError, StopIteration) as e:
         got = repr(e)
+    capped = Repo()
+    root = capped.entity("alice", "obligation@1", {"state": "open", "statement": "root", "serves": []})
+    prev = root
+    for k in range(5):                             # a chain: each rests on the one before, so the walk goes deep
+        prev = capped.entity("alice", "obligation@1", {"state": "open", "statement": f"rests {k}", "serves": []}, refs=[prev])
+    c1 = capped.report()
+    old_max = G.MAX_NODES
+    G.MAX_NODES = 3
+    try:
+        cut = next(e for e in G.impact(Repo().report(), c1)["lineages"] if e["lineage"] == root)
+    finally:
+        G.MAX_NODES = old_max
+    full = next(e for e in G.impact(Repo().report(), c1)["lineages"] if e["lineage"] == root)
+    check("DR17b impact says when what rests on a lineage was cut at the walk's bound (complete false), not a shorter "
+          "list as if whole (Codex 78eb7170)", cut["complete"] is False and len(cut["rests_on_it"]) < 5
+          and full["complete"] is True and len(full["rests_on_it"]) == 5, (cut, full))
     check("DR17 a lineage removed by the later report is read in the earlier one, whatever else has its address",
           blob == x and x not in {n[0] for n in rep1["graph"]["nodes"]}
           and isinstance(got, dict) and got["gone"] and got["schema"] == "obligation@1" and got["state"] == "open", got)
