@@ -1,0 +1,145 @@
+# Codex challenge of G3 roadmap closure
+
+D: 8f3e08333f0f26c1d8dc784c2f2da5e89d0320e341f0a5459b7b981c150a59b4
+T: 4ce02a05a91f9009e3d8ca1466c01eb05a98386538a84c8ccc98f612902e3017
+M: d201c2a1c9cd9d98102f7ee472a46a5285b8aea0
+
+## Verdict and boundary
+
+P2: A finding whose test the sandbox denies produces no observation, yet the waker marks its replay complete, covers older failed replays, and wakes the reviewer without naming that gap. D is therefore not done: the loop cannot distinguish every due finding having an observation from a successful checker process that observed nothing.
+
+The checker correctly refuses to invent an observation when the jail prevents the test from running. docs/REPOSITORY.md:301-305 explicitly documents that case (localhost tests cannot bind in the waker sandbox). This challenge is about the waker losing that known gap, not a request to file a fabricated no_result or grant network access. T's statement that a later completed replay covers earlier incomplete ones is false for this path. Its residual names invalid push branches only.
+
+## Code path at M
+
+- warrant/review.py:153-156: DENIED prints `not run ... (no observation)` and continues without an attest. The command returns zero; existing tools_test R08b checks exactly that contract.
+- integrations/warrant-review/waker/waker.py:728-732: _file checks only the process exit and lines beginning with record ids. A zero exit with only `not run` output becomes `replay: nothing to replay`.
+- Same file:633 and 643-646: replay records ok=true and calls cover.
+- Same file:690-696: cover marks an earlier failed replay covered_by the current head.
+- Same file:1303-1307: wake_after_replay sees done and passes no incomplete detail to the reviewer. pending then returns false, so retry_lines has no work for it.
+
+This also affects a checker run that produces some observations and denies another: the `not run` output is not represented in completion state. The executable probe below isolates the all-denied case and the false coverage of one previous failed head.
+
+## Reproduction and limits
+
+Run the script below with M's worktree path as its sole argument and TMPDIR pointing inside the review's scratch directory. It calls the real unsigned finding test runner with an EPERM-producing patch, then injects the checker transport output specified by the real DENIED branch into the actual _file, replay, cover, pending, and wake_after_replay methods. It uses no seeds or signatures, runs no checker command, and contacts no GitHub endpoint. Git metadata for _file and the checker transport are mocked; this is a deterministic integration probe, not a live production-waker run. Existing R08b independently passed with the actual checker process and synthetic fixture keys.
+
+Observed:
+
+```text
+{
+ "run_test": "denied",
+ "checker_exit": 0,
+ "checker_attests": 0,
+ "waker_line": "replay: nothing to replay",
+ "current_state": "done",
+ "old_state": "done",
+ "pending": false,
+ "wake": "woken",
+ "incomplete_passed_to_reviewer": [
+  null
+ ]
+}
+REPRODUCED: a denied test with no observation is called complete, covers an older failure, and wakes without the gap
+CONTROL: exit 75 -> waiting; reviewer not woken
+```
+
+The exit-75 control remains incomplete, withholds the wake, and therefore demonstrates that the missing-observation case takes the wrong completion path.
+
+## Checks at M
+
+- Due facts reproduced by `python3 -m warrant.roadmap due --actor codex --json`; MCP context showed T waiting for one roadmap/acceptor acceptance, no open requirements.
+- Read merged PRs #204, #477, #481, #491 through the GitHub connector, their referenced changes, the current review/replay and witness-ledger implementation, and the derived view writers. #491's merge is exactly M.
+- Plugin suite: 42 PASS, 0 FAIL.
+- tools_test sections review_cases, review_join_cases, ledger_cases, drift_impact_cases: 34 printed passing checks, all passed.
+- Mutants P43, P44, P45, P46: 4/4 KILLED by W26, W27, W27, W28 respectively, with unmutated baseline passing. Other mutants and full repository suites were not run.
+- Roadmap check: 110 lineages, zero problems. Claims check: 143 live claims, zero problems (pre-verdict).
+
+## Required resolution
+
+Preserve unobserved finding/head pairs as a named gap through the checker-to-waker boundary. Such a run must not silently report nothing to replay, count as full coverage of older failures, or wake a reviewer without that gap. Retry where useful, or explicitly retain and disclose sandbox refusals; add a regression that exercises the checker output together with completion, covering and wake decisions. This review changes no implementation or tests.
+
+## Standalone unsigned probe
+
+```python
+"""Unsigned probe at M; no seed is read and no checker command runs."""
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+root = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root))
+from warrant.review import run_test, DENIED
+spec = importlib.util.spec_from_file_location('waker_probe', root/'integrations/warrant-review/waker/waker.py')
+W = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(W)
+with tempfile.TemporaryDirectory() as td:
+    home = Path(td)
+    fixture = home/'fixture'
+    (fixture/'tests').mkdir(parents=True)
+    subprocess.run(['git','init','-q',str(fixture)],check=True)
+    patch = '''diff --git a/tests/denied_test.py b/tests/denied_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/denied_test.py
+@@ -0,0 +1 @@
++raise PermissionError(1, 'Operation not permitted')
+'''
+    verdict = run_test(fixture, 'denied_test', 'F1', patch)
+    assert verdict == DENIED, verdict
+    # review.replay's DENIED branch prints this and continues without an attest;
+    # the command returns zero (covered by the existing R08b regression case).
+    stdout = b'not run cccccccccccc on dddddddddddd: the jail denied what its test needs (no observation)\n'
+    w = object.__new__(W.Waker)
+    w.home = home
+    w.repository = 's0fractal/warrant'
+    w.replayers = home/'no-seeds'
+    w.clock = lambda: 10000
+    w.replay_python = sys.executable
+    (home/'replays').mkdir()
+    a = {'pr':4,'head':'b'*40,'branch':'topic'}
+    base = 'a'*40
+    old = {'pr':4,'head':'c'*40,'base':base,'attempts':[{'finished':0,'ok':False,'line':'replay failed: checker exited 75'}]}
+    oldpath = home/'replays'/f"4-{'c'*40}.json"
+    oldpath.write_text(json.dumps(old))
+    w.tree = lambda base: fixture
+    # Inject only the checker transport, with the real checker's DENIED output.
+    # No key or signature is used; these bytes never reach a subprocess.
+    w.seed = lambda code: ('review-replayer', b'unused transport placeholder')
+    w.jail = lambda *args, **kwargs: subprocess.CompletedProcess([],0,stdout,b'')
+    W.git = lambda *args: str(fixture/'.git').encode()
+    w._replay = lambda a,base,actor,seed: w._file(a,base,actor,seed,fixture,home,'topic')
+    wake_args = []
+    w.wake = lambda a,incomplete=None: (wake_args.append(incomplete), 'woken')
+    pushed,line = w.replay(a,base)
+    _,memo = w.replay_memo(a)
+    wake = W.wake_after_replay(w,a)
+    result = {
+        'run_test':verdict,
+        'checker_exit':0,
+        'checker_attests':0,
+        'waker_line':line,
+        'current_state':w.replay_state(memo,base)[0],
+        'old_state':w.replay_state(json.loads(oldpath.read_text()),base)[0],
+        'pending':w.pending(4,base),
+        'wake':wake,
+        'incomplete_passed_to_reviewer':wake_args,
+    }
+    print(json.dumps(result,indent=1))
+    assert result['waker_line']=='replay: nothing to replay'
+    assert result['current_state']=='done' and result['old_state']=='done'
+    assert result['pending'] is False and wake_args==[None]
+    print('REPRODUCED: a denied test with no observation is called complete, covers an older failure, and wakes without the gap')
+    # Control: a genuine nonzero checker exit still waits and withholds the wake.
+    a2 = {'pr':5,'head':'e'*40,'branch':'topic'}
+    wake_args.clear()
+    w.jail = lambda *args, **kwargs: subprocess.CompletedProcess([],75,b'',b'transient failure')
+    _, failure = w.replay(a2,base)
+    _, failed_memo = w.replay_memo(a2)
+    withheld = W.wake_after_replay(w,a2)
+    assert w.replay_state(failed_memo,base)[0] == 'waiting'
+    assert withheld == 'not woken: the replay is incomplete' and wake_args == []
+    print('CONTROL: exit 75 -> waiting; reviewer not woken')
+```
