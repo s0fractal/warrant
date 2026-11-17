@@ -400,6 +400,7 @@ MUTANTS = [
     ("T321", "warrant/graph.py", '    out += [f"  {q(a)} -> {q(b)} [label={q(rel)}];" for a, rel, b in graph["edges"]]\n', '', TOOLS, ["DR25b"]),
     ("T322", "warrant_agent/api.py", '    data = G.impact(*reps) if op == "impact" else G.delta(*reps)', '    data = G.impact(*reps)', AGENT, ["A51"]),
     ("T323", "warrant/review.py", '        base, head = (git(root, "rev-parse", "--verify", f"{x}^{{commit}}") for x in (base, head or "HEAD"))', '        base, head = (git(root, "rev-parse", "--verify", f"{x}^{{commit}}") for x in (head or "HEAD", base))', AGENT, ["A51"]),
+    ("T324", "tools/graph.py", '        a = G.answer(rep, {"op": "view", "name": n}, None, code)', '        a = G.answer(rep, {"op": "view"}, None, code)', TOOLS, ["DR25c"]),
     ("T307", "warrant/drift.py", '    d = drift(rep, root, at, since=False)\n', '    d = drift(rep, root, at)\n', TOOLS, ["DR33"]),
     ("T308", "warrant/drift.py", '        if rule == C.CLOSURE and since:\n', '        if rule == C.CLOSURE:\n', TOOLS, ["DR33"]),
     ("T309", "warrant/pins.py", '    if not since:\n        return ("CHANGED", p, "") if now else ("GONE", p, "")\n', '', TOOLS, ["DR33"]),
