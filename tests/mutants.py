@@ -396,6 +396,7 @@ MUTANTS = [
     ("T317", "warrant/cli.py", '            out.append(dict(b, revertable=why is None,', '            out.append(dict(b, revertable=True,', TOOLS, ["ST1"]),
     ("T318", "warrant/review.py", '    joins = CH.join_records(repo.view(), a.actor)\n', '    joins = []\n', TOOLS, ["R01c"]),
     ("T319", "warrant/across.py", '        return {"trust": self.view.trust, "profile": self.view.profile, "checkout": self.rep.get("checkout")}', '        return {"trust": self.view.trust, "profile": self.view.profile}', TOOLS, ["RV6"]),
+    ("T320", "warrant/across.py", 'dict(query, page={"offset": q.get("offset", 0), "budget": budget})', 'query', AGENT, ["X15b"]),
     ("T307", "warrant/drift.py", '    d = drift(rep, root, at, since=False)\n', '    d = drift(rep, root, at)\n', TOOLS, ["DR33"]),
     ("T308", "warrant/drift.py", '        if rule == C.CLOSURE and since:\n', '        if rule == C.CLOSURE:\n', TOOLS, ["DR33"]),
     ("T309", "warrant/pins.py", '    if not since:\n        return ("CHANGED", p, "") if now else ("GONE", p, "")\n', '', TOOLS, ["DR33"]),
@@ -897,6 +898,7 @@ MUTANTS = [
     ("P40", "integrations/warrant-review/waker/waker.py", ' or (c.get("asked") and isinstance(b.get("verdict"), str))', '', WAKER, ["W23"]),
     ("P41", "integrations/warrant-review/waker/waker.py", '    if c.get("asked"):                   # a question addressed to Codex', '    if False:                   # a question addressed to Codex', WAKER, ["W23"]),
     ("P42", "integrations/warrant-review/waker/waker.py", '        or (t in asked and binds(rec, {"closure": t, "asked": True})))\n', '        or False)\n', WAKER, ["W24"]),
+    ("P43", "integrations/warrant-review/waker/waker.py", "            if base is not None and doc.get(\"base\") != base:", "            if False:", WAKER, ["W26"]),
     ("P13", "integrations/warrant-review/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
     # warrant verify (warrant/verify.py, docs/VERIFY.md): a package assessed alone; the one-file verifier and its build
     ("UM01", VF, '"rely": bool(roots) and all(r["rely"] for r in roots.values())',

@@ -623,7 +623,7 @@ class Waker:
         p, doc = self.replay_memo(a)
         if seed is None and doc is None:
             return False, actor             # no memo: a seed placed later serves this head
-        state, why = self.replay_state(doc)
+        state, why = self.replay_state(doc, base)
         if state != "retry":
             return False, why
         skipped = False
@@ -652,7 +652,7 @@ class Waker:
         p = self.home / "replays" / f"{self.key(a)}.json"
         return p, (runs(json.loads(p.read_text())) if p.is_file() else None)
 
-    def replay_state(self, doc):
+    def replay_state(self, doc, base=None):
         """(what, detail) of a replay memo: done (a run completed, here or at a later head of the pull request,
         `covered_by`), skipped (no replay can run at this head: it changes the checker, or its branch is not one
         to push to; this covers nothing), gave up (MAX_TRIES runs failed), waiting (for its backoff) or retry. A
@@ -666,6 +666,8 @@ class Waker:
             return "done", (last.get("line") or "replayed") + (f" (covered by the replay at {doc['covered_by'][:12]})"
                                                                if doc.get("covered_by") and not last.get("ok") else "")
         if last.get("skipped"):
+            if base is not None and doc.get("base") != base:   # skipped at another base: what it lacked may be adopted
+                return "retry", f"skipped at base {str(doc.get('base'))[:12]}; the base moved (Codex 97b547fe)"
             return "skipped", last.get("line") or "replay skipped"
         if len(tries) >= MAX_TRIES:
             return GAVE_UP, f"replay incomplete: {len(tries)} checker runs failed, the last: {last.get('line')}"

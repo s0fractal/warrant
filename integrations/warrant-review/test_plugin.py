@@ -764,6 +764,13 @@ def carrying_answers():
           "whose body names it in opened.for) beside its verdict on the head version, or alone; an answer to a version "
           "that asks it nothing refuses the carry, and an acceptance wake (no asked_too) carries only its own verdict",
           (both, alone, off, old))
+    w = object.__new__(WAKER.Waker)
+    w.clock = lambda: 0
+    memo = {"base": "a" * 40, "attempts": [{"finished": 0, "ok": False, "skipped": True, "line": "replay skipped: #4 changes the checker"}]}
+    check("W26", w.replay_state(memo, "a" * 40)[0] == "skipped" and w.replay_state(memo, "b" * 40)[0] == "retry"
+          and w.replay_state(memo)[0] == "skipped",
+          "a replay skipped at a head that changes the checker stays skipped while the base is the one it was skipped at, "
+          "and is retried once the base moved, as its line promises (it replays once adopted; Codex 97b547fe)")
 
 
 if __name__ == "__main__":

@@ -369,7 +369,9 @@ def answer(readings, q, budget=BUDGET, adapter=None):
     code = read[0].rep["code"] if read else E.code_identity()
     out = {"warrant": FORMAT, "completeness": "UNATTESTED", "untrusted": True, "query": query, "stores": stores,
            "unavailable": unavailable, "total": len(ids), "offset": q.get("offset", 0), "next": len(ids), **extra, "nodes": [],
-           **dict(zip(("root", "lens"), identity({x.key: x.rep for x in read}, unavailable, code, adapter, query)))}
+           # the page is part of the lens: two pages of one query read different rows (Codex da1681d5)
+           **dict(zip(("root", "lens"), identity({x.key: x.rep for x in read}, unavailable, code, adapter,
+                                                 dict(query, page={"offset": q.get("offset", 0), "budget": budget}))))}
     used, pos = _dumped(out), out["offset"]
     if used > budget:
         raise Refusal("RESOURCE_LIMIT", f"the answer's header is {used} bytes; {budget} are allowed")
