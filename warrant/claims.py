@@ -43,6 +43,7 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
+from . import chains as CH
 from . import imports as IM
 from . import records as R
 from . import pins as P
@@ -434,6 +435,11 @@ def replay(repo, key, into=None):
                                                         "files": files, "closure": CLOSURE}, refs=[leaf]))
         print(f"{'ACCEPT' if ok else 'HELD  '} {b['id']} {L[:12]}")
     print(f"claims checker: {len(todo)} of {len(now)} backed claims run, {len(now) - len(todo)} fresh at this commit")
+    if into is not None:             # a branch of its chain it left in another store (the switch to its own store): taken in
+        joins = CH.join_records(repo.view(), CHECKER)
+        if joins:
+            print(f"claims checker: {len(joins)} loose tip(s) of its chain taken in")
+        recs = joins + recs
     return repo.file(CHECKER, key, recs, into=into)
 
 
