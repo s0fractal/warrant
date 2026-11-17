@@ -637,6 +637,7 @@ MUTANTS = [
     ("G137", "warrant/gate.py", '"successors": {"in force": ["pr/acceptor"]}}\n', '"successors": {"in force": ["pr/acceptor", "pr/owner"]}}\n', GATE, ["RC11"]),
     ("G138", "warrant/gate.py", '    if why or now is None or not same or body is None or C.canon(body) != C.canon(b.v3):\n', '    if why or now is None or body is None or C.canon(body) != C.canon(b.v3):\n', GATE, ["RC12"]),
     ("G139", "warrant/gate.py", '    if why or now is None or not same or body is None or C.canon(body) != C.canon(b.v3):\n', '    if why or now is None or not same:\n', GATE, ["RC12"]),
+    ("G140", "warrant/gate.py", '            + ", ".join(f"{p} ({w})" for p, w in extra[:8]))] if extra else []', '            + ", ".join(f"{p} ({w})" for p, w in extra[:8]))] if False else []', GATE, ["E19b"]),
     ("G136", "warrant/gate.py", '    if veto:\n        out.append(("RULES_VETO"', '    if False:\n        out.append(("RULES_VETO"', GATE, ["RC10"]),
     ("G43", "warrant/gate.py", "    except UnicodeDecodeError:              # Git holds", "    except ZeroDivisionError:              # Git holds", GATE, ["E51"]),
     ("G32", "warrant/gate.py", 'or (status == "A" and "/" not in deeper and _module_file(deeper, "__init__"))):', 'or False):', GATE, ["E41"]),

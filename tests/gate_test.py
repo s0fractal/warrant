@@ -219,7 +219,7 @@ def lineage_cases():
 
 
 def verdict_cases():
-    def setup(branch="codex/verdicts/x", repo=REPO, due=True, again=False, released2=False):
+    def setup(branch="codex/verdicts/x", repo=REPO, due=True, again=False, released2=False, view=False):
         r = Repo()
         (r.dot / "merge.json").write_text(json.dumps(MERGE))
         if released2:                                  # obligation@2: a release waits for another roadmap/acceptor
@@ -235,6 +235,8 @@ def verdict_cases():
         base = r.commit("base")
         git(r.root, "checkout", "-q", "-b", "verdict")
         r.attest("bob", d)
+        if view:                                       # a generated view committed beside the verdict
+            (r.root / "REVIEWS.md").write_text("generated\n")
         head = r.commit("bob's verdict")
         if again:
             git(r.root, "checkout", "-q", "master")
@@ -250,6 +252,8 @@ def verdict_cases():
     check("E23 verdicts only from a branch outside codex/verdicts/ are refused", codes(setup(branch="feature")) == {"VERDICTS_BRANCH"})
     check("E18 a verdict the base holds already is refused", "VERDICT_NOT_NEW" in codes(setup(again=True)))
     check("E19 a verdict on a version the base does not hold due for its actor is refused", codes(setup(due=False)) == {"VERDICT_NOT_DUE"})
+    check("E19b verdicts with a generated view committed beside them are refused as TAIL_CHANGES, not as a pull request "
+          "with no review (Codex 1dfedf69)", codes(setup(view=True)) == {"TAIL_CHANGES"}, setup(view=True).reasons)
     rel2 = setup(released2=True)
     check("E98 a roadmap/acceptor's verdict on an obligation@2 release (one that waits for an acceptor other than the "
           "releasing roadmap/owner) is due at the base: eligible, verdicts only", rel2.eligible and rel2.facts.get("verdicts"), rel2.reasons)

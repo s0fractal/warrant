@@ -1028,7 +1028,7 @@ def _verdicts_only(a, root, b, pr, head, rep):
     except (subprocess.CalledProcessError, IndexError):
         return None
     extra, lines, blobs = tail(root, mb, head)
-    if extra or not lines:
+    if not lines:
         return None
     added = _ids(lines)
     acceptors = b.holders("roadmap/acceptor")
@@ -1039,7 +1039,10 @@ def _verdicts_only(a, root, b, pr, head, rep):
     if not (roadmap or claims):
         return None
     branch = VERDICT_BRANCH if roadmap else CLAIMS_BRANCH
-    out = []
+    # verdicts with anything beside them (a committed generated view, a changed file) are verdicts refused for that,
+    # not a pull request with no review (Codex 1dfedf69 on eefa8157: the tail rule holds for verdicts only too)
+    out = [("TAIL_CHANGES", f"{len(extra)} change(s) beside the verdicts beyond added record lines and blobs: "
+            + ", ".join(f"{p} ({w})" for p, w in extra[:8]))] if extra else []
     if pr.get("head_repo") != b.repository:
         out.append(("VERDICTS_FORK", f"#{pr['number']}'s head is a branch of {str(pr.get('head_repo'))[:60]!r}, not {b.repository}"))
     if not str(pr.get("branch") or "").startswith(branch):
