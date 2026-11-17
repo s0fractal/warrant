@@ -55,24 +55,29 @@ def fresh(tree, path, blob):
     return now == blob or (now is None and blob in tree.values())
 
 
-def first_change(root, commit, path, blob, head="HEAD"):
+def first_change(root, commit, path, blob, head="HEAD", memo=None):
     """The commit since which `path` has not held `blob` (`fresh`), on the way from `commit` to `head`: of the commits
     that changed the path or the number of copies of those bytes in the tree, the first after the last one at which the
     file read fresh again (deleted then restored, moved with its bytes), and never one that changed only its mode
     (Codex finding e895d8cad992). None when none is found: the commit is not in this clone, or a merge brought the
     bytes. `commit`, `path` and `blob` come from a record: only a commit id and an object id reach Git, and the path
-    is literal."""
+    is literal. `memo`, one answer's (one `head`): each range's commits and each commit's tree read once."""
+    memo = {} if memo is None else memo
     if not S.hex_of(commit, 40):
         return None
     oid = blob[len("link:"):] if blob.startswith("link:") else blob
     try:
-        order = git(root, "rev-list", "--reverse", "--topo-order", f"{commit}..{head}").splitlines()
+        if ("order", commit) not in memo:
+            memo["order", commit] = git(root, "rev-list", "--reverse", "--topo-order", f"{commit}..{head}").splitlines()
+        order = memo["order", commit]
         touched = set(git(root, "--literal-pathspecs", "log", "--format=%H", f"{commit}..{head}", "--", path).splitlines())
         if S.hex_of(oid, 40):
             touched |= set(git(root, "log", "--format=%H", f"--find-object={oid}", f"{commit}..{head}").splitlines())
         since = None
         for c in reversed([c for c in order if c in touched]):
-            if fresh(blobs(root, c), path, blob):
+            if ("tree", c) not in memo:
+                memo["tree", c] = blobs(root, c)
+            if fresh(memo["tree", c], path, blob):
                 break
             since = c
     except subprocess.CalledProcessError:
@@ -80,9 +85,10 @@ def first_change(root, commit, path, blob, head="HEAD"):
     return since
 
 
-def compare(root, commit, files, head, where, at="HEAD", memo=None):
+def compare(root, commit, files, head, where, at="HEAD", memo=None, since=True):
     """[(verdict, path, detail)] of an acceptance's `files` against HEAD (`head`, {path: blob}; `where`, {blob: path}).
-    `memo`, one answer's: first_change once per (commit, path, blob), however many claims name them."""
+    `memo`, one answer's: first_change once per (commit, path, blob), however many claims name them. With `since`
+    false the history is not read and a changed or gone file's detail is empty: the verdicts are the same."""
     memo = {} if memo is None else memo
     why = unreadable(files)
     if why:
@@ -95,12 +101,20 @@ def compare(root, commit, files, head, where, at="HEAD", memo=None):
         elif now is None and blob in where:
             out.append(("MOVED", p, f"now at {where[blob]}"))
         else:
-            if (commit, p, blob) not in memo:
-                memo[commit, p, blob] = first_change(root, commit, p, blob, at)
-            x = memo[commit, p, blob]
-            since = f"since {x[:12]}" if x else f"since {str(commit)[:12]}"
-            out.append(("CHANGED", p, since) if now else ("GONE", p, f"not at HEAD, {since}"))
+            out.append(_stale(root, commit, p, blob, now, at, memo, since))
     return out
+
+
+def _stale(root, commit, p, blob, now, at, memo, since):
+    """The row of an accepted file other bytes are at (CHANGED) or gone from (GONE), with the commit since which it
+    has been so when `since`, from `memo` once per (commit, path, blob)."""
+    if not since:
+        return ("CHANGED", p, "") if now else ("GONE", p, "")
+    if (commit, p, blob) not in memo:
+        memo[commit, p, blob] = first_change(root, commit, p, blob, at, memo)
+    x = memo[commit, p, blob]
+    when = f"since {x[:12]}" if x else f"since {str(commit)[:12]}"
+    return ("CHANGED", p, when) if now else ("GONE", p, f"not at HEAD, {when}")
 
 
 def verdict(rows):

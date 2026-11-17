@@ -450,10 +450,30 @@ def drift_repo():
 
 
 def gated(r, L):
-    """(drift answer, reliance) of claim lineage L at r's head."""
+    """(drift answer, reliance) of claim lineage L at r's head: the reliance the gate sets, which reads no history, and
+    the answer `warrant drift` gives, which does; their verdicts are one (DR33)."""
     rep = RP.Repo(r.root).report()
-    d = D.gate(rep, r.root)
+    g = D.gate(rep, r.root)
+    d = D.drift(rep, r.root)
+    check("DR33 the gate's verdicts are the drift answer's, read with no history: no `log` or `rev-list` runs for it",
+          {k: x["verdict"] for k, x in g.items()} == {k: x["verdict"] for k, x in d.items()} and gate_reads(r) == [],
+          (g, d))
     return d.get(L, {}), rep["lineages"][L]["reliance"]
+
+
+def gate_reads(r):
+    """The history commands (`log`, `rev-list`) the gate runs reading r at its head."""
+    from warrant import pins as PN
+    ran, real = [], PN.git
+    def spy(root, *a, raw=False):
+        ran.extend(x for x in a if x in ("log", "rev-list"))
+        return real(root, *a, raw=raw)
+    PN.git = spy
+    try:
+        D.gate(RP.Repo(r.root).report(), r.root)
+    finally:
+        PN.git = real
+    return ran
 
 
 def pinned_by_lead():
@@ -678,8 +698,10 @@ def drift_cases():
                            "files": {"lib/code.py": "0" * 40}, "closure": CL.CLOSURE}, [L])
     r.commit("an acceptance whose commit is an option")
     d, rel = gated(r, L)
+    from warrant import pins as PN
+    asked = PN.first_change(r.root, f"--output={out}", "lib/code.py", "0" * 40)   # whichever acceptance drift reads
     check("DR10 a commit named by a record reaches Git only as a commit id: one shaped as an option writes nothing",
-          not list(r.home.glob("written-by-git*")) and rel == D.STALE, (d, rel))
+          not list(r.home.glob("written-by-git*")) and rel == D.STALE and asked is None, (d, rel, asked))
     r = checker_repo()
     (r.root / "lib").mkdir()
     (r.root / "lib" / "code.py").write_text("X = 1\n")

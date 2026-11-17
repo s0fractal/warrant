@@ -104,10 +104,10 @@ def _name(rep, L, eff):
     return b.get("id") or b.get("key") or L[:12]
 
 
-def drift(rep, root, at="HEAD"):
+def drift(rep, root, at="HEAD", since=True):
     """{lineage: {id, version, verdict, commit, files}} for each lineage (a claim@1 one not retired) whose effective
     version has a pinned acceptance: the comparison of the acceptance that is freshest, against commit `at` (a resolved
-    id or HEAD)."""
+    id or HEAD). With `since` false no history is read: the verdicts are the same, a changed file's detail empty."""
     done = pinned(rep)
     if not done:
         return {}
@@ -119,10 +119,14 @@ def drift(rep, root, at="HEAD"):
     out, memo = {}, {}
     for L in sorted(covered(rep, done)):
         eff = rep["lineages"][L]["effective"]
-        seen = [(x, compare(root, x, files, head, where, at, memo) if rule == C.CLOSURE else
+        # the freshest acceptance is chosen by verdicts alone, which read no history: only its rows read when each
+        # file changed (first_change), the costly part, and not those of the acceptances it outranks
+        seen = [(x, files, rule, compare(root, x, files, head, where, at, memo, since=False) if rule == C.CLOSURE else
                  [("UNKNOWN", "", "the acceptance names its test and mutated files, not the import closure they ran")])
                 for x, files, rule in done[eff]]
-        x, rows = min(seen, key=lambda s: RANK[_verdict(s[1])])
+        x, files, rule, rows = min(seen, key=lambda s: RANK[_verdict(s[3])])
+        if rule == C.CLOSURE and since:
+            rows = compare(root, x, files, head, where, at, memo)
         out[L] = {"id": _name(rep, L, eff), "version": eff, "verdict": _verdict(rows), "commit": x,
                   "files": [{"verdict": v, "path": p, "detail": d} for v, p, d in rows]}
     return out
@@ -159,9 +163,11 @@ def checkout(root, at="HEAD"):
 
 def gate(rep, root, at="HEAD"):
     """`rep` with the reliance of each claim whose acceptances are all stale set to STALE (and its drift kept under
-    `drift`): an ELIGIBLE lineage only, and with what it read under `checkout`. Returns the drift answer."""
+    `drift`): an ELIGIBLE lineage only, and with what it read under `checkout`. Returns the drift answer, read with no
+    history (when each file changed is `warrant drift`'s to say): every read of a store passes here, and the verdicts
+    alone decide reliance."""
     rep["checkout"] = checkout(root, at)
-    d = drift(rep, root, at)
+    d = drift(rep, root, at, since=False)
     for L, x in d.items():
         lin = rep["lineages"][L]
         lin["drift"] = x["verdict"]
