@@ -2936,6 +2936,36 @@ def asked_cases():
           and f3["attest"] == [] , (f3, rep3["versions"][done]["guard"]))
 
 
+def across_checkout_cases():
+    """One store (one rules@1 identity) cloned at two checkouts is two readings in across: the checkout decides STALE, so
+    neither Home name chooses the reliance (Codex 1ae0f910 on ec6d1ebe's closure); clones at one tree still count once."""
+    from warrant import across as AC
+    from warrant import gate as GT
+    from warrant import home as H
+    r, L = drift_repo()
+    r.put("alice", "schema", GT.RULES_SCHEMA)
+    r.put("bob", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES)
+    r.commit("rules genesis")
+    z = Path(tempfile.mkdtemp()) / "z"
+    git(r.root.parent, "clone", "-q", str(r.root), str(z))
+    same = Path(tempfile.mkdtemp()) / "same"
+    git(r.root.parent, "clone", "-q", str(r.root), str(same))
+    (z / "lib" / "code.py").write_text("X = 2\n")
+    git(z, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "the mutated file changes in this clone")
+    def rows(*places):
+        doc = H.empty()
+        for name, path in places:
+            doc = H.add_repository(doc, str(path), name)
+        out = AC.answer(AC.home_readings(doc), {"query": "rests", "target": L})
+        return out, sorted((v.get("store"), v.get("reliance")) for n in out["nodes"] if n["id"] == L for v in n.get("in", []))
+    two, got = rows(("a", r.root), ("z", z))
+    once, got1 = rows(("a", r.root), ("same", same))
+    check("RV6 one identity at two checkouts stays two readings, each with the reliance its own checkout gives (ELIGIBLE "
+          "and STALE), while clones at one tree count once (read_as)",
+          len(two["stores"]) == 2 and got == [("a", "ELIGIBLE"), ("z", D.STALE)]
+          and len(once["stores"]) == 1 and once["stores"][0].get("read_as") == ["a", "same"], (got, got1, two["stores"]))
+
+
 def status_brakes_cases():
     """`warrant status` shows the gate's brakes still open at HEAD (no network) and whether each can still be reverted
     exactly; a merge whose files changed again since cannot, and status says so instead of leaving the veto implied."""
@@ -3022,6 +3052,7 @@ if __name__ == "__main__":
         roadmap_cases,
         schemas_due_cases,
         status_brakes_cases,
+        across_checkout_cases,
         cli_cases,
         chain_join_cases,
         home_cases,
