@@ -1,0 +1,183 @@
+# Codex roadmap verdict evidence: G3 head coverage
+
+Base M: 26ca883d1f027a8326d93afe25d287ccbde1f60a
+Duty D: 8f3e08333f0f26c1d8dc784c2f2da5e89d0320e341f0a5459b7b981c150a59b4
+Version T: 1a0051aad221ab3d13d51cad9ecf8d73b80be58c0e6b62059616f8e5aa48181b
+Actor: codex
+
+Verdict: challenge. The owed replay at every recorded PR head is not done.
+
+## Counterexample at M
+
+A finding targets a first PR head whose code.py says X = 1. Before that replay succeeds, the author pushes a second recorded head changing X to 2. Both finding/head pairs are due according to warrant.review.to_replay. warrant.review.replay (lines 145-151) silently skips the first head because its code_tree differs from the current checkout. It runs only the second head's test. After that observation is present, the runner returns successfully with empty stdout, although to_replay still lists the first head. There is no jail denial, timeout or test-application failure in this case.
+
+The waker treats a successful return without denied findings as complete (waker.py:643-648), and cover (700-708) marks the older failed replay covered_by the new branch head, without checking which finding/head pairs were actually observed. wake_after_replay (1315-1326) then wakes with gap=None. Thus the failure at the original head has neither a checker observation nor an incomplete-replay disclosure. T explicitly claims that a complete later replay covers earlier failed ones; that is false when their code differs. D also requires the finding test replayed at each head. The denied-test residual in T does not cover this case.
+
+The unsigned controls run the same test against the old and fixed code: reproduces at X=1, does_not_reproduce at X=2. Existing R02 tests enumerate both pairs but do not test that both are executed through the waker.
+
+## Probe boundary
+
+The script below executes the actual replay function and run_test on a local fixture repository. Its signer is a public-only SimpleNamespace with no seed or signing method; repo.file is intercepted and only collects unsigned proposed attest records. The next report includes the one collected observation in memory, modeling its successful publication. The waker's publication boundary is simulated with _replay return values; its actual replay, cover, memo and wake_after_replay methods are used. No checker key is read, no replay attest is signed, no real jail, GitHub push or network delivery is exercised. Fixture input records use the deterministic test actors from tests/world.py. All fixture and scratch files are outside the review worktree.
+
+A repair must track coverage by finding/head pair and replay missing pairs at their own commits (or preserve and disclose them as unobserved, with the obligation's scope explicitly resolved). Merely suppressing cover still leaves the per-head execution gap. A regression should change code between the targeted and successor heads and verify that the old reproducing result is obtained, rather than accepting a successful process exit or empty output as full coverage.
+
+## Checks
+
+- HEAD and origin verified; roadmap due --actor codex --json and MCP context match D, T, G3, no subject/requires; guard PENDING for one roadmap/acceptor. MCP workspace binds the configured codex key and roles.
+- Read the six cited PR descriptions and verified their merge commits are ancestors of M; inspected merged review, waker and ledger code and associated tests/mutants. T's evidence 1188548c... is the pr-head@1 root for #495, not a blob.
+- Focused tests/tools_test.py sections review_cases, review_join_cases, ledger_cases: 22 cases pass.
+- integrations/warrant-review/test_plugin.py: 46 PASS, 0 FAIL.
+- roadmap check: 110 lineages, 0 problems; claims check: 143 live claims, 0 problems.
+- Mutants P43, P44, P45, P46, P47, P48: 6/6 KILLED by their own W26-W29 cases, using the repository harness with scratch copies redirected outside the worktree.
+- Unsigned counterexample below reproduces at M. Full repository suites, live waker execution and historical checker attests were not re-executed.
+
+## Reproduction
+
+Save the following script outside the checkout and run with this checkout path as its argument; set TMPDIR to that external work directory and PYTHONDONTWRITEBYTECODE=1.
+
+```python
+"""Unsigned probe: actual replay runner, inert signer, record collection only.
+Run: python3 -B head_coverage_probe.py /path/to/warrant
+Only fixture actors sign fixture input. No replay attest is signed or stored.
+"""
+import contextlib
+import importlib.util
+import io
+import json
+from pathlib import Path
+import sys
+from types import SimpleNamespace
+
+ROOT = Path(sys.argv[1]).resolve()
+sys.path[:0] = [str(ROOT), str(ROOT / 'tests')]
+from world import Repo, KEYS, git
+from warrant import review as RV
+from warrant import repo as RP
+
+r = Repo(git_init=True)
+(r.root / 'tests').mkdir()
+(r.root / 'code.py').write_text('X = 1\n')
+x1 = r.commit('first code head')
+D = r.entity('alice', 'pr-head@1', {'state':'open','repository':'s0fractal/warrant','pr':7,'title':'fixture','serves':[]})
+h1 = r.entity('alice','pr-head@1',{'state':'head','commit':x1,'tree':git(r.root,'rev-parse',x1+'^{tree}')},lineage=D)
+patch = '''diff --git a/tests/head_coverage_test.py b/tests/head_coverage_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/head_coverage_test.py
+@@ -0,0 +1,4 @@
++import sys
++sys.path.insert(0, ".")
++import code
++print(("FAIL " if code.X == 1 else "ok   ") + "F1 X must be two")
+'''
+f = r.put('bob','challenge',{'target':h1,'statement':'P2 X must be two','severity':'P2','what':'fixture defect',
+ 'where':['code.py:1'],'commit':x1,'tree':git(r.root,'rev-parse',x1+'^{tree}'),
+ 'test':{'file':'head_coverage_test','case':'F1','patch':patch}},'finding@1',refs=[h1])
+(r.root / 'code.py').write_text('X = 2\n')
+x2 = r.commit('fix in second head')
+h2 = r.entity('alice','pr-head@1',{'state':'head','commit':x2,'tree':git(r.root,'rev-parse',x2+'^{tree}')},lineage=h1)
+r.trust['keys'][RV.REPLAYER] = [KEYS['dave'].public]
+r.profile['roles']['replayer'].append(RV.REPLAYER)
+r.write_config()
+# Match the actual branch after an author's pushed records-only commit.
+branch_head = r.commit('second head version')
+rp = RP.Repo(r.root)
+rep = rp.report()
+expected = [h for c,h,_ in RV.to_replay(rep,{RV.REPLAYER,'carol'}) if c == f]
+collected = []
+def collect(actor, unused_signer, records):
+    assert actor == RV.REPLAYER
+    collected.extend(records)
+    return ['0'*64 for _ in records]
+rp.file = collect
+# Only a public identifier, no seed or signing method. Every attempted write is intercepted.
+public_only = SimpleNamespace(public=KEYS['dave'].public)
+stdout = io.StringIO()
+with contextlib.redirect_stdout(stdout):
+    RV.replay(rp, public_only)
+observed = [v['body']['on'] for v in collected]
+missing = [h for h in expected if h not in observed]
+# Model only the successful publication of the collected attest in the next report.
+# The report input is in memory; the replay signer remains inert, and no replay is signed.
+rep['_recs']['0'*64] = collected[0]
+rp.report = lambda: rep
+second_stdout = io.StringIO()
+with contextlib.redirect_stdout(second_stdout):
+    RV.replay(rp, public_only)
+assert len(collected) == 1 and second_stdout.getvalue() == ''
+remaining = [h for c,h,_ in RV.to_replay(rep,{RV.REPLAYER,'carol'}) if c == f]
+assert remaining == [h1]
+# Independent control: run the same test at the original code commit, unsigned.
+git(r.root,'checkout','--quiet',x1,'--','code.py')
+old_verdict = RV.run_test(r.root,'head_coverage_test','F1',patch)
+git(r.root,'checkout','--quiet',branch_head,'--','code.py')
+new_verdict = RV.run_test(r.root,'head_coverage_test','F1',patch)
+# Feed the actual runner's successful return (no jail denial or exception) to the waker.
+spec = importlib.util.spec_from_file_location('coverage_waker', ROOT/'integrations/warrant-review/waker/waker.py')
+W = importlib.util.module_from_spec(spec); spec.loader.exec_module(W)
+w = object.__new__(W.Waker)
+w.home = r.home/'memo'; (w.home/'replays').mkdir(parents=True)
+w.repository = 's0fractal/warrant'; w.clock=lambda:100
+w.tree=lambda base:'fixture-code'; w.seed=lambda tree:('review-replayer', b'not used')
+w._replay=lambda *args:(True,'replay: 1 observation pushed (publication boundary simulated)')
+old_memo = w.home/'replays'/('7-'+x1+'.json')
+old_memo.write_text(json.dumps({'pr':7,'head':x1,'attempts':[{'ok':False,'finished':0,'line':'replay failed: exit 75'}]}))
+w.replay({'pr':7,'head':branch_head},'b'*40)
+covered = json.loads(old_memo.read_text()).get('covered_by')
+# A subsequent replay at the records-only pushed head has empty stdout, as above.
+w._replay=lambda *args:(False,'replay: nothing to replay')
+next_head = 'f'*40
+w.replay({'pr':7,'head':next_head},'b'*40)
+gaps=[]
+w.wake=lambda a,gap:(gaps.append(gap),'woken')
+W.wake_after_replay(w,{'pr':7,'head':next_head})
+print(json.dumps({'expected_head_versions':expected,'collected_observations':observed,'missing':missing,
+ 'original_head_control':old_verdict,'fixed_head_control':new_verdict,'checker_stdout':stdout.getvalue(),'second_checker_stdout':second_stdout.getvalue(),'still_due':remaining,
+ 'older_failed_replay_covered_by':covered,'reviewer_gaps':gaps,'signed_replay_records':0},indent=2))
+assert expected == [h1,h2] and observed == [h2] and missing == [h1]
+assert old_verdict == 'reproduces' and new_verdict == 'does_not_reproduce'
+assert covered == branch_head and gaps == [None]
+print('FAIL F1 original head remains unobserved, but successful later replay covers the failed replay and wakes with no gap')
+```
+
+## Observed output
+
+```text
+{
+  "expected_head_versions": [
+    "30c051d791d2988c0f426eb6261b5d964a64a4d85c06b964141bd159600d7a84",
+    "c004fa97999cdef715597c8a3aa9e101b678d2dfec022bbafb6977d0a2a45e3b"
+  ],
+  "collected_observations": [
+    "c004fa97999cdef715597c8a3aa9e101b678d2dfec022bbafb6977d0a2a45e3b"
+  ],
+  "missing": [
+    "30c051d791d2988c0f426eb6261b5d964a64a4d85c06b964141bd159600d7a84"
+  ],
+  "original_head_control": "reproduces",
+  "fixed_head_control": "does_not_reproduce",
+  "checker_stdout": "0000000000000000000000000000000000000000000000000000000000000000 does_not_reproduce facc185e7769 on c004fa97999c\n",
+  "second_checker_stdout": "",
+  "still_due": [
+    "30c051d791d2988c0f426eb6261b5d964a64a4d85c06b964141bd159600d7a84"
+  ],
+  "older_failed_replay_covered_by": "caeda29b7b752485311b3a8b13aac19f935de759",
+  "reviewer_gaps": [
+    null
+  ],
+  "signed_replay_records": 0
+}
+FAIL F1 original head remains unobserved, but successful later replay covers the failed replay and wakes with no gap
+```
+
+## Mutant output
+
+```text
+P43 KILLED integrations/warrant-review/waker/waker.py by integrations/warrant-review/test_plugin.py ['W26']
+P44 KILLED integrations/warrant-review/waker/waker.py by integrations/warrant-review/test_plugin.py ['W27']
+P45 KILLED integrations/warrant-review/waker/waker.py by integrations/warrant-review/test_plugin.py ['W27']
+P46 KILLED integrations/warrant-review/waker/waker.py by integrations/warrant-review/test_plugin.py ['W28']
+P47 KILLED integrations/warrant-review/waker/waker.py by integrations/warrant-review/test_plugin.py ['W29']
+P48 KILLED integrations/warrant-review/waker/waker.py by integrations/warrant-review/test_plugin.py ['W29']
+6 of 6 killed
+```
