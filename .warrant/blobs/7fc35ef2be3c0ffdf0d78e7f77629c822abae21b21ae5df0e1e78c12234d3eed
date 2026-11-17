@@ -1,0 +1,117 @@
+# Codex verdict on the G10 merger-authority review closure
+
+Repository: s0fractal/warrant
+Base M: ca80360fbaa1ded02e13c27edd45a66a5ae959e4
+Obligation D: 549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f
+Version T: 015e51b28d9837ec117495fff5dd0294840b00b7d6d1737335e576804917a2f8
+Reviewer and signer: codex
+Verdict: challenge; no acceptance.
+
+## P1: The owner brake cannot merge the exact revert of a rules change
+
+Observed on M. The rules@1 projection gate added after the original #350/#356 changes now breaks their post-merge brake for .warrant/v3.json. This is a current integration failure, not a claim that this rules@1 interaction existed at 8278d4a3 or a311e2b8.
+
+At warrant/gate.py:720, _shared adds rules_reasons before _review recognizes the gate's exact revert. At warrant/gate.py:780-784, rules_reasons compares the reverted file with the newest rules@1 version still in the preserved store. open_revert (1266-1298) and revert_plan keep all signed records, so the rule version being undone remains in force. The revert is recognized as exact (facts.revert is its merge) but remains ineligible solely with RULES_PROJECTION. enforce_brakes then also regards it as pending (1445), leaving a blocked revert rather than restoring the prior rules.
+
+The fixture first admits a valid constitutional change with green checks and the owner present, changing only an existing actor's replayer role in v3.json and filing its proper rules@1 successor. It merges with an open brake. The owner's hold on the original PR is recognized. The gate's own revert_plan is applied byte for byte to a single-parent bot-authored revert PR from the same repository; records remain intact, no path changed again, and its checks are green. Expected: that exact revert is eligible. Actual: exact_revert=true, eligible=false, only RULES_PROJECTION, zero rejected records and zero store problems.
+
+Control: the same construction reverting AGENTS.md, with the same rules genesis, is eligible. Diagnostic control: temporarily disabling only rules_reasons in the in-memory interpreter makes the exact trust revert eligible too. This diagnostic isolates the cause; it is not a proposed fix or a change to this repository.
+
+Impact: a timely owner veto cannot automatically undo a trust/profile change even when an exact nonconflicting revert exists. This differs from the named residual about a path changed again or records losing authenticity after restoring old trust: no added key, no authentication failure and no path conflict are needed here. The owner-brake contract from #356 and AGENTS.md rule 1 therefore does not hold for constitutional rules changes at M. Repair through an ordinary constitutional PR with a regression and a failing mutant, preserving signed history and an honest rules projection. No implementation was changed in this review.
+
+## Scope and checks
+
+- Re-resolved HEAD=M and ran warrant.roadmap due --actor codex --json; D/T, G10, evidence, refs, null subject and empty requires match the waker's input.
+- Worktree-specific MCP workspace confirms signer codex and roadmap/acceptor; context confirms T pending only one roadmap acceptance with no open requirement and no challenge before this verdict.
+- Read docs/AGENT.md, docs/V3.md and docs/REPOSITORY.md; reviewed the named five-file diff 9e183284..8278d4a3, current gate implementation and configuration, and follow-up changes 58e3cc74, 7ebf68c7 and a311e2b8. tools/gate.py is an unchanged shim in this range.
+- Read GitHub metadata and descriptions for #350, #356 and #365; merge commits match the supplied references. #350 was merged 2026-11-12T23:43:46Z.
+- T's evidence d0ff0fb75c8b28b319e992304cb48a2f8707464e30c0859b1617255aef4734ea resolves to the signed PR #365 head-version record, not a blob; its commit is 820c96d64f97efcb5b7fe53270c021848a65c16d.
+- Current complete gate suite: 111 passing cases; tools: 213; core: 73; zero failures.
+- Selected existing mutants G85,G86,G93,G94,G95,G96,G97: 7/7 KILLED, each by its named case (E74,E75,E80,E81,E82,E83,E70 respectively), with the repository's harness, one worker, copied source and fixtures confined to this review's working directory. This supports the prior fixes, not the new brake/rules composition.
+- roadmap check: 102 lineages, 0 problems. claims check: 143 live claims, 0 problems (before filing; repeated after filing in the final report).
+- New unsigned fixture probe: FAIL F1 on M. Full source and observed output below. All Git mutations are to temporary fixture repositories; GitHub PR metadata and green checks are simulated in the probe. No live merge, hold label, workflow or revert was requested.
+- Not run: the full mutant collection, all other suites, historical whole-environment replay, or live GitHub mutation. No general security-audit claim is made.
+
+## Reproduction
+
+At M, save the following source outside the checkout (for this run: ~/.warrant/work/codex/015e51b28d98/trust_revert_probe.py), then run from the checkout:
+
+    TMPDIR=$HOME/.warrant/work/codex/015e51b28d98 python3 $HOME/.warrant/work/codex/015e51b28d98/trust_revert_probe.py
+
+Expected regression exit: 0. Observed exit: 1, FAIL F1. No source patch is applied.
+
+```python
+import json, sys, time
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / 'tests'))
+from gate_test import PR, PRES, GT, green, git
+
+def genesis(p):
+    p.r.profile['roles']['pr/acceptor'] = ['alice','bob']
+    p.r.write_config()
+    p.r.put('alice','schema',GT.RULES_SCHEMA)
+    p.g = p.r.put('alice','entity',dict(json.loads((p.r.dot/'v3.json').read_text()),state='in force'),GT.RULES)
+
+def change(p):
+    p.r.profile['roles']['replayer'].append('eve')
+    p.r.write_config()
+    p.n = p.r.put('alice','entity',dict(json.loads((p.r.dot/'v3.json').read_text()),state='in force'),GT.RULES,lineage=p.g)
+
+def run(trust):
+    p = PR(before_base=genesis,before_x=change if trust else lambda p: (p.r.root/'AGENTS.md').write_text('changed\n'),merge=PRES)
+    now=int(time.time())
+    original = p.assess(checks=green(p.head,completed=now-1),now=now,present=True)
+    assert original.eligible, original.reasons
+    git(p.r.root,'checkout','-q','master')
+    git(p.r.root,'merge','-q','--no-ff','feature','-m',f'Merge #7\n\nwarrant-gate brake until {now+3600}: #7 head version {p.head_v}')
+    base=git(p.r.root,'rev-parse','HEAD')
+    b=GT.Base(p.r.root,base)
+    class Held:
+        def pull(self, n): return {'labels':['hold']}
+    base_snap,_=GT.store_at(p.r.root,base)
+    base_rep=GT.assess_snapshot(b,base_snap)
+    brake=GT.brakes(p.r.root,base,now=now)[0]
+    veto=GT.vetoed(b,base_rep,Held(),brake)
+    assert veto is not None
+    plan,err=GT.revert_plan(p.r.root,base,base)
+    assert err is None,err
+    git(p.r.root,'checkout','-q','-b',f'gate/revert/7-{base[:12]}')
+    for e in plan:
+        f=p.r.root/e['path']
+        if e['sha'] is None: f.unlink()
+        else:
+            f.parent.mkdir(parents=True,exist_ok=True)
+            f.write_bytes(GT.objects(p.r.root,[e['sha']])[e['sha']])
+            f.chmod(0o755 if e['mode']=='100755' else 0o644)
+    rh=p.r.commit(f'Revert #7\n\nwarrant-gate revert of {base}')
+    pr={'number':8,'state':'open','draft':False,'base':'master','head':rh,'labels':[], 'branch':f'gate/revert/7-{base[:12]}','head_repo':'s0fractal/warrant','author':'github-actions[bot]'}
+    a=GT.assess(p.r.root,b,pr,green(rh,completed=now),now=now)
+    snap,_=GT.store_at(p.r.root,rh)
+    rep=GT.assess_snapshot(b,snap)
+    print(json.dumps({'trust_change':trust,'veto':veto,'original_eligible':original.eligible,'plan_paths':[e['path'] for e in plan], 'exact_revert':a.facts.get('revert')==base,'eligible':a.eligible,'reasons':a.reasons,'store_rejected':len(rep['rejected']),'store_problems':rep['problems']}))
+    saved=GT.rules_reasons
+    try:
+        GT.rules_reasons=lambda *args: []
+        diagnostic=GT.assess(p.r.root,b,pr,green(rh,completed=now),now=now)
+        print(json.dumps({'diagnostic_only_rules_gate_disabled':True,'trust_change':trust,'eligible':diagnostic.eligible,'reasons':diagnostic.reasons}))
+    finally:
+        GT.rules_reasons=saved
+    return a
+control=run(False)
+assert control.eligible
+trust=run(True)
+print(('ok   F1' if trust.eligible else 'FAIL F1')+' the owner brake must merge the exact revert of a rules change while preserving signed history')
+sys.exit(0 if trust.eligible else 1)
+
+```
+
+Observed output:
+
+```text
+{"trust_change": false, "veto": "the label 'hold' on #7", "original_eligible": true, "plan_paths": ["AGENTS.md", "code.py"], "exact_revert": true, "eligible": true, "reasons": [], "store_rejected": 0, "store_problems": []}
+{"diagnostic_only_rules_gate_disabled": true, "trust_change": false, "eligible": true, "reasons": []}
+{"trust_change": true, "veto": "the label 'hold' on #7", "original_eligible": true, "plan_paths": [".warrant/v3.json", "code.py"], "exact_revert": true, "eligible": false, "reasons": [["RULES_PROJECTION", ".warrant/v3.json at the head is not the rules@1 version in force, 81fbef015d81: the file changed without a version of the rules, or a version names other rules than the file"]], "store_rejected": 0, "store_problems": []}
+{"diagnostic_only_rules_gate_disabled": true, "trust_change": true, "eligible": true, "reasons": []}
+FAIL F1 the owner brake must merge the exact revert of a rules change while preserving signed history
+
+```
