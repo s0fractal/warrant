@@ -67,7 +67,8 @@ class PR:
         self.x = self.r.commit("the change")
         self.root_v = self.r.entity("alice", "pr-head@1", {"state": "open", "repository": REPO, "pr": 7, "title": "t"})
         self.head_v = self.r.entity("alice", "pr-head@1", {"state": "head", "commit": self.x,
-                                                           "tree": git(self.r.root, "rev-parse", f"{self.x}^{{tree}}")}, lineage=self.root_v)
+                                                           "tree": git(self.r.root, "rev-parse", f"{self.x}^{{tree}}")}, lineage=self.root_v,
+                                    requires=getattr(self, "head_requires", ()))
         self.h1 = self.r.commit("head version")
         if accept:
             self.r.attest("bob", self.head_v)
@@ -780,6 +781,15 @@ def constitution_cases():
           codes(early) == {"NO_ACCEPT"} and late.eligible and late.facts.get("solo") and late.accept[0] == "alice"
           and not nobody.eligible and "OWNER_VETO" in codes(vetoed) and not vetoed.eligible and codes(plain) == {"NO_ACCEPT"},
           (early.reasons, late.reasons, nobody.reasons, vetoed.reasons, plain.reasons))
+    def open_duty(p):
+        acceptors("bob", "alice")(p)
+        p.head_requires = [p.r.entity("alice", "obligation@1", {"state": "open", "statement": "not closed yet", "serves": []})]
+    w = PR(merge=SOLO, accept=False, before_base=open_duty)
+    wh = git(w.r.root, "rev-parse", "HEAD")
+    waits = w.assess(checks=green(wh, completed=NOW - 500 * 3600), now=NOW)
+    check("E64b a head version whose guard requires a lineage still open is not merged solo, however long its window: "
+          "the solo rule waives a missing acceptance, never an open requirement (Codex deb8cccb)",
+          not waits.eligible and "REQUIRES_OPEN" in codes(waits) and not waits.facts.get("solo"), waits.reasons)
 
     class GH:
         def __init__(self, old=()):

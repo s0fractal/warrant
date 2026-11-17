@@ -1057,6 +1057,9 @@ def _verdict(a, b, rep, lin, x):
                           + ", ".join(f[:12] for f in findings)))
     if v["guard"] != "MET" or not by:
         a.reasons.append(("NO_ACCEPT", f"the head version {lin['leaf'][:12]} is {v['guard']}: " + "; ".join(v["waiting"])[:200]))
+    if v.get("open"):                   # a lineage the head's guard requires is still open: no solo window waives it
+        a.reasons.append(("REQUIRES_OPEN", f"the head version {lin['leaf'][:12]} requires lineage(s) still open: "
+                          + ", ".join(L[:12] for L in v["open"]) + " (Codex deb8cccb)"))
     a.accept = (by[0], lin["leaf"], x) if by else None
 
 
