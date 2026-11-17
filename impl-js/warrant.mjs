@@ -405,16 +405,17 @@ function assigned14(cp) {
   }
   return false;
 }
-const EDGE = /^[\p{Zs}\p{Zl}\p{Zp}]$/u;
+// Cc and the white space outside it (Zs, Zl, Zp) as Unicode 14.0.0 has them, carried as warrant/shapes.py carries them
+// (CONTROL14, SPACE14), not read from the runtime's tables (Codex 4fba55d3).
+const SPACE14 = new Set([0x20, 0xa0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000]);
+const control14 = (cp) => cp <= 0x1f || (cp >= 0x7f && cp <= 0x9f);
 export function isActor(v) {
   if (!(isStr(v) && v.length > 0 && cpLen(v) <= 200)) return false;
   for (const c of v) if (!assigned14(c.codePointAt(0))) return false;
   if (v.normalize("NFC") !== v) return false;
-  if (/\p{Cc}/u.test(v)) return false;
-  const first = String.fromCodePoint(v.codePointAt(0));
-  let last = v[v.length - 1];
-  if (v.length > 1 && /[\udc00-\udfff]/.test(last) && /[\ud800-\udbff]/.test(v[v.length - 2])) last = v.slice(-2);
-  return !(EDGE.test(first) || EDGE.test(last));
+  for (const c of v) if (control14(c.codePointAt(0))) return false;
+  const cps = [...v];
+  return !(SPACE14.has(cps[0].codePointAt(0)) || SPACE14.has(cps[cps.length - 1].codePointAt(0)));
 }
 function isList(v, item, sortedToo = false) {
   if (!Array.isArray(v) || !v.every((x) => item(x))) return false;

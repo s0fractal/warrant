@@ -21,8 +21,17 @@ QREF = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})\Z")  # NOSONAR S6353: \d w
 # A citation of a record in another store: "<store>:<record id>"; the store is a name a repository or a Home gives it.
 CITATION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,127}:[0-9a-f]{64}\Z")
 MAX_ACTOR = 200
-# Unicode White_Space outside Cc (Cc is refused anywhere in an actor id): Zs, Zl, Zp.
-EDGE_SPACE = ("Zs", "Zl", "Zp")
+# The two categories an actor id is checked for, carried as Unicode 14.0.0 has them (Codex 4fba55d3: the interpreter's
+# category tables are not the format's): Cc, refused anywhere, and the white space outside Cc (Zs, Zl, Zp), refused at
+# either end. tests/shapes_test.py holds both against the interpreter (S10: equal under 14.0.0 and every later version
+# measured, Python 3.11 to 3.15).
+CONTROL14 = ((0x00, 0x1F), (0x7F, 0x9F))
+SPACE14 = frozenset((0x20, 0xA0, 0x1680, *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000))
+
+
+def control14(cp):
+    """Whether code point `cp` is a control character (General_Category Cc) in Unicode 14.0.0."""
+    return any(a <= cp <= b for a, b in CONTROL14)
 
 # ---------------------------------------------------------------- the Unicode version actor ids are read under
 # The format fixes Unicode 14.0.0 for actor ids (docs/V3.md §2, `actor`) so that every receiver gives the same verdict
@@ -83,9 +92,9 @@ def actor_problem(v):
         return "must use only code points assigned in Unicode 14.0.0"
     if not unicodedata.is_normalized("NFC", v):
         return "must be in Unicode NFC"
-    if any(unicodedata.category(c) == "Cc" for c in v):
+    if any(control14(ord(c)) for c in v):
         return "must not contain a control character"
-    if unicodedata.category(v[0]) in EDGE_SPACE or unicodedata.category(v[-1]) in EDGE_SPACE:
+    if ord(v[0]) in SPACE14 or ord(v[-1]) in SPACE14:
         return "must not begin or end with white space"
     return None
 

@@ -119,6 +119,13 @@ def main():
           "actor ids use only code points assigned in Unicode 14.0.0, the format's version, checked first so the reason "
           "is one on every interpreter: U+0870 (new in 14.0) is an actor; U+16D67 twice (16.0, minds #94), U+1FAE8 "
           f"(15.0), U+31350 (15.0), an unassigned and a noncharacter are not, nor one also not in NFC; the carried table ({how})", (reasons, len(spans)))
+    cc = {c for c in range(0x110000) if unicodedata.category(chr(c)) == "Cc"}
+    zs = {c for c in range(0x110000) if unicodedata.category(chr(c)) in ("Zs", "Zl", "Zp")}
+    carried_cc = {c for a, b in S.CONTROL14 for c in range(a, b + 1)}
+    check("S10", carried_cc == cc and set(S.SPACE14) == zs and not S.is_actor("a\x85b") and not S.is_actor("codex\u3000")
+          and S.is_actor("co\u3000dex"),
+          "the categories an actor id is checked for are carried as Unicode 14.0.0 has them (Codex 4fba55d3), not read from "
+          f"the interpreter: Cc and Zs/Zl/Zp equal this interpreter's {unicodedata.unidata_version} sets", (len(cc), sorted(zs)))
     found = hex_patterns()
     outside = sorted({(f, p) for f, p in found if f != "warrant/shapes.py"} - OTHER_SHAPES)
     dollar = sorted((f, p) for f, p in found if p.endswith("$"))
