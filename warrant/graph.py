@@ -245,9 +245,11 @@ def impact(rep0, rep1):
     for L in sorted(touched):
         rep = rep1 if L in rep1["lineages"] else rep0
         lin = rep["lineages"][L]
-        rests = sorted({lineage_of(rep, n["id"]) for n in why(rep, L)["nodes"]} - {None, L})
+        w = why(rep, L)
+        rests = sorted({lineage_of(rep, n["id"]) for n in w["nodes"]} - {None, L})
+        # `complete` false: the walk stopped at MAX_NODES and more rests on it than listed (Codex 78eb7170)
         out.append({"lineage": L, "schema": lin["schema"], "state": lin["state"], "reliance": lin["reliance"],
-                    "gone": L not in rep1["lineages"], "rests_on_it": rests})
+                    "gone": L not in rep1["lineages"], "rests_on_it": rests, "complete": w["complete"]})
     return {"delta": d, "lineages": out}
 
 

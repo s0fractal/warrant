@@ -782,6 +782,11 @@ def carrying_answers():
     check("W27", same == [] and len(moved) == 1 and "replayed at bbbb" in moved[0] and w.pending(4, "b" * 40) and not w.pending(4, "a" * 40),
           "a pull request not due (it was reviewed) with a replay skipped at an older base is retried at the current one, "
           "and only then: pending and retry_lines read the base too (Codex 9bf00420)")
+    two_skips = {"base": "b" * 40, "attempts": [dict(memo["attempts"][0], finished=0), dict(memo["attempts"][0], finished=1),
+                                                 {"finished": 2, "ok": False, "line": "replay failed: exit 75"}]}
+    check("W28", w.replay_state(two_skips, "b" * 40)[0] == "waiting" and w.replay_state(dict(two_skips, attempts=two_skips["attempts"][:2]), "c" * 40)[0] == "retry",
+          "a skip is no checker run: after two skips at earlier bases one real failure waits for its backoff and is retried, "
+          "it does not give up (Codex 1a7a5d6e)")
 
 
 if __name__ == "__main__":

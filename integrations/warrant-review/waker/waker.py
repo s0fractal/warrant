@@ -660,8 +660,8 @@ class Waker:
         replay)."""
         if doc is None:
             return "retry", "first replay"
-        tries = doc["attempts"]
-        last = tries[-1]
+        last = doc["attempts"][-1]
+        tries = [t for t in doc["attempts"] if not t.get("skipped")]    # a skip is no checker run (Codex 1a7a5d6e)
         if last.get("ok") or doc.get("covered_by"):
             return "done", (last.get("line") or "replayed") + (f" (covered by the replay at {doc['covered_by'][:12]})"
                                                                if doc.get("covered_by") and not last.get("ok") else "")
@@ -669,6 +669,9 @@ class Waker:
             if base is not None and doc.get("base") != base:   # skipped at another base: what it lacked may be adopted
                 return "retry", f"skipped at base {str(doc.get('base'))[:12]}; the base moved (Codex 97b547fe)"
             return "skipped", last.get("line") or "replay skipped"
+        if not tries:                   # only skips so far, at other bases: the first real run
+            return "retry", "first replay at this base"
+        last = tries[-1]                # the backoff runs from the last real run, not from a skip
         if len(tries) >= MAX_TRIES:
             return GAVE_UP, f"replay incomplete: {len(tries)} checker runs failed, the last: {last.get('line')}"
         due_at = last.get("finished", 0) + BACKOFF * 2 ** (len(tries) - 1)

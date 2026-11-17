@@ -401,6 +401,7 @@ MUTANTS = [
     ("T322", "warrant_agent/api.py", '    data = G.impact(*reps) if op == "impact" else G.delta(*reps)', '    data = G.impact(*reps)', AGENT, ["A51"]),
     ("T323", "warrant/review.py", '        base, head = (git(root, "rev-parse", "--verify", f"{x}^{{commit}}") for x in (base, head or "HEAD"))', '        base, head = (git(root, "rev-parse", "--verify", f"{x}^{{commit}}") for x in (head or "HEAD", base))', AGENT, ["A51"]),
     ("T324", "tools/graph.py", '        a = G.answer(rep, {"op": "view", "name": n}, None, code)', '        a = G.answer(rep, {"op": "view"}, None, code)', TOOLS, ["DR25c"]),
+    ("T325", "warrant/graph.py", '"rests_on_it": rests, "complete": w["complete"]})', '"rests_on_it": rests, "complete": True})', TOOLS, ["DR17b"]),
     ("T307", "warrant/drift.py", '    d = drift(rep, root, at, since=False)\n', '    d = drift(rep, root, at)\n', TOOLS, ["DR33"]),
     ("T308", "warrant/drift.py", '        if rule == C.CLOSURE and since:\n', '        if rule == C.CLOSURE:\n', TOOLS, ["DR33"]),
     ("T309", "warrant/pins.py", '    if not since:\n        return ("CHANGED", p, "") if now else ("GONE", p, "")\n', '', TOOLS, ["DR33"]),
@@ -908,6 +909,7 @@ MUTANTS = [
     ("P43", "integrations/warrant-review/waker/waker.py", "            if base is not None and doc.get(\"base\") != base:", "            if False:", WAKER, ["W26"]),
     ("P44", "integrations/warrant-review/waker/waker.py", "        return any(self.replay_state(runs(json.loads(p.read_text())), base)[0]", "        return any(self.replay_state(runs(json.loads(p.read_text())))[0]", WAKER, ["W27"]),
     ("P45", "integrations/warrant-review/waker/waker.py", "            if doc is None or w.replay_state(doc, base)[0] in", "            if doc is None or w.replay_state(doc)[0] in", WAKER, ["W27"]),
+    ("P46", "integrations/warrant-review/waker/waker.py", '        tries = [t for t in doc["attempts"] if not t.get("skipped")]', '        tries = list(doc["attempts"])', WAKER, ["W28"]),
     ("P13", "integrations/warrant-review/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
     # warrant verify (warrant/verify.py, docs/VERIFY.md): a package assessed alone; the one-file verifier and its build
     ("UM01", VF, '"rely": bool(roots) and all(r["rely"] for r in roots.values())',
