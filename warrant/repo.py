@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from . import engine as E
+from . import sources as SRC
 from . import jcs as C
 from . import keys as K
 from . import records as R
@@ -59,8 +60,11 @@ class Repo:
         return doc["trust"], doc["profile"], doc["repository"]
 
     def view(self, snap=None):
+        """The store under its receiver; read now (no `snap`), with the sources .warrant/sources.json names beside it."""
         trust, profile, _ = self.config()
-        return E.View(snap if snap is not None else self.store.snapshot(), trust, profile)
+        if snap is None:
+            snap, _ = SRC.with_sources(self.root, self.store.snapshot(), SRC.config_doc(self.root))
+        return E.View(snap, trust, profile)
 
     def report(self, snap=None):
         v = self.view(snap)
