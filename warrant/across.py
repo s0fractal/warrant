@@ -87,19 +87,23 @@ class Reading:
             self.view = E.View(snap, trust, profile)
             self.rep = self.view.report()
             self.identity = G.identity(self.rep, snap)["identity"]
-            # one identity read under other rules is another reading: its key names the receiver too (Codex on #466),
-            # so two readings of one genesis never overwrite each other in root and lens
-            self.key = (f"rules@1:{self.identity}/{C.doc_id({'trust': trust, 'profile': profile})}" if self.identity
-                        else name)
             if root is not None:
                 self.rep["_recs"], self.rep["_basis"] = self.view.recs, self.view.basis
                 D.gate(self.rep, root)
                 del self.rep["_recs"], self.rep["_basis"]
+            # one identity read under other rules, or beside another checkout, is another reading: its key names the
+            # receiver and the checkout too (Codex on #466, and 1ae0f910: a checkout decides STALE), so two readings of
+            # one genesis never overwrite each other in root and lens, and no Home name chooses a reliance
+            self.key = (f"rules@1:{self.identity}/{C.doc_id(self.reading_of())}" if self.identity else name)
             self.problems = {}
             for code, i, _ in self.rep["problems"]:
                 self.problems.setdefault(i, []).append(code)
         except Exception as e:           # NOSONAR S112: one store's failure of any kind is named, and never stops the others
             self.why = f"{getattr(e, 'code', type(e).__name__)}: {e}"
+
+    def reading_of(self):
+        """What decides this reading besides the records: the receiver and the checkout the freshness gate read."""
+        return {"trust": self.view.trust, "profile": self.view.profile, "checkout": self.rep.get("checkout")}
 
     def holds(self, i):
         return i in self.view.snap.lines or i in self.view.snap.blobs
@@ -311,14 +315,14 @@ def _compose(snaps):
 
 def united(readings):
     """`readings` with each store read once (obligation ec6d1ebe; Codex on its closure): readings of one identity
-    (warrant.graph.identity) under one trust and profile are one reading of their records united,
+    (warrant.graph.identity) under one trust, profile and checkout are one reading of their records united,
     named by the first of their names, `read_as` all of them; the answer keys it by `rules@1:<identity>/<the
     receiver's digest>`. A store with
     no identity, or one store read under other rules, stays as read: other rules are another reading."""
     groups, out = {}, []
     for x in readings:
         if x.why is None and x.identity is not None:
-            groups.setdefault((x.identity, C.doc_id(x.view.trust), C.doc_id(x.view.profile)), []).append(x)
+            groups.setdefault((x.identity, C.doc_id(x.reading_of())), []).append(x)
         else:
             out.append(x)
     for xs in groups.values():
