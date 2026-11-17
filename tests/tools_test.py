@@ -966,6 +966,18 @@ def drift_impact_cases():
     check("DR25 `tools/graph.py impact BASE..HEAD` gives under `drift` the answer `warrant drift --impact BASE..HEAD` gives: "
           "one definition of what a change makes stale, read from the commits, with no harness run",
           g.get("drift") == m and "claims_by_mutated_file" not in g and roots == {"base": base, "head": head}, (g.get("drift"), m))
+    from warrant import gate as GT
+    from warrant import graph as G
+    _, droots, dq, dd = TG.ask(RP.Repo(r.root), "delta", [f"{base}..{head}"])
+    rep_b, rep_h = (RP.Repo(r.root).report(GT.store_at(r.root, c)[0]) for c in (base, head))
+    _, _, eq, dots = TG.ask(RP.Repo(r.root), "export", ["--format", "dot"])
+    graph_h = RP.Repo(r.root).report()["graph"]
+    check("DR25b `tools/graph.py delta BASE..HEAD` is warrant.graph.delta of the two commits' stores (its query names both "
+          "commits), and `export --format dot` names every node and edge of the record graph as Graphviz text",
+          dd == G.delta(rep_b, rep_h) and dq == {"op": "delta", "range": f"{base}..{head}"} and droots == {"base": base, "head": head}
+          and eq == {"op": "export", "format": "dot"} and dots.startswith("digraph warrant {\n") and dots.endswith("}\n")
+          and all(f'"{n[0]}" [label=' in dots for n in graph_h["nodes"]) and all(f'"{a}" -> "{b}" [label="{rel}"]' in dots for a, rel, b in graph_h["edges"]),
+          (dq, dots[:200]))
     (r.root / "README").write_text("unrelated again\n")
     later = r.commit("another unrelated change")
     m2 = D.impact(RP.Repo(r.root).report(), r.root, later, head)

@@ -82,6 +82,7 @@ def horizon_cases():
           and blind in hz and hz[blind] is None and G.horizon(RP.Repo(repo.root).report(), acc) == hz.get(acc), hz)
     seen_bounds()
     ground_cases()
+    graph_range_cases()
 
 
 def ground_cases():
@@ -97,6 +98,29 @@ def ground_cases():
           "with why), an open obligation resting on nothing is",
           gd.get("grounded") is False and gd.get("failing_count", 0) >= 1 and all(len(f) == 2 for f in gd.get("failing", []))
           and go == {"grounded": True, "failing": [], "failing_count": 0}, (gd, go))
+
+
+def graph_range_cases():
+    """graph op=impact and op=delta over BASE..HEAD of the workspace's checkout, op=export as JSON or DOT (obligation
+    8c856b3b, Codex 08a4f30b: the operations it names were missing from the agent's graph)."""
+    from warrant import gate as GT
+    repo = Repo(git_init=True)
+    o = repo.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    base = repo.commit("base")
+    done = repo.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+    head = repo.commit("closed")
+    cfg = cfg_of(repo)
+    rng = f"{base}..{head}"
+    imp, dl = (ok(api.call(cfg, "graph", {"workspace": "w", "op": op, "range": rng})) for op in ("impact", "delta"))
+    reps = [RP.Repo(repo.root).report(GT.store_at(repo.root, c)[0]) for c in (base, head)]
+    dot = ok(api.call(cfg, "graph", {"workspace": "w", "op": "export", "format": "dot"}))
+    bad = api.call(cfg, "graph", {"workspace": "w", "op": "delta", "range": "nothing"})
+    check("A51 graph op=impact and op=delta read the two commits' stores under the workspace's receiver (the root names "
+          "both); op=export gives DOT on request; a range that is not BASE..HEAD is refused",
+          dl.get("data") == G.delta(*reps) and [x["lineage"] for x in imp.get("data", {}).get("lineages", [])] == [o]
+          and dl.get("root", {}).get("base") == base and dl.get("root", {}).get("head") == head
+          and done in dl.get("data", {}).get("added", []) and str(dot.get("data", "")).startswith("digraph warrant {")
+          and bad.get("error") == "BAD_REQUEST", (imp, dl.get("root"), bad))
 
 
 def seen_bounds():

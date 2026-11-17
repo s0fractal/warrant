@@ -218,6 +218,17 @@ def delta(rep0, rep1):
             "lineages_removed": sorted(set(rep0["lineages"]) - set(rep1["lineages"]))}
 
 
+def dot(graph):
+    """The record graph (a report's `graph`: nodes [id, kind, schema, actor, at, basis], edges [from, rel, to]) as
+    Graphviz DOT text, nodes and edges in the report's order: full ids, a label of kind and schema, the relation on
+    each edge. Deterministic, as the JSON export is; labels are quoted with every `"` and `\\` escaped."""
+    q = lambda x: '"' + str(x).replace("\\", "\\\\").replace('"', '\\"') + '"'  # noqa: E731
+    out = ["digraph warrant {"]
+    out += [f"  {q(n[0])} [label={q(' '.join(str(x) for x in n[1:3] if x))}];" for n in graph["nodes"]]
+    out += [f"  {q(a)} -> {q(b)} [label={q(rel)}];" for a, rel, b in graph["edges"]]
+    return "\n".join(out + ["}"]) + "\n"
+
+
 def impact(rep0, rep1):
     """The lineages the records added or removed between two reports bear on (a version's own, an attest's or a
     challenge's target's), each with what rests on it in the later report (why), roots of other lineages only."""

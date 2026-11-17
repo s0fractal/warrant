@@ -8,6 +8,8 @@ Markdown views of the records as build artifacts.
     python3 tools/graph.py impact BASE..HEAD                 # the lineages the records changed between two commits
                                                              # bear on, and under `drift` the claims the range makes
                                                              # stale with what rests on them (warrant drift --impact)
+    python3 tools/graph.py delta BASE..HEAD                  # the records and lineages added, removed or changed
+    python3 tools/graph.py export [--format json|dot]        # the whole record graph (dot: Graphviz text)
     python3 tools/graph.py views [--check]                   # build/views/{CLAIMS,ROADMAP,REVIEWS,WITNESSES}.md
 
 A query's result is JSON: {root, lens, query, data}. `root` names the store read (its snapshot digest; with
@@ -25,7 +27,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from warrant import claims as CL           # noqa: E402
 from warrant import drift as DR            # noqa: E402
-from warrant import gate as GT             # noqa: E402
 from warrant import review as RV           # noqa: E402
 from warrant import roadmap as RM          # noqa: E402
 from warrant.repo import Failed, Repo, dump, main  # noqa: E402
@@ -61,16 +62,13 @@ def witnesses(rep):
     return "\n".join(out) + "\n"
 
 
+def range_reports(repo, rng):
+    base, head, s0, s1 = RV.range_snapshots(repo.root, rng)
+    return base, head, [repo.report(s0), repo.report(s1)]
+
+
 def impact(repo, rng):
-    base, _, head = rng.partition("..")
-    git = lambda *a: subprocess.run(["git", "-C", str(repo.root), *a], capture_output=True, text=True, check=True).stdout.strip()
-    base, head = git("rev-parse", "--verify", f"{base}^{{commit}}"), git("rev-parse", "--verify", f"{head or 'HEAD'}^{{commit}}")
-    reps = []
-    for c in (base, head):
-        snap, problems = GT.store_at(repo.root, c)
-        if problems:
-            raise Failed("STORE", f"{c[:12]}: {problems[:2]}")
-        reps.append(repo.report(snap))
+    base, head, reps = range_reports(repo, rng)
     d = G.impact(*reps)
     d["drift"] = DR.impact(reps[1], repo.root, head, base)    # the code side: one definition, no harness run
     return reps[1], {"base": base, "head": head}, d
@@ -98,6 +96,12 @@ def ask(repo, cmd, rest):
     if cmd == "impact" and rest:
         rep, roots, data = impact(repo, rest[0])
         return rep, roots, {"op": "impact", "range": rest[0]}, data
+    if cmd == "delta" and rest:
+        base, head, reps = range_reports(repo, rest[0])
+        return reps[1], {"base": base, "head": head}, {"op": "delta", "range": f"{base}..{head}"}, G.delta(*reps)
+    if cmd == "export" and rest in ([], ["--format", "json"], ["--format", "dot"]):
+        rep, fmt = repo.report(), rest[1] if rest else "json"
+        return rep, None, {"op": "export", "format": fmt}, G.dot(rep["graph"]) if fmt == "dot" else rep["graph"]
     if cmd in ("around", "path", "why", "grounded") and rest:
         rep = repo.report()
         snap = repo.store.snapshot()
