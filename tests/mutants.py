@@ -693,7 +693,7 @@ MUTANTS = [
     ("T31", "warrant/cli.py", "        for d in (cwd, *cwd.parents):", "        for d in (cwd,):", TOOLS, ["K01"]),
     ("T32", "warrant/cli.py", '    trust = json.loads(Path(here(a.trust)).read_text()) if getattr(a, "trust", None) else doc["trust"]',
      '    trust = doc["trust"] if doc else json.loads(Path(here(a.trust)).read_text())', TOOLS, ["K02"]),
-    ("T33", "warrant/cli.py", '            "frontier": G.frontier(rep, profile, a.actor, view.recs) if a.actor else None}', '            "frontier": None}',
+    ("T33", "warrant/cli.py", '            "frontier": G.frontier(rep, profile, a.actor, view.recs) if a.actor else None, "brakes": brakes}', '            "frontier": None, "brakes": brakes}',
      TOOLS, ["K03"]),
     ("T34", "warrant/cli.py", '    return " · ".join(f"{k} {n}" for k, n in d.items()) or "none"', '    return "none"', TOOLS, ["K04"]),
     ("T35", "warrant/cli.py", "    if argv[:1] and argv[0] in LOOP:", "    if False:", TOOLS, ["K05"]),
