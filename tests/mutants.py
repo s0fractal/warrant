@@ -285,7 +285,7 @@ MUTANTS = [
     ("T179", "warrant/resolve.py", '                if _sha(data) != i:\n                    raise Mismatch', '                if False:\n                    raise Mismatch', TOOLS, ["RV2"]),
     ("T180", "warrant/resolve.py", '        got = p.in_git(i)\n        if got:\n            return got', '        got = None\n        if got:\n            return got', TOOLS, ["RV1"]),
     ("T181", "warrant/resolve.py", '        got = p.bytes_of(i)\n        if got:\n            return "RESOLVED", got[1]', '        got = None\n        if got:\n            return "RESOLVED", got[1]', TOOLS, ["RV1"]),
-    ("T182", "warrant/resolve.py", '    if home is not None and home.holds(i):', '    if False:', TOOLS, ["RV1"]),
+    ("T182", "warrant/resolve.py", '        if p.holds(i):\n            return "PRESENT"', '        if False:\n            return "PRESENT"', TOOLS, ["RV1"]),
     # the bridge (warrant/bridge.py): an issue through the form becomes one record in the bridge's own store, and nothing else does
     ("T221", "warrant/bridge.py", ' and event.get("action") == "opened"):', '):', TOOLS, ["BR3"]),
     ("T222", "warrant/bridge.py", ' or "pull_request" in issue:', ':', TOOLS, ["BR3"]),
@@ -368,7 +368,7 @@ MUTANTS = [
     ("T280", "warrant/gate.py", 'due_for(rep, self.profile, actor, ("goal@1", "obligation@1", "obligation@2"))', 'due_for(rep, self.profile, actor, ("goal@1", "obligation@1"))', GATE, ["E98"]),
     ("T281", "warrant/graph.py", '    if len(roots) != 1:\n', '    if not roots:\n', TOOLS, ["ID1"]),
     ("T282", "warrant/graph.py", '    roots = sorted(L for L, lin in rep["lineages"].items() if lin["schema"] == RULES)\n', '    roots = sorted(rep["lineages"])[:1]\n', TOOLS, ["ID1"]),
-    ("T283", "warrant/across.py", '"problems": len(rep["problems"]), "identity": G.identity(rep, self.view.snap)["identity"]}', '"problems": len(rep["problems"]), "identity": None}', AGENT, ["X04b"]),
+    ("T283", "warrant/across.py", '            self.identity = G.identity(self.rep, snap)["identity"]\n', '            self.identity = None\n', AGENT, ["X04b"]),
     ("T284", "warrant/graph.py", '    if not any(_self_signed(root, env) for env in snap.lines.get(root, [])):\n', '    if False:\n', TOOLS, ["ID2"]),
     ("T285", "warrant/graph.py", '    keys = keys.get(rec.get("actor")) if isinstance(keys, dict) else None\n', '    keys = sum(keys.values(), []) if isinstance(keys, dict) else None\n', TOOLS, ["ID2"]),
     ("T286", "warrant/resolve.py", '            self.identity = G.identity(E.View(self.snap, trust, profile).report(), self.snap)["identity"]\n', '            self.identity = None\n', TOOLS, ["RV3"]),
