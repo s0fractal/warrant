@@ -394,6 +394,7 @@ MUTANTS = [
     ("T315", "warrant_agent/api.py", '            cap["grounded"] = {"grounded": g["grounded"],', '            cap["grounded"] = {"grounded": True,', AGENT, ["A50"]),
     ("T316", "warrant_agent/api.py", '            if "drift" in lin:\n                cap["drift"] = lin["drift"]\n', '', TOOLS, ["DR1"]),
     ("T317", "warrant/cli.py", '            out.append(dict(b, revertable=why is None,', '            out.append(dict(b, revertable=True,', TOOLS, ["ST1"]),
+    ("T318", "warrant/review.py", '    joins = CH.join_records(repo.view(), a.actor)\n', '    joins = []\n', TOOLS, ["R01c"]),
     ("T307", "warrant/drift.py", '    d = drift(rep, root, at, since=False)\n', '    d = drift(rep, root, at)\n', TOOLS, ["DR33"]),
     ("T308", "warrant/drift.py", '        if rule == C.CLOSURE and since:\n', '        if rule == C.CLOSURE:\n', TOOLS, ["DR33"]),
     ("T309", "warrant/pins.py", '    if not since:\n        return ("CHANGED", p, "") if now else ("GONE", p, "")\n', '', TOOLS, ["DR33"]),

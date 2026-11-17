@@ -1064,6 +1064,26 @@ def drift_impact_cases():
           and c["root"] != b["root"], (a.get("root"), b.get("root"), want, c.get("data", {}).get("unavailable")))
 
 
+def review_join_cases():
+    r = review_repo()
+    rp = RP.Repo(r.root)
+    k = RP.load_key(str(r.seed("alice")), r.root)
+    rp.file("alice", k, [R.record("entity", "alice", 0, {"state": "open", "repository": "s0fractal/warrant", "pr": 3,
+                                                         "title": "t", "serves": []}, "pr-head@1")])
+    sys.argv = ["review.py"]
+    base = r.store.lines()                                        # alice files on two branches; the merge holds both
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "one branch", "serves": []})
+    one = r.store.lines()
+    r.store.write_lines(base)
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "the other", "serves": []})
+    r.store.add_lines(one)
+    forked = len(CH.loose(rp.view(), "alice"))
+    RV.run(["--root", str(r.root), "head", "--pr", "3", "--actor", "alice", "--key", str(r.seed("alice"))])
+    check("R01c `head` after a merge that forked its signer's chain takes the loose tip in with a `joined` attest first, "
+          "re-signing nothing: the fork is closed and the head version lands on one chain",
+          forked == 1 and CH.loose(rp.view(), "alice") == [] and not CH.forks(rp.view())["open"], (forked, CH.forks(rp.view())))
+
+
 def review_cases():
     r = review_repo()
     rp = RP.Repo(r.root)
@@ -2998,6 +3018,7 @@ if __name__ == "__main__":
         freshness_cases,
         drift_impact_cases,
         review_cases,
+        review_join_cases,
         roadmap_cases,
         schemas_due_cases,
         status_brakes_cases,
