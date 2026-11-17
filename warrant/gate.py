@@ -717,7 +717,10 @@ def _shared(a, root, b, pr, checks, now=None):
                                + [f"{c} {str(i)[:12]}" for c, i, _ in rep["problems"][:2]])))
     if not rep["canonical"]:
         sh.append(("STORE_NOT_CANONICAL", "the head's records.jsonl is not in canonical order (`warrant fmt`)"))
-    sh += rules_reasons(root, b, head, rep)
+    reverts = ()
+    if str(pr.get("branch") or "").startswith(REVERT_BRANCH):      # its merge's rules versions are void at the head
+        reverts = tuple(m[1] for m in revert_lines(_commit(root, head)[2]))  # (an inexact revert is refused below)
+    sh += rules_reasons(root, b, head, rep, reverts)
     _review(a, root, b, pr, head, rep, checks, now)
 
 
@@ -729,9 +732,10 @@ RULES_SCHEMA = {"name": RULES, "fields": {"state": "str", "warrant": "str", "rep
                 "states": {"in force": None}, "closed": [], "successors": {"in force": ["pr/acceptor"]}}
 
 
-def rules_in_force(rep):
+def rules_in_force(rep, void=frozenset()):
     """(lineage, version in force, why not) of the store's rules@1 lineage as `rep` (a report under the BASE's rules)
-    reads it: its effective version; none when the store has no such lineage."""
+    reads it: its effective version, less the versions in `void` (those a merge the gate reverted brought: the version
+    each succeeded is in force again); none when the store has no such lineage."""
     lins = sorted(L for L, lin in rep["lineages"].items() if lin["schema"] == RULES)
     if not lins:
         return None, None, None
@@ -740,7 +744,36 @@ def rules_in_force(rep):
     lin = rep["lineages"][lins[0]]
     if lin["forks"]:
         return lins[0], None, ("RULES_FORK", f"the {RULES} lineage forks: two versions after one")
-    return lins[0], lin["effective"], None
+    return lins[0], _yielded(rep, lin["effective"], void), None
+
+
+def _yielded(rep, v, void):
+    """Version `v`, or, while it is void, the version it succeeded."""
+    while v in void:
+        v = (rep["_recs"].get(v) or {}).get("lineage")
+    return v
+
+
+def reverted_rules(root, commit, also=()):
+    """The rules@1 versions brought by the merges the gate reverted on `commit`'s first parents (its revert line in a
+    merge message), and by the merges in `also` (the one a revert pull request takes back): void in the gate's reading
+    of the rules in force. The store keeps every record (a revert takes no record back), so without this the revert of
+    a rules change left the file one version behind the records, and RULES_PROJECTION refused it and every pull
+    request after it (Codex 5abc6a7a)."""
+    merges = {m[1] for _, _, _, msg in first_parent(root, commit) for m in revert_lines(msg)} | set(also)
+    out = set()
+    for m in sorted(merges):
+        try:
+            parents = _commit(root, m)[0]
+        except (Refused, subprocess.CalledProcessError, IndexError, ValueError):
+            continue
+        if not parents:
+            continue
+        before = set(store_at(root, parents[0])[0].lines)
+        after = store_at(root, m)[0]
+        out |= {i for i, envs in after.lines.items() if i not in before
+                and envs[0]["record"].get("kind") == "entity" and envs[0]["record"].get("schema") == RULES}
+    return frozenset(out)
 
 
 def _genesis(root, b, head, rep, now, why):
@@ -757,18 +790,20 @@ def _genesis(root, b, head, rep, now, why):
     return []
 
 
-def rules_reasons(root, b, head, rep):
+def rules_reasons(root, b, head, rep, revert=()):
     """[(code, detail)]: what keeps the head's rules from being the base's or their recorded successor. Once the base
     holds a rules@1 version in force, the head's version in force (its records read under the BASE's trust and
     profile, as every head is: a version that names a new key or a new role holder is judged by the rules it would
     replace, so N+1 never admits itself) must be the head's .warrant/v3.json, canonically, and be the base's version or
     the one that succeeds it. A change of bytes that changes no canonical byte (spacing, key order) needs no version."""
     if not hasattr(b, "_rules"):                    # once per base: every pull request is judged against it
-        b._rules = rules_in_force(assess_snapshot(b, store_at(root, b.commit)[0]))
+        b._void = reverted_rules(root, b.commit)
+        b._rules = rules_in_force(assess_snapshot(b, store_at(root, b.commit)[0]), b._void)
     _, before, why = b._rules
     if why:
         return [why]
-    L, now, why = rules_in_force(rep)
+    void = b._void | reverted_rules(root, head, revert) if revert else b._void
+    L, now, why = rules_in_force(rep, void)
     if before is None:                              # no rules recorded at the base: v3.json is governed as before,
         return [] if L is None else _genesis(root, b, head, rep, now, why)       # unless the head brings the first
     if why or now is None:
@@ -782,7 +817,8 @@ def rules_reasons(root, b, head, rep):
     if C.canon(body) != C.canon(file):
         out.append(("RULES_PROJECTION", f"{RULES_FILE} at the head is not the {RULES} version in force, {now[:12]}: the "
                     "file changed without a version of the rules, or a version names other rules than the file"))
-    if now != before and rep["_recs"][now].get("lineage") != before:
+    undone = before in void and now == _yielded(rep, before, void)     # a revert puts the version it succeeded back
+    if now != before and rep["_recs"][now].get("lineage") != before and not undone:
         out.append(("RULES_CHAIN", f"the {RULES} version in force at the head, {now[:12]}, does not succeed the base's, "
                     f"{before[:12]}"))
     role = (b.gate.get(CONSTITUTIONAL) or {}).get("veto_role", "pr/owner")
