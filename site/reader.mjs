@@ -111,7 +111,7 @@ export function declaredSources(doc) {
   if (!Array.isArray(xs)) throw new Refused("sources is a list");
   const seen = new Set();
   for (const x of xs) {
-    const good = isPlain(x) && Object.keys(x).sort().join() === "actors,name,ref" && typeof x.name === "string" && SRC_NAME.test(x.name)
+    const good = isPlain(x) && Object.keys(x).sort(utf16).join() === "actors,name,ref" && typeof x.name === "string" && SRC_NAME.test(x.name)
       && typeof x.ref === "string" && SRC_REF.test(x.ref) && !x.ref.includes("..")
       && Array.isArray(x.actors) && x.actors.length > 0 && x.actors.every(isActor) && !seen.has(x.name);
     if (!good) throw new Refused(`a source is {name, ref, actors} with a unique name, a refs/heads or refs/warrant ref and actor ids`);
@@ -127,6 +127,55 @@ export function rawSourceBase(ref, root) {
   return m ? `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${ref}/` : null;
 }
 
+// The declaration .warrant/sources.json holds at `root`: its document, or null when there is none.
+async function sourcesDoc(root, fetcher) {
+  const raw = await get(root + ".warrant/sources.json", fetcher);
+  if (raw === null) return null;
+  try { return JSON.parse(new TextDecoder().decode(raw)); } catch { throw new Refused(`${root}.warrant/sources.json: not JSON`); }
+}
+
+const actorOf = (line) => {
+  try { return JSON.parse(new TextDecoder().decode(line)).record.actor; } catch { return null; }     // unreadable: no actor's
+};
+
+// {lines, sources, bases}: the store's own lines and each declared source's lines by its actors, in canonical order.
+async function withSources(root, own, backend, fetcher, sourceBase) {
+  const dec = new TextDecoder(), byText = new Map(own.map((l) => [dec.decode(l), l])), sources = [], bases = [];
+  for (const s of declaredSources(await sourcesDoc(root, fetcher))) {
+    const at = sourceBase(s.ref, root);
+    const raw = at === null ? null : await get(at + ".warrant/records.jsonl", fetcher); // NOSONAR S9382: sources in declared order
+    const mine = raw === null ? [] : split(raw).filter((l) => s.actors.includes(actorOf(l)));
+    for (const l of mine) byText.set(dec.decode(l), l);
+    if (raw !== null) bases.push(at);
+    sources.push({ name: s.name, ref: s.ref, base: raw === null ? null : at, records: mine.length,
+                   left_out: raw === null ? 0 : split(raw).length - mine.length });
+  }
+  const lines = [...byText.values()];
+  return { lines: lines.length === own.length ? lines : await canonicalOrder(lines, backend), sources, bases };
+}
+
+const bytesKey = (b) => {
+  let x = "";
+  for (let i = 0; i < b.length; i += 8192) {
+    x += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); // NOSONAR S7758: one code unit per byte, as the bytes sort
+  }
+  return x;
+};
+const order = (a, b) => {
+  if (a !== b) return a < b ? -1 : 1;
+  return 0;
+};
+
+// Lines in the order store.py writes them (_line_id): the record's id, then the line's bytes.
+async function canonicalOrder(lines, backend) {
+  const key = async (l) => {
+    try { const r = JSON.parse(new TextDecoder().decode(l)).record; return isPlain(r) ? await backend.sha256(canon(r)) : ""; } catch { return ""; }
+  };
+  const keyed = await Promise.all(lines.map(async (l) => [await key(l), bytesKey(l), l]));
+  keyed.sort((a, b) => order(a[0], b[0]) || order(a[1], b[1]));
+  return keyed.map((x) => x[2]);
+}
+
 // {lines, blobs, doc, missing, mode, asked, sources}: the store at `base`, its blobs by `mode` ("quick" | "full"), with
 // beside its own lines each declared source's lines by that source's actors only (warrant/sources.py): a source decides
 // nothing by being read, a line by another actor there is left out and counted, a source not served is named, never
@@ -138,35 +187,7 @@ export async function fetchStore(base, backend, { full = false, fetcher = global
   let doc;
   try { doc = loadsLenient(new TextDecoder().decode(config)); } catch { throw new Refused(`${root}.warrant/v3.json: not JSON`); }
   const own = split((await get(root + ".warrant/records.jsonl", fetcher)) || new Uint8Array());
-  const srcRaw = await get(root + ".warrant/sources.json", fetcher);
-  let srcDoc = null;
-  if (srcRaw !== null) {
-    try { srcDoc = JSON.parse(new TextDecoder().decode(srcRaw)); } catch { throw new Refused(`${root}.warrant/sources.json: not JSON`); }
-  }
-  const dec = new TextDecoder(), byText = new Map(own.map((l) => [dec.decode(l), l])), sources = [], bases = [];
-  for (const s of declaredSources(srcDoc)) {
-    const at = sourceBase(s.ref, root);
-    const raw = at === null ? null : await get(at + ".warrant/records.jsonl", fetcher);
-    let records = 0, left = 0;
-    for (const l of raw === null ? [] : split(raw)) {
-      let actor = null;
-      try { actor = JSON.parse(dec.decode(l)).record.actor; } catch { /* unreadable: not this source's actor's */ }
-      if (s.actors.includes(actor)) { records++; byText.set(dec.decode(l), l); } else left++;
-    }
-    if (raw !== null) bases.push(at);
-    sources.push({ name: s.name, ref: s.ref, base: raw === null ? null : at, records, left_out: left });
-  }
-  // one snapshot in canonical order (store.py _line_id: the record's id, then the line), as the Python union is
-  let lines = [...byText.values()];
-  if (lines.length !== own.length) {
-    const key = async (l) => {
-      try { const r = JSON.parse(dec.decode(l)).record; return isPlain(r) ? await backend.sha256(canon(r)) : ""; } catch { return ""; }
-    };
-    const bytesKey = (b) => { let x = ""; for (let i = 0; i < b.length; i += 8192) x += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); return x; };
-    const keyed = await Promise.all(lines.map(async (l) => [await key(l), bytesKey(l), l]));     // the line's bytes, as Python sorts them
-    keyed.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
-    lines = keyed.map((x) => x[2]);
-  }
+  const { lines, sources, bases } = await withSources(root, own, backend, fetcher, sourceBase);
   const { all, maps } = await named(lines, backend);
   const wanted = [...(full ? all : maps)].sort(utf16), got = new Array(wanted.length);
   let next = 0;

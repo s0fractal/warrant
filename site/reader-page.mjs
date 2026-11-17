@@ -142,8 +142,7 @@ function drawFloor() {
       fact("root", s.root ? short(s.root) : "not computed: the root covers every blob, and only the migration maps were fetched",
            s.root ? null : " ", s.root ? null : link("fetch every blob", { full: true })),
       fact("blobs", `${s.blobs.read} read of ${s.blobs.asked} asked for` + (s.blobs.missing ? ` · ${s.blobs.missing} named and not served` : "")),
-      ...(s.sources ?? []).map((x) => fact("source", `${x.name} at ${x.ref}: ` + (x.base === null ? "not served where this reader can find it"
-        : `${x.records} record(s) by its actors` + (x.left_out ? `, ${x.left_out} by others left out` : "")))),
+      ...(s.sources ?? []).map((x) => fact("source", `${x.name} at ${x.ref}: ${sourceLine(x)}`)),
       fact("completeness", `${s.completeness}: no store can show that it holds everything said about its records`),
       fact("reliance", counts(s.reliance)),
       s.pins ? fact("pins", pinsLine(s.pins)) : [],
@@ -669,3 +668,11 @@ $("full").checked = first.full;
 $("pins").checked = first.pins;
 $("with").value = first.with.join("\n");
 if (first.base) start();
+
+
+// What one source of the store gave the reader (site/reader.mjs fetchStore).
+function sourceLine(x) {
+  if (x.base === null) return "not served where this reader can find it";
+  const left = x.left_out ? `, ${x.left_out} by others left out` : "";
+  return `${x.records} record(s) by its actors${left}`;
+}

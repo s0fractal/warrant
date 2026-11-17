@@ -978,7 +978,7 @@ def frame_parity_cases():
     ids equal the Python ones."""
     from warrant import graph as G
     from warrant import repo as RP
-    rep = RP.Repo(ROOT).report()
+    rep = RP.Repo(ROOT).report(RP.Repo(ROOT).store.snapshot())     # the store as served, its sources aside: the reader here reads it over a local server, where no source is served
     by = {}
     for L, lin in sorted(rep["lineages"].items()):
         by.setdefault(lin["schema"], []).append(L)
