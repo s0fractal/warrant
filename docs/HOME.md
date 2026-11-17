@@ -142,7 +142,7 @@ identity: each store is named by its identity (`identities`, the root of its one
 warrant.graph.identity), and the places of one identity are one store, whose citations count once and whose own
 holdings are `PRESENT` wherever of them they lie. `across` reads them as one store too: under one trust and profile,
 their records united, named by the first of their names with all of them under `read_as`, and keyed by
-`rules@1:<identity>` in its `root` and `lens`, so two Homes that name one store differently bind it alike.
+`rules@1:<identity>/<the receiver's digest>` in its `root` and `lens`, so two Homes that name one store differently bind it alike and one store read under two receivers binds both readings.
 
 Measured on 2026-11-13 over the seven stores of this Home: 4198 cited ids `PRESENT`, 3 `RESOLVED` (the cells of the minds
 chain a goal of minds cites), 2 `MISSING` (no store and no history holds them), 0 `LOCATED`. Its one live consumer is

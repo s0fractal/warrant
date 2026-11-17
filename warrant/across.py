@@ -87,7 +87,10 @@ class Reading:
             self.view = E.View(snap, trust, profile)
             self.rep = self.view.report()
             self.identity = G.identity(self.rep, snap)["identity"]
-            self.key = f"rules@1:{self.identity}" if self.identity else name
+            # one identity read under other rules is another reading: its key names the receiver too (Codex on #466),
+            # so two readings of one genesis never overwrite each other in root and lens
+            self.key = (f"rules@1:{self.identity}/{C.doc_id({'trust': trust, 'profile': profile})}" if self.identity
+                        else name)
             if root is not None:
                 self.rep["_recs"], self.rep["_basis"] = self.view.recs, self.view.basis
                 D.gate(self.rep, root)
@@ -309,7 +312,8 @@ def _compose(snaps):
 def united(readings):
     """`readings` with each store read once (obligation ec6d1ebe; Codex on its closure): readings of one identity
     (warrant.graph.identity) under one trust and profile are one reading of their records united,
-    named by the first of their names, `read_as` all of them; the answer keys it by `rules@1:<identity>`. A store with
+    named by the first of their names, `read_as` all of them; the answer keys it by `rules@1:<identity>/<the
+    receiver's digest>`. A store with
     no identity, or one store read under other rules, stays as read: other rules are another reading."""
     groups, out = {}, []
     for x in readings:

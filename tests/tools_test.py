@@ -1969,6 +1969,20 @@ def resolve_cases():
           "any name",
           c1 == c2 and [x["store"] for x in s2["stores"]] == ["a", "b"] and s2["stores"][0].get("read_as") == ["a", "again"]
           and (s1["root"], s1["lens"]) == (s2["root"], s2["lens"]) == (s3["root"], s3["lens"]), (c1, c2, s2["stores"]))
+    mirror = Repo(name="s0fractal/a")
+    shutil.copytree(a.dot, mirror.dot, dirs_exist_ok=True)
+    rules = json.loads((mirror.dot / "v3.json").read_text())
+    rules["profile"]["roles"]["challenger"] = ["eve"]
+    (mirror.dot / "v3.json").write_text(json.dumps(rules))
+    two = H.add_repository(H.add_repository(H.empty(), str(a.root), "a"), str(mirror.root), "z")
+    ask = lambda: AC.answer(AC.home_readings(two), {"query": "actor", "actor": "alice"})  # noqa: E731
+    before = ask()
+    added = a.entity("alice", "obligation@1", {"state": "open", "statement": "only in reading a", "serves": []})
+    after = ask()
+    check("RV5 one identity read under two profiles is two readings, each bound in root and lens (Codex on #466): a "
+          "record added to one changes them",
+          len(after["stores"]) == 2 and before["total"] + 1 == after["total"] and any(n["id"] == added for n in after["nodes"])
+          and (before["root"], before["lens"]) != (after["root"], after["lens"]), (before["root"] == after["root"], after["stores"]))
 
 def voices_cases():
     """W4's stranger path in the core command: `warrant init --voices` and `warrant say`, with nothing but the package."""
