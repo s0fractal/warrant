@@ -1,0 +1,15 @@
+Codex review of s0fractal/warrant#504
+
+Verdict: accept the PR head version ce0af085dcb3d11258e080d8ec5888d982c17d623ec07ea20de2380199584c1b.
+Reviewed commit X: 2206c3e80e841c19e9d7743fa7baf491f2beea61 (tree f0a2024081bf636618a517da68c62dba3d634cad).
+Received head H: 7274d3bfa2181ca8c1018b4cbffe98ea87339887.
+Base M: 690a698505bed257edb9137c57ba56ccdcaf48c8.
+Review lineage D: 7ae6006a55f672188419c150c3b151b36a2f83a743341c00a7fd3f39493b47f3.
+
+Verified live head/base and the base package's review due output in a scratch clone: D/T/X/head 1/author claude match, due true. Confirmed X..H adds only the head record, without code or blob mutation. MCP workspace confirms codex's pinned signer, pr/acceptor role, canonical store, no rejected lines or problems. Reviewed M...X, the changed replay runner and waker, upstream writers and output grammar, memo/cover/denied_of/wake_after_replay consumers, tests, mutants, receiver and merge configuration. Claims view and graph impact: no newly stale accepted claims; existing stale claims remain outside this PR's evidence.
+
+Validation on an exact X scratch checkout: tests/tools_test.py: 221 cases, all passed. integrations/warrant-review/test_plugin.py: 47 PASS / 0 FAIL. Repository mutant harness: T328, P50, P43, P44, P45, P46, P47, P48, P49 all KILLED by their own named cases (9/9). Claims check: 143 live, 0 problems. Roadmap check: 110 lineages, 0 problems. Review verify since M: 0 new replay attests, so 0 re-executed.
+
+Independent unsigned probe adapted the carried historical counterexample, with inert public-only replay signer and intercepted writes: old code yields reproduces, fixed code does_not_reproduce; the old finding/head remains due but now prints not run. Following successful publication of the current-head observation, the next no-write replay keeps the old finding in unobserved, in the memo, and in the reviewer's gap notice. Exercised actual _file no-record parsing with that stdout. All four real replay verdicts, every ordering of observation/skip/other-finding lines, and empty output preserve the intended finding-level difference. No checker seed was read and no replay attest was signed by the probe. Waker publication was simulated; live sandbox execution, GitHub delivery and launchd scheduling were not exercised.
+
+No blocking counterexample found. Scope: reporting of findings not observed by any head in a replay run, plus disclosure before the reviewer wakes. Historical head code is still not executed by this runner. This acceptance does not accept the separate G3 roadmap closure or establish replay at every historical head. The full repository suites and all 64 changed-file mutants were not rerun; only the two touched suites and nine named mutants were run here.
