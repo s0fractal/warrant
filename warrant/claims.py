@@ -454,7 +454,7 @@ def verify(repo, base, done=frozenset(), verified=None):
     result at the commit it names cannot change) is checked but not run again; `verified`, when given, receives every
     acceptance that held, so a later run of the same pull request after its base moved re-executes only what is new."""
     old = _records_at(repo.root, base)
-    rep = repo.report()
+    rep = repo.report(repo.store.snapshot())     # this store's own records: a source's are not this pull request's to verify
     recs, bad, by_commit = rep["_recs"], [], {}
     for i, r in sorted(recs.items()):
         if r["kind"] != "attest" or r["actor"] != CHECKER or i in old or rep["_basis"].get(i) != "SIGNED":

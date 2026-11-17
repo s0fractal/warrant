@@ -424,6 +424,30 @@ def checker_cases():
     why = refused_code(CL.verify, rp, base)
     check("C14 the checker accepts no claim whose mutant survives, and CI refuses an acceptance that does not hold again at its commit",
           held == [] and why is not None and why.startswith("CLAIM_REPLAY_DIFFERS") and "does not hold" in why, (held, why))
+    # the same forged acceptance in the checker's own store (a source), not in this store: not this pull request's
+    r2 = checker_repo()
+    rp2 = RP.Repo(r2.root)
+    L2 = claim(r2, witnesses=["q_test:Q1", "q_test:Q2"], mutants=["Z1", "Z2"])
+    base2 = r2.commit("a claim whose mutant survives")
+    own = r2.root.parent / (r2.root.name + "-own")
+    git(r2.root, "worktree", "add", "-q", "--orphan", "-b", "stores/claims-checker", str(own))
+    (own / ".warrant").mkdir()
+    (own / ".warrant" / "records.jsonl").write_bytes(b"")
+    rp2.file(CL.CHECKER, CHECKER_KEY, [R.record("attest", CL.CHECKER, 0, {
+        "target": L2, "verdict": "accept", "commit": base2, "tree": git(r2.root, "rev-parse", f"{base2}^{{tree}}"),
+        **RP.identity(r2.root), "witnesses": ["q_test:Q1", "q_test:Q2"], "mutants": ["Z1", "Z2"]}, refs=[L2])],
+        into=str(own / ".warrant"))
+    git(own, "add", ".warrant")
+    git(own, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "its store")
+    (r2.dot / "sources.json").write_text(json.dumps({"warrant": "sources/1", "sources": [
+        {"name": "claims-checker", "ref": "refs/heads/stores/claims-checker", "actors": [CL.CHECKER]}]}))
+    r2.commit("its store is a source")
+    seen_there = any(x["actor"] == CL.CHECKER and x["kind"] == "attest" for x in rp2.report()["_recs"].values())
+    why2 = refused_code(CL.verify, rp2, base2)
+    check("C31 CI re-executes the checker's acceptances this pull request adds to this store, not those its own store (a "
+          "source read beside it) holds: a pull request does not answer for a source's records, and re-running every one "
+          "the checker filed since the base would grow with every run",
+          seen_there and why2 is None, (seen_there, why2))
 
 
 def preflight_fixture(sentence_present):

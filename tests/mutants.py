@@ -414,6 +414,7 @@ MUTANTS = [
     ("T338", "warrant/repo.py", '        dest = self.store if into is None else Store(Path(into))', '        dest = self.store', TOOLS, ["SR6"]),
     ("T339", "warrant/store.py", ', key=_line_id), {}) if beside else snap, trust, actor)', ', key=_line_id), {}) if False else snap, trust, actor)', TOOLS, ["SR6"]),
     ("T340", "warrant/claims.py", '        recs = joins + recs\n', '', TOOLS, ["C30"]),
+    ("T341", "warrant/claims.py", '    rep = repo.report(repo.store.snapshot())     # this store', '    rep = repo.report()     # this store', TOOLS, ["C31"]),
     ("T329", "warrant/cli.py", '                guard = s["states"].get(body.get("state"))\n', '                guard = None\n', TOOLS, ["FC1"]),
     ("T330", "warrant/cli.py", '        print(out["record"])                # --id', '        print(json.dumps(out))                # --id', TOOLS, ["FC1"]),
     ("T331", "warrant/cli.py", '+ (f", waits for {\'; \'.join(g[\'waiting\'])}" if g["waiting"] else "")', '+ ""', TOOLS, ["FC2"]),
