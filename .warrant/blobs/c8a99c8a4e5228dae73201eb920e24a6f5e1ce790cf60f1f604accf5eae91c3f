@@ -1,0 +1,85 @@
+Codex roadmap verdict evidence
+
+Base M: d5a356c6b387a473de1631e5147c3f5532c91410
+Obligation D: 8c856b3b26355a6eaf27b32cc1404ada26b7528b6e567dc78f84bd0da0a7dc0e (G11)
+Version T: a8c6834af6d31396ed8fbaf6f874fed3dba79898aaf303f1fa189de297c706d1
+
+Verdict: challenge. The named interfaces do not deliver all the operations owed.
+
+Verified locally at M with warrant.roadmap due --actor codex --json: D, T, statement, evidence, references, no subject, no requirements all match the waker. MCP workspace binds the signer codex and gives it roadmap/acceptor. MCP context shows T as the pending leaf, with no attests or challenges, waiting only for one roadmap/acceptor acceptance. Evidence 208d0c15d65db795631a068547d714575bdac0d7b08d95d1c77c7ee08e97062f resolves to the pr-head@1 root of #477, rather than a blob. Inspected merge c5f57d6a and commit 1d9a32a699af823d4f402d4865dfd7e9207f0310.
+
+Blocking gaps:
+- tools/graph.py:95-111,114-131 dispatch only impact, around, path, why, grounded, frontier and views. delta and export are absent, including JSON/DOT export. Running python3 -B tools/graph.py delta M..M, export, and export --format dot returns status 2, REFUSED USAGE. An empty range should still be a valid delta answer.
+- warrant_agent/api.py:49,191-211 excludes impact and delta. graph's closed request permits only workspace, op, target, actor, so it cannot accept a commit range or an export format.
+- warrant_agent/mcp_server.py:99-104 declares the same enum. Through the actual stdio MCP client, op=impact and op=delta are rejected by argument validation (literal_error), which lists around, path, why, grounded, frontier, ledger, export as the allowed operations.
+- The core has delta(rep0,rep1) and impact(rep0,rep1), and MCP graph exports JSON, but those do not supply the missing commands or DOT export. API op=export on a valid small fixture succeeds, while op=export, format=dot is BAD_REQUEST for an unknown member. This is functional missing delivery, independent of the older impact counterexample.
+
+Positive checks:
+- tests/tools_test.py sections impact_cases and drift_impact_cases passed, including DR17 and DR25. The same-address blob/removed-lineage regression the closure names passes at M.
+- tests/agent_test.py sections operations and mcp_cases passed under the MCP environment, including A15 and M01.
+- Exact registered mutations T124 (warrant/graph.py, impact_cases) and T136 (tools/graph.py, drift_impact_cases) were applied separately to a disposable copy under the review work directory. Their previously green cases printed FAIL DR17 and FAIL DR25, respectively, each status 1. This is a targeted execution of those definitions, not the full mutant matrix or a checker-signed replay.
+- Full suites, full mutant matrix, live CI, and unrelated obligations were not re-reviewed. No code was edited in the review worktree.
+
+Reproducer run from the base worktree (uses the repository's real signed fixture with its own test keys):
+
+import json, os, subprocess, sys
+from pathlib import Path
+ROOT = Path("/Users/s0fractal/Projects/.worktrees/codex-review/accept-a8c6834af6d3-0-d5a356c6b387")
+sys.path[:0] = [str(ROOT / "tests"), str(ROOT)]
+from world import Repo
+from warrant_agent import api
+from warrant_agent.config import Config
+M = "d5a356c6b387a473de1631e5147c3f5532c91410"
+T = "a8c6834af6d31396ed8fbaf6f874fed3dba79898aaf303f1fa189de297c706d1"
+r = Repo(base=str(Path(__file__).parent))
+cfg = Config({"agent_api":"warrant-agent/3", "workspaces":{"w":{"repo":str(r.root), "operations":["graph"]}}})
+rows = []
+for args in [["delta", f"{M}..{M}"], ["export"], ["export", "--format", "dot"]]:
+ p = subprocess.run([sys.executable, "-B", "tools/graph.py", *args], cwd=ROOT, capture_output=True, text=True)
+ rows.append({"interface":"CLI", "args":args, "returncode":p.returncode,"stdout":p.stdout,"stderr":p.stderr})
+for req in [{"op":"impact"}, {"op":"delta"}, {"op":"impact","range":f"{M}..{M}"}, {"op":"delta","range":f"{M}..{M}"}, {"op":"export"}, {"op":"export", "format":"dot"}]:
+ out = api.call(cfg, "graph", {"workspace":"w", **req})
+ rows.append({"interface":"API", "request":req, "result":out})
+print(json.dumps(rows,indent=1))
+
+
+Observed probe results:
+{"args": ["delta", "d5a356c6b387a473de1631e5147c3f5532c91410..d5a356c6b387a473de1631e5147c3f5532c91410"], "interface": "CLI", "returncode": 2, "stderr": "REFUSED USAGE     python3 tools/graph.py around ID | path ID | why ID     # a node; what it rests on; what rests on it\n    python3 tools/graph.py grounded ID                       # whether a version and all it rests on stand (warrant.graph)\n    python3 tools/graph.py frontier ACTOR                    # what waits for an actor\n    python3 tools/graph.py impact BASE..HEAD                 # the lineages the records changed between two commits\n                                                             # bear on, and under `drift` the claims the range makes\n                                                             # stale with what rests on them (warrant drift --impact)\n    python3 tools/graph.py views [--check]                   # build/views/{CLAIMS,ROADMAP,REVIEWS,WITNESSES}.md\n", "stdout": ""}
+{"args": ["export"], "interface": "CLI", "returncode": 2, "stderr": "REFUSED USAGE     python3 tools/graph.py around ID | path ID | why ID     # a node; what it rests on; what rests on it\n    python3 tools/graph.py grounded ID                       # whether a version and all it rests on stand (warrant.graph)\n    python3 tools/graph.py frontier ACTOR                    # what waits for an actor\n    python3 tools/graph.py impact BASE..HEAD                 # the lineages the records changed between two commits\n                                                             # bear on, and under `drift` the claims the range makes\n                                                             # stale with what rests on them (warrant drift --impact)\n    python3 tools/graph.py views [--check]                   # build/views/{CLAIMS,ROADMAP,REVIEWS,WITNESSES}.md\n", "stdout": ""}
+{"args": ["export", "--format", "dot"], "interface": "CLI", "returncode": 2, "stderr": "REFUSED USAGE     python3 tools/graph.py around ID | path ID | why ID     # a node; what it rests on; what rests on it\n    python3 tools/graph.py grounded ID                       # whether a version and all it rests on stand (warrant.graph)\n    python3 tools/graph.py frontier ACTOR                    # what waits for an actor\n    python3 tools/graph.py impact BASE..HEAD                 # the lineages the records changed between two commits\n                                                             # bear on, and under `drift` the claims the range makes\n                                                             # stale with what rests on them (warrant drift --impact)\n    python3 tools/graph.py views [--check]                   # build/views/{CLAIMS,ROADMAP,REVIEWS,WITNESSES}.md\n", "stdout": ""}
+{"interface": "API", "request": {"op": "impact"}, "result": {"error": "BAD_REQUEST", "message": "op is one of ['around', 'path', 'why', 'grounded', 'frontier', 'ledger', 'export']"}}
+{"interface": "API", "request": {"op": "delta"}, "result": {"error": "BAD_REQUEST", "message": "op is one of ['around', 'path', 'why', 'grounded', 'frontier', 'ledger', 'export']"}}
+{"interface": "API", "request": {"op": "impact", "range": "d5a356c6b387a473de1631e5147c3f5532c91410..d5a356c6b387a473de1631e5147c3f5532c91410"}, "result": {"error": "BAD_REQUEST", "message": "unknown members ['range'] or missing []"}}
+{"interface": "API", "request": {"op": "delta", "range": "d5a356c6b387a473de1631e5147c3f5532c91410..d5a356c6b387a473de1631e5147c3f5532c91410"}, "result": {"error": "BAD_REQUEST", "message": "unknown members ['range'] or missing []"}}
+{"interface": "API", "request": {"op": "export"}, "result": {"ok": {"format": "JSON graph", "nodes": 5, "query": {"op": "export"}}}}
+{"interface": "API", "request": {"format": "dot", "op": "export"}, "result": {"error": "BAD_REQUEST", "message": "unknown members ['format'] or missing []"}}
+
+Targeted mutation results:
+[
+ {
+  "id": "T124",
+  "file": "warrant/graph.py",
+  "section": "impact_cases",
+  "cases": [
+   "DR17"
+  ],
+  "returncode": 1,
+  "failed": [
+   "DR17"
+  ],
+  "outcome": "KILLED"
+ },
+ {
+  "id": "T136",
+  "file": "tools/graph.py",
+  "section": "drift_impact_cases",
+  "cases": [
+   "DR25"
+  ],
+  "returncode": 1,
+  "failed": [
+   "DR25"
+  ],
+  "outcome": "KILLED"
+ }
+]
