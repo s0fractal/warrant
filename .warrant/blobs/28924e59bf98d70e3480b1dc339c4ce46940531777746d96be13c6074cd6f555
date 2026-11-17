@@ -1,0 +1,253 @@
+{
+  "cause": [
+    ".warrant/merge.json watched.paths lists warrant/shapes.py with window_hours=24.",
+    "warrant/gate.py _pr (lines 849-863) subtracts explicitly tier-listed files from OWNER_PATHS and delegates them to _watched.",
+    "tests/gate_test.py E32/E47 require imported modules to be owner OR constitutional OR watched paths, and E54 deliberately permits watched changes after their window.",
+    "docs/V3.md section 12 expressly says imported modules are now watched/constitutional; T.residual acknowledges this, while T.statement and T.established still say any imported-module change is refused."
+  ],
+  "checked": [
+    "HEAD/origin and local roadmap due facts matched the supplied M/D/T.",
+    "MCP context confirmed T is signed by claude, leaf of D, guard PENDING only for roadmap/acceptor; codex holds that role.",
+    "Read PR #303 via GitHub, merge 910a4dc4, commit 00a61c85 and merge f61f5567, and current policy, gate, closure tests and import walker.",
+    "Full tests/gate_test.py: 112 ok case lines, all passed.",
+    "Mutants G25-G42: 18/18 killed by their named cases, section-based harness; matrix included.",
+    "warrant.roadmap check: 110 lineages, 0 problems; warrant.claims check: 143 live claims, 0 problems."
+  ],
+  "conclusion": "Challenge: the historical module-shadowing defect is fixed, but the unchanged done criterion and T.established assert refusal of every imported-module change; the current policy intentionally permits such changes.",
+  "counterexample": "The attached probe uses the actual M merge.json in the existing signed-record PR fixture, copies the current warrant and tools packages into its base, gives the author and acceptor the two pr/acceptor roles, changes only warrant/shapes.py besides the fixture code.py delta, and supplies green checks completed 25 hours before assessment, owner absent. The static closure includes warrant/shapes.py. assess returns eligible=true, reasons=[], watched=[warrant/shapes.py]. No network merge is performed.",
+  "duty": "cceddfe5b1e4a2c2fb1af17c5209799a31df65063cfbd9d28f48c200eb0ad4e8",
+  "gate_output": "ok   E32 every module the gate imports, directly or through another, is an owner, a constitutional or a watched path of this repository, and the gate itself is an owner or a constitutional path\nok   E33 ... the walk follows each form of import, one inside a function too, through other modules, and reaches no module nothing imports\nok   E46 ... and it names what the interpreter loads: a same-name package in place of the module's file, and the file still where the directory of its name has no __init__\nok   E60 ... and it follows the programs a file starts by name: `-m` a module (a package's __main__ too) and the imports of `-c` code (a string after `-m` that names a module of the repository is followed whatever the program: naming more is the safe side); a file of the closure that does not parse is no closure (Unreadable), never a partial one\nok   E47 a fresh interpreter started as the workflow starts the gate loads, from the checkout, only files the walk found, each a listed path\nok   E34 a head that adds a package of the name of a module the gate imports refuses the merge, never the review (Codex challenge of dda3ad65, observed at a3917a9f: eligible, no reason)\nok   E35 ... and one that adds a module nothing listed imports is still the gate's to merge\nok   E36 a directory, a link or a submodule of a listed module's name is the owner's to merge (Codex challenge of dda3ad65: warrant/shapes/__init__.py was eligible)\nok   E37 ... a file of that name with another ending the import system reads (an extension module is preferred to the source)\nok   E38 ... and the bytecode cache of a directory that holds one (it is loaded in place of the source)\nok   E39 a module added to a directory the interpreter searches before the standard library is the owner's to merge\nok   E40 ... a directory added there\nok   E41 ... an __init__ added to a directory that was there\nok   E42 ... and an entry there that is a link or a submodule\nok   E43 a .gitattributes, in any directory, is the owner's to merge (a checkout writes other bytes than the blob's where it says)\nok   E44 a name that a case-folding file system writes over a guarded one is the owner's to merge\nok   E45 beside all of these the gate still merges: a new module of the package, a name that only begins like a listed one, a file changed where it was, a file deeper in a directory that was there, a file that is no module\nok   E50 a directory the base has dropped since the merge base is a directory added: the merge would bring it back\nok   E51 a head holding a path that is not UTF-8 is refused (HEAD_UNREADABLE), never the end of the run (observed at 9509b865: UnicodeDecodeError out of assess, so no other pull request was read)\nok   E52 a base whose tree holds a path that is not UTF-8 is refused as BASE_CONFIG, never a crash of the gate's run\nok   E48 this interpreter resolves a module to a same-name package, a link to one or an extension module before its .py file, and a standard library name to a file of the checkout; a directory without __init__, a .pyc beside the source and a file beside the package are not preferred (the gate refuses them all the same)\nok   E49 ... and it runs a committed __pycache__ file in place of the source beside it, whose path it still reports\nok   E01 an accepted head, records-only tail, green checks: eligible, by the acceptor, at X\nok   E02 the owner's hold label refuses the merge only\nok   E03 a head with no verdict yet is due for review, and not eligible\nok   E12 an acceptance by an actor who is no pr/acceptor does not count\nok   E04 a line the base's trust does not authenticate refuses both verdicts\nok   E25 a head store out of canonical order is refused\nok   E28 a head that proposes one valid schema, backed by its author alone, is due for the acceptor's review, not refused (6d6bb700: SCHEMA_NOT_COUNTED made it STORE_PROBLEMS)\nok   E05 a change after X beyond records and blobs refuses\nok   E06 a record line removed after X refuses\nok   E07 a blob added after X that no record added cites refuses\nok   E08 a record added after X that is not this pull request's nor a verdict refuses\nok   E09 an attest by an actor who is no pr/acceptor, about another record, is no verdict\nok   E29 a head that merged the base after the acceptance is held to X's clean merge with the base: eligible with no new review\nok   E30 a change beside the base's merged in after X still refuses\nok   E31 a head whose merge of the base conflicts with X is compared with X: its resolution needs a review\nok   E10 a change to an owner path refuses the merge, not the review\nok   E11 a finding standing against the head version refuses the merge\nok   E13 two head versions succeeding one version fork the review\nok   E14 a head whose X is not an ancestor is refused\nok   E15 a head version naming another tree than its commit's is refused\nok   E16 a pull request of verdicts only, due at the base, by a roadmap/acceptor: eligible, never due\nok   E17 verdicts only from another repository's branch are refused\nok   E23 verdicts only from a branch outside codex/verdicts/ are refused\nok   E18 a verdict the base holds already is refused\nok   E19 a verdict on a version the base does not hold due for its actor is refused\nok   E19b verdicts with a generated view committed beside them are refused as TAIL_CHANGES, not as a pull request with no review (Codex 1dfedf69)\nok   E98 a roadmap/acceptor's verdict on an obligation@2 release (one that waits for an acceptor other than the releasing roadmap/owner) is due at the base: eligible, verdicts only\nok   E96 a pull request of verdicts only that backs a schema short of its quorum, by a roadmap/acceptor holding schema/author, is due and eligible (rules@1 e8aacad8 waited for Codex with no duty naming him); by one who holds no schema/author it is not due\nok   E66 a pull request of the claims checker's acceptances only, on backed claims' leaves at the base, from a branch under claims/verdicts/, is the gate's to merge (CI re-executes each first); from another branch, on a claim that is not backed, or by a checker that is no claim/verifier at the base, it is not\nok   E24 a version whose required lineage is open is not due for a verdict\nok   E20 a required check of that name from another workflow is refused (CHECK_AMBIGUOUS)\nok   E26 a required check with no run at the head is refused\nok   E21 the gate reads the pull request again: a head moved since the assessment is not merged\nok   E22 ... and the base again: a base moved since the assessment is not merged\nok   E27 an eligible pull request is merged at the head assessed, and the required workflows dispatched\nok   E97 the gate writes the merge it made, one line of JSON, for the job that files its receipt; nothing when it merged nothing, and only into the runner's temporary directory or the current one\nok   E53 a change to a watched path accepted by one pr/acceptor, its author holding none, is not merged by the gate (WATCHED_FAMILIES); it stays reviewed, not due\nok   E54 two families, the head version's author counted when it holds pr/acceptor: merged once the owner's window has passed since the required checks completed at the head (GitHub's clock), not before, and not when that time is unknown (WATCHED_WINDOW)\nok   E55 a challenge by the veto role (pr/owner) on the head version stops the merge, counted or not (OWNER_VETO); one by an actor of no role does not\nok   E56 one family only (its author, no acceptor: the others out of budget): the gate itself merges it once the longer solo window has passed with nothing else refusing (solo_ready), not before, and a hold label withdraws it (owner, 2026-11-13: agents stop merging under the owner's name)\nok   E57 a change to no watched and no owner path keeps the rule it had: one acceptance, no window\nok   E59 a place a watched file implies (a package of its module's name) is the owner's, not watched: only a change to a watched file itself is the models' to merge\nok   E58 a watched policy that names an owner path, one family, a solo window shorter than the window, no window or an unknown member is refused as the base's configuration\nok   E61 a change to a constitutional path accepted by two families is merged by the gate after the constitutional window (72 h here), not after the watched one, and leaves the notice its comment carries\nok   E62 ... one family: merged by the gate after the constitutional solo window (168 h), not after the watched one (72 h); a change to both tiers waits for the longer\nok   E63 a constitutional tier without a watched one, with a window or a solo window shorter than the watched one, naming a watched or an owner path, a login that is not one, or no notify; a solo rule longer than the watched solo window or without its veto role: each is refused as the base's configuration\nok   E64 `solo`: a change to no listed path by a pr/acceptor, with no acceptance, is merged by the gate once its window has passed since the checks completed; not before, not by an author who holds no pr/acceptor, not against a pr/owner's challenge, and not at all where merge.json has no solo rule\nok   E65 when a constitutional window opens the gate comments once per head commit, naming the owner's login, the paths, when each window ends and how to veto; a comment with its mark by another user does not count, and a change to no tier gets none\nok   E67 the owner present, a constitutional change merges with no window before it once the checks are green, its brake as long as its window would have been (168 h for one family, 72 h for two); away, the windows apply; checks not completed, nothing merges\nok   E68 a merge with the owner present carries its brake in the merge commit (until when, the pull request, the head version) and the gate comments once, naming the owner, how long the brake acts and how to pull it\nok   E69 a merge whose brake is open and that the owner's hold label vetoes is reverted: the gate opens a pull request from gate/revert/ whose one commit takes back exactly the merge's change, the store's records kept, and starts CI on it; with no veto nothing is done, and after its window the brake is closed\nok   E70 the gate's revert is merged as such once its checks are green: the exact revert of a braked merge of the base, opened by the workflow's bot; one opened by anyone else, or that changes more, is not; a path changed again since the merge makes no revert\nOPEN #7 merged as 256901db4ce7: its brake holds until 2030-03-17 18:46 UTC\n1 merge(s) at 6d6145f76a13 whose brake is still open\nok   E71 a release waits for its brakes: `brakes --at C` fails while a merge in C's history may still be vetoed, and lists none once every window has passed\nok   E72 the owner is present when a merge into the base on GitHub is his (his login the author, GitHub's web-flow the committer) since `since` and within `days`; a bot's merge, one he did not make on GitHub, one before `since` or older than `days` is no presence\nok   E72b the owner's merge on GitHub stays his sign however many of the gate's own merges follow it: the bot's merges ask GitHub nothing and count toward no bound (his merge was the 32nd back on 2026-11-16)\nok   E73 a presence rule without a watched tier, with no days, a login that is not one or an unknown member refuses the base's configuration\nok   E74 a change a second family accepted is merged as accepted, not as solo, whatever the solo windows say: solo is the record that no second family reviewed it (Codex F1 on #350)\nok   E75 a notice mark in a comment by a login that only begins with github-actions does not count: the notice is posted (Codex F2 on #350)\nok   E76 a brake line is a whole line naming a full record id; a shorter id, trailing words or a revert line naming no full commit id are none\nok   E77 a reaction of the owner's login to a comment of the gate makes him present for `days` from it; a reaction by another login, or to a comment that is not the gate's, does not\nok   E78 when his presence ends the gate says so once, in an issue naming him, with what makes him present again; never again for the same end, and not while he is present\nok   E79 a change that also touches an owner path gets no constitutional notice: the gate will not merge it, the owner does\nok   E80 an open brake is found however many first-parent commits follow it: `brakes` reads the whole first-parent history, so a release and the revert still see it after 301 later commits (Codex dccff737 on #356)\nok   E81 the gate's exact revert compares each path's mode as well as its object: the same blobs with an owner path turned into a link are no revert (Codex 7a84e332 on #356)\nok   E82 when a sign of presence expires, the deadline is still read, so the change to away is announced (Codex cd8d1a0b on #356: presence_until dropped the expired sign and the notice never came)\nok   E84 a pull request of verdicts only that conflicts with the base is carried by a new one: the base merged into its head by the gate (records the union of both stores in canonical order, parents the head and the base) on a new branch under the same prefix, opened as a pull request with CI started on it, the old one closed with a comment naming the new one and its branch deleted; a mergeable one, or one not verdicts only, is left alone (#364)\nok   E89 ... and the old pull request's branch is never moved: GitHub holds a pull_request run of the workflow token's update for approval (#379, #382), where a pull request it opens starts none\nok   E90 a refresh that failed part way is resumed with each step made once: the new pull request open, the next run only closes the old one (no second branch or pull request, no FAILED); the branch made with no pull request, it opens one from it (the analysis session on #383)\nok   E91 a resumed carry is bound to its source before anything is retired: an open pull request or a branch of the carry's name whose commit is not the head and the base merged (other parents, or another tree than the stores' union) leaves the old pull request open and its branch kept; and the old one is closed only once CI has started on the carry, dispatched again when its dispatch failed (Codex on #383)\nok   E92 the carry is of the head assessed: a source whose head moved since is not carried (nothing made, the next run reads it), one that moves while it is carried is left open, and its branch is never deleted: GitHub deletes a ref with no expected head, so a verdict pushed between a read and the delete would go with it (Codex on #383 at f1da8d88 and on #388 at e42e6695)\nok   E93 the gate approves the run GitHub holds for approval (action_required) at the head of a pull request it assessed as verdicts only, of a required workflow only, and none for a head that moved, a closed pull request, one that is not verdicts only (code waiting for its checks alone included), or one refused for more than its checks (#389: held when opened)\nok   E95 a change to docs/V3.md, or to what a receiver's rely rests on (warrant/verify.py, warrant_verify.py, graph, pins, merkle, snapshot), is watched under this repository's own merge.json, and the configuration is one the gate accepts\nok   RC1 a change of .warrant/v3.json that carries the rules@1 version succeeding the base's, its body the new file, filed by a holder of pr/acceptor or pr/owner under the base's rules, raises no rules reason\nok   RC2 the file changed with no version of the rules: refused (RULES_PROJECTION)\nok   RC3 a version whose body is not the new file: refused (RULES_PROJECTION)\nok   RC4 a version filed by an actor the base's profile gives neither pr/acceptor nor pr/owner (eve, whom the new file would give a role) is not in force under the base's rules, so the file is no version's: refused; N+1 never admits itself\nok   RC5 two versions after the base's: the rules lineage forks, refused (RULES_FORK)\nok   RC6 a change of the file's bytes that changes no canonical byte (spacing, key order) needs no version\nok   RC7 a base that records no rules governs .warrant/v3.json as before: no rules reason\nok   RC8 a version signed by a key the new file adds, its actor a pr/acceptor of the new file only: under the base's trust that line is no one's, and the file is no version's: refused (the counterexample of N+1 admitting itself)\nok   RC11 a version filed by the base's pr/owner is not in force: the owner's word only lowers (#350), and the rules have no guard, so filing is making in force; the owner's stop is RULES_VETO\nok   RC12 the first rules version (a base that records none) must be the base's file unchanged, in a pull request that changes no rule: one with a key the file does not have, or one filed with a change of the file, is refused (RULES_GENESIS); the true genesis passes (the analysis session on #400: the genesis was not checked)\nok   RC10 a challenge by the constitutional tier's veto role (pr/owner) on the new rules version stops it (RULES_VETO), as one on the head version stops the pull request\nok   RC9 a head whose rules in force are not the base's nor their successor (the base's version gone): refused (RULES_CHAIN)\nok   E85 after its merge the gate starts the after_merge workflows on the base: one with paths only when the merge changed one of them (pages after site/), one without after every merge, none after a merge of verdicts only (the checker's own acceptances must not start it again)\nok   E86 an after_merge list naming no workflow file, empty paths, a workflow twice or an unknown member refuses the base's configuration\nok   E94 after a merge of verdicts the gate starts the claims checker when the code moved since a commit they were made at (another tree outside .warrant/, or one Git cannot read), and not when they were made at the base's code, .warrant/ aside (the analysis session: #389's acceptances, made at 45f73a63, merged after #386 and #387 changed the code, and nothing started the checker: 75 claims STALE)\nok   E87 with brakes open, a pre-release by the form of its version (3.0.0a7, b1, rc2, .dev3) is admitted and a stable one (3.0.0, 3.0.0.post1) refused; the form is the whole string, so 3.0.0a7 with a newline, 3.0.0a, 3.0.0-alpha or a7 are no pre-release; with no version the brakes refuse as before\nok   E88 a revert of a merge names the published versions whose tagged commit holds it (here v3.0.0a7, not v3.0.0a6, tagged before it), and a tag whose commit this clone does not hold is unknown, never 'not published' (Codex on #376: merge-base exits 128 there, and False was read as no)\nok   E83 a revert counts as pending only when the gate assessed an open pull request as the exact revert of that merge: a fork's branch named gate/revert/7-blocker does not hold back the revert of the vetoed #7, the gate's own pending revert does (Codex 8caa1ce8)\nall passed\n",
+  "limits": [
+    "No full repository suite or full mutant list run.",
+    "No live GitHub merge, workflow execution, checker-key replay, or external-environment proof claimed.",
+    "The historical #303 shadow-package refusal is fixed; this verdict concerns the current closure against its unchanged obligation."
+  ],
+  "master": "3d01d9f84115f7c537c48ed932447090449d4328",
+  "mutants": {
+    "definition": "b05896c02e2f2cce2daade3eb7f510d4f5f4931913b1e9b4f3e75498aa087f0c",
+    "rows": [
+      {
+        "detail": "",
+        "failed": [
+          "E32"
+        ],
+        "id": "G25",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "closure_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E32"
+        ],
+        "id": "G26",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "closure_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E36"
+        ],
+        "id": "G27",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E37"
+        ],
+        "id": "G28",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E38"
+        ],
+        "id": "G29",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E39"
+        ],
+        "id": "G30",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E40"
+        ],
+        "id": "G31",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E41"
+        ],
+        "id": "G32",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E42"
+        ],
+        "id": "G33",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E43"
+        ],
+        "id": "G34",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E44"
+        ],
+        "id": "G35",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E45"
+        ],
+        "id": "G36",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E45"
+        ],
+        "id": "G37",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E45"
+        ],
+        "id": "G38",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E39"
+        ],
+        "id": "G39",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E34"
+        ],
+        "id": "G40",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E50"
+        ],
+        "id": "G41",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      },
+      {
+        "detail": "",
+        "failed": [
+          "E40"
+        ],
+        "id": "G42",
+        "outcome": "KILLED",
+        "rc": 1,
+        "sections": [
+          "shadow_cases"
+        ]
+      }
+    ]
+  },
+  "probe_output": "{\n  \"base_master\": \"3d01d9f84115f7c537c48ed932447090449d4328\",\n  \"imports_shapes\": true,\n  \"eligible\": true,\n  \"reasons\": [],\n  \"watched\": [\n    \"warrant/shapes.py\"\n  ],\n  \"fixture_base\": \"98907a47479b0c53d29f92736cec1b94a0cf5321\",\n  \"fixture_head\": \"d61ba71f7c0546cb70615b5a79f70ebb70caa2bc\",\n  \"closure\": [\n    \"tools/gate.py\",\n    \"warrant/__init__.py\",\n    \"warrant/engine.py\",\n    \"warrant/gate.py\",\n    \"warrant/jcs.py\",\n    \"warrant/keys.py\",\n    \"warrant/records.py\",\n    \"warrant/shapes.py\",\n    \"warrant/store.py\"\n  ]\n}\nCOUNTEREXAMPLE: gate permits a change to an imported module under the actual policy at M\n",
+  "probe_source": "import json\nimport sys\nfrom pathlib import Path\n\nROOT = Path('/Users/s0fractal/Projects/.worktrees/codex-review/accept-f39b875dda12-0-3d01d9f84115')\nsys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]\nimport gate_test as T\n\npolicy = json.loads((ROOT / '.warrant/merge.json').read_text())\nclosure = T.imported_modules(ROOT, 'tools/gate.py')\nassert 'warrant/shapes.py' in closure\n\ndef base(p):\n    T.package_at(p.r.root)\n    p.r.profile['roles']['pr/acceptor'] = ['alice', 'bob']\n    p.r.write_config()\n\ndef change(p):\n    f = p.r.root / 'warrant/shapes.py'\n    f.write_text(f.read_text() + '\\nROADMAP_REVIEW_PROBE = True\\n')\n\np = T.PR(before_base=base, before_x=change, merge=policy)\nhead = T.git(p.r.root, 'rev-parse', 'HEAD')\nnow = 1_800_000_000\nchecks = T.green(head, completed=now - 25 * 3600)\na = p.assess(checks=checks, now=now, present=False)\nprint(json.dumps({'base_master': T.git(ROOT, 'rev-parse', 'HEAD'),\n                  'imports_shapes': True, 'eligible': a.eligible,\n                  'reasons': a.reasons, 'watched': a.facts.get('watched'),\n                  'fixture_base': p.base, 'fixture_head': head,\n                  'closure': sorted(closure)}, indent=2))\nassert a.eligible and not a.reasons and a.facts.get('watched') == ['warrant/shapes.py']\nprint('COUNTEREXAMPLE: gate permits a change to an imported module under the actual policy at M')\n",
+  "python": "3.15.2 (main, Oct 25 2026, 16:57:51) [Clang 21.0.0 (clang-2100.3.34.2)]",
+  "resolution": "Revise the obligation through a successor version to the adopted tier/window/brake invariant and establish it, or restore unconditional imported-module refusal if that remains the owed requirement. This challenge does not ask an agent to override the owner-authorized policy.",
+  "review": "Codex roadmap verdict evidence: R-GATE-CLOSURE",
+  "target": "f39b875dda12662512a9d7e1f48fbfdd4ab110e96e12b8b1ecdbc947b3623f18"
+}
