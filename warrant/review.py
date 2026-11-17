@@ -145,9 +145,11 @@ def replay(repo, key):
     for c, h, (file, case, patch) in to_replay(rep, set(profile["roles"].get("replayer", [])) | {REPLAYER}):
         x = rep["_recs"][h]["body"].get("commit")
         try:
-            if not S.hex_of(x, 40) or code_tree(repo.root, x) != code:
-                continue                   # this checkout does not hold that head's code
+            held = S.hex_of(x, 40) and code_tree(repo.root, x) == code
         except subprocess.CalledProcessError:
+            held = False
+        if not held:                       # this checkout does not hold that head's code: said, not silent (Codex on #501)
+            print(f"not run {c[:12]} on {h[:12]}: this checkout holds another head's code (no observation here)", flush=True)
             continue
         t0 = int(time.time())
         verdict = run_test(repo.root, file, case, patch)

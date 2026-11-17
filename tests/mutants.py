@@ -404,6 +404,7 @@ MUTANTS = [
     ("T325", "warrant/graph.py", '"rests_on_it": rests, "complete": w["complete"]})', '"rests_on_it": rests, "complete": True})', TOOLS, ["DR17b"]),
     ("T326", "warrant_agent/api.py", '        data, query = (G.dot(rep["graph"]) if fmt == "dot" else rep["graph"]), {"op": op, "format": fmt}', '        data, query = G.dot(rep["graph"]), {"op": op, "format": fmt}', AGENT, ["A51"]),
     ("T327", "tools/graph.py", 'G.dot(rep["graph"]) if fmt == "dot" else rep["graph"]', 'G.dot(rep["graph"])', TOOLS, ["DR25b"]),
+    ("T328", "warrant/review.py", '            print(f"not run {c[:12]} on {h[:12]}: this checkout holds another head\'s code (no observation here)", flush=True)\n', '', TOOLS, ["R08c"]),
     ("T307", "warrant/drift.py", '    d = drift(rep, root, at, since=False)\n', '    d = drift(rep, root, at)\n', TOOLS, ["DR33"]),
     ("T308", "warrant/drift.py", '        if rule == C.CLOSURE and since:\n', '        if rule == C.CLOSURE:\n', TOOLS, ["DR33"]),
     ("T309", "warrant/pins.py", '    if not since:\n        return ("CHANGED", p, "") if now else ("GONE", p, "")\n', '', TOOLS, ["DR33"]),
@@ -915,6 +916,7 @@ MUTANTS = [
     ("P46", "integrations/warrant-review/waker/waker.py", '        tries = [t for t in doc["attempts"] if not t.get("skipped")]', '        tries = list(doc["attempts"])', WAKER, ["W28"]),
     ("P47", "integrations/warrant-review/waker/waker.py", "                if denied:                  # by a partial", "                if False:                  # by a partial", WAKER, ["W29"]),
     ("P49", "integrations/warrant-review/waker/waker.py", "        if ok:                          # a partial one covers too", "        if ok and not denied:           # a partial one covers too", WAKER, ["W29"]),
+    ("P50", "integrations/warrant-review/waker/waker.py", "    return sorted({x.split()[2] for x in out if x.startswith(\"not run \") and len(x.split()) > 2} - seen)", "    return sorted({x.split()[2] for x in out if x.startswith(\"not run \") and len(x.split()) > 2})", WAKER, ["W30"]),
     ("P48", "integrations/warrant-review/waker/waker.py", "    denied = w.denied_of(x[\"pr\"])\n", "    denied = []\n", WAKER, ["W29"]),
     ("P13", "integrations/warrant-review/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
     # warrant verify (warrant/verify.py, docs/VERIFY.md): a package assessed alone; the one-file verifier and its build

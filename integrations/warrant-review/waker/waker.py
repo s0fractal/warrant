@@ -745,7 +745,7 @@ class Waker:
         out = r.stdout.decode().splitlines()
         lines = [x for x in out if x.split() and HEX.match(x.split()[0])]
         # a finding test the jail denied is not run and files nothing (#451): the replay is partial, and says so
-        self.denied = sorted({x.split()[2] for x in out if x.startswith("not run ") and len(x.split()) > 2})
+        self.denied = unobserved(out)
         if not lines:
             return False, "replay: nothing to replay" + _denied_note(self.denied)
         paths = changes(wt, [x.split()[0] for x in lines], actor)
@@ -1326,6 +1326,13 @@ def wake_after_replay(w, x):
     denied = w.denied_of(x["pr"])
     gap = (detail if what == GAVE_UP else None) or (_denied_note(denied).lstrip("; ") if denied else None)
     return w.wake(x, gap)[1]
+
+
+def unobserved(out):
+    """The findings a replay's output names as not run (the jail denied the test, or the head's code is not the
+    checkout's) and observes at no head of the same run: what no observation covers (#451; Codex on #501)."""
+    seen = {x.split()[2] for x in out if x.split() and HEX.match(x.split()[0]) and len(x.split()) > 2}
+    return sorted({x.split()[2] for x in out if x.startswith("not run ") and len(x.split()) > 2} - seen)
 
 
 def _denied_note(ids):
