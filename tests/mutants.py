@@ -389,6 +389,7 @@ MUTANTS = [
     ("T310", "warrant/shapes.py", '    if any(control14(ord(c)) for c in v):\n', '    if any(unicodedata.category(c) == "Cc" and ord(c) != 0x85 for c in v):\n', SHAPES_TEST, ["S10"]),
     ("T311", "warrant/shapes.py", '    if ord(v[0]) in SPACE14 or ord(v[-1]) in SPACE14:\n', '    if ord(v[0]) in SPACE14:\n', SHAPES_TEST, ["S10"]),
     ("T312", "warrant/shapes.py", 'SPACE14 = frozenset((0x20, 0xA0, 0x1680, *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000))', 'SPACE14 = frozenset((0x20, 0xA0, 0x1680, *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F))', SHAPES_TEST, ["S10"]),
+    ("T313", "warrant/across.py", 'f"rules@1:{self.identity}/{C.doc_id({\'trust\': trust, \'profile\': profile})}"', 'f"rules@1:{self.identity}"', TOOLS, ["RV5"]),
     ("T307", "warrant/drift.py", '    d = drift(rep, root, at, since=False)\n', '    d = drift(rep, root, at)\n', TOOLS, ["DR33"]),
     ("T308", "warrant/drift.py", '        if rule == C.CLOSURE and since:\n', '        if rule == C.CLOSURE:\n', TOOLS, ["DR33"]),
     ("T309", "warrant/pins.py", '    if not since:\n        return ("CHANGED", p, "") if now else ("GONE", p, "")\n', '', TOOLS, ["DR33"]),
