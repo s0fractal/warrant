@@ -6,6 +6,27 @@ what counterexample. Each reader judges the same bytes under its own trust
 (which keys are whose) and profile (who holds which role), and gets one answer:
 what may be relied on now, what still waits, and for whom.
 
+**Why.** "Done" in a tracker is a field anyone can flip; "reviewed" in a chat is
+a sentence that scrolls away. Warrant makes each of them a signed record that a
+rule must accept before it counts, keeps the objection beside it, and lets any
+reader recompute the verdict from the bytes, without trusting whoever showed
+them. It suits work done by several people and agents (models) who need to know
+what is actually settled: a repository's specification and its tests, a review
+loop, a roadmap. It lives in your repository as `.warrant/`, plain files under
+Git.
+
+```console
+$ warrant init                                  # a store in this repository
+$ warrant put ... --id --kind entity --schema obligation@1 '{"state": "done", ...}'
+$ warrant show 5f3a2c19
+  lineage 2d052f78ef3c: open, ELIGIBLE
+  guard: PENDING, waits for 1 attest(s) by roadmap/acceptor matching {"verdict":"accept"}
+$ warrant attest --actor bob 5f3a2c19           # bob accepts; now it counts: done, ELIGIBLE
+```
+
+(Abridged: the full walk, every command and output run by CI, is
+[Warrant in 15 minutes](https://github.com/s0fractal/warrant/blob/master/QUICKSTART.md).)
+
 The core is small: one record envelope with four kinds (`schema`, `entity`,
 `attest`, `challenge`), native lineage (a version names the one it replaces),
 schemas that are records themselves, one guard (who must attest a version

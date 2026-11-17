@@ -41,7 +41,6 @@ warrant trust --trust trust.json --bind alice=alice.key --bind bob=bob.key > /de
 cat > profile.json <<'EOF'
 {"warrant": "profile/3", "roles": {"schema/author": ["alice"], "roadmap/acceptor": ["bob"]}}
 EOF
-id() { python3 -c 'import json, sys; print(json.load(sys.stdin)["record"])'; }
 ```
 
 ```output
@@ -71,17 +70,22 @@ warrant bootstrap --store store --actor alice --key alice.key --trust trust.json
 ## 3. An obligation, and the version that closes it
 
 alice owes something. Its first version is `open`; the closing version, `done`,
-carries the guard `obligation@1` requires for that state: one attest by a
-`roadmap/acceptor` with `{"verdict": "accept"}`.
+carries the guard `obligation@1` gives that state, which `put` takes from the
+schema when none is named: one attest by a `roadmap/acceptor` with
+`{"verdict": "accept"}`. `--id` prints the new record's id alone; `show` says
+where a record stands, in plain words.
 
 ```sh obligation
-o=$(warrant put --store store --actor alice --key alice.key --trust trust.json --at 1010 --kind entity --schema obligation@1 '{"state": "open", "statement": "the quickstart runs", "serves": []}' | id)
-d=$(warrant put --store store --actor alice --key alice.key --trust trust.json --at 1020 --kind entity --schema obligation@1 --lineage "$o" --guard '{"quorum": 1, "roles": ["roadmap/acceptor"], "match": {"verdict": "accept"}, "requires": []}' '{"state": "done", "statement": "the quickstart runs", "serves": []}' | id)
-warrant assess --store store --trust trust.json --profile profile.json --lineage "$o" | python3 -c 'import json, sys; r = json.load(sys.stdin); l = r["lineage"]; print(l["state"], l["reliance"], r["versions"][l["leaf"]]["guard"], r["versions"][l["leaf"]]["waiting"])'
+o=$(warrant put --store store --actor alice --key alice.key --trust trust.json --at 1010 --id --kind entity --schema obligation@1 '{"state": "open", "statement": "the quickstart runs", "serves": []}')
+d=$(warrant put --store store --actor alice --key alice.key --trust trust.json --at 1020 --id --kind entity --schema obligation@1 --lineage "$o" '{"state": "done", "statement": "the quickstart runs", "serves": []}')
+warrant show --store store --trust trust.json --profile profile.json "$d" | tail -n +2
 ```
 
 ```output
-open ELIGIBLE PENDING ['1 attest(s) by roadmap/acceptor matching {"verdict":"accept"}']
+  statement: the quickstart runs
+  lineage 2d052f78ef3c: open, ELIGIBLE (this version)
+  guard: PENDING, waits for 1 attest(s) by roadmap/acceptor matching {"verdict":"accept"}
+  grounded: no: it, or something it rests on, is not yet effective and ELIGIBLE
 ```
 
 The lineage is still `open`: the closing version is its leaf, but it is not
@@ -91,11 +95,14 @@ effective until its guard is met.
 
 ```sh accept
 warrant attest --store store --actor bob --key bob.key --trust trust.json --at 1030 "$d" > /dev/null
-warrant assess --store store --trust trust.json --profile profile.json --lineage "$o" | python3 -c 'import json, sys; r = json.load(sys.stdin); l = r["lineage"]; print(l["state"], l["reliance"], r["versions"][l["leaf"]]["accepted_by"])'
+warrant show --store store --trust trust.json --profile profile.json "$d" | tail -n +2
 ```
 
 ```output
-done ELIGIBLE ['bob']
+  statement: the quickstart runs
+  lineage 2d052f78ef3c: done, ELIGIBLE (this version)
+  guard: MET; accepted by bob
+  grounded: yes
 ```
 
 alice could not have done this herself: the version's own actor never meets its
@@ -110,11 +117,15 @@ drops.
 
 ```sh challenge
 warrant put --store store --actor bob --key bob.key --trust trust.json --at 1040 --kind challenge --ref "$d" "{\"target\": \"$d\", \"statement\": \"the quickstart fails on Python 3.10\"}" > /dev/null
-warrant assess --store store --trust trust.json --profile profile.json --lineage "$o" | python3 -c 'import json, sys; l = json.load(sys.stdin)["lineage"]; print(l["state"], l["reliance"])'
+warrant show --store store --trust trust.json --profile profile.json "$d" | tail -n +2
 ```
 
 ```output
-done CHALLENGED
+  statement: the quickstart runs
+  lineage 2d052f78ef3c: done, CHALLENGED (this version)
+  guard: MET; accepted by bob
+  grounded: no: it, or something it rests on, is not yet effective and ELIGIBLE
+  challenged by bob (counted): the quickstart fails on Python 3.10
 ```
 
 alice answers with a new version; once bob accepts it, the challenge no longer
