@@ -676,9 +676,10 @@ class Waker:
             return "waiting", f"replay incomplete: run {len(tries)} failed ({last.get('line')}); retry after {iso(due_at)}"
         return "retry", f"replay run {len(tries) + 1} of {MAX_TRIES}"
 
-    def pending(self, n):
-        """Whether a replay of pull request `n` is incomplete with runs left (waiting or retry), at any head."""
-        return any(self.replay_state(runs(json.loads(p.read_text())))[0] in ("waiting", "retry")
+    def pending(self, n, base=None):
+        """Whether a replay of pull request `n` is incomplete with runs left (waiting or retry), at any head, read at
+        `base` (a skip made at another base is retried: Codex 9bf00420)."""
+        return any(self.replay_state(runs(json.loads(p.read_text())), base)[0] in ("waiting", "retry")
                    for p in (self.home / "replays").glob(f"{number(n)}-*.json"))
 
     def cover(self, a):
@@ -1309,9 +1310,9 @@ def retry_lines(w, base, found):
     its current head. Nobody is woken here."""
     out = []
     for x in found["not_due"]:
-        if x.get("head_repo") == w.repository and w.pending(x["pr"]):
+        if x.get("head_repo") == w.repository and w.pending(x["pr"], base):
             _, doc = w.replay_memo(x)
-            if doc is None or w.replay_state(doc)[0] in ("waiting", "retry"):    # a head that skipped stays quiet
+            if doc is None or w.replay_state(doc, base)[0] in ("waiting", "retry"):    # a skip stays quiet at its own base
                 out.append(f"  RETRY #{x['pr']} {x['head'][:12]}: {w.replay(x, base)[1]}")
     return out
 

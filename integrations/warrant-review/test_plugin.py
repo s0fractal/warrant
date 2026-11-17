@@ -771,6 +771,17 @@ def carrying_answers():
           and w.replay_state(memo)[0] == "skipped",
           "a replay skipped at a head that changes the checker stays skipped while the base is the one it was skipped at, "
           "and is retried once the base moved, as its line promises (it replays once adopted; Codex 97b547fe)")
+    home = Path(tempfile.mkdtemp(prefix="waker-retry-"))
+    (home / "replays").mkdir()
+    head = "c" * 40
+    (home / "replays" / f"4-{head}.json").write_text(json.dumps(dict(memo, pr=4, head=head)))
+    w.home, w.repository = home, "s0fractal/warrant"
+    w.replay = lambda x, b: (False, f"replayed at {b[:4]}")
+    found = {"not_due": [{"pr": 4, "head": head, "head_repo": "s0fractal/warrant"}]}
+    same, moved = WAKER.retry_lines(w, "a" * 40, found), WAKER.retry_lines(w, "b" * 40, found)
+    check("W27", same == [] and len(moved) == 1 and "replayed at bbbb" in moved[0] and w.pending(4, "b" * 40) and not w.pending(4, "a" * 40),
+          "a pull request not due (it was reviewed) with a replay skipped at an older base is retried at the current one, "
+          "and only then: pending and retry_lines read the base too (Codex 9bf00420)")
 
 
 if __name__ == "__main__":
