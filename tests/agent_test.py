@@ -73,7 +73,6 @@ def horizon_cases():
     named = repo.attest("dave", done, seen={"root": root, "challenges": [early, late]})
     cap = ok(api.call(cfg, "context", {"workspace": "w", "targets": [done]})).get("targets", {}).get(done, {})
     hz = cap.get("horizons", {})
-    rep = repo.report()
     check("A46 prepare fills an acceptance's `seen`: the root of the snapshot its view read and the counted challenges "
           "against the target in it (eve's does not count here, so it is not listed)",
           seen == {"root": root, "challenges": [early]}, seen)
