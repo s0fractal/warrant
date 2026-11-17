@@ -81,6 +81,22 @@ def horizon_cases():
           hz.get(acc) == {"root": root, "unseen": [late]} and hz.get(named) == {"root": root, "unseen": []}
           and blind in hz and hz[blind] is None and G.horizon(RP.Repo(repo.root).report(), acc) == hz.get(acc), hz)
     seen_bounds()
+    ground_cases()
+
+
+def ground_cases():
+    """context says what a target's reliance does not: whether it rests on ground (graph.grounded)."""
+    repo = Repo()
+    obl = repo.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    done = repo.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=obl)
+    other = repo.entity("alice", "obligation@1", {"state": "open", "statement": "rests on nothing", "serves": []})
+    cfg = cfg_of(repo)
+    t = ok(api.call(cfg, "context", {"workspace": "w", "targets": [done, other]})).get("targets", {})
+    gd, go = (t.get(x, {}).get("grounded") or {} for x in (done, other))
+    check("A50 context gives each version's `grounded`: a closure waiting for its acceptor is not (its failing named, "
+          "with why), an open obligation resting on nothing is",
+          gd.get("grounded") is False and gd.get("failing_count", 0) >= 1 and all(len(f) == 2 for f in gd.get("failing", []))
+          and go == {"grounded": True, "failing": [], "failing_count": 0}, (gd, go))
 
 
 def seen_bounds():

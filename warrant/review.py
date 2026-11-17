@@ -35,6 +35,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import chains as CH
 from . import gate as GT
 from . import records as R
 from . import shapes as S
@@ -308,7 +309,11 @@ def run(argv=None):
         return 0
     key = load_key(a.key, root)
     _, _, name = repo.config()
-    dump({"filed": repo.file(a.actor, key, [_pr_record(repo, rep, a, name)])})
+    # a merge of the base after this actor filed there too forks its chain (CHAIN_FORK): its `joined` attests take
+    # the loose tips in first, nothing re-signed, so the record lands on one chain (antigravity's ISM-W6, the form
+    # that keeps every record as it was signed)
+    joins = CH.join_records(repo.view(), a.actor)
+    dump({"filed": repo.file(a.actor, key, [*joins, _pr_record(repo, rep, a, name)]), "joined": len(joins)})
     return 0
 
 
