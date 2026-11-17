@@ -978,6 +978,15 @@ def drift_impact_cases():
           and eq == {"op": "export", "format": "dot"} and dots.startswith("digraph warrant {\n") and dots.endswith("}\n")
           and all(f'"{n[0]}" [label=' in dots for n in graph_h["nodes"]) and all(f'"{a}" -> "{b}" [label="{rel}"]' in dots for a, rel, b in graph_h["edges"]),
           (dq, dots[:200]))
+    views = TG.render(RP.Repo(r.root))
+    snap = RP.Repo(r.root).report()["snapshot"]
+    lines = {n: t.split("\n")[2] for n, t in views.items()}
+    lenses = {n: ln.split("lens `")[-1].rstrip("`") for n, ln in lines.items()}
+    check("DR25c each generated view names what decided it, as a query's result does: the store's full snapshot as root "
+          "and a lens of its own, the view's name in it (Codex b26d7983)",
+          sorted(views) == ["CLAIMS.md", "REVIEWS.md", "ROADMAP.md", "WITNESSES.md"]
+          and all(ln.startswith(f"root `{snap}` · lens `") for ln in lines.values())
+          and all(len(x) == 64 for x in lenses.values()) and len(set(lenses.values())) == 4, lines)
     (r.root / "README").write_text("unrelated again\n")
     later = r.commit("another unrelated change")
     m2 = D.impact(RP.Repo(r.root).report(), r.root, later, head)

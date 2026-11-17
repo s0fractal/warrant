@@ -44,9 +44,19 @@ def code_id(root):
 
 
 def render(repo):
+    """The generated views, each under a line naming what decided it: `root` (the store's snapshot, full) and `lens`
+    (warrant.graph.answer's content address of the code this tool runs from, the trust, the profile, the view's name
+    and the checkout), as a query's result carries them (Codex b26d7983 on G11's closure)."""
     rep = repo.report()
-    return {"CLAIMS.md": CL.view(rep, repo.root), "ROADMAP.md": RM.view(rep), "REVIEWS.md": RV.view(rep),
-            "WITNESSES.md": witnesses(rep)}
+    views = {"CLAIMS.md": CL.view(rep, repo.root), "ROADMAP.md": RM.view(rep), "REVIEWS.md": RV.view(rep),
+             "WITNESSES.md": witnesses(rep)}
+    code = json.dumps(code_id(repo.root), sort_keys=True)
+    out = {}
+    for n, text in views.items():
+        a = G.answer(rep, {"op": "view", "name": n}, None, code)
+        head, _, rest = text.partition("\n")
+        out[n] = f"{head}\n\nroot `{a['root']}` · lens `{a['lens']}`\n{rest}"
+    return out
 
 
 def witnesses(rep):
