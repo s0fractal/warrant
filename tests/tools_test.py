@@ -3008,6 +3008,59 @@ def across_checkout_cases():
           and len(once["stores"]) == 1 and once["stores"][0].get("read_as") == ["a", "same"], (got, got1, two["stores"]))
 
 
+def sources_cases():
+    """A store of an actor's own, read beside the repository's (warrant/sources.py): its records by the actors the
+    declaration names count under the repository's receiver; records by anyone else there are left out and named; a
+    ref the clone does not hold is named, never read as empty; with no declaration nothing changes."""
+    from warrant import sources as SRC
+    r = Repo(git_init=True)
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+    r.commit("the repository's store")
+    side = Repo()                                    # the actor's own store: bob's acceptance, and a line by eve
+    acc = side.put("bob", "attest", {"target": d, "verdict": "accept"}, refs=[d])
+    noise = side.entity("eve", "obligation@1", {"state": "open", "statement": "not bob's", "serves": []})
+    git(r.root, "checkout", "-q", "--orphan", "stores/bob")
+    git(r.root, "rm", "-rq", "--cached", ".")
+    (r.root / ".warrant").mkdir(exist_ok=True)
+    keep = r.dot / "records.jsonl"
+    mine = keep.read_bytes()
+    keep.write_bytes(side.dot.joinpath("records.jsonl").read_bytes())
+    git(r.root, "add", ".warrant/records.jsonl")
+    git(r.root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "bob's store")
+    git(r.root, "checkout", "-q", "-f", "master")
+    keep.write_bytes(mine)
+    before = RP.Repo(r.root).report()
+    decl = {"warrant": "sources/1", "sources": [{"name": "bob", "ref": "refs/heads/stores/bob", "actors": ["bob"]}]}
+    (r.dot / "sources.json").write_text(json.dumps(decl))
+    after = RP.Repo(r.root).report()
+    _, out = cli(r.root, "status", "--json")
+    st = json.loads(out or "{}")
+    (r.dot / "sources.json").write_text(json.dumps(dict(decl, sources=[dict(decl["sources"][0], ref="refs/heads/stores/nobody")])))
+    _, out2 = cli(r.root, "status", "--json")
+    gone = (json.loads(out2 or "{}").get("sources") or [{}])[0]
+    check("SR1 a declared source's records by its actors count beside the repository's own: bob's acceptance there "
+          "closes alice's obligation here, under this repository's receiver; with no declaration it does not",
+          before["lineages"][o]["state"] == "open" and after["lineages"][o]["state"] == "done" and acc in after["_recs"], 
+          (before["lineages"][o]["state"], after["lineages"][o]["state"]))
+    check("SR2 a source cannot speak for another actor: eve's record there is left out, and status names how many",
+          noise not in after["_recs"] and st.get("sources", [{}])[0].get("left_out", 0) >= 1
+          and st.get("sources", [{}])[0].get("records") == 1, st.get("sources"))
+    check("SR3 a ref this clone does not hold is named (commit null), never read as an empty store",
+          gone.get("commit") is None and gone.get("name") == "bob", gone)
+    bad = []
+    for doc in ({"warrant": "sources/1", "sources": [{"name": "x", "ref": "HEAD", "actors": ["bob"]}]},
+                {"warrant": "sources/1", "sources": [{"name": "x", "ref": "refs/heads/a/../b", "actors": ["bob"]}]},
+                {"warrant": "sources/1", "sources": [{"name": "x", "ref": "refs/heads/a", "actors": []}]},
+                {"warrant": "other", "sources": []}):
+        try:
+            SRC.declared(doc)
+        except ValueError:
+            bad.append(True)
+    check("SR4 a malformed declaration is refused: a ref outside refs/heads and refs/warrant, a ref with .., no actors, "
+          "another format", bad == [True] * 4, bad)
+
+
 def status_brakes_cases():
     """`warrant status` shows the gate's brakes still open at HEAD (no network) and whether each can still be reverted
     exactly; a merge whose files changed again since cannot, and status says so instead of leaving the veto implied."""
@@ -3094,6 +3147,7 @@ if __name__ == "__main__":
         roadmap_cases,
         schemas_due_cases,
         status_brakes_cases,
+        sources_cases,
         across_checkout_cases,
         cli_cases,
         chain_join_cases,

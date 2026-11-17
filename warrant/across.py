@@ -34,6 +34,7 @@ from . import graph as G
 from . import home as H
 from . import jcs as C
 from . import shapes as S
+from . import sources as SRC
 from .store import Refused, Snapshot, Store, confined
 
 FORMAT = "across/1"
@@ -399,6 +400,7 @@ def home_readings(doc):
             raise Refusal("NOT_PERMITTED", f"the operator did not permit `graph` for {name!r}")
         path = os.path.expanduser(r["path"])
         snap = snapshot_of(Store(H.store_of(doc, name)))
+        snap, _ = SRC.with_sources(path, snap, SRC.config_doc(path))
         trust, profile, repository = H.receiver(path)
         return snap, trust, profile, repository
     return [Reading(name, lambda name=name, r=r: read(name, r), os.path.expanduser(r["path"])) for name, r in sorted(doc["repositories"].items())]

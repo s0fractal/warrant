@@ -38,6 +38,7 @@ from warrant import keys as K
 from warrant import records as R
 from warrant import review as RV
 from warrant import shapes as S
+from warrant import sources as SRC
 from warrant import verify as V
 from warrant.store import Inadmissible, Refused, Snapshot
 
@@ -60,7 +61,10 @@ def _closed(req, required, optional=()):
 def _assess(ws, snap=None):
     trust, profile = ws.receiver()
     try:
-        snap = snap if snap is not None else ws.open().snapshot()
+        if snap is None:            # a repository's store with the sources its v3.json names beside it
+            snap = ws.open().snapshot()
+            if ws.repo is not None:
+                snap, _ = SRC.with_sources(ws.repo, snap, SRC.config_doc(ws.repo))
         return snap, E.View(snap, trust, profile), trust, profile
     except Refused as e:
         raise AgentError("RESOURCE_LIMIT" if "limit" in str(e) else "REFUSED", str(e)) from None

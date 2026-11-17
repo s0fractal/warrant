@@ -26,6 +26,7 @@ from . import across as A
 from . import bootstrap as B
 from . import chains as CH
 from . import engine as E
+from . import sources as SRC
 from . import graph as G
 from . import home as H
 from . import records as R
@@ -253,9 +254,12 @@ def status(a):
     store = store_dir(a)
     trust, profile, name = receiver(a, store)
     snap = Store(store).snapshot()
+    root = Path(store).resolve().parent
+    srcs = []
+    if Path(store).name == ".warrant":            # a repository's store: the sources its v3.json names, read beside it
+        snap, srcs = SRC.with_sources(root, snap, SRC.config_doc(root))
     view = E.View(snap, trust, profile, a.as_of)
     rep, forks = view.report(), CH.forks(view)
-    root = Path(store).resolve().parent
     if a.as_of is None and Path(store).name == ".warrant":
         from . import drift as D
         rep["_recs"], rep["_basis"] = view.recs, view.basis
@@ -275,7 +279,8 @@ def status(a):
             "schemas_pending": sorted(rep["schemas_pending"]), "problems": rep["problems"],
             "lineages": {k: dict(sorted(v.items())) for k, v in sorted(lineages.items())},
             "reliance": dict(sorted(reliance.items())),
-            "frontier": G.frontier(rep, profile, a.actor, view.recs) if a.actor else None, "brakes": brakes}
+            "frontier": G.frontier(rep, profile, a.actor, view.recs) if a.actor else None, "brakes": brakes,
+            "sources": srcs}
 
 
 def open_brakes(root):
@@ -319,6 +324,10 @@ def render(st):
              ("chain forks", (", ".join(st["chain_forks"]) + f" · open: {', '.join(st['chain_forks_open']) or 'none'}")
                              if st["chain_forks"] else "none"),
              ("problems", f"{len(st['problems'])}" if st["problems"] else "none")]
+    for x in st.get("sources") or []:
+        rows.append(("source", f"{x['name']} at {x['ref']}: " + (f"{x['records']} record(s) by its actors at {x['commit'][:12]}"
+                                                               + (f", {x['left_out']} by others left out" if x["left_out"] else "")
+                                                               if x["commit"] else "not in this clone (fetch the ref)")))
     if st.get("brakes") is not None:
         rows.append(("brakes", f"{len(st['brakes'])} open (the owner may veto; the gate reverts a vetoed merge)" if st["brakes"] else "none open"))
         rows += [("", f"#{b['pr']} merged as {b['merge'][:12]}, until {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(b['until']))}"
