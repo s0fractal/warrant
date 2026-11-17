@@ -396,6 +396,7 @@ MUTANTS = [
     ("T317", "warrant/cli.py", '            out.append(dict(b, revertable=why is None,', '            out.append(dict(b, revertable=True,', TOOLS, ["ST1"]),
     ("T318", "warrant/review.py", '    joins = CH.join_records(repo.view(), a.actor)\n', '    joins = []\n', TOOLS, ["R01c"]),
     ("T319", "warrant/across.py", '        return {"trust": self.view.trust, "profile": self.view.profile, "checkout": self.rep.get("checkout")}', '        return {"trust": self.view.trust, "profile": self.view.profile}', TOOLS, ["RV6"]),
+    ("T320", "warrant/across.py", 'dict(query, page={"offset": q.get("offset", 0), "budget": budget})', 'query', AGENT, ["X15b"]),
     ("T307", "warrant/drift.py", '    d = drift(rep, root, at, since=False)\n', '    d = drift(rep, root, at)\n', TOOLS, ["DR33"]),
     ("T308", "warrant/drift.py", '        if rule == C.CLOSURE and since:\n', '        if rule == C.CLOSURE:\n', TOOLS, ["DR33"]),
     ("T309", "warrant/pins.py", '    if not since:\n        return ("CHANGED", p, "") if now else ("GONE", p, "")\n', '', TOOLS, ["DR33"]),

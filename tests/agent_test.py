@@ -960,6 +960,11 @@ def across_cases():
           len(pages) > 1 and all(len(json.dumps(x, sort_keys=True)) <= 8192 for x in pages) and len(ids) == len(set(ids)) == pages[0].get("total") == 41
           and pages[-1].get("next") is None and all(x.get("next") for x in pages[:-1]) and len(row.get("refs", [])) == A.REF_ROWS
           and row.get("refs_more") == 100 - A.REF_ROWS and row.get("foreign_more") == 100 - A.REF_ROWS, [len(x.get("nodes", [])) for x in pages])
+    again = _ans(cfg, {"query": "open", "max_bytes": 8192, "offset": 0})
+    check("X15b each page is its own answer: the same root, another lens (its offset and budget bound), and the same "
+          "lens again gives the same bytes (Codex da1681d5)",
+          len({x["root"] for x in pages}) == 1 and len({x["lens"] for x in pages}) == len(pages)
+          and json.dumps(again, sort_keys=True) == json.dumps(pages[0], sort_keys=True), [x["lens"][:8] for x in pages])
     tiny, header = api.call(cfg, "across", {"query": "stores", "max_bytes": 64}), _ans(cfg, {"query": "open"})
     row_over = api.call(cfg, "across", {"query": "open", "max_bytes": len(json.dumps(dict(header, nodes=[]), sort_keys=True)) + 8})
     small = many.home / "small.json"
