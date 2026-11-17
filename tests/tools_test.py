@@ -2916,6 +2916,32 @@ def asked_cases():
           and f3["attest"] == [] , (f3, rep3["versions"][done]["guard"]))
 
 
+def status_brakes_cases():
+    """`warrant status` shows the gate's brakes still open at HEAD (no network) and whether each can still be reverted
+    exactly; a merge whose files changed again since cannot, and status says so instead of leaving the veto implied."""
+    r = Repo(git_init=True)
+    (r.root / "x.txt").write_text("one\n")
+    r.commit("base")
+    git(r.root, "checkout", "-q", "-b", "side")
+    (r.root / "x.txt").write_text("two\n")
+    r.commit("the change")
+    git(r.root, "checkout", "-q", "master")
+    until = int(time.time()) + 3600
+    git(r.root, "merge", "-q", "--no-ff", "side", "-m", "Merge pull request #7", "-m", f"warrant-gate brake until {until}: #7 head version {'ab' * 32}")
+
+    def st():
+        with contextlib.chdir(r.root):
+            return CLI.status(CLI._parser().parse_args(["status"]))["brakes"]
+    first = st()
+    (r.root / "x.txt").write_text("three\n")
+    r.commit("changed again")
+    second = st()
+    check("ST1 status lists each brake still open at HEAD with its pull request and end, revertable while the gate's exact "
+          "revert is possible, and why not once a later commit changed its files",
+          [(b["pr"], b["until"], b["revertable"]) for b in first] == [(7, until, True)]
+          and [(b["pr"], b["revertable"]) for b in second] == [(7, False)] and "x.txt" in second[0].get("why", ""), (first, second))
+
+
 def schemas_due_cases():
     """A schema short of its schema/author quorum is due for each holder who may back it (gate.schemas_due, `roadmap
     due`, the review waker's queue): rules@1 (e8aacad8, #400) waited for Codex with no duty naming him."""
@@ -2974,6 +3000,7 @@ if __name__ == "__main__":
         review_cases,
         roadmap_cases,
         schemas_due_cases,
+        status_brakes_cases,
         cli_cases,
         chain_join_cases,
         home_cases,

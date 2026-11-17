@@ -393,6 +393,7 @@ MUTANTS = [
     ("T314", "warrant/graph.py", '    if "schema/author" not in roles:\n        return []\n    return [{"version": i, "name": p["name"]}', '    return [{"version": i, "name": p["name"]}', TOOLS, ["SD3"]),
     ("T315", "warrant_agent/api.py", '            cap["grounded"] = {"grounded": g["grounded"],', '            cap["grounded"] = {"grounded": True,', AGENT, ["A50"]),
     ("T316", "warrant_agent/api.py", '            if "drift" in lin:\n                cap["drift"] = lin["drift"]\n', '', TOOLS, ["DR1"]),
+    ("T317", "warrant/cli.py", '            out.append(dict(b, revertable=why is None,', '            out.append(dict(b, revertable=True,', TOOLS, ["ST1"]),
     ("T307", "warrant/drift.py", '    d = drift(rep, root, at, since=False)\n', '    d = drift(rep, root, at)\n', TOOLS, ["DR33"]),
     ("T308", "warrant/drift.py", '        if rule == C.CLOSURE and since:\n', '        if rule == C.CLOSURE:\n', TOOLS, ["DR33"]),
     ("T309", "warrant/pins.py", '    if not since:\n        return ("CHANGED", p, "") if now else ("GONE", p, "")\n', '', TOOLS, ["DR33"]),

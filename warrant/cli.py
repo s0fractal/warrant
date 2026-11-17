@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sys
+import subprocess
 import time
 from pathlib import Path
 
@@ -259,6 +260,7 @@ def status(a):
         from . import drift as D
         rep["_recs"], rep["_basis"] = view.recs, view.basis
         D.gate(rep, root)            # G14: a lineage whose acceptances name other bytes than HEAD's counts STALE here too
+    brakes = open_brakes(root) if a.as_of is None and Path(store).name == ".warrant" else None
     lineages, reliance = {}, {}
     for lin in rep["lineages"].values():
         by, state = lineages.setdefault(lin["schema"], {}), lin["state"] or "none"     # none: no effective version yet
@@ -273,7 +275,24 @@ def status(a):
             "schemas_pending": sorted(rep["schemas_pending"]), "problems": rep["problems"],
             "lineages": {k: dict(sorted(v.items())) for k, v in sorted(lineages.items())},
             "reliance": dict(sorted(reliance.items())),
-            "frontier": G.frontier(rep, profile, a.actor, view.recs) if a.actor else None}
+            "frontier": G.frontier(rep, profile, a.actor, view.recs) if a.actor else None, "brakes": brakes}
+
+
+def open_brakes(root):
+    """The gate's brakes still open at this checkout's HEAD (warrant.gate.brakes: merges the owner may still veto, read
+    from the merge messages, no network), each with whether the gate's exact revert of it is still possible
+    (revert_plan: `revertable`, or why not); None outside a git checkout."""
+    from . import gate as GT
+    try:
+        head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD^{commit}"], capture_output=True, text=True,
+                              check=True).stdout.strip()
+        out = []
+        for b in GT.brakes(root, head):
+            _, why = GT.revert_plan(root, head, b["merge"])
+            out.append(dict(b, revertable=why is None, **({"why": why} if why else {})))
+        return out
+    except (subprocess.CalledProcessError, OSError, GT.Refused):
+        return None
 
 
 def _counts(d):
@@ -300,6 +319,10 @@ def render(st):
              ("chain forks", (", ".join(st["chain_forks"]) + f" · open: {', '.join(st['chain_forks_open']) or 'none'}")
                              if st["chain_forks"] else "none"),
              ("problems", f"{len(st['problems'])}" if st["problems"] else "none")]
+    if st.get("brakes") is not None:
+        rows.append(("brakes", f"{len(st['brakes'])} open (the owner may veto; the gate reverts a vetoed merge)" if st["brakes"] else "none open"))
+        rows += [("", f"#{b['pr']} merged as {b['merge'][:12]}, until {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(b['until']))}"
+                      f" · {'revertable' if b['revertable'] else 'no exact revert: ' + b['why']}") for b in st["brakes"]]
     f = st["frontier"]
     if f:
         rows.append((f["actor"], f"may attest {len(f['attest'])} · own pending {len(f['pending'])} · challenged {len(f['challenged'])}"
