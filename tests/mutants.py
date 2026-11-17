@@ -910,6 +910,8 @@ MUTANTS = [
     ("P44", "integrations/warrant-review/waker/waker.py", "        return any(self.replay_state(runs(json.loads(p.read_text())), base)[0]", "        return any(self.replay_state(runs(json.loads(p.read_text())))[0]", WAKER, ["W27"]),
     ("P45", "integrations/warrant-review/waker/waker.py", "            if doc is None or w.replay_state(doc, base)[0] in", "            if doc is None or w.replay_state(doc)[0] in", WAKER, ["W27"]),
     ("P46", "integrations/warrant-review/waker/waker.py", '        tries = [t for t in doc["attempts"] if not t.get("skipped")]', '        tries = list(doc["attempts"])', WAKER, ["W28"]),
+    ("P47", "integrations/warrant-review/waker/waker.py", "        if ok and not denied:", "        if ok:", WAKER, ["W29"]),
+    ("P48", "integrations/warrant-review/waker/waker.py", "    denied = w.denied_of(x[\"pr\"])\n", "    denied = []\n", WAKER, ["W29"]),
     ("P13", "integrations/warrant-review/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
     # warrant verify (warrant/verify.py, docs/VERIFY.md): a package assessed alone; the one-file verifier and its build
     ("UM01", VF, '"rely": bool(roots) and all(r["rely"] for r in roots.values())',
