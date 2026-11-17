@@ -640,9 +640,11 @@ class Waker:
         t = self.clock()
         doc = doc or {"pr": a["pr"], "head": a["head"], "attempts": []}
         doc.update(base=base, replayer=actor, at=iso(t), pushed=pushed, line=line)
-        doc["attempts"].append({"at": iso(t), "finished": t, "ok": ok, "line": line, **({"skipped": True} if skipped else {})})
+        denied = list(getattr(self, "denied", []) or []) if ok else []
+        doc["attempts"].append({"at": iso(t), "finished": t, "ok": ok, "line": line, **({"skipped": True} if skipped else {}),
+                                **({"denied": denied} if denied else {})})
         p.write_text(json.dumps(doc, indent=1))
-        if ok:
+        if ok and not denied:           # a partial replay covers no other head's (Codex 4ce02a05)
             self.cover(a)
         return pushed, line
 
@@ -685,6 +687,16 @@ class Waker:
         return any(self.replay_state(runs(json.loads(p.read_text())), base)[0] in ("waiting", "retry")
                    for p in (self.home / "replays").glob(f"{number(n)}-*.json"))
 
+    def denied_of(self, n):
+        """The finding tests the jail denied in the latest completed replay of pull request `n`, at any head: what
+        the reviewer must be told no observation covers."""
+        best = (-1, [])
+        for p in (self.home / "replays").glob(f"{number(n)}-*.json"):
+            done = [t for t in runs(json.loads(p.read_text()))["attempts"] if t.get("ok")]
+            if done and done[-1].get("finished", 0) > best[0]:
+                best = (done[-1].get("finished", 0), done[-1].get("denied") or [])
+        return best[1]
+
     def cover(self, a):
         """A replay completed at `a`'s head replays every finding of its store at each of its heads: the
         incomplete replays of the same pull request at other heads are covered by it."""
@@ -703,6 +715,7 @@ class Waker:
         shutil.rmtree(work, ignore_errors=True)
 
     def _replay(self, a, base, actor, seed):
+        self.denied = []
         n, head, branch = number(a["pr"]), commit(a["head"]), a.get("branch")
         if not (isinstance(branch, str) and PR_BRANCH.match(branch) and branch != self.branch):
             raise Skipped(f"replay skipped: {str(branch)[:40]!r} is not a pull request branch to push to")
@@ -727,9 +740,12 @@ class Waker:
                       prof, self.env(work, code), seed, cwd=code)
         if r.returncode:
             raise RuntimeError(f"the checker exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
-        lines = [x for x in r.stdout.decode().splitlines() if x.split() and HEX.match(x.split()[0])]
+        out = r.stdout.decode().splitlines()
+        lines = [x for x in out if x.split() and HEX.match(x.split()[0])]
+        # a finding test the jail denied is not run and files nothing (#451): the replay is partial, and says so
+        self.denied = sorted({x.split()[2] for x in out if x.startswith("not run ") and len(x.split()) > 2})
         if not lines:
-            return False, "replay: nothing to replay"
+            return False, "replay: nothing to replay" + _denied_note(self.denied)
         paths = changes(wt, [x.split()[0] for x in lines], actor)
         git("-C", str(wt), "add", "--", *paths)
         msg = (f"Review replay of #{n} at {head[:12]}: {len(lines)} observation(s) by {actor[:27]}\n\n" + "\n".join(lines)
@@ -741,7 +757,8 @@ class Waker:
         if tip[:1] != [head]:
             raise NotPushed(f"replay not pushed: {branch} is at {(tip or ['nothing'])[0][:12]}, not {head[:12]}")
         git("-C", str(wt), "push", "--quiet", "origin", f"{new}:refs/heads/{branch}")
-        return True, f"replay: {len(lines)} observation(s) by {actor[:27]} pushed as {new[:12]} on {branch}"
+        return True, (f"replay: {len(lines)} observation(s) by {actor[:27]} pushed as {new[:12]} on {branch}"
+                      + _denied_note(self.denied))
 
     # -- one wake
 
@@ -1304,7 +1321,15 @@ def wake_after_replay(w, x):
     what, detail = w.replay_state(doc) if doc is not None else ("done", "")
     if what in ("waiting", "retry"):
         return "not woken: the replay is incomplete"
-    return w.wake(x, detail if what == GAVE_UP else None)[1]
+    denied = w.denied_of(x["pr"])
+    gap = (detail if what == GAVE_UP else None) or (_denied_note(denied).lstrip("; ") if denied else None)
+    return w.wake(x, gap)[1]
+
+
+def _denied_note(ids):
+    """The words a partial replay adds to its line and to the reviewer's prompt."""
+    return (f"; {len(ids)} finding test(s) not run, the jail denied what they need: {', '.join(i[:12] for i in ids)}"
+            if ids else "")
 
 
 def retry_lines(w, base, found):

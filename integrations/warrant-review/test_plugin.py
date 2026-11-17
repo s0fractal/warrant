@@ -787,6 +787,28 @@ def carrying_answers():
     check("W28", w.replay_state(two_skips, "b" * 40)[0] == "waiting" and w.replay_state(dict(two_skips, attempts=two_skips["attempts"][:2]), "c" * 40)[0] == "retry",
           "a skip is no checker run: after two skips at earlier bases one real failure waits for its backoff and is retried, "
           "it does not give up (Codex 1a7a5d6e)")
+    home2 = Path(tempfile.mkdtemp(prefix="waker-denied-"))
+    (home2 / "replays").mkdir()
+    old_head, new_head = "d" * 40, "e" * 40
+    (home2 / "replays" / f"5-{old_head}.json").write_text(json.dumps({"pr": 5, "head": old_head, "attempts": [
+        {"finished": 0, "ok": False, "line": "replay failed: exit 75"}]}))
+    v = object.__new__(WAKER.Waker)
+    v.home, v.repository, v.clock = home2, "s0fractal/warrant", (lambda: 10)
+    v.seed = lambda tree: ("review-replayer", "seed")
+    v.tree = lambda base: "code"
+    denied_id = "ab" * 32
+    def partial(a, base, actor, seed):
+        v.denied = [denied_id]
+        return True, "replay: 1 observation(s)" + WAKER._denied_note(v.denied)
+    v._replay = partial
+    pushed, line = v.replay({"pr": 5, "head": new_head}, "f" * 40)
+    old_doc = json.loads((home2 / "replays" / f"5-{old_head}.json").read_text())
+    v.wake = lambda x, gap: (None, f"woken; told: {gap}")
+    told = WAKER.wake_after_replay(v, {"pr": 5, "head": new_head})
+    check("W29", pushed and "not run" in line and denied_id[:12] in line and v.denied_of(5) == [denied_id]
+          and "covered_by" not in old_doc and denied_id[:12] in told and "not run" in told,
+          "a replay whose finding tests the jail denied is partial: its line names them, it covers no other head's "
+          "failed replay, and the reviewer's wake is told which findings no observation covers (Codex 4ce02a05)")
 
 
 if __name__ == "__main__":
