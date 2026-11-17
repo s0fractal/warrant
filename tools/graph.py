@@ -27,7 +27,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from warrant import claims as CL           # noqa: E402
 from warrant import drift as DR            # noqa: E402
-from warrant import gate as GT             # noqa: E402
 from warrant import review as RV           # noqa: E402
 from warrant import roadmap as RM          # noqa: E402
 from warrant.repo import Failed, Repo, dump, main  # noqa: E402
