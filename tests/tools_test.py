@@ -583,6 +583,7 @@ def drift_cases():
     lens1 = A.answer(A.home_readings(home), {"query": "stores"})["lens"]
     ctx = api.call(agent(r), "context", {"workspace": "w", "targets": [L]})
     seen = ctx.get("ok", {}).get("targets", {}).get(L, {}).get("lineage", {}).get("reliance")
+    ctx_drift = ctx.get("ok", {}).get("targets", {}).get(L, {}).get("drift")
     text = D.lines({L: d1})
     shown = CL.view(RP.Repo(r.root).report(), r.root)
     CL.replay(RP.Repo(r.root), CHECKER_KEY)
@@ -592,7 +593,7 @@ def drift_cases():
           "in claims view and in the agent's context, until the claims checker accepts it again (G14 obligation 055751e2); the "
           "acceptance names the files it ran on", set(pin or {}) == {"lib/code.py", "tests/q_test.py"}
           and d0.get("verdict") == "UNCHANGED" and rel0 == "ELIGIBLE" and d1.get("verdict") == "CHANGED" and rel1 == D.STALE
-          and seen == D.STALE and f"; {D.STALE}; leaf `{rep['lineages'][L]['leaf'] or L}`)" in shown and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE",
+          and seen == D.STALE and ctx_drift == "CHANGED" and f"; {D.STALE}; leaf `{rep['lineages'][L]['leaf'] or L}`)" in shown and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE",
           (pin, d0, rel0, d1, rel1, seen, d2, rel2))
     check("DR16 `across` reads a stale claim STALE as context does, through Home and through the agent, and its lens binds the "
           "tree it read: the same store answers differently at two heads", far == (D.STALE, D.STALE) and lens0 != lens1, (far, lens0, lens1))
@@ -1061,6 +1062,26 @@ def drift_impact_cases():
           and a["data"]["stale"][0]["elsewhere"] != b["data"]["stale"][0]["elsewhere"] and a["root"] != b["root"]
           and (b["root"], b["lens"]) == want and [u["store"] for u in c["data"].get("unavailable", [])] == ["gone"]
           and c["root"] != b["root"], (a.get("root"), b.get("root"), want, c.get("data", {}).get("unavailable")))
+
+
+def review_join_cases():
+    r = review_repo()
+    rp = RP.Repo(r.root)
+    k = RP.load_key(str(r.seed("alice")), r.root)
+    rp.file("alice", k, [R.record("entity", "alice", 0, {"state": "open", "repository": "s0fractal/warrant", "pr": 3,
+                                                         "title": "t", "serves": []}, "pr-head@1")])
+    sys.argv = ["review.py"]
+    base = r.store.lines()                                        # alice files on two branches; the merge holds both
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "one branch", "serves": []})
+    one = r.store.lines()
+    r.store.write_lines(base)
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "the other", "serves": []})
+    r.store.add_lines(one)
+    forked = len(CH.loose(rp.view(), "alice"))
+    RV.run(["--root", str(r.root), "head", "--pr", "3", "--actor", "alice", "--key", str(r.seed("alice"))])
+    check("R01c `head` after a merge that forked its signer's chain takes the loose tip in with a `joined` attest first, "
+          "re-signing nothing: the fork is closed and the head version lands on one chain",
+          forked == 1 and CH.loose(rp.view(), "alice") == [] and not CH.forks(rp.view())["open"], (forked, CH.forks(rp.view())))
 
 
 def review_cases():
@@ -2915,6 +2936,32 @@ def asked_cases():
           and f3["attest"] == [] , (f3, rep3["versions"][done]["guard"]))
 
 
+def status_brakes_cases():
+    """`warrant status` shows the gate's brakes still open at HEAD (no network) and whether each can still be reverted
+    exactly; a merge whose files changed again since cannot, and status says so instead of leaving the veto implied."""
+    r = Repo(git_init=True)
+    (r.root / "x.txt").write_text("one\n")
+    r.commit("base")
+    git(r.root, "checkout", "-q", "-b", "side")
+    (r.root / "x.txt").write_text("two\n")
+    r.commit("the change")
+    git(r.root, "checkout", "-q", "master")
+    until = int(time.time()) + 3600
+    git(r.root, "merge", "-q", "--no-ff", "side", "-m", "Merge pull request #7", "-m", f"warrant-gate brake until {until}: #7 head version {'ab' * 32}")
+
+    def st():
+        with contextlib.chdir(r.root):
+            return CLI.status(CLI._parser().parse_args(["status"]))["brakes"]
+    first = st()
+    (r.root / "x.txt").write_text("three\n")
+    r.commit("changed again")
+    second = st()
+    check("ST1 status lists each brake still open at HEAD with its pull request and end, revertable while the gate's exact "
+          "revert is possible, and why not once a later commit changed its files",
+          [(b["pr"], b["until"], b["revertable"]) for b in first] == [(7, until, True)]
+          and [(b["pr"], b["revertable"]) for b in second] == [(7, False)] and "x.txt" in second[0].get("why", ""), (first, second))
+
+
 def schemas_due_cases():
     """A schema short of its schema/author quorum is due for each holder who may back it (gate.schemas_due, `roadmap
     due`, the review waker's queue): rules@1 (e8aacad8, #400) waited for Codex with no duty naming him."""
@@ -2943,6 +2990,14 @@ def schemas_due_cases():
           sch in before["schemas_pending"] and bob == [(sch, "schema", True)] and alice == [] and carol == []
           and sch in [d["version"] for d in GT.schemas_due(before, r.profile, "bob")]
           and sch not in [d["version"] for d in GT.schemas_due(before, r.profile, "alice")], (bob, alice, carol))
+    from warrant import graph as G
+    view = E.View(r.store.snapshot(), r.trust, r.profile)
+    fr = {a: G.frontier(view.report(), r.profile, a, view.recs)["schemas"] for a in ("alice", "bob", "carol")}
+    check("SD3 the frontier lists the schema a schema/author may back by the gate's own rule (schemas_due): bob's, not "
+          "the filer's, not carol's, who holds no such role",
+          {"version": sch, "name": "thing@1"} in fr["bob"] and sch not in [x["version"] for x in fr["alice"]] and fr["carol"] == []
+          and all([d["version"] for d in GT.schemas_due(before, r.profile, a)] == [x["version"] for x in fr[a]]
+                  for a in fr), fr)
     r.attest("bob", sch)
     after = rep()
     r2 = repo()
@@ -2963,8 +3018,10 @@ if __name__ == "__main__":
         freshness_cases,
         drift_impact_cases,
         review_cases,
+        review_join_cases,
         roadmap_cases,
         schemas_due_cases,
+        status_brakes_cases,
         cli_cases,
         chain_join_cases,
         home_cases,

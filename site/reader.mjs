@@ -1530,7 +1530,16 @@ export function frontier(r, actor) {
   }
   const challenged = byRoot.filter(([, lin]) => lin.reliance === "CHALLENGED" && lin.actor === actor).map(([root]) => root);
   return { actor, roles: [...roles].sort(cmp), attest, pending, challenged, asked: askedOf(r, byRoot, author, acted, actor),
-           declined: declinedBy(r, byRoot, author, actor) };
+           declined: declinedBy(r, byRoot, author, actor), schemas: schemasWaiting(rep, roles, author, acted, actor) };
+}
+
+// warrant/graph.py schemas_waiting: the schemas short of their quorum (schemas_pending) the actor may back: it holds
+// schema/author, did not file it and has neither attested nor challenged it; by id, in Python's order.
+function schemasWaiting(rep, roles, author, acted, actor) {
+  if (!roles.has("schema/author")) return [];
+  return Object.entries(rep.schemas_pending ?? {}).sort((x, y) => cmp(x[0], y[0]))
+    .filter(([i, p]) => !p.backed_by.includes(actor) && !acted.has(i) && author.get(i) !== actor)
+    .map(([i, p]) => ({ version: i, name: p.name }));
 }
 
 // warrant/graph.py opened_for: the actor a version's body addresses (`opened.for`, a non-empty string), or null.
@@ -1580,8 +1589,8 @@ export function waitsFor(r, actor) {
   return { actor, roles: f.roles,
            attest: f.attest.map((x) => ({ ...named(x.lineage, x.version), waiting: x.waiting })),
            pending: f.pending.map((v) => named(rootOf.get(v), v)),
-           challenged: f.challenged.map((L) => named(L, null)),
-           count: f.attest.length + f.pending.length + f.challenged.length };
+           challenged: f.challenged.map((L) => named(L, null)), schemas: f.schemas,
+           count: f.attest.length + f.pending.length + f.challenged.length + f.schemas.length };
 }
 
 // The key a page keeps a store's mark under in localStorage: one per store address and rules identity (rulesId),

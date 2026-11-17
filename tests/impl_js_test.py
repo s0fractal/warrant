@@ -85,22 +85,35 @@ def wire(case):
             "trust": case["trust"], "profile": case["profile"], "as_of": case.get("as_of")}
 
 
+JS_BATCH_BYTES = 128 << 20    # one node process reads its cases file as one string, at most 0x1fffffe8 characters
+
+
 def js_batch(cases, extra=()):
-    """warrant.mjs's answer to each case, in order (one node process for all of them)."""
-    if not cases:
-        return []
-    with tempfile.TemporaryDirectory() as d:
-        f = Path(d) / "cases.jsonl"
-        with f.open("w") as out:
-            for c in cases:
-                out.write(json.dumps(wire(c)) + "\n")
-        p = subprocess.run([NODE, str(JS), "batch", str(f), *extra], capture_output=True, check=False, timeout=3600)
-    if p.returncode:
-        raise RuntimeError(f"node exited {p.returncode}: {p.stderr.decode(errors='replace')[-800:]}")
-    got = [json.loads(x) for x in p.stdout.decode().splitlines()]
+    """warrant.mjs's answer to each case, in order: one node process per run of cases whose file stays under
+    JS_BATCH_BYTES (24 mutations of this repository's store, 2026-11-17, passed node's string limit in one)."""
+    lines = [json.dumps(wire(c)) + "\n" for c in cases]
+    got, chunk, size = [], [], 0
+    for ln in lines:
+        if chunk and size + len(ln) > JS_BATCH_BYTES:
+            got += _js_run(chunk, extra)
+            chunk, size = [], 0
+        chunk.append(ln)
+        size += len(ln)
+    if chunk:
+        got += _js_run(chunk, extra)
     if len(got) != len(cases):
         raise RuntimeError(f"node answered {len(got)} of {len(cases)} cases")
     return got
+
+
+def _js_run(lines, extra):
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "cases.jsonl"
+        f.write_text("".join(lines))
+        p = subprocess.run([NODE, str(JS), "batch", str(f), *extra], capture_output=True, check=False, timeout=3600)
+    if p.returncode:
+        raise RuntimeError(f"node exited {p.returncode}: {p.stderr.decode(errors='replace')[-800:]}")
+    return [json.loads(x) for x in p.stdout.decode().splitlines()]
 
 
 def agree(py, js, operands=DF.OPERANDS):
@@ -2450,6 +2463,22 @@ def browser_frontier_cases():
           w == {"actor": "bob", "roles": bob["roles"], "count": len(bob["attest"]) + len(bob["pending"]) + len(bob["challenged"]),
                 "attest": len(bob["attest"]), "pending": len(bob["pending"]), "challenged": len(bob["challenged"])}
           and "waits" not in (((d_none.get("desk") or {}).get("stores") or [{}])[0]) and "frontier" not in plain, (w, d_none))
+
+    g = Repo(roles={"schema/author": ["alice", "bob"]})
+    g.profile["quorum"] = {"schema/author": 2}
+    g.write_config()
+    sch = g.put("alice", "schema", {"name": "thing@1", "fields": {"state": "str"}, "states": {"open": None}, "closed": [], "successors": {}})
+    srvs, (bg,) = _serve_many(g.root)
+    try:
+        js_g = {a: _reader(bg, "--actor", a)[1].get("frontier") for a in ("alice", "bob", "carol")}
+    finally:
+        for x in srvs:
+            x.shutdown()
+    py_g = {a: _frontier_py(g.root, a) for a in js_g}
+    check("J15 a schema short of its quorum waits in the frontier of a schema/author who may back it, the reader's as "
+          "Python's (graph.schemas_waiting, the gate's schemas_due): bob's, not its filer's",
+          all(js_g[a] == py_g[a] for a in js_g) and sch in [x["version"] for x in py_g["bob"]["schemas"]]
+          and sch not in [x["version"] for x in py_g["alice"]["schemas"]], {a: (js_g[a], py_g[a]) for a in js_g if js_g[a] != py_g[a]})
 
     srv, base = _serve(ROOT)
     try:
