@@ -34,7 +34,7 @@ DIGESTS = {
     "warrant/shapes.py": "f75aaec6bd7916c000115a42c4192b8bc0312ed3d7ca630174b0c74c601f5a72",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
-    "warrant/pins.py": "7d22133765d1eda4d862dacf1b5494b2681ac51bbb9c24b7f8bae71e076eebe4",
+    "warrant/pins.py": "3a9e6be0c566cb716263e7e93105b7d485a7b02446639fe0887031bdb0a83952",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
     "warrant/graph.py": "2554e61431dce2caadbd80222065cb62d4624b6fd21cfc6b62d873f6a31ab198",
     "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
@@ -728,15 +728,21 @@ def compare(root, commit, files, head, where, at="HEAD", memo=None, since=True):
             out.append(("UNCHANGED", p, ""))
         elif now is None and blob in where:
             out.append(("MOVED", p, f"now at {where[blob]}"))
-        elif not since:
-            out.append(("CHANGED", p, "") if now else ("GONE", p, ""))
         else:
-            if (commit, p, blob) not in memo:
-                memo[commit, p, blob] = first_change(root, commit, p, blob, at, memo)
-            x = memo[commit, p, blob]
-            since = f"since {x[:12]}" if x else f"since {str(commit)[:12]}"
-            out.append(("CHANGED", p, since) if now else ("GONE", p, f"not at HEAD, {since}"))
+            out.append(_stale(root, commit, p, blob, now, at, memo, since))
     return out
+
+
+def _stale(root, commit, p, blob, now, at, memo, since):
+    """The row of an accepted file other bytes are at (CHANGED) or gone from (GONE), with the commit since which it
+    has been so when `since`, from `memo` once per (commit, path, blob)."""
+    if not since:
+        return ("CHANGED", p, "") if now else ("GONE", p, "")
+    if (commit, p, blob) not in memo:
+        memo[commit, p, blob] = first_change(root, commit, p, blob, at, memo)
+    x = memo[commit, p, blob]
+    when = f"since {x[:12]}" if x else f"since {str(commit)[:12]}"
+    return ("CHANGED", p, when) if now else ("GONE", p, f"not at HEAD, {when}")
 
 
 def verdict(rows):

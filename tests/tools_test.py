@@ -698,8 +698,10 @@ def drift_cases():
                            "files": {"lib/code.py": "0" * 40}, "closure": CL.CLOSURE}, [L])
     r.commit("an acceptance whose commit is an option")
     d, rel = gated(r, L)
+    from warrant import pins as PN
+    asked = PN.first_change(r.root, f"--output={out}", "lib/code.py", "0" * 40)   # whichever acceptance drift reads
     check("DR10 a commit named by a record reaches Git only as a commit id: one shaped as an option writes nothing",
-          not list(r.home.glob("written-by-git*")) and rel == D.STALE, (d, rel))
+          not list(r.home.glob("written-by-git*")) and rel == D.STALE and asked is None, (d, rel, asked))
     r = checker_repo()
     (r.root / "lib").mkdir()
     (r.root / "lib" / "code.py").write_text("X = 1\n")

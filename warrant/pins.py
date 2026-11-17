@@ -100,15 +100,21 @@ def compare(root, commit, files, head, where, at="HEAD", memo=None, since=True):
             out.append(("UNCHANGED", p, ""))
         elif now is None and blob in where:
             out.append(("MOVED", p, f"now at {where[blob]}"))
-        elif not since:
-            out.append(("CHANGED", p, "") if now else ("GONE", p, ""))
         else:
-            if (commit, p, blob) not in memo:
-                memo[commit, p, blob] = first_change(root, commit, p, blob, at, memo)
-            x = memo[commit, p, blob]
-            since = f"since {x[:12]}" if x else f"since {str(commit)[:12]}"
-            out.append(("CHANGED", p, since) if now else ("GONE", p, f"not at HEAD, {since}"))
+            out.append(_stale(root, commit, p, blob, now, at, memo, since))
     return out
+
+
+def _stale(root, commit, p, blob, now, at, memo, since):
+    """The row of an accepted file other bytes are at (CHANGED) or gone from (GONE), with the commit since which it
+    has been so when `since`, from `memo` once per (commit, path, blob)."""
+    if not since:
+        return ("CHANGED", p, "") if now else ("GONE", p, "")
+    if (commit, p, blob) not in memo:
+        memo[commit, p, blob] = first_change(root, commit, p, blob, at, memo)
+    x = memo[commit, p, blob]
+    when = f"since {x[:12]}" if x else f"since {str(commit)[:12]}"
+    return ("CHANGED", p, when) if now else ("GONE", p, f"not at HEAD, {when}")
 
 
 def verdict(rows):
