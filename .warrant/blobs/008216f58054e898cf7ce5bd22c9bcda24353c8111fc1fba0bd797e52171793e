@@ -1,0 +1,91 @@
+# Codex verdict on G11 graph-query obligation
+
+Base M: ca6fdd3c08905c01db16c87ae2a712a3812ea1cb
+Obligation D: 8c856b3b26355a6eaf27b32cc1404ada26b7528b6e567dc78f84bd0da0a7dc0e
+Version T: 85a6c79ea7409d2d5f5331e70772336c751c9aeefa3bd7154ea1681ae221b873
+Actor: codex
+Verdict: challenge; the required mutation coverage is incomplete.
+
+## What remains owed
+
+D explicitly requires export in both JSON and DOT, each subcommand tested and each claimed property burned by a mutant. T claims these and says each subcommand has a mutant on its own property. The positive graph-export assertions in tests/agent_test.py:103-124 (A51) and tests/tools_test.py:970-980 (DR25b) request DOT. They never assert that default or explicit JSON export returns the record graph. tests/mutants.py has no mutant covering that format choice: T321 removes DOT edges, T322 replaces delta with impact, T323 reverses range endpoints.
+
+This is an unmet testing obligation, not an observed JSON-export runtime defect at M. At M the independent probe returns the correct graph object for default and explicit JSON. However, changing the format branch to return DOT for BOTH formats survives the full agent suite (155 successful checks, exit 0) and the tools graph sections (18 successful checks, exit 0). The same independent probe fails on both JSON cases after that mutation. Thus the repository's checks and registered mutants do not establish this explicitly claimed property.
+
+## Surviving mutation
+
+Applied only to an isolated copy of M outside the review worktree:
+
+```diff
+--- a/warrant_agent/api.py
++++ b/warrant_agent/api.py
+@@ -215 +215 @@
+-        data, query = (G.dot(rep["graph"]) if fmt == "dot" else rep["graph"]), {"op": op, "format": fmt}
++        data, query = (G.dot(rep["graph"]) if fmt in ("json", "dot") else rep["graph"]), {"op": op, "format": fmt}
+```
+
+Reproduce with an isolated archive of M, apply that diff, then run:
+
+```
+/Users/s0fractal/.warrant/codex-mcp/bin/python -B tests/agent_test.py
+WARRANT_SECTION=drift_impact_cases,impact_cases,asked_cases /Users/s0fractal/.warrant/codex-mcp/bin/python -B tests/tools_test.py
+```
+
+Both return 0. Set TMPDIR to a directory of this review when running them. Interpreter: Python 3.13.15, cryptography 50.0.2, MCP SDK installed. All 155 agent checks ran, including M01; no skip lines appeared. The complete tools suite in the isolated archive could not finish narrow_cases because the archive has no Git HEAD; no success is claimed for that run. The full unmodified tools suite in the actual worktree passes all 220 checks.
+
+Independent probe (run once with the original source directory and once with the mutated archive as its argument):
+
+```python
+import sys, importlib.util, json, os, subprocess, hashlib
+from pathlib import Path
+src=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd()
+sys.path[:0]=[str(src/'tests'),str(src)]
+from world import Repo
+from warrant_agent.config import Config
+from warrant_agent import api
+from warrant import graph as G
+r=Repo(git_init=True)
+a=r.entity('alice','obligation@1',{'state':'open','statement':'a','serves':[]})
+b=r.entity('alice','obligation@1',{'state':'open','statement':'b','serves':[]},refs=[a])
+c=r.entity('alice','obligation@1',{'state':'open','statement':'c','serves':[]},refs=[b])
+cfg=Config({'agent_api':'warrant-agent/3','workspaces':{'w':{'repo':str(r.root),'operations':['graph']}}})
+def ask(op,**kw):
+ return api.call(cfg,'graph',dict(workspace='w',op=op,**kw))['ok']['data']
+assert {n['id'] for n in ask('path',target=c)['nodes']} == {a,b}
+assert {n['id'] for n in ask('why',target=a)['nodes']} == {b,c}
+bad=False
+for fmt in (None,'json','dot'):
+ out=ask('export',**({} if fmt is None else {'format':fmt}))
+ expect='str' if fmt=='dot' else 'dict'
+ got=type(out).__name__
+ print('export',fmt,'expected',expect,'actual',got,flush=True)
+ if got!=expect:
+  print('FAIL JSON_EXPORT: JSON export returned Graphviz text',flush=True)
+  bad=True
+if bad: raise SystemExit(1)
+print('PASS independent path/why direction and JSON/DOT exports')
+```
+
+Mutated output:
+
+```
+export None expected dict actual str
+FAIL JSON_EXPORT: JSON export returned Graphviz text
+export json expected dict actual str
+FAIL JSON_EXPORT: JSON export returned Graphviz text
+export dot expected str actual str
+```
+
+## Checked successfully
+
+- HEAD and origin match the supplied checkout/repository. roadmap due --actor codex at M confirms the exact D, T, evidence record, references, absent subject, and empty requires; rechecked before filing. MCP workspace validates codex's own pinned key and roadmap/acceptor role. MCP context shows T PENDING for one roadmap/acceptor acceptance, no open requirement. Evidence 82406477 is a pr-head@1 record for #491, not a blob; read through MCP as a record.
+- Read docs/AGENT.md, docs/V3.md and docs/REPOSITORY.md, #481 and #491 and their merged code, and 1d9a32a6. The common graph moved from warrant_agent/graph.py to warrant/graph.py in that commit; the move itself is fine.
+- Unmodified full tests/agent_test.py: 155 checks pass, exit 0; full tests/tools_test.py: 220 checks pass, exit 0.
+- Focused mutation run: T321, T322, T323, T325, T124 and T136 all KILLED by their named cases (6/6). Each targeted section was run clean before mutation. The initial attempt to baseline every section in an archive was refused because narrow_cases requires a Git checkout; those results were not counted as kills.
+- Independent traversal probe confirms path traverses dependencies, why traverses dependents, and JSON/DOT formats work before mutation.
+- Independent subprocess checks of tool and agent CLI: path, why, frontier, impact, delta, JSON export and DOT export each give byte-identical JSON envelopes under PYTHONHASHSEED=1 and 2 on the same signed fixture (14 interface/query pairs). This is bounded evidence, not proof for every input.
+- roadmap check: 110 lineages, 0 problems; claims check: 143 live claims, 0 problems (rechecked after filing).
+
+## Completion criterion
+
+Add positive default-JSON and explicit-format=json export checks against an independently expected record graph in the repository's tests, and register a format-choice mutant that fails its own named case. Keep source and CI green. No source change, merge, Git commit or push is part of this verdict.
