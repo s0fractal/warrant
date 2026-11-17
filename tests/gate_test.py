@@ -1403,6 +1403,49 @@ AFTER_ = dict(MERGE, after_merge=[{"workflow": ".github/workflows/pages.yml", "p
                                   {"workflow": ".github/workflows/claims-replay.yml"}])
 
 
+def rules_revert_cases():
+    """The owner's brake on a change of the rules (Codex 5abc6a7a): the gate's exact revert of a merge that brought a
+    rules@1 version takes the file back while the store keeps the version, so the gate reads that version void: the
+    revert raises no rules reason, and after it a pull request that leaves the rules alone raises none either."""
+    r = Repo(git_init=False)
+    (r.dot / "merge.json").write_text(json.dumps(PRES))
+    r.put("alice", "schema", GT.RULES_SCHEMA)
+    g = r.put("alice", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES)
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("base, its rules recorded")
+    git(r.root, "checkout", "-q", "-b", "feature")
+    r.profile["roles"]["replayer"] = sorted(set(r.profile["roles"]["replayer"]) | {"eve"})
+    r.write_config()
+    r.put("bob", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES, lineage=g)
+    v = r.entity("alice", "pr-head@1", {"state": "open", "repository": REPO, "pr": 7, "title": "t"})
+    r.commit("the rules change and its version")
+    git(r.root, "checkout", "-q", "master")
+    git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {NOW + 3600}: #7 head version {v}")
+    merge = git(r.root, "rev-parse", "HEAD")
+    git(r.root, "checkout", "-q", "-b", f"gate/revert/7-{merge[:12]}")
+    git(r.root, "checkout", f"{merge}^1", "--", ".warrant/v3.json")
+    r.commit(f"Revert #7\n\nwarrant-gate revert of {merge}")
+    rh = git(r.root, "rev-parse", "HEAD")
+    pr = {"number": 8, "state": "open", "draft": False, "base": "master", "head": rh, "labels": [],
+          "branch": f"gate/revert/7-{merge[:12]}", "head_repo": REPO, "author": "github-actions[bot]"}
+    a = GT.assess(r.root, merge, pr, green(rh))
+    rules = {c for c in codes(a) if c.startswith("RULES_")}
+    git(r.root, "checkout", "-q", "master")
+    git(r.root, "merge", "-q", "--no-ff", f"gate/revert/7-{merge[:12]}", "-m", f"merge-on-acceptance: revert of #7\n\nwarrant-gate revert of {merge}")
+    after = git(r.root, "rev-parse", "HEAD")
+    git(r.root, "checkout", "-q", "-b", "later")
+    (r.root / "notes.md").write_text("a change that leaves the rules alone\n")
+    r.entity("alice", "pr-head@1", {"state": "open", "repository": REPO, "pr": 9, "title": "later"})
+    lh = r.commit("a later change")
+    later = GT.assess(r.root, after, {"number": 9, "state": "open", "draft": False, "base": "master", "head": lh, "labels": [],
+                                      "branch": "later", "head_repo": REPO, "author": "alice"}, green(lh))
+    lrules = {c for c in codes(later) if c.startswith("RULES_")}
+    check("RC12 the gate's exact revert of a merge that brought a rules@1 version raises no rules reason (the version is "
+          "void in the gate's reading, the one it succeeded in force again), and a later pull request that leaves the "
+          "rules alone raises none either", rules == set() and lrules == set() and a.facts.get("revert") == merge,
+          (sorted(rules), sorted(lrules), a.reasons, later.reasons))
+
+
 def rules_cases():
     """Stage 2a (the analysis session's decision for the owner, plan §10.3): the publisher's rules as rules@1 records,
     .warrant/v3.json their projection. The gate reads the head's records under the BASE's trust and profile."""
@@ -1661,6 +1704,7 @@ if __name__ == "__main__":
         refresh_cases,
         own_tiers_cases,
         rules_cases,
+        rules_revert_cases,
         after_merge_cases,
         prerelease_cases,
         revert_pending_cases,
