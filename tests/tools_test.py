@@ -1180,6 +1180,8 @@ def review_cases():
     check("R08 the replayer signs each replay as `review-replayer`, naming the code that ran (its own tool's) and its environment",
           out.returncode == 0 and len(got) == 1 and got[0]["body"]["target"] == f2 and got[0]["body"]["on"] == v2
           and got[0]["body"].get("code") == me["code"] and got[0]["body"].get("env") == me["env"], (out.stderr[-300:], got))
+    check("R08c a finding's test at a head whose code this checkout does not hold is said not run, never skipped in "
+          "silence (Codex on #501)", "holds another head's code" in out.stdout, out.stdout[-400:])
     f3 = r.put("bob", "challenge", {"target": v2, "statement": "P1 z", "severity": "P1", "what": "w", "where": [],
                                     "commit": x2, "tree": ran["tree"], "test": {"file": "bug_test", "case": "F1",
                                     "patch": JAILED.replace("@@LINE@@", "PermissionError: [Errno 1] Operation not permitted")}},

@@ -811,6 +811,12 @@ def carrying_answers():
           "a replay whose finding tests the jail denied is partial: its line names them, it covers an older head's failed "
           "replay saying so (none is left pending for ever: Codex on #495), and the reviewer's wake is told which "
           "findings no observation covers (Codex 4ce02a05)")
+    a1, a2 = "a1" * 32, "b2" * 32
+    out = [f"{'c' * 64} reproduces {a1[:12]} on {'d' * 12}", f"not run {a1[:12]} on {'e' * 12}: this checkout holds another head's code",
+           f"not run {a2[:12]} on {'d' * 12}: the jail denied what its test needs (no observation)"]
+    check("W30", WAKER.unobserved(out) == [a2[:12]],
+          "a finding not run at one head but observed at another in the same replay is observed; one observed at no head "
+          "is unobserved, whatever kept it from running (Codex on #501)")
 
 
 if __name__ == "__main__":
