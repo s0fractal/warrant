@@ -95,13 +95,18 @@ def build(cfg):
         "the report. op=around {target}: a node and its edges; op=path {target}: what it rests on; op=why {target}: "
         "what rests on it; op=grounded {target}: whether it and all it rests on, transitively, are effective and ELIGIBLE, "
         "and which fail, why; op=frontier {actor?}; op=ledger: per actor, acceptances later refuted by a reproduced "
-        "challenge, and challenges reproduced; op=export. Every result carries root (the snapshot digest) and lens "
+        "challenge, and challenges reproduced; op=export {format?: json|dot}; op=impact {range BASE..HEAD}: the lineages the "
+        "records changed between two commits bear on, and what rests on them; op=delta {range}: records and lineages added, "
+        "removed or changed. Every result carries root (the snapshot digest) and lens "
         "(the code, trust, profile and query): the same lens over the same root gives the same result."))
-    def warrant_graph(op: Literal["around", "path", "why", "grounded", "frontier", "ledger", "export"], workspace: Workspace,
+    def warrant_graph(op: Literal["around", "path", "why", "grounded", "frontier", "ledger", "export", "impact", "delta"],
+                      workspace: Workspace,
                       target: Annotated[str | None, Field(description="around/path/why/grounded: a record id or prefix.")] = None,
-                      actor: Annotated[str | None, Field(description="frontier: whose; your signer's if omitted.")] = None
+                      actor: Annotated[str | None, Field(description="frontier: whose; your signer's if omitted.")] = None,
+                      range: Annotated[str | None, Field(description="impact/delta: BASE..HEAD, two commits of the checkout.")] = None,
+                      format: Annotated[Literal["json", "dot"] | None, Field(description="export: json (default) or dot.")] = None
                       ) -> dict[str, Any]:
-        return run("graph", _req(op=op, workspace=workspace, target=target, actor=actor))
+        return run("graph", _req(op=op, workspace=workspace, target=target, actor=actor, range=range, format=format))
 
     @server.tool(name="warrant_across", annotations=reads, description=(
         "One read over every workspace, each assessed alone under its own trust and profile. query=stores: lineages by "

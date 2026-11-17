@@ -36,6 +36,7 @@ from warrant import graph as G
 from warrant import jcs as C
 from warrant import keys as K
 from warrant import records as R
+from warrant import review as RV
 from warrant import shapes as S
 from warrant import verify as V
 from warrant.store import Inadmissible, Refused, Snapshot
@@ -46,7 +47,7 @@ from .config import OPERATIONS, repository_config
 from .errors import CODES, AgentError, need
 
 PACKAGE = V.PACKAGE
-GRAPH_OPS = ("around", "path", "why", "grounded", "frontier", "ledger", "export")
+GRAPH_OPS = ("around", "path", "why", "grounded", "frontier", "ledger", "export", "impact", "delta")
 HANDOFF_OPS = ("export", "inspect", "import")
 
 
@@ -189,11 +190,13 @@ def read(cfg, req):
 
 
 def graph(cfg, req):
-    _closed(req, ("workspace", "op"), ("target", "actor"))
+    _closed(req, ("workspace", "op"), ("target", "actor", "range", "format"))
     ws = cfg.workspace(req["workspace"])
     ws.permit("graph")
     op = req["op"]
     need(isinstance(op, str) and op in GRAPH_OPS, "BAD_REQUEST", f"op is one of {list(GRAPH_OPS)}")
+    if op in ("impact", "delta"):
+        return _graph_range(ws, op, req.get("range"))
     snap, view, _, profile = _assess(ws)
     rep = _report(ws, view)
     if op in ("around", "path", "why", "grounded"):
@@ -207,8 +210,27 @@ def graph(cfg, req):
         need(S.is_actor(actor), "BAD_REQUEST", "actor is an actor id")
         data, query = G.frontier(rep, profile, actor, view.recs), {"op": op, "actor": actor}
     else:
-        data, query = rep["graph"], {"op": op}
+        fmt = req.get("format") or "json"
+        need(fmt in ("json", "dot"), "BAD_REQUEST", "format is json or dot")
+        data, query = (G.dot(rep["graph"]) if fmt == "dot" else rep["graph"]), {"op": op, "format": fmt}
     return _budget(G.answer(rep, query, data, adapter_id()), max(ws.limits["context_bytes"], ws.limits["read_bytes"]) * 16)
+
+
+def _graph_range(ws, op, rng):
+    """impact or delta over BASE..HEAD of the workspace's checkout, each commit's store from Git's objects, assessed
+    under the workspace's receiver: the result's root names both commits."""
+    need(ws.repo is not None, "BAD_REQUEST", f"workspace {ws.name!r} reads a store with no checkout: no range to read")
+    need(isinstance(rng, str) and ".." in rng and len(rng) <= 200, "BAD_REQUEST", "range is BASE..HEAD")
+    trust, profile = ws.receiver()
+    try:
+        base, head, s0, s1 = RV.range_snapshots(ws.repo, rng)
+    except RV.Failed as e:
+        raise AgentError("BAD_REQUEST", str(e)) from None
+    reps = [E.View(s, trust, profile).report() for s in (s0, s1)]
+    data = G.impact(*reps) if op == "impact" else G.delta(*reps)
+    out = G.answer(reps[1], {"op": op, "range": f"{base}..{head}"}, data, adapter_id())
+    out["root"] = {"snapshot": out["root"], "base": base, "head": head}
+    return _budget(out, max(ws.limits["context_bytes"], ws.limits["read_bytes"]) * 16)
 
 
 def _reading(ws):

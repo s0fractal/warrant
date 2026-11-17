@@ -317,6 +317,24 @@ def run(argv=None):
     return 0
 
 
+def range_snapshots(root, rng):
+    """(base, head, base snapshot, head snapshot) of a range BASE..HEAD (HEAD by default) of the checkout at `root`,
+    each store read from Git's objects at its commit (gate.store_at, as the gate reads a base); a store with problems
+    there is refused. Here, not in warrant.repo, so the core's import closure holds no gate (CF6)."""
+    base, _, head = rng.partition("..")
+    try:
+        base, head = (git(root, "rev-parse", "--verify", f"{x}^{{commit}}") for x in (base, head or "HEAD"))
+    except subprocess.CalledProcessError:
+        raise Failed("RANGE", f"{rng[:80]!r} is not BASE..HEAD of two commits of this repository") from None
+    snaps = []
+    for c in (base, head):
+        snap, problems = GT.store_at(root, c)
+        if problems:
+            raise Failed("STORE", f"{c[:12]}: {problems[:2]}")
+        snaps.append(snap)
+    return base, head, snaps[0], snaps[1]
+
+
 def _pr_record(repo, rep, a, name):
     """The record `open`, `head` or `merged` files."""
     if a.cmd == "open":
