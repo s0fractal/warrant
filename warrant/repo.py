@@ -22,7 +22,7 @@ from . import jcs as C
 from . import keys as K
 from . import records as R
 from .pins import git
-from .store import Refused, Store, dot_of, read_inside
+from .store import Refused, Snapshot, Store, _line_id, dot_of, read_inside
 
 PACKAGE = Path(__file__).resolve().parent        # the checker's code: every module of this package
 NAME = PACKAGE.name                              # its path in a repository that carries its source
@@ -72,17 +72,22 @@ class Repo:
         rep["_recs"], rep["_basis"] = v.recs, v.basis
         return rep
 
-    def file(self, actor, key, records):
+    def file(self, actor, key, records, into=None):
         """Append `records` (dicts as records.record makes them, actor and prev filled here) signed by `key` as
-        `actor`, each dated now or at the actor's head; the ids."""
+        `actor`, each dated now or at the actor's head; the ids. `into`: the .warrant directory of another store (a
+        checkout of a source's ref, warrant/sources.py) to file there instead, the actor's chain read across both."""
         trust, _, _ = self.config()
         if key.public not in trust["keys"].get(actor, []):
             raise Failed("SIGNER", f"the key {key.id[:12]} is not one .warrant/v3.json binds to {actor!r}")
         if not records:
             return []
-        h = E.head(self.store.snapshot(), trust, actor)
+        dest = self.store if into is None else Store(Path(into))
+        here = self.store.snapshot()
+        both = here if into is None else Snapshot(sorted(set(here.raw) | set(dest.snapshot().raw), key=_line_id), {})
+        h = E.head(both, trust, actor)
         at = max(int(time.time()), h["at"] or 0)
-        return self.store.extend([dict(r, actor=actor, at=at, prev=None) for r in records], key, trust, expect_head=h["id"] or "")
+        return dest.extend([dict(r, actor=actor, at=at, prev=None) for r in records], key, trust, expect_head=h["id"] or "",
+                           beside=None if into is None else here)
 
 
 def inside(path, root=None):
