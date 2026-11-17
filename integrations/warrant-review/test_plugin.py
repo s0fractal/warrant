@@ -806,9 +806,11 @@ def carrying_answers():
     v.wake = lambda x, gap: (None, f"woken; told: {gap}")
     told = WAKER.wake_after_replay(v, {"pr": 5, "head": new_head})
     check("W29", pushed and "not run" in line and denied_id[:12] in line and v.denied_of(5) == [denied_id]
-          and "covered_by" not in old_doc and denied_id[:12] in told and "not run" in told,
-          "a replay whose finding tests the jail denied is partial: its line names them, it covers no other head's "
-          "failed replay, and the reviewer's wake is told which findings no observation covers (Codex 4ce02a05)")
+          and old_doc.get("covered_by") == new_head and old_doc.get("covered_partially") == [denied_id]
+          and v.replay_state(old_doc, "f" * 40)[0] == "done" and denied_id[:12] in told and "not run" in told,
+          "a replay whose finding tests the jail denied is partial: its line names them, it covers an older head's failed "
+          "replay saying so (none is left pending for ever: Codex on #495), and the reviewer's wake is told which "
+          "findings no observation covers (Codex 4ce02a05)")
 
 
 if __name__ == "__main__":
