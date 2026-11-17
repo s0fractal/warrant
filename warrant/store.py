@@ -154,16 +154,18 @@ class Store:
         has no signed record yet). The file is rewritten in canonical order."""
         return self.extend([r], key, trust, expect_head, admit)[0]
 
-    def extend(self, records, key, trust, expect_head=None, admit=None):
+    def extend(self, records, key, trust, expect_head=None, admit=None, beside=None):
         """append() for several records of one actor, chained in order, under one lock and one write. `admit(snapshot,
         records)`, called under the lock on the store as it is then, returns why the records may not be filed
-        (Inadmissible), so no other writer changes the store between that decision and the write."""
+        (Inadmissible), so no other writer changes the store between that decision and the write. `beside`, a
+        snapshot read with this store (a repository whose source this store is, warrant/sources.py), joins it for the
+        actor's head only: a chain that began there goes on here, one chain across the two."""
         from .engine import head
         out, data, chained = [], [], []
         with self.locked():
             snap = self.snapshot()
             actor = records[0]["actor"]
-            h = head(snap, trust, actor)
+            h = head(Snapshot(sorted(set(snap.raw) | set(beside.raw), key=_line_id), {}) if beside else snap, trust, actor)
             if expect_head is not None and (h["id"] or "") != expect_head:
                 raise Refused(f"CHAIN_MOVED: the head of {actor} is {h['id']}")
             prev, at = h["id"], h["at"]

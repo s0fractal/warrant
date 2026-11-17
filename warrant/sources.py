@@ -55,15 +55,19 @@ def _git(root, *a):
 
 
 def _commit(root, ref):
-    """The commit `ref` names in this clone, or None. `ref` was checked by declared (refs/heads or refs/warrant, no
-    ..), and --end-of-options keeps it an argument even so."""
+    """The commit `ref` names in this clone, or None. A branch a plain clone holds only as origin's remote-tracking
+    ref (refs/remotes/origin/...) is read there, so `git clone` alone reads every source the origin has. `ref` was
+    checked by declared (refs/heads or refs/warrant, no ..), and --end-of-options keeps it an argument even so."""
     if not (isinstance(ref, str) and REF.match(ref) and ".." not in ref):
         return None
-    try:
-        commit = _git(root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{commit}}").decode().strip()
-    except subprocess.CalledProcessError:
-        return None
-    return commit if S.hex_of(commit, 40) else None
+    for r in (ref, *(["refs/remotes/origin/" + ref[len("refs/heads/"):]] if ref.startswith("refs/heads/") else [])):
+        try:
+            commit = _git(root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{r}^{{commit}}").decode().strip()
+        except subprocess.CalledProcessError:
+            continue
+        if S.hex_of(commit, 40):
+            return commit
+    return None
 
 
 def _actor(line):

@@ -398,7 +398,7 @@ def held(b, ran, killed):
         killed.get(m, {}).get("outcome") == "KILLED" for m in b["mutants"])
 
 
-def replay(repo, key):
+def replay(repo, key, into=None):
     """The claims checker at a clean commit: each live `backed` claim whose leaf waits, or none of whose acceptances
     by the checker names the bytes this commit holds for it (files_of: its tests, its mutated files and their import
     closure), is accepted when every witness case passes and every mutant it cites is killed on one of its cases, in
@@ -434,7 +434,7 @@ def replay(repo, key):
                                                         "files": files, "closure": CLOSURE}, refs=[leaf]))
         print(f"{'ACCEPT' if ok else 'HELD  '} {b['id']} {L[:12]}")
     print(f"claims checker: {len(todo)} of {len(now)} backed claims run, {len(now) - len(todo)} fresh at this commit")
-    return repo.file(CHECKER, key, recs)
+    return repo.file(CHECKER, key, recs, into=into)
 
 
 def verify(repo, base, done=frozenset(), verified=None):
@@ -552,6 +552,8 @@ def _parser():
     sub.add_parser("closures")
     r = sub.add_parser("replay")
     r.add_argument("--key", required=True)
+    r.add_argument("--into", help="a checkout (inside this one, e.g. build/stores/claims-checker) of the checker's own "
+                                  "store, a source .warrant/sources.json names: its acceptances are filed there")
     vf = sub.add_parser("verify")
     vf.add_argument("--base", required=True)
     vf.add_argument("--done", help="a file of the checkout (build/...) of acceptance ids already re-executed and held on "
@@ -623,7 +625,7 @@ def run(argv=None):
         return 0
     key = load_key(a.key, root)
     if a.cmd == "replay":
-        dump({"filed": replay(repo, key)})
+        dump({"filed": replay(repo, key, into=a.into and str(inside(a.into, root) / ".warrant"))})
     elif a.cmd == "file":
         dump({"filed": file_claims(repo, a.actor, key, json.loads(inside(a.src, root).read_text()))})
     else:

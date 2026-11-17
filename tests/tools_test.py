@@ -3093,6 +3093,37 @@ def sources_cases():
     check("SR4 a malformed declaration is refused: a ref outside refs/heads and refs/warrant, a ref with .., no actors, "
           "another format", bad == [True] * 4, bad)
 
+    # a plain clone holds the source branch only as origin's: it is read there
+    c = r.root.parent / (r.root.name + "-clone")
+    git(r.root.parent, "clone", "-q", str(r.root), str(c))
+    (c / ".warrant" / "sources.json").write_text(json.dumps(decl))
+    cl = SRC.with_sources(c, RP.Repo(c).store.snapshot(), decl)[1][0]
+    check("SR5 a branch a plain clone holds only as refs/remotes/origin/... is read there: git clone alone reads the "
+          "source", cl.get("commit") is not None and cl.get("records") == 1, cl)
+
+    # the actor files into its own store, its chain going on from the repository's: one chain, no fork
+    (r.dot / "sources.json").write_text(json.dumps(decl))
+    own = r.root.parent / (r.root.name + "-own")
+    git(r.root, "worktree", "add", "-q", str(own), "stores/bob")
+    first = RP.Repo(r.root).file("alice", KEYS["alice"], [R.record("attest", "alice", 0, {"target": d, "verdict": "accept"}, refs=[d])])
+    try:
+        moved = RP.Repo(r.root).file("alice", KEYS["alice"], [R.record("entity", "alice", 0, {"state": "open", "statement": "t",
+                                                                                              "serves": []}, "obligation@1")],
+                                     into=str(own / ".warrant"))
+    except Exception as e:              # a refusal fails the case below, not the run
+        moved = []
+        print("SR6 refused:", e)
+    git(own, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-am", "alice files here")
+    decl2 = {"warrant": "sources/1", "sources": [dict(decl["sources"][0], actors=["bob", "alice"])]}
+    (r.dot / "sources.json").write_text(json.dumps(decl2))
+    rep2 = RP.Repo(r.root).report()
+    prev = rep2["_recs"].get(moved[0], {}).get("prev") if moved else None
+    mine_here = bool(moved) and moved[0] not in RP.Repo(r.root).store.snapshot().lines \
+        and moved[0] in RP.Store(own / ".warrant").snapshot().lines
+    check("SR6 filing into a source's store goes on with the actor's chain from the repository's (its prev is the "
+          "head there), lands only in that store, and the union reads one chain, no fork",
+          bool(first) and prev == first[0] and mine_here and not rep2.get("chain_forks"), (prev, first, rep2.get("chain_forks")))
+
 
 def status_brakes_cases():
     """`warrant status` shows the gate's brakes still open at HEAD (no network) and whether each can still be reverted

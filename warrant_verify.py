@@ -37,7 +37,7 @@ DIGESTS = {
     "warrant/pins.py": "3a9e6be0c566cb716263e7e93105b7d485a7b02446639fe0887031bdb0a83952",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
     "warrant/graph.py": "25411d475f9dd8036fccd0ddfd6ad7fd6222a79d75c357882fcf308d74b2af5f",
-    "warrant/store.py": "be08049e8c4c55db8515ff0776e1fe8844583244e427e830709e92700a509b86",
+    "warrant/store.py": "2a588521b918135a8868e283a301e63c53bb99e84c157814bb97732cecace625",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
     "warrant/verify.py": "482b241a1a287f60d8017edf4adcc47ef90935dc700704c65c164ef4f2536553",
 }
@@ -1527,16 +1527,18 @@ class Store:
         has no signed record yet). The file is rewritten in canonical order."""
         return self.extend([r], key, trust, expect_head, admit)[0]
 
-    def extend(self, records, key, trust, expect_head=None, admit=None):
+    def extend(self, records, key, trust, expect_head=None, admit=None, beside=None):
         """append() for several records of one actor, chained in order, under one lock and one write. `admit(snapshot,
         records)`, called under the lock on the store as it is then, returns why the records may not be filed
-        (Inadmissible), so no other writer changes the store between that decision and the write."""
+        (Inadmissible), so no other writer changes the store between that decision and the write. `beside`, a
+        snapshot read with this store (a repository whose source this store is, warrant/sources.py), joins it for the
+        actor's head only: a chain that began there goes on here, one chain across the two."""
         from .engine import head
         out, data, chained = [], [], []
         with self.locked():
             snap = self.snapshot()
             actor = records[0]["actor"]
-            h = head(snap, trust, actor)
+            h = head(Snapshot(sorted(set(snap.raw) | set(beside.raw), key=_line_id), {}) if beside else snap, trust, actor)
             if expect_head is not None and (h["id"] or "") != expect_head:
                 raise Refused(f"CHAIN_MOVED: the head of {actor} is {h['id']}")
             prev, at = h["id"], h["at"]
