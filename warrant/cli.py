@@ -325,9 +325,12 @@ def render(st):
                              if st["chain_forks"] else "none"),
              ("problems", f"{len(st['problems'])}" if st["problems"] else "none")]
     for x in st.get("sources") or []:
-        rows.append(("source", f"{x['name']} at {x['ref']}: " + (f"{x['records']} record(s) by its actors at {x['commit'][:12]}"
-                                                               + (f", {x['left_out']} by others left out" if x["left_out"] else "")
-                                                               if x["commit"] else "not in this clone (fetch the ref)")))
+        if not x["commit"]:
+            what = "not in this clone (fetch the ref)"
+        else:
+            what = f"{x['records']} record(s) by its actors at {x['commit'][:12]}"
+            what += f", {x['left_out']} by others left out" if x["left_out"] else ""
+        rows.append(("source", f"{x['name']} at {x['ref']}: {what}"))
     if st.get("brakes") is not None:
         rows.append(("brakes", f"{len(st['brakes'])} open (the owner may veto; the gate reverts a vetoed merge)" if st["brakes"] else "none open"))
         rows += [("", f"#{b['pr']} merged as {b['merge'][:12]}, until {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(b['until']))}"

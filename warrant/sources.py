@@ -54,42 +54,51 @@ def _git(root, *a):
     return subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout
 
 
+def _commit(root, ref):
+    """The commit `ref` names in this clone, or None. `ref` was checked by declared (refs/heads or refs/warrant, no
+    ..), and --end-of-options keeps it an argument even so."""
+    if not (isinstance(ref, str) and REF.match(ref) and ".." not in ref):
+        return None
+    try:
+        commit = _git(root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{commit}}").decode().strip()
+    except subprocess.CalledProcessError:
+        return None
+    return commit if S.hex_of(commit, 40) else None
+
+
+def _actor(line):
+    try:
+        return json.loads(line)["record"]["actor"]
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def _blobs(root, commit):
+    try:
+        rows = _git(root, "ls-tree", "-z", f"{commit}:{BLOBS.rstrip('/')}").decode().split("\0")
+    except subprocess.CalledProcessError:
+        return {}
+    out = {}
+    for meta, _, name in (row.partition("\t") for row in rows if "\t" in row):
+        kind, obj = meta.split()[1:3]
+        if S.hex64(name) and kind == "blob":
+            out[name] = _git(root, "cat-file", "blob", obj)
+    return out
+
+
 def read(root, source):
     """(commit, [raw lines by its actors], {blob: bytes}, left out) of one source at its ref in the clone at `root`;
     commit None when the ref is not here."""
-    try:
-        commit = _git(root, "rev-parse", "--verify", "--quiet", f"{source['ref']}^{{commit}}").decode().strip()
-    except subprocess.CalledProcessError:
-        return None, [], {}, 0
-    if not S.hex_of(commit, 40):
+    commit = _commit(root, source["ref"])
+    if commit is None:
         return None, [], {}, 0
     try:
         raw = _git(root, "cat-file", "blob", f"{commit}:{RECORDS}")
     except subprocess.CalledProcessError:
         raw = b""
-    lines, left = [], 0
-    for ln in raw.split(b"\n"):
-        if not ln:
-            continue
-        try:
-            actor = json.loads(ln)["record"]["actor"]
-        except (ValueError, KeyError, TypeError):
-            actor = None
-        if actor in source["actors"]:
-            lines.append(ln + b"\n")
-        else:
-            left += 1
-    blobs = {}
-    try:
-        rows = _git(root, "ls-tree", "-z", f"{commit}:{BLOBS.rstrip('/')}").decode().split("\0")
-    except subprocess.CalledProcessError:
-        rows = []
-    for row in rows:
-        if "\t" in row:
-            meta, name = row.split("\t", 1)
-            if S.hex64(name) and meta.split()[1] == "blob":
-                blobs[name] = _git(root, "cat-file", "blob", meta.split()[2])
-    return commit, lines, blobs, left
+    lines = [ln for ln in raw.split(b"\n") if ln]
+    mine = [ln + b"\n" for ln in lines if _actor(ln) in source["actors"]]
+    return commit, mine, _blobs(root, commit), len(lines) - len(mine)
 
 
 def with_sources(root, snap, doc):
