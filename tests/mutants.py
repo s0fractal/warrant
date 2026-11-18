@@ -675,6 +675,7 @@ MUTANTS = [
     ("G142", "warrant/gate.py", '        b._void = reverted_rules(root, b.commit)\n', '        b._void = frozenset()\n', GATE, ["RC12"]),
     ("G143", "warrant/gate.py", ' and not undone:', ':', GATE, ["RC12"]),
     ("G144", "warrant/gate.py", '    succeeds = _yielded(rep, rep["_recs"][now].get("lineage"), void) if now != before else before', '    succeeds = rep["_recs"][now].get("lineage") if now != before else before', GATE, ["RC13"]),
+    ("G146", "warrant/gate.py", 'f"base {base}.\\n\\nwarrant-gate revert of {a.facts[\'revert\']}\\n")', 'f"base {base}.")', GATE, ["RC14"]),
     ("G145", "warrant/gate.py", '    if v.get("open"):                   # a lineage the head', '    if False:                   # a lineage the head', GATE, ["E64b"]),
     ("G136", "warrant/gate.py", '    if veto:\n        out.append(("RULES_VETO"', '    if False:\n        out.append(("RULES_VETO"', GATE, ["RC10"]),
     ("G43", "warrant/gate.py", "    except UnicodeDecodeError:              # Git holds", "    except ZeroDivisionError:              # Git holds", GATE, ["E51"]),

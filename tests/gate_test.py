@@ -1468,6 +1468,72 @@ def rules_revert_cases():
           (sorted(rules), sorted(lrules), a.reasons, later.reasons))
 
 
+def rules_revert_merge_cases():
+    """The gate's own merge of a rules revert (merge_one's message, not one written by hand as RC12's is) is read by
+    reverted() and reverted_rules() on the first parents: the marker is on the merge commit (Codex c881cf2a, F1)."""
+    r = Repo(git_init=False)
+    (r.dot / "merge.json").write_text(json.dumps(PRES))
+    r.put("alice", "schema", GT.RULES_SCHEMA)
+    g = r.put("alice", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES)
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("base, rules recorded")
+    git(r.root, "checkout", "-q", "-b", "feature")
+    r.profile["roles"]["replayer"] = sorted(set(r.profile["roles"]["replayer"]) | {"eve"})
+    r.write_config()
+    n1 = r.put("bob", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES, lineage=g)
+    v = r.entity("alice", "pr-head@1", {"state": "open", "repository": REPO, "pr": 7, "title": "t"})
+    r.commit("the rules change and its version")
+    git(r.root, "checkout", "-q", "master")
+    git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {NOW + 3600}: #7 head version {v}")
+    merge = git(r.root, "rev-parse", "HEAD")
+    branch = f"gate/revert/7-{merge[:12]}"
+    git(r.root, "checkout", "-q", "-b", branch)
+    git(r.root, "checkout", f"{merge}^1", "--", ".warrant/v3.json")
+    r.commit(f"Revert #7\n\nwarrant-gate revert of {merge}")
+    rh = git(r.root, "rev-parse", "HEAD")
+    pr = {"number": 8, "state": "open", "draft": False, "base": "master", "head": rh, "labels": [], "branch": branch,
+          "head_repo": REPO, "author": "github-actions[bot]"}
+    b = GT.Base(r.root, merge)
+    a = GT.assess(r.root, b, pr, green(rh))
+
+    class Hub:                                      # merges as GitHub does: --no-ff, with the title and message given
+        sha = None
+
+        def pull(self, n):
+            return pr
+
+        def tip(self, name):
+            return merge
+
+        def merge(self, n, head, title, message):
+            git(r.root, "checkout", "-q", "master")
+            git(r.root, "merge", "-q", "--no-ff", head, "-m", title + "\n\n" + message)
+            self.sha = git(r.root, "rev-parse", "HEAD")
+            return {"merged": True, "sha": self.sha}
+
+        def parents(self, sha):
+            return GT._commit(r.root, sha)[0]
+
+        def dispatch(self, workflow, branch):
+            pass
+
+    gh = Hub()
+    result = GT.merge_one(b, a, gh)
+    git(r.root, "checkout", "-q", "-b", "later")
+    (r.root / "notes.md").write_text("ordinary later change\n")
+    x = r.commit("ordinary later change")
+    v9 = r.entity("alice", "pr-head@1", {"state": "open", "repository": REPO, "pr": 9, "title": "later"})
+    h9 = r.entity("alice", "pr-head@1", {"state": "head", "commit": x, "tree": git(r.root, "rev-parse", f"{x}^{{tree}}")}, lineage=v9)
+    r.attest("bob", h9)
+    lh = r.commit("later accepted head")
+    later = GT.assess(r.root, gh.sha, {"number": 9, "state": "open", "draft": False, "base": "master", "head": lh, "labels": [],
+                                       "branch": "later", "head_repo": REPO, "author": "alice"}, green(lh))
+    check("RC14 the gate's own merge of a rules revert (merge_one's message) is seen as a revert on the first parents: the "
+          "reverted rules version is void and a later accepted pull request raises no rules reason (Codex c881cf2a)",
+          a.eligible and result.get("merged") and GT.reverted(r.root, gh.sha, merge)
+          and n1 in GT.reverted_rules(r.root, gh.sha) and later.eligible, (a.reasons, result, later.reasons))
+
+
 def rules_cases():
     """Stage 2a (the analysis session's decision for the owner, plan §10.3): the publisher's rules as rules@1 records,
     .warrant/v3.json their projection. The gate reads the head's records under the BASE's trust and profile."""
@@ -1727,6 +1793,7 @@ if __name__ == "__main__":
         own_tiers_cases,
         rules_cases,
         rules_revert_cases,
+        rules_revert_merge_cases,
         after_merge_cases,
         prerelease_cases,
         revert_pending_cases,
