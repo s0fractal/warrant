@@ -2,6 +2,7 @@
 arrays and objects, plus a strict reader for the same domain."""
 import hashlib
 import json
+import re
 
 MAX_INT = 2**53 - 1
 MAX_DEPTH = 256
@@ -72,8 +73,13 @@ def canon(value):
     return "".join(out).encode("utf-8")
 
 
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
 def _check_text(s):
-    if any(0xD800 <= ord(c) <= 0xDFFF for c in s):
+    # an ASCII string holds no surrogate; any other is searched in C, not character by character in Python (the
+    # store's read spent half its time here, 2026-11-17: obligation aea35e1b)
+    if not s.isascii() and _SURROGATE.search(s):
         raise NotCanonical("lone surrogate")
 
 
