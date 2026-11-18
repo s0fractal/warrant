@@ -641,6 +641,74 @@ def roadmap_parity_cases():
           same and rep["lineages"][o2]["state"] == "done" and RM.check(rep) == [], (o1, o2, c1, c2, accepted))
 
 
+def work_cases():
+    """The work loop (warrant_agent.work): find a record by what it says, an inbox over every workspace, and an act
+    previewed, then filed all at once, as the CLI files it."""
+    repo = Repo(git_init=True)
+    o = repo.entity("carol", "obligation@1", {"state": "open", "statement": "Owed: the Thing", "serves": []})
+    other = repo.entity("dave", "obligation@1", {"state": "open", "statement": "something else", "serves": []})
+    repo.entity("dave", "pr-head@1", {"state": "open", "repository": "s0fractal/warrant", "pr": 6, "title": "another", "serves": []})
+    repo.commit("base")
+    cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {
+        "w": {"repo": str(repo.root), "signer": {"actor": "carol", "key": str(repo.seed("carol"))}}}})
+
+    def act(**req):
+        return api.call(cfg, "act", dict(req, workspace="w"))
+
+    def both(**req):                       # preview, then file exactly what was previewed
+        pre = ok(act(**req))
+        return pre, ok(act(act=req["act"], records=pre.get("records")))
+
+    pre, opened = both(act="review-open", pr=7, title="the change")
+    found = ok(api.call(cfg, "find", {"workspace": "w", "schema": "pr-head@1", "where": {"pr": 7}}))
+    text = ok(api.call(cfg, "find", {"workspace": "w", "text": "OWED: THE", "leaves": True}))
+    check("WK1 find: by schema and an exact body field it names the pull request's review lineage by its full id; "
+          "text matches the body in any case; a preview's ids are the ids filed",
+          [x["id"] for x in found.get("records", [])] == opened.get("filed") == pre.get("ids")
+          and [x["id"] for x in text.get("records", [])] == [o] and other not in str(text), (found, text, pre, opened))
+    head = repo.commit("the change")
+    _, h = both(act="review-head", pr=7)
+    _, closed = both(act="close", obligation=o, pr=7, established=["the Thing is done"], residual=["nothing"])
+    c = (closed.get("filed") or [None])[0]
+    rec = repo.store.snapshot().lines.get(c, [{}])[0].get("record", {})
+    hrec = repo.store.snapshot().lines.get((h.get("filed") or [None])[0], [{}])[0].get("record", {})
+    leaf = ok(api.call(cfg, "find", {"workspace": "w", "text": "owed: the", "leaves": True}))
+    check("WK2 act: review-head records the checkout's HEAD; close files the obligation's done version with the pull "
+          "request's review lineage as its evidence, as warrant.roadmap close does; find with leaves names only it",
+          [x["id"] for x in leaf.get("records", [])] == [c] and hrec.get("body", {}).get("commit") == head and rec.get("lineage") == o and rec.get("body", {}).get("state") == "done"
+          and rec.get("body", {}).get("evidence") == opened.get("filed"), (hrec, rec))
+    mine = ok(api.call(cfg, "inbox", {}))
+    bobs = ok(api.call(cfg, "inbox", {"actor": "bob"}))
+    ch = repo.put("bob", "challenge", {"target": c, "text": "not done"}, refs=[c])
+    challenged = ok(api.call(cfg, "inbox", {}))
+    _, answered = both(act="review-head", pr=7, answers=[ch])
+    after = ok(api.call(cfg, "inbox", {}))
+    do = lambda box: [(x["do"], x["id"]) + ((x["challenge"],) if "challenge" in x else ()) for w in box.get("workspaces", []) for x in w["items"]]  # noqa: E731
+    check("WK3 inbox: the signer's closure waits on roadmap/acceptor; bob's inbox asks him to attest it and the pull request's head; bob's challenge "
+          "is the signer's to answer, until a record answers it; a pull request head is not listed as waiting",
+          ("wait", c) in do(mine) and ("attest", c) in do(bobs) and ("attest", (h.get("filed") or [None])[0]) in do(bobs) and bobs.get("due") == 2
+          and ("answer challenge", c, ch) in do(challenged) and ("answer challenge", c, ch) not in do(after)
+          and all(x[1] != c or x[0] != "answer challenge" for x in do(after)) and answered.get("filed")
+          and not any(i == (h.get("filed") or [None])[0] for _, i, *_ in do(mine)), (do(mine), do(bobs), do(challenged), do(after)))
+    pre = ok(act(act="accept", target=o))
+    stale = act(act="accept", records=pre.get("records"))
+    again = act(act="accept", records=pre.get("records"))
+    pre2 = ok(act(act="review-open", pr=8, title="two"))
+    forged = act(act="review-open", records=[dict(pre2["records"][0], actor="bob")])
+    lines = len(repo.store.lines())
+    broken = act(act="review-open", records=[pre2["records"][0], dict(pre2["records"][0], body=dict(pre2["records"][0]["body"], pr=9))])
+    check("WK4 act files what was previewed or nothing: the same records twice is CHAIN_MOVED, another actor's record is "
+          "NOT_PERMITTED, and records that are not one chain in order write no line",
+          "ok" in stale and again.get("error") == "CHAIN_MOVED" and forged.get("error") == "NOT_PERMITTED"
+          and broken.get("error") == "INVALID_RECORD" and len(repo.store.lines()) == lines, (stale, again, forged, broken))
+    cfg2 = Config({"agent_api": "warrant-agent/3", "workspaces": {
+        "w": {"repo": str(repo.root), "signer": {"actor": "carol", "key": str(repo.seed("carol"))}},
+        "gone": {"store": str(repo.home / "nowhere"), "trust": str(repo.home / "t.json"), "profile": str(repo.home / "p.json")}}})
+    box = api.call(cfg2, "inbox", {})
+    check("WK5 inbox names a workspace it cannot read instead of skipping it",
+          [u["workspace"] for u in ok(box).get("unavailable", [])] == ["gone"] if "ok" in box else box.get("error") is not None, box)
+
+
 def mcp_cases():
     try:
         import mcp  # noqa: F401
@@ -666,10 +734,22 @@ def mcp_cases():
                 rec = (p.structured_content or {}).get("record")
                 c = await s.call_tool("warrant_commit", {"workspace": "w", "record": rec})
                 bad = await s.call_tool("warrant_read", {"workspace": "w", "target": "00000000"})
-                return names, c, bad
-    names, c, bad = asyncio.run(run())
-    check("M01 stdio MCP: nine tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
-          names == sorted(["warrant_" + n for n in ("workspace", "context", "read", "graph", "across", "handoff", "prepare", "commit", "explain")])
+                pre = await s.call_tool("warrant_act", {"workspace": "w", "act": "accept", "target": obl})
+                filed = await s.call_tool("warrant_act", {"workspace": "w", "act": "accept",
+                                                           "records": (pre.structured_content or {}).get("records")})
+                box = await s.call_tool("warrant_inbox", {})
+                found = await s.call_tool("warrant_find", {"workspace": "w", "kind": "attest", "actor": "bob"})
+                return names, c, bad, pre, filed, box, found
+    names, c, bad, pre, filed, box, found = asyncio.run(run())
+    got = [x["id"] for x in (found.structured_content or {}).get("records", [])]
+    check("M02 stdio MCP: warrant_act previews then files an acceptance as the configured signer; warrant_inbox answers "
+          "over the workspaces; warrant_find names both of the signer's attests",
+          not pre.is_error and not filed.is_error and not box.is_error
+          and (filed.structured_content or {}).get("filed") == (pre.structured_content or {}).get("ids") and len(got) == 2,
+          (pre, filed, box, found))
+    check("M01 stdio MCP: twelve tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
+          names == sorted(["warrant_" + n for n in ("workspace", "context", "read", "graph", "across", "handoff", "prepare", "commit", "explain",
+                                                         "find", "inbox", "act")])
           and not c.is_error and (c.structured_content or {}).get("filed", {}).get("actor") == "bob"
           and bad.is_error and "NOT_FOUND" in bad.content[0].text, (names, c, bad))
 
@@ -2073,6 +2153,7 @@ if __name__ == "__main__":
         init_cases,
         memory_cases,
         roadmap_parity_cases,
+        work_cases,
         mcp_cases,
         home_cases,
         across_cases,

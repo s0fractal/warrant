@@ -4,9 +4,9 @@
     warrant-agent-mcp --repo DIR --actor ACTOR [--seed SEED]   # one checkout, configured in memory (no file)
     warrant-agent-mcp init --actor ACTOR --seed SEED --config OUT.json [--repo DIR] ...   (warrant_agent.init)
 
-Nine tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
+Twelve tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
 warrant_workspace, warrant_context, warrant_read, warrant_graph, warrant_across, warrant_handoff, warrant_prepare,
-warrant_commit, warrant_explain. An argument left out is left out of the request. A tool's structured
+warrant_commit, warrant_explain, warrant_find, warrant_inbox, warrant_act. An argument left out is left out of the request. A tool's structured
 result is the object the CLI prints; a typed refusal is a tool error whose text is that refusal's
 JSON. The configuration (workspaces, signer, limits) is the operator's and is fixed at start; no tool
 argument chooses a signer, a key, a path or code to run. stdout carries only MCP messages.
@@ -36,6 +36,11 @@ store and that store's verdict; no store's verdict counts for another. A store t
 - File a record: warrant_prepare (kind, schema, body; target for an attest or a challenge; lineage for a new \
 version), check it, then warrant_commit with the returned record unchanged. Accept a version: kind=attest, \
 body {"verdict": "accept"}, target the version id.
+- Find a record by what it says: warrant_find (schema, body fields in `where`, `text`, `state`, `leaves`).
+- What waits for you, in every workspace at once: warrant_inbox (versions to attest, questions, challenges standing \
+against your records that nothing answers yet, your own versions still waiting).
+- Do a whole act at once: warrant_act act=review-open | review-head | close | accept returns the records it would file, \
+checked; call it again with `records` unchanged to sign and file them all, or none.
 - A word you do not know: warrant_explain.
 What a result does not establish: the source's completeness (always UNATTESTED), the truth of evidence text, \
 or anything outside the store."""
@@ -164,6 +169,58 @@ def build(cfg):
     def warrant_explain(word: Annotated[str, Field(description="e.g. PENDING, LINEAGE_NOT_AUTHOR, CHAIN_MOVED.")]
                         ) -> dict[str, Any]:
         return run("explain", {"word": word})
+
+    @server.tool(name="warrant_find", annotations=reads, description=(
+        "Records by what they say, newest first: every filter given must hold. schema, kind, actor; where {field: value} "
+        "compares top-level body fields exactly (e.g. {\"pr\": 523}); text is a case-insensitive substring of the body; "
+        "state is the lineage's state (open, done, ...); leaves keeps only each lineage's latest version. Each row: the "
+        "full id, a title, the target of an attest or challenge, the lineage's root, state and reliance."))
+    def warrant_find(workspace: Workspace,
+                     schema: Annotated[str | None, Field(description="e.g. obligation@1, pr-head@1.")] = None,
+                     kind: Annotated[Literal["entity", "attest", "challenge", "schema"] | None, Field(description="Record kind.")] = None,
+                     actor: Annotated[str | None, Field(description="Whose records.")] = None,
+                     where: Annotated[dict[str, Any] | None, Field(description="Body fields to exact values.")] = None,
+                     text: Annotated[str | None, Field(description="A substring of the body, any case.")] = None,
+                     state: Annotated[str | None, Field(description="The lineage's state.")] = None,
+                     leaves: Annotated[bool | None, Field(description="Only the latest version of each lineage.")] = None,
+                     limit: Annotated[int | None, Field(description="At most this many rows (default 50, at most 500).")] = None
+                     ) -> dict[str, Any]:
+        return run("find", _req(workspace=workspace, schema=schema, kind=kind, actor=actor, where=where, text=text,
+                                state=state, leaves=leaves, limit=limit))
+
+    @server.tool(name="warrant_inbox", annotations=reads, description=(
+        "What waits for an actor (default: each workspace's signer) in every workspace at once: `attest` versions whose "
+        "guard waits for its role, `answer` questions asked of it, `back schema` proposals short of their quorum, "
+        "`answer challenge` challenges standing against its own records that no record answers and no newer version "
+        "replaced, `wait` its own versions still waiting (and on what). `due` counts what it can act on."))
+    def warrant_inbox(actor: Annotated[str | None, Field(description="Whose inbox; it does not choose who signs.")] = None
+                      ) -> dict[str, Any]:
+        return run("inbox", _req(actor=actor))
+
+    @server.tool(name="warrant_act", annotations=local, description=(
+        "A whole act in one call. Without `records`: the records the act would file, built as the CLI builds them, "
+        "chained on your head and checked as this receiver would read them (nothing is written). With `records` (that "
+        "list, unchanged): all signed as your signer and appended under one lock, all or none. act=review-open {pr, title, "
+        "serves?}; review-head {pr, commit?, answers?} (default commit: the checkout's HEAD); close {obligation, "
+        "established, evidence? or pr (its review lineage as evidence), residual?, refs?, requires?}; accept {target}."))
+    def warrant_act(workspace: Workspace, act: Literal["review-open", "review-head", "close", "accept"],
+                    records: Annotated[list[dict[str, Any]] | None, Field(description="To file: the records a preview returned.")] = None,
+                    pr: Annotated[int | None, Field(description="review-*: the pull request; close: its review lineage is the evidence.")] = None,
+                    title: Annotated[str | None, Field(description="review-open: the pull request's title.")] = None,
+                    serves: Annotated[list[str] | None, Field(description="review-open: what it serves.")] = None,
+                    commit: Annotated[str | None, Field(description="review-head: a revision of the checkout.")] = None,
+                    answers: Annotated[list[str] | None, Field(description="review-head: the challenges this head answers.")] = None,
+                    obligation: Annotated[str | None, Field(description="close: the obligation (any version of it).")] = None,
+                    evidence: Annotated[list[str] | None, Field(description="close: record ids it rests on.")] = None,
+                    established: Annotated[list[str] | None, Field(description="close: what is now true.")] = None,
+                    residual: Annotated[list[str] | None, Field(description="close: what stays open.")] = None,
+                    refs: Annotated[list[str] | None, Field(description="close: files, commits, pull requests named.")] = None,
+                    requires: Annotated[list[str] | None, Field(description="close: lineages that must be done first.")] = None,
+                    target: Annotated[str | None, Field(description="accept: the version.")] = None
+                    ) -> dict[str, Any]:
+        return run("act", _req(workspace=workspace, act=act, records=records, pr=pr, title=title, serves=serves,
+                               commit=commit, answers=answers, obligation=obligation, evidence=evidence,
+                               established=established, residual=residual, refs=refs, requires=requires, target=target))
 
     return server
 

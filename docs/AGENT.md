@@ -63,6 +63,9 @@ identity `A`'s (docs/HOME.md).
 | `prepare` | `{workspace, kind, body, schema?, target?, lineage?, refs?, guard?}` | an unsigned record of the signer, dated now and chained to its head, checked as this receiver reads it |
 | `commit` | `{workspace, record}` | its id and how this receiver reads it now |
 | `explain` | `{word}` | what a verdict, reliance, problem or refusal means and does not establish |
+| `find` | `{workspace, schema?, kind?, actor?, where?, text?, state?, leaves?, limit?}` | records matching every filter, newest first: `where` compares top-level body fields exactly (`{"pr": 523}`), `text` is a substring of the body in any case, `state` the lineage's state, `leaves` only each lineage's latest version; each row the full id, a title, an attest's or challenge's target, the lineage's root, state and reliance |
+| `inbox` | `{actor?}` | over every workspace, what waits for the actor (default: each workspace's signer): `attest`, `answer` (asked of it), `back schema`, `answer challenge` (a counted challenge standing against one of its records that no record answers in `answers` and no newer version of the lineage replaced), `wait` (its own versions, a pull request's head left to the gate); `due` counts what it can act on; a workspace it cannot read is named in `unavailable` |
+| `act` | `{workspace, act, ...}` then `{workspace, act, records}` | `review-open {pr, title, serves?}`, `review-head {pr, commit?, answers?}`, `close {obligation, established, evidence? or pr, residual?, refs?, requires?}`, `accept {target}`: the records the act files, built as `warrant.review` and `warrant.roadmap` build them (a chain fork of the signer joined first), chained on its head and checked; with `records` (that list, unchanged), all signed and appended under one lock and one write, or none (`CHAIN_MOVED` if the head moved) |
 
 `prepare` fills in the signer, the time, `prev`, `target` (in the body and in `refs`) and the
 references the schema's typed fields name; for an entity with no `guard`, the schema's minimal guard
@@ -82,6 +85,19 @@ compare-and-swap on the signer's head (a stale `prev` is `CHAIN_MOVED`: prepare 
 `{"error": CODE, "message"}`; `explain` has every code.
 
 ## Recipes
+
+The loop of a change, in this repository, with `act` (each call twice: the preview, then the same `records` back):
+
+```json
+{"workspace": "warrant", "act": "review-open", "pr": 523, "title": "gate: the revert marker"}
+{"workspace": "warrant", "act": "close", "obligation": "<any version of it>", "pr": 523,
+ "established": ["what holds now"], "residual": ["what does not"]}
+{"workspace": "warrant", "act": "review-head", "pr": 523}
+```
+
+Commit the store between `close` and `review-head` (the head names the commit that holds the closure). Start a
+session with `inbox`; find an id with `find` (`{"schema": "pr-head@1", "where": {"pr": 523}}`), not by reading the store.
+
 
 Accept a version (an obligation's closure, a pull request's head):
 
