@@ -1010,6 +1010,17 @@ def drift_impact_cases():
     check("DR19 given BASE, the changed files no acceptance names are listed, since nothing resting on them can be seen",
           m["changed"] == ["README", "lib/code.py"] and m["in_no_acceptance"] == ["README"]
           and "2 file(s), 1 in no acceptance: README" in text, m)
+    from warrant import graph as GR
+    cap = GR.MAX_NODES
+    try:
+        GR.MAX_NODES = 2                  # a walk that stops before the end: what rests on the claim is not all listed
+        cut = D.impact(RP.Repo(r.root).report(), r.root, head, base)
+    finally:
+        GR.MAX_NODES = cap
+    check("DR34 an impact whose walk stopped at the node bound says so: `complete` false and PARTIAL in its first line, "
+          "never a partial count read as the whole (Codex e8a6dfdd); a whole walk is complete",
+          m["complete"] is True and m["stale"][0]["complete"] is True and cut["complete"] is False
+          and "PARTIAL" in D.impact_lines(cut).splitlines()[0] and "PARTIAL" not in text, (cut, text))
     import importlib.util
     spec = importlib.util.spec_from_file_location("graph_tool", ROOT / "tools" / "graph.py")
     TG = importlib.util.module_from_spec(spec)

@@ -37,9 +37,11 @@ them. A root is relied on when all of this holds under the receiver's trust and 
 - with `--checkout DIR`: the files its acceptances name (`files`, {path: git blob}) are still those
   bytes in the tree of DIR's HEAD. A file moved with its bytes unchanged is still those bytes. An
   acceptance made again at the new bytes makes the root fresh again; an older one stays in the
-  package and reads stale. Without `--checkout` the files are listed as `NOT_CHECKED` and do not
-  decide the exit. With `--checkout` and no `git` to read the tree, they read `NOT_CHECKED` and the
-  exit is 1: a comparison that was asked for and not made is never read as fresh.
+  package and reads stale. Without `--checkout` the files are listed as `NOT_CHECKED`, the root's
+  lineage reads `PINS_NOT_CHECKED` and the exit is 1 (docs/V3.md §10: never relied on over pins
+  nobody compared; a root whose acceptances name no files is not affected). With `--checkout` and no
+  `git` to read the tree, they read `NOT_CHECKED` and the exit is 1 as well: a comparison that was
+  not made is never read as fresh.
 
 With `--witness FILE`, a `witness/1` (`warrant snapshot prove --use SNAPSHOT --roots ID ...` makes one), the answer
 also has `absence`: against the reverse index root of a `snapshot@1` that a witness signed (an actor your trust binds

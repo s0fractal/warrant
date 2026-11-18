@@ -1262,10 +1262,27 @@ def vetoed(b, rep, gh, k):
     version by a holder of a veto role (counted or not)."""
     if b.gate["hold_label"] in gh.pull(k["pr"])["labels"]:
         return f"the label {b.gate['hold_label']!r} on #{k['pr']}"
+    return veto_challenge(b, rep, k)
+
+
+def veto_challenge(b, rep, k):
+    """Why `rep` holds a veto of brake `k`'s merge: a challenge on its head version by a holder of a veto role, or None."""
     roles = {w["veto_role"] for t, w in b.gate.items() if t in (*TIERS, SOLO)}
     vetoers = set().union(*(b.holders(r) for r in roles)) if roles else set()
     veto = sorted(c for c, x in rep["challenges"].items() if x["target"] == k["version"] and rep["_recs"].get(c, {}).get("actor") in vetoers)
     return f"a challenge by {rep['_recs'][veto[0]]['actor']} on #{k['pr']}'s head version: {veto[0][:12]}" if veto else None
+
+
+def timely_veto(root, b, k):
+    """Why an ended brake `k` was vetoed in time, or None: a veto challenge already in the base's store at the last
+    first-parent commit made before the brake ended (its committer time, which the forge sets for the gate's merges,
+    not a record's own `at`, which its signer chooses). The label's time is not read: an ended brake's veto is a
+    challenge (Codex af30dd9b: a timely veto whose revert failed was dropped once the brake had ended)."""
+    at = next((x for x, _, t, _ in first_parent(root, b.commit) if t <= k["until"]), None)
+    if at is None:
+        return None
+    snap, _ = store_at(root, at)
+    return veto_challenge(b, assess_snapshot(b, snap), k)
 
 
 def _kept(path):
@@ -1487,11 +1504,15 @@ def enforce_brakes(root, b, gh, found, now=None):
     snap, _ = store_at(root, b.commit)
     rep = assess_snapshot(b, snap)
     pending = {a.facts.get("revert") for a in found if a.facts.get("revert")}
-    out = []
-    for k in brakes(root, b.commit, now):
+    out, now = [], time.time() if now is None else now
+    for k in brakes(root, b.commit, now, open_only=False):
+        ended = k["until"] <= now
+        if ended and not veto_challenge(b, rep, k):     # the cheap test first: most ended brakes were never vetoed
+            continue
         if reverted(root, b.commit, k["merge"]) or k["merge"] in pending:
             continue
-        why = vetoed(b, rep, gh, k)
+        # ended: only a veto standing now that was in the base before the end, so a failed revert is retried
+        why = timely_veto(root, b, k) if ended else vetoed(b, rep, gh, k)
         if why:
             out.append((k["pr"], open_revert(root, b, gh, k, why)))
     return out

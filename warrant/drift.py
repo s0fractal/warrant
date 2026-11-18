@@ -200,12 +200,15 @@ def _accepted_files(rep, L):
 
 
 def rests_on(rep, L):
-    """The roots of the lineages of `rep` that rest on lineage L, transitively, from any of its versions: a record may
-    cite the version it read, not the root."""
-    roots = set()
+    """(the roots of the lineages of `rep` that rest on lineage L, transitively, from any of its versions: a record may
+    cite the version it read, not the root; whether every walk was followed to its end, not stopped at
+    graph.MAX_NODES)."""
+    roots, complete = set(), True
     for v in rep["lineages"][L]["versions"]:
-        roots |= {G.lineage_of(rep, n["id"]) for n in G.why(rep, v)["nodes"]}
-    return sorted(roots - {None, L})
+        w = G.why(rep, v)
+        roots |= {G.lineage_of(rep, n["id"]) for n in w["nodes"]}
+        complete = complete and w["complete"]
+    return sorted(roots - {None, L}), complete
 
 
 def changed_paths(root, base, head):
@@ -242,15 +245,19 @@ def impact(rep, root, head="HEAD", base=None, readings=None):
         row = {"lineage": L, "id": x["id"], "verdict": x["verdict"], "commit": x["commit"],
                "files": [f for f in x["files"] if f["verdict"] not in FRESH]}
         if readings is None:
-            row["rests_on_it"] = [_row(rep, R) for R in rests_on(rep, L)]
+            roots, row["complete"] = rests_on(rep, L)
+            row["rests_on_it"] = [_row(rep, R) for R in roots]
         else:
             vs = rep["lineages"][L]["versions"]
-            reached = set(A.reach([rep, *(r.rep for r in read)], vs)[0]) - set(vs)
+            depth, row["complete"] = A.reach([rep, *(r.rep for r in read)], vs)
+            reached = set(depth) - set(vs)
             row["rests_on_it"] = [_row(rep, R) for R in sorted({G.lineage_of(rep, i) for i in reached} - {None, L})]
             row["elsewhere"] = _elsewhere(others, reached, L)
         stale.append(row)
     out = {"head": head, "base": base, "stale": stale, "affected": sorted({r["lineage"] for s in stale for r in s["rests_on_it"]}),
-           "stores": sorted({e["store"] for s in stale for e in s.get("elsewhere", [])})}
+           "stores": sorted({e["store"] for s in stale for e in s.get("elsewhere", [])}),
+           # false: a walk stopped at graph.MAX_NODES records, so more rests on a stale claim than is listed (Codex e8a6dfdd)
+           "complete": all(s["complete"] for s in stale)}
     if readings is not None:
         out["unavailable"] = _unavailable(readings, root)
     if base:
@@ -307,6 +314,7 @@ def impact_lines(m):
     else:
         head = f"impact: {n} stale claim(s) -> {len(m['affected'])} lineage(s) resting on them"
         head += f" -> {len(m['stores'])} other store(s)" if m["stores"] else ""
+        head += "" if m.get("complete", True) else f" (PARTIAL: a walk stopped at {G.MAX_NODES} records; more rests on them)"
     out = [head]
     for s in m["stale"]:
         out.append(f"STALE {s['id']} ({s['lineage'][:12]}), accepted at {str(s['commit'])[:12]}")
