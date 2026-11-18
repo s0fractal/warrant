@@ -34,7 +34,7 @@ DIGESTS = {
     "warrant/shapes.py": "290685204b8457314661d2055ab973115a4c1356f6e03ed8b5cae2ad6f0a4761",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
-    "warrant/pins.py": "3a9e6be0c566cb716263e7e93105b7d485a7b02446639fe0887031bdb0a83952",
+    "warrant/pins.py": "a2984deb5d8f0b4b925bbfe44b088e79f1f6959462730a759f6f2d53e92fe500",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
     "warrant/graph.py": "25411d475f9dd8036fccd0ddfd6ad7fd6222a79d75c357882fcf308d74b2af5f",
     "warrant/store.py": "f569d538c09f7b6049e2c8a0ea9fcc8add176d4e7adb166511aba42604f62588",
@@ -740,9 +740,13 @@ def first_change(root, commit, path, blob, head="HEAD", memo=None):
         if ("order", commit) not in memo:
             memo["order", commit] = git(root, "rev-list", "--reverse", "--topo-order", f"{commit}..{head}").splitlines()
         order = memo["order", commit]
-        touched = set(git(root, "--literal-pathspecs", "log", "--format=%H", f"{commit}..{head}", "--", path).splitlines())
+        # --full-history -m: a merge that brings the bytes back, and a commit that restored them on a line a merge
+        # then left out, are both candidates; Git's default simplification drops them (Codex ce0721c1)
+        touched = set(git(root, "--literal-pathspecs", "log", "--full-history", "-m", "--format=%H", f"{commit}..{head}",
+                          "--", path).splitlines())
         if S.hex_of(oid, 40):
-            touched |= set(git(root, "log", "--format=%H", f"--find-object={oid}", f"{commit}..{head}").splitlines())
+            touched |= set(git(root, "log", "--full-history", "-m", "--format=%H", f"--find-object={oid}",
+                               f"{commit}..{head}").splitlines())
         since = None
         for c in reversed([c for c in order if c in touched]):
             if ("tree", c) not in memo:

@@ -1,20 +1,31 @@
 {
+ "at": "8cc8b52b43f42afc8d1c0f21b5a5f7c8f08740c3",
  "window": [
-  "2026-10-16",
-  "2026-11-16"
+  "2026-10-16T00:00:00Z",
+  "2026-11-16T23:59:59Z"
  ],
- "pull_request_merges": 312,
- "base_into_branch_merges": 123,
+ "pull_request_merges": 314,
+ "side_merges": 123,
+ "branch_into_branch_merges": 17,
+ "base_into_branch_merges": 106,
  "with_records_conflict": 14,
  "records_conflict_only": 13,
+ "records_conflicts_by": {
+  "gate": 4,
+  "local": 10
+ },
+ "records_conflicts_distinct_pull_requests": 12,
+ "records_conflicts_needing_hands_with_union": [
+  "db53a851feb1b5a7e68a08787717a4e55970e464"
+ ],
  "conflicts_by_path": {
-  "CHANGELOG.md": 40,
-  "tests/mutants.py": 27,
-  "SPEC-CLAIMS.md": 15,
+  "CHANGELOG.md": 39,
+  "tests/mutants.py": 25,
   ".warrant/records.jsonl": 14,
-  "WITNESSES.md": 10,
-  "REVIEWS.md": 7,
-  "tests/agent_test.py": 5,
+  "SPEC-CLAIMS.md": 13,
+  "WITNESSES.md": 9,
+  "REVIEWS.md": 5,
+  "tests/agent_test.py": 4,
   "tests/tools_test.py": 3,
   "warrant_verify.py": 2,
   "docs/REPOSITORY.md": 2,
@@ -35,23 +46,147 @@
   ".github/workflows/ci.yml": 1,
   "README.md": 1,
   "tests/agent_mutants.py": 1,
-  "tests/loops_mutants.py": 1,
   "tools/check.py": 1
  },
- "commits_with_records_conflict": [
-  "2dd637c5f7b2c0af66b0df830091b2c90367bfa9",
-  "92c8225fe59dfc3c33f7fc65ae63801ea8e1cc84",
-  "db8c3d899fd49a99cd88df87787caf94f906659d",
-  "f80a193db7a9dd21b0bf39d018f3d40e626eaa6d",
-  "22e58764fe9ea9a093786a30e60960b1be6b6dd2",
-  "efb3943e2053e4f7ee2118b47277304a94917ecf",
-  "f5d5508dd3700747ba44c7f3376d71095ee0f2e3",
-  "ec56667b6c162a41d295ecbcc31478f99f0e89e1",
-  "bab8e19f7fc0f76cf1802c8b35baa8f9babbdb49",
-  "2050782513359464b24cfaa1718a2fcafaf6f9ae",
-  "1cdf9bdf9d27c15b00bbf29c40bae03ba3738c21",
-  "db53a851feb1b5a7e68a08787717a4e55970e464",
-  "bae6acf38987b8fa8c4ade9e957d22351f44211a",
-  "66de8b6d4df700fb75d4bc4fb0c9743ab0cf4fdb"
+ "records_conflicts": [
+  {
+   "commit": "2dd637c5f7b2c0af66b0df830091b2c90367bfa9",
+   "by": "gate",
+   "pull_request": "#421",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "92c8225fe59dfc3c33f7fc65ae63801ea8e1cc84",
+   "by": "gate",
+   "pull_request": "#421",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "db8c3d899fd49a99cd88df87787caf94f906659d",
+   "by": "local",
+   "pull_request": "#404",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "f80a193db7a9dd21b0bf39d018f3d40e626eaa6d",
+   "by": "local",
+   "pull_request": "#405",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "22e58764fe9ea9a093786a30e60960b1be6b6dd2",
+   "by": "local",
+   "pull_request": "#393",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "efb3943e2053e4f7ee2118b47277304a94917ecf",
+   "by": "local",
+   "pull_request": "#392",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "f5d5508dd3700747ba44c7f3376d71095ee0f2e3",
+   "by": "gate",
+   "pull_request": "#382",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "ec56667b6c162a41d295ecbcc31478f99f0e89e1",
+   "by": "local",
+   "pull_request": "#376",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "bab8e19f7fc0f76cf1802c8b35baa8f9babbdb49",
+   "by": "gate",
+   "pull_request": "#379",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "2050782513359464b24cfaa1718a2fcafaf6f9ae",
+   "by": "local",
+   "pull_request": "#364",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "1cdf9bdf9d27c15b00bbf29c40bae03ba3738c21",
+   "by": "local",
+   "pull_request": "#364",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "db53a851feb1b5a7e68a08787717a4e55970e464",
+   "by": "local",
+   "pull_request": "#267",
+   "conflicts": [
+    ".warrant/records.jsonl",
+    "CHANGELOG.md",
+    "docs/AGENT.md",
+    "docs/HOME.md",
+    "tests/agent_test.py",
+    "tests/mutants.py",
+    "warrant/cli.py",
+    "warrant_agent/api.py"
+   ],
+   "with_union": [
+    "docs/AGENT.md",
+    "docs/HOME.md",
+    "tests/agent_test.py",
+    "warrant/cli.py",
+    "warrant_agent/api.py"
+   ]
+  },
+  {
+   "commit": "bae6acf38987b8fa8c4ade9e957d22351f44211a",
+   "by": "local",
+   "pull_request": "#264",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  },
+  {
+   "commit": "66de8b6d4df700fb75d4bc4fb0c9743ab0cf4fdb",
+   "by": "local",
+   "pull_request": "#227",
+   "conflicts": [
+    ".warrant/records.jsonl"
+   ],
+   "with_union": []
+  }
  ]
 }

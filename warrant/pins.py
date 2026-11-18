@@ -70,9 +70,13 @@ def first_change(root, commit, path, blob, head="HEAD", memo=None):
         if ("order", commit) not in memo:
             memo["order", commit] = git(root, "rev-list", "--reverse", "--topo-order", f"{commit}..{head}").splitlines()
         order = memo["order", commit]
-        touched = set(git(root, "--literal-pathspecs", "log", "--format=%H", f"{commit}..{head}", "--", path).splitlines())
+        # --full-history -m: a merge that brings the bytes back, and a commit that restored them on a line a merge
+        # then left out, are both candidates; Git's default simplification drops them (Codex ce0721c1)
+        touched = set(git(root, "--literal-pathspecs", "log", "--full-history", "-m", "--format=%H", f"{commit}..{head}",
+                          "--", path).splitlines())
         if S.hex_of(oid, 40):
-            touched |= set(git(root, "log", "--format=%H", f"--find-object={oid}", f"{commit}..{head}").splitlines())
+            touched |= set(git(root, "log", "--full-history", "-m", "--format=%H", f"--find-object={oid}",
+                               f"{commit}..{head}").splitlines())
         since = None
         for c in reversed([c for c in order if c in touched]):
             if ("tree", c) not in memo:
