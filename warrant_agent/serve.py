@@ -30,6 +30,7 @@ from warrant import jcs as C
 from warrant import graph as G
 from warrant import home as H
 from warrant import records as R
+from warrant import sources as SRC
 from warrant.repo import Failed, Repo, load_key
 from warrant_agent import glossary as GL
 from warrant_agent import changes as CH
@@ -245,9 +246,16 @@ class Space:
         return cls({n: os.path.expanduser(r["path"]) for n, r in sorted(doc["repositories"].items())})
 
     def _stamp(self, root):
+        """What the report depends on: the store's files, and the commit each declared source's ref names now (a
+        source's ref advancing changes no local file: Codex c6be9748, the receipts read stale until a restart)."""
         dot = Path(root) / ".warrant"
-        return tuple((p.name, p.stat().st_size, p.stat().st_mtime_ns) for p in sorted(dot.glob("*"))
-                     if p.is_file() and p.suffix in (".jsonl", ".json"))
+        files = tuple((p.name, p.stat().st_size, p.stat().st_mtime_ns) for p in sorted(dot.glob("*"))
+                      if p.is_file() and p.suffix in (".jsonl", ".json"))
+        try:
+            tips = tuple((x["name"], SRC._commit(root, x["ref"])) for x in SRC.declared(SRC.config_doc(root)))
+        except (ValueError, OSError) as e:
+            tips = (("refused", str(e)[:200]),)
+        return files, tips
 
     def report(self, name):
         root = self.roots[name]

@@ -1698,6 +1698,35 @@ def survey(root, b, gh, prs=None, hold=False, remote="origin", present_=False):
     return out
 
 
+SOURCES_FILE = ".warrant/sources.json"
+SOURCE_NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
+SOURCE_REF = re.compile(r"refs/(heads|warrant)/[A-Za-z0-9._/-]{1,200}\Z")
+
+
+def source_tips(b, gh):
+    """{name: the commit GitHub's ref names now, or None} for each source the base's .warrant/sources.json declares,
+    read at the merge: what the gate's receipt names beside the merge it states (Codex 7f09815d). The gate decides
+    nothing on a source (it reads none); a declaration it cannot read names none. Read here rather than imported:
+    warrant/sources.py is no path of the gate's (R-GATE-CLOSURE)."""
+    try:
+        doc = json.loads(files_at(b.root, b.commit, (SOURCES_FILE,)).get(SOURCES_FILE, b"null"))
+    except (ValueError, Refused, subprocess.CalledProcessError):
+        return {}
+    xs = doc.get("sources") if isinstance(doc, dict) else None
+    out = {}
+    for x in xs if isinstance(xs, list) else []:
+        if not (isinstance(x, dict) and isinstance(x.get("name"), str) and SOURCE_NAME.match(x["name"])
+                and isinstance(x.get("ref"), str) and SOURCE_REF.match(x["ref"]) and ".." not in x["ref"]):
+            continue
+        try:
+            got = gh.api(f"git/ref/{x['ref'][len('refs/'):]}")
+            sha = got.get("object", {}).get("sha") if isinstance(got, dict) else None
+        except Refused:
+            sha = None
+        out[x["name"]] = sha if S.hex_of(sha, 40) else None
+    return out
+
+
 def merge_one(b, a, gh):
     """Merge eligible Assessment `a` at the head it assessed, after reading the pull request and the base branch
     again (the pull request rules at the same head, the base at the same commit); then dispatch the required
@@ -1746,7 +1775,7 @@ def merge_one(b, a, gh):
         return {"pr": n, "merged": False, "why": f"GitHub answered {json.dumps(res)[:200]}"}
     parents = gh.parents(res["sha"])
     out = {"pr": n, "merged": True, "merge": res["sha"], "parents": parents, "head": head, "base": base, "version": rid,
-           "as_assessed": parents == [base, head], "dispatched": [], "dispatch_failed": []}
+           "as_assessed": parents == [base, head], "dispatched": [], "dispatch_failed": [], "sources": source_tips(b, gh)}
     for w in sorted({c["workflow"] for c in b.gate["required"]}) + after_merge(b, a):
         try:
             gh.dispatch(w, b.gate["base"])

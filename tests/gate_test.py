@@ -1530,7 +1530,7 @@ def rules_revert_merge_cases():
                                        "branch": "later", "head_repo": REPO, "author": "alice"}, green(lh))
     check("RC14 the gate's own merge of a rules revert (merge_one's message) is seen as a revert on the first parents: the "
           "reverted rules version is void and a later accepted pull request raises no rules reason (Codex c881cf2a)",
-          a.eligible and result.get("merged") and GT.reverted(r.root, gh.sha, merge)
+          a.eligible and result.get("merged") and result.get("sources") == {} and GT.reverted(r.root, gh.sha, merge)
           and n1 in GT.reverted_rules(r.root, gh.sha) and later.eligible, (a.reasons, result, later.reasons))
 
 
@@ -1580,6 +1580,42 @@ def ended_brake_cases():
     check("E99 a veto in the base before its brake ended is enforced by a run after the end, so a failed revert is "
           "retried; a veto that reached the base only after the end opens no revert (Codex af30dd9b)",
           len(timely) == 1 and "opened" in timely[0][1] and tardy == [] and hub.calls == [], (timely, tardy, hub.calls))
+
+
+def source_tip_cases():
+    """The gate's result for a merge names the commit each source the base declares stood at (source_tips), for the
+    receipt to state (Codex 7f09815d): a ref GitHub answers with a commit names it, one it refuses or answers with no
+    commit id names null, a malformed entry is left out; a base with no declaration names none."""
+    r = Repo(git_init=False)
+    (r.dot / "merge.json").write_text(json.dumps(PRES))
+    (r.dot / "sources.json").write_text(json.dumps({"warrant": "sources/1", "sources": [
+        {"name": "claims-checker", "ref": "refs/heads/stores/claims-checker", "actors": ["carol"]},
+        {"name": "gone", "ref": "refs/heads/stores/gone", "actors": ["carol"]},
+        {"name": "odd", "ref": "refs/heads/stores/odd", "actors": ["carol"]},
+        {"name": "Bad Name", "ref": "refs/heads/x", "actors": ["carol"]},
+        {"name": "out", "ref": "HEAD", "actors": ["carol"]}]}))
+    git(r.root, "init", "-q", "-b", "master")
+    base = r.commit("a base that declares sources")
+    asked = []
+
+    class Hub:
+        def api(self, path, method="GET", body=None, pages=False):
+            asked.append(path)
+            if path == "git/ref/heads/stores/claims-checker":
+                return {"object": {"sha": "4" * 40}}
+            if path == "git/ref/heads/stores/odd":
+                return {"object": {"sha": "not a commit"}}
+            raise GT.Refused("Not Found (HTTP 404)", "GITHUB")
+    got = GT.source_tips(GT.Base(r.root, base), Hub())
+    bare = Repo(git_init=False)
+    (bare.dot / "merge.json").write_text(json.dumps(PRES))
+    git(bare.root, "init", "-q", "-b", "master")
+    none = GT.source_tips(GT.Base(bare.root, bare.commit("no declaration")), Hub())
+    check("E100 the gate's merge result names each declared source's tip as GitHub answers it, null when GitHub names "
+          "no commit, and asks nothing for a malformed entry; a base with no declaration names none",
+          got == {"claims-checker": "4" * 40, "gone": None, "odd": None} and none == {}
+          and sorted(asked) == ["git/ref/heads/stores/claims-checker", "git/ref/heads/stores/gone", "git/ref/heads/stores/odd"],
+          (got, none, asked))
 
 
 def rules_cases():
@@ -1843,6 +1879,7 @@ if __name__ == "__main__":
         rules_revert_cases,
         rules_revert_merge_cases,
         ended_brake_cases,
+        source_tip_cases,
         after_merge_cases,
         prerelease_cases,
         revert_pending_cases,

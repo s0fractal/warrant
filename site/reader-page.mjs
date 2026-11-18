@@ -674,5 +674,6 @@ if (first.base) start();
 function sourceLine(x) {
   if (x.base === null) return "not served where this reader can find it";
   const left = x.left_out ? `, ${x.left_out} by others left out` : "";
-  return `${x.records} record(s) by its actors${left}`;
+  const at = x.commit ? `, read at commit ${x.commit.slice(0, 12)}` : ", read at the ref as it was: no commit resolved";
+  return `${x.records} record(s) by its actors${left}${at}`;
 }

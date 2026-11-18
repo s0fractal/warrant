@@ -322,6 +322,11 @@ pull request's address, in a store of its own on the branch `receipts`.
   repository's trust binds `merge-gate` to the key below with no role: `status` names the receipts tip it read, and
   the receipts are signed records of the union that count for no guard. The gate reads no source, so a receipt never
   decides a merge. The reader page still asks the receipts store itself whether a receipt is the gate's (`gateStore`).
+- **Sources at a named commit.** Each receipt names, under `sources`, the commit every source the base declares stood
+  at when the gate merged (`warrant/gate.py` `source_tips`, from GitHub's refs; null when GitHub names none). The browser
+  reader resolves a source's ref to a commit by GitHub's commits API, reads the source there and names that commit
+  (`githubCommit`); `warrant status` names the tip it read. `warrant serve` reads a source again once its ref
+  advances.
 - **The key.** Its public key is `5d29ebfdbff7362a5f871f86a1c6d71524fc260b65289d11578b692c3db974b9`, pinned in
   `site/reader.mjs` (`GATE`): the reader shows a receipt as the gate's only from a store bound to it alone.
   `gate-key.yml` makes it once on a runner and keeps it as `WARRANT_GATE_SEED` of the environment `gate`,
