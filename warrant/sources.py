@@ -22,7 +22,7 @@ import subprocess
 from pathlib import Path
 
 from . import shapes as S
-from .store import Snapshot, _line_id, read_inside
+from .store import Snapshot, read_inside
 
 NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 REF = re.compile(r"refs/(heads|warrant)/[A-Za-z0-9._/-]{1,200}\Z")
@@ -118,7 +118,7 @@ def with_sources(root, snap, doc):
         lines |= set(got)
         blobs.update(b)
         info.append({"name": s["name"], "ref": s["ref"], "commit": commit, "records": len(got), "left_out": left})
-    return Snapshot(sorted(lines, key=_line_id), blobs), info
+    return Snapshot(lines, blobs, sort=True), info
 
 
 def config_doc(root):

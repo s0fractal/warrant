@@ -57,15 +57,16 @@ def read_inside(path, base):
 class Snapshot:
     """The bytes of one read: {id: [distinct lines]}, {hash: bytes}, and what was wrong."""
 
-    def __init__(self, lines, blobs):
+    def __init__(self, lines, blobs, sort=False):
+        """`sort`: the lines are a union of stores (warrant/sources.py) to read in canonical order, each record's id
+        computed once here rather than once more for a sort beforehand."""
         self.blobs = dict(blobs)
         self.rejected, self.lines, seen = {}, {}, set()
-        self.raw = list(dict.fromkeys(lines))       # every distinct line as read, rejected ones too (the limits count them)
-        order = list(lines) == sorted(set(lines), key=_line_id)
+        lines = list(lines)
+        envs, keys = {}, {}
         for raw in lines:
-            if raw in seen:
+            if raw in envs:
                 continue
-            seen.add(raw)
             try:
                 if len(raw) > R.LINE_MAX:
                     raise R.Invalid(f"line longer than {R.LINE_MAX} bytes")
@@ -76,9 +77,21 @@ class Snapshot:
                 R.need(sig is None or (isinstance(sig, dict) and set(sig) == {"key", "ed25519"} and S.hex64(sig["key"])
                                        and S.hex128(sig["ed25519"])), "sig is null or {key, ed25519}")
             except UNREADABLE as e:
+                envs[raw] = None
                 self.rejected[hashlib.sha256(raw).hexdigest()] = f"line: {e}"
+                keys[raw] = _line_id(raw)           # a rejected line sorts by what its record would be, as before
                 continue
-            self.lines.setdefault(R.rid(env["record"]), []).append(env)
+            envs[raw] = env
+            keys[raw] = (R.rid(env["record"]), raw)
+        distinct = list(envs)
+        if sort:
+            distinct.sort(key=keys.__getitem__)
+        order = sort or lines == sorted(distinct, key=keys.__getitem__)
+        self.raw = distinct                         # every distinct line as read, rejected ones too (the limits count them)
+        for raw in distinct:
+            seen.add(raw)
+            if envs[raw] is not None:
+                self.lines.setdefault(keys[raw][0], []).append(envs[raw])
         self.canonical = order and not self.rejected          # a rejected line is never canonical, wherever it sorts
         listing = sorted(seen) + [f"b {h} {C.digest(b)}".encode() for h, b in sorted(self.blobs.items())]
         self.digest = C.digest(b"\n".join(listing))

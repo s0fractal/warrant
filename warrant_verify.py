@@ -30,14 +30,14 @@ import types
 
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
-    "warrant/jcs.py": "1caa6890ea01355224cb4dd4010777b388b51a2b3e5bc405192eeff717b3f9d3",
+    "warrant/jcs.py": "a9660eac6e87c33ba83a2000b80b9d69e0f0468970011a26441c5474e4f758c5",
     "warrant/shapes.py": "290685204b8457314661d2055ab973115a4c1356f6e03ed8b5cae2ad6f0a4761",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "3a9e6be0c566cb716263e7e93105b7d485a7b02446639fe0887031bdb0a83952",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
     "warrant/graph.py": "25411d475f9dd8036fccd0ddfd6ad7fd6222a79d75c357882fcf308d74b2af5f",
-    "warrant/store.py": "2a588521b918135a8868e283a301e63c53bb99e84c157814bb97732cecace625",
+    "warrant/store.py": "f569d538c09f7b6049e2c8a0ea9fcc8add176d4e7adb166511aba42604f62588",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
     "warrant/verify.py": "482b241a1a287f60d8017edf4adcc47ef90935dc700704c65c164ef4f2536553",
 }
@@ -48,6 +48,7 @@ SOURCES["jcs"] = r'''"""Canonical JSON (SPEC §2): RFC 8785 over integers, strin
 arrays and objects, plus a strict reader for the same domain."""
 import hashlib
 import json
+import re
 
 MAX_INT = 2**53 - 1
 MAX_DEPTH = 256
@@ -118,8 +119,13 @@ def canon(value):
     return "".join(out).encode("utf-8")
 
 
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
 def _check_text(s):
-    if any(0xD800 <= ord(c) <= 0xDFFF for c in s):
+    # an ASCII string holds no surrogate; any other is searched in C, not character by character in Python (the
+    # store's read spent half its time here, 2026-11-17: obligation aea35e1b)
+    if not s.isascii() and _SURROGATE.search(s):
         raise NotCanonical("lone surrogate")
 
 
@@ -1430,15 +1436,16 @@ def read_inside(path, base):
 class Snapshot:
     """The bytes of one read: {id: [distinct lines]}, {hash: bytes}, and what was wrong."""
 
-    def __init__(self, lines, blobs):
+    def __init__(self, lines, blobs, sort=False):
+        """`sort`: the lines are a union of stores (warrant/sources.py) to read in canonical order, each record's id
+        computed once here rather than once more for a sort beforehand."""
         self.blobs = dict(blobs)
         self.rejected, self.lines, seen = {}, {}, set()
-        self.raw = list(dict.fromkeys(lines))       # every distinct line as read, rejected ones too (the limits count them)
-        order = list(lines) == sorted(set(lines), key=_line_id)
+        lines = list(lines)
+        envs, keys = {}, {}
         for raw in lines:
-            if raw in seen:
+            if raw in envs:
                 continue
-            seen.add(raw)
             try:
                 if len(raw) > R.LINE_MAX:
                     raise R.Invalid(f"line longer than {R.LINE_MAX} bytes")
@@ -1449,9 +1456,21 @@ class Snapshot:
                 R.need(sig is None or (isinstance(sig, dict) and set(sig) == {"key", "ed25519"} and S.hex64(sig["key"])
                                        and S.hex128(sig["ed25519"])), "sig is null or {key, ed25519}")
             except UNREADABLE as e:
+                envs[raw] = None
                 self.rejected[hashlib.sha256(raw).hexdigest()] = f"line: {e}"
+                keys[raw] = _line_id(raw)           # a rejected line sorts by what its record would be, as before
                 continue
-            self.lines.setdefault(R.rid(env["record"]), []).append(env)
+            envs[raw] = env
+            keys[raw] = (R.rid(env["record"]), raw)
+        distinct = list(envs)
+        if sort:
+            distinct.sort(key=keys.__getitem__)
+        order = sort or lines == sorted(distinct, key=keys.__getitem__)
+        self.raw = distinct                         # every distinct line as read, rejected ones too (the limits count them)
+        for raw in distinct:
+            seen.add(raw)
+            if envs[raw] is not None:
+                self.lines.setdefault(keys[raw][0], []).append(envs[raw])
         self.canonical = order and not self.rejected          # a rejected line is never canonical, wherever it sorts
         listing = sorted(seen) + [f"b {h} {C.digest(b)}".encode() for h, b in sorted(self.blobs.items())]
         self.digest = C.digest(b"\n".join(listing))
