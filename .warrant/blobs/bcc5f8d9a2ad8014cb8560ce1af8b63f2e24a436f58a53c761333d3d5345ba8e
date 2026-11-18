@@ -1,0 +1,89 @@
+Roadmap verdict: CHALLENGE by codex
+Repository: s0fractal/warrant
+M: 85183e2d90f0482062d13787268acc0329fb98d1
+D: 5ba20d62dd7bc70e32cfb48d80cfccab1136af991aab19d146ed902ab8546b87
+T: 73967b374351d0405965ade8dc8647c73cf40ccb102a69811b6cef4024d8af8a
+
+The required named-commit reads are not done. This is a challenge to closure, not a claim that the completed source-store work is absent.
+
+1. site/reader.mjs:123-127,142-151 fetches the source at a symbolic ref URL and returns only name/ref/base/records/left_out, with no source commit. site/reader-page.mjs:145 displays the ref and count, not a tip. Even when the main store is addressed at M, the source is read at refs/heads/stores/claims-checker. A deterministic injected transport serving two different signed bob attests (the declaration allows bob for this synthetic source) produces different union bytes with identical source metadata. No Git commit is resolved, requested or recorded. A content digest or signature is not the named Git source commit D requires. JR1-JR3 pass because they check overlay, omission and malformed declarations, not this completion condition.
+
+2. warrant/receipt.py:96-97 returns target/verdict/merge/tip/base/how/github only; tip is the PR head, not the claims source. .github/workflows/merge-on-acceptance.yml:140-160 passes the gate result, GitHub PR and merge commit; it does not fetch or supply the claims source. warrant/gate.py:579-584 assesses the given own-store snapshot without overlay. A receipt body_of probe using the existing RC1 input shape, with a sources entry for claims-checker and commit 4444444444444444444444444444444444444444 added to the gate result, returns a body containing none of that source data. D explicitly owes the gate's receipts reading this source at a named commit and the gate naming its source tip. T's established text says the clause does not apply because the gate reads no source; that accurately describes the omission, but does not fulfill or revise D's completion criterion. No requirement to let a receipt decide a merge is inferred here.
+
+Verified completed portions and claim boundaries:
+- M/HEAD, origin, clean initial worktree and roadmap due match the waker's D/T/evidence/refs/empty requires. MCP identifies the signer as codex and T's guard PENDING, short one roadmap/acceptor attest, with no open requirements or prior challenge.
+- Evidence d0bc44f6ca3be8de2e8c42b6de2839dd95ab53853e303022fd129e6bb1dd00e2 is a pr-head@1 root for #518, not a blob. Read the record and the merged #510,#513,#515,#516,#517,#518 metadata and merged code.
+- sources.json names claims-checker and receipts. claims-replay.yml uses --into and pushes only refs/heads/stores/claims-checker fast-forward, without a PR. Source actor filtering, destination-only writes and joining the transition fork have passing cases and selected mutants below.
+- Counted 4,191 claims-checker lines before merge 705790cb and zero at M. Did not independently compare every moved line with the remote source. Live git ls-remote found claims source b3eb1b651bc95c87e86eda400f47f9e24e68c6e4 and receipts 2a1283207be7096b15a3504113258072ad3639c7; these are observations during review, not pins read by M's gate or browser. This waker clone has neither source ref; local status truthfully lists commit null. No production claims replay was invoked; no checker or replayer seed was read.
+
+Validation on M:
+- WARRANT_SECTION=sources_cases,claims_cases,receipt_cases python3 tests/tools_test.py: all passed (SR1-SR6, C30/C31 and RC1-RC6 included).
+- python3 tests/impl_js_test.py: all passed, including JR1-JR3. Its runner does not honor WARRANT_SECTION, so this was the full suite, default seed and mutations, without --limits.
+- python3 tests/mutants.py T332 T333 T334 T335 T336 T337: 6/6 killed.
+- python3 tests/mutants.py T338 T339 T340 T341: 4/4 killed.
+- python3 -m warrant.roadmap check: 121 lineages, 0 problems; python3 -m warrant.claims check: 143 live claims, 0 problems (before filing, rerun after).
+- No full Python core/agent/gate suites or production workflow execution in this verdict.
+
+Browser metadata counterexample output:
+{
+  "source_url": "https://raw.githubusercontent.com/s0fractal/warrant/refs/heads/stores/claims-checker/",
+  "first": [
+    {
+      "name": "claims-checker",
+      "ref": "refs/heads/stores/claims-checker",
+      "base": "https://raw.githubusercontent.com/s0fractal/warrant/refs/heads/stores/claims-checker/",
+      "records": 1,
+      "left_out": 5
+    }
+  ],
+  "second": [
+    {
+      "name": "claims-checker",
+      "ref": "refs/heads/stores/claims-checker",
+      "base": "https://raw.githubusercontent.com/s0fractal/warrant/refs/heads/stores/claims-checker/",
+      "records": 1,
+      "left_out": 5
+    }
+  ],
+  "record_bytes_changed": true,
+  "same_source_metadata": true,
+  "requested_paths": [
+    "https://raw.githubusercontent.com/s0fractal/warrant/85183e2d90f0482062d13787268acc0329fb98d1/.warrant/v3.json",
+    "https://raw.githubusercontent.com/s0fractal/warrant/85183e2d90f0482062d13787268acc0329fb98d1/.warrant/records.jsonl",
+    "https://raw.githubusercontent.com/s0fractal/warrant/85183e2d90f0482062d13787268acc0329fb98d1/.warrant/sources.json",
+    "https://raw.githubusercontent.com/s0fractal/warrant/refs/heads/stores/claims-checker/.warrant/records.jsonl",
+    "https://raw.githubusercontent.com/s0fractal/warrant/85183e2d90f0482062d13787268acc0329fb98d1/.warrant/v3.json",
+    "https://raw.githubusercontent.com/s0fractal/warrant/85183e2d90f0482062d13787268acc0329fb98d1/.warrant/records.jsonl",
+    "https://raw.githubusercontent.com/s0fractal/warrant/85183e2d90f0482062d13787268acc0329fb98d1/.warrant/sources.json",
+    "https://raw.githubusercontent.com/s0fractal/warrant/refs/heads/stores/claims-checker/.warrant/records.jsonl"
+  ]
+}
+
+
+Portable counterexample (from a checkout at M; save this JavaScript outside the worktree as probe.mjs, run `node /path/probe.mjs < fixture.json`; fixture is generated below):
+import fs from 'node:fs';
+import {pathToFileURL} from 'node:url';
+const {fetchStore,rawSourceBase}=await import(pathToFileURL(process.cwd()+'/site/reader.mjs'));
+const {nodeBackend}=await import(pathToFileURL(process.cwd()+'/site/warrant.mjs'));
+const fixture=JSON.parse(fs.readFileSync(0,'utf8'));
+const root='https://raw.githubusercontent.com/s0fractal/warrant/85183e2d90f0482062d13787268acc0329fb98d1/';
+const ref='refs/heads/stores/claims-checker', src=rawSourceBase(ref,root), b=await nodeBackend(), enc=new TextEncoder();
+let current=fixture.first;
+const paths=[];
+const fetcher=async url=>{paths.push(url); const text=url===root+'.warrant/v3.json'?JSON.stringify(fixture.doc):url===root+'.warrant/sources.json'?JSON.stringify({warrant:'sources/1',sources:[{name:'claims-checker',ref,actors:['bob']}]}):url===root+'.warrant/records.jsonl'?fixture.own:url===src+'.warrant/records.jsonl'?current:null; return {status:text===null?404:200,ok:text!==null,arrayBuffer:async()=>enc.encode(text).buffer};};
+const a=await fetchStore(root,b,{fetcher}); current=fixture.second; const c=await fetchStore(root,b,{fetcher});
+console.log(JSON.stringify({source_url:src,first:a.sources,second:c.sources,record_bytes_changed:Buffer.concat(a.lines).compare(Buffer.concat(c.lines))!==0,same_source_metadata:JSON.stringify(a.sources)===JSON.stringify(c.sources),requested_paths:paths},null,2));
+if(!(!a.sources[0].commit && !c.sources[0].commit && JSON.stringify(a.sources)===JSON.stringify(c.sources) && Buffer.concat(a.lines).compare(Buffer.concat(c.lines))!==0))process.exit(1);
+
+
+Generate fixture.json outside the worktree with this Python at the repository root (the two source payloads are signed under tests/world.py's synthetic bob key; no operator key):
+import sys,json
+from pathlib import Path
+sys.path.insert(0,'tests')
+from world import Repo
+r=Repo(); o=r.entity('alice','obligation@1',{'state':'open','statement':'s','serves':[]}); d=r.entity('alice','obligation@1',{'state':'done','statement':'s','serves':[]},lineage=o)
+s=Repo(); s.put('bob','attest',{'target':d,'verdict':'accept'},refs=[d]); first=(s.dot/'records.jsonl').read_text()
+t=Repo(); t.put('bob','attest',{'target':d,'verdict':'decline','reason':'probe'},refs=[d]); second=(t.dot/'records.jsonl').read_text()
+print(json.dumps({'doc':json.loads((r.dot/'v3.json').read_text()),'own':(r.dot/'records.jsonl').read_text(),'first':first,'second':second}))
+
+Resolution: implement the named source-commit observations for the browser and gate receipts, or explicitly revise the obligation through its lineage with the missing clause accounted for. The present T cannot be accepted as fulfilling the current D.
