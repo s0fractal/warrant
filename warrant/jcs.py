@@ -52,10 +52,37 @@ def _push_container(stack, v, depth):
     stack.append(("s", "{", 0))
 
 
+_ASTRAL = re.compile("[\U00010000-\U0010ffff]")
+
+
+def _plain(v, depth):
+    """Whether `v` is in the domain with nothing json.dumps would write otherwise than RFC 8785 does: only exact
+    JSON types, integers within ±(2^53-1), no lone surrogate, no key outside the Basic Multilingual Plane (there
+    sort_keys's code point order and RFC 8785's UTF-16 order agree), nesting within MAX_DEPTH. Then canon is one
+    json.dumps call; anything else, an error included, takes the token-by-token path. The vectors hold both."""
+    if depth > MAX_DEPTH:
+        return False
+    t = type(v)
+    if t is str:
+        return v.isascii() or not _SURROGATE.search(v)
+    if v is None or t is bool:
+        return True
+    if t is int:
+        return -MAX_INT <= v <= MAX_INT
+    if t is list:
+        return all(_plain(x, depth + 1) for x in v)
+    if t is dict:
+        return all(type(k) is str and (k.isascii() or not (_SURROGATE.search(k) or _ASTRAL.search(k)))
+                   and _plain(x, depth + 1) for k, x in v.items())
+    return False
+
+
 def canon(value):
     """RFC 8785 bytes. Object members are ordered by UTF-16 code units; integers
     outside ±(2^53-1), floats and lone surrogates are refused. Iterative, so
     nesting depth is bounded by MAX_DEPTH, not by the interpreter's stack."""
+    if _plain(value, 0):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     out = []
     stack = [("v", value, 0)]
     while stack:

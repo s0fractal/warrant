@@ -40,6 +40,7 @@ SHAPES_TEST = "tests/shapes_test.py"
 E, S, RC, DR = "warrant/engine.py", "warrant/store.py", "warrant/records.py", "warrant/drift.py"
 VERIFY, VF = "tests/verify_test.py", "warrant/verify.py"
 ONE, ONE_SRC, ONE_BUILD = "warrant_verify.py", "tools/verify_single.py", "tools/build_verify.py"
+JCS = "warrant/jcs.py"
 PINS = "warrant/pins.py"        # the comparison of an acceptance's files with a tree: warrant.drift's, and warrant.verify's
 # (id, file, find, replace, test file, cases)
 MUTANTS = [
@@ -415,6 +416,10 @@ MUTANTS = [
     ("T339", "warrant/store.py", ', key=_line_id), {}) if beside else snap, trust, actor)', ', key=_line_id), {}) if False else snap, trust, actor)', TOOLS, ["SR6"]),
     ("T340", "warrant/claims.py", '        recs = joins + recs\n', '', TOOLS, ["C30"]),
     ("T341", "warrant/claims.py", '    rep = repo.report(repo.store.snapshot())     # this store', '    rep = repo.report()     # this store', TOOLS, ["C31"]),
+    ("T342", JCS, 'not (_SURROGATE.search(k) or _ASTRAL.search(k))', 'not _SURROGATE.search(k)', CORE, ["K40"]),
+    ("T343", JCS, '        return -MAX_INT <= v <= MAX_INT\n', '        return True\n', CORE, ["K40"]),
+    ("T344", JCS, '        return v.isascii() or not _SURROGATE.search(v)\n', '        return True\n', CORE, ["K40"]),
+    ("T345", JCS, '    if depth > MAX_DEPTH:\n        return False\n    t = type(v)', '    t = type(v)', CORE, ["K40"]),
     ("T329", "warrant/cli.py", '                guard = s["states"].get(body.get("state"))\n', '                guard = None\n', TOOLS, ["FC1"]),
     ("T330", "warrant/cli.py", '        print(out["record"])                # --id', '        print(json.dumps(out))                # --id', TOOLS, ["FC1"]),
     ("T331", "warrant/cli.py", '+ (f", waits for {\'; \'.join(g[\'waiting\'])}" if g["waiting"] else "")', '+ ""', TOOLS, ["FC2"]),
