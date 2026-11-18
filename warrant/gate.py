@@ -1696,7 +1696,10 @@ def merge_one(b, a, gh):
     until = int(time.time() + hours * 3600) if hours and not a.facts.get("revert") else None
     if a.facts.get("revert"):
         title = f"Merge pull request #{n} (the gate's revert of {rid[:12]}, vetoed in its brake window)"
-        message = f"merge-on-acceptance: revert of {rid}: the change it reverts was vetoed in its brake window; head {head}; base {base}."
+        # the marker goes on the first-parent merge commit itself: reverted() and reverted_rules() read only first
+        # parents, and the revert branch's own commit is the merge's second parent (Codex c881cf2a)
+        message = (f"merge-on-acceptance: revert of {rid}: the change it reverts was vetoed in its brake window; head {head}; "
+                   f"base {base}.\n\nwarrant-gate revert of {a.facts['revert']}\n")
     elif a.facts.get("solo") and a.facts.get("present") and hours:
         title = f"Merge pull request #{n} (solo: {actor}, the owner present: the brake after the merge)"
         message = (f"merge-on-acceptance: solo: head version {rid} by {actor} at {x}, one model family, merged with the owner "
