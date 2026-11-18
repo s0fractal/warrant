@@ -318,6 +318,10 @@ pull request's address, in a store of its own on the branch `receipts`.
   the key never states a hand merge, which stays an agent's observation (`python -m warrant.review merged`, `how: hand`).
 - **What it counts for.** Nothing. The store trusts the one name `merge-gate` and gives nobody a role; read beside
   this repository's store, a receipt is a signed observation on the head version it targets.
+- **Read as a source.** `.warrant/sources.json` names the branch `receipts` for the actor `merge-gate`, and this
+  repository's trust binds `merge-gate` to the key below with no role: `status` names the receipts tip it read, and
+  the receipts are signed records of the union that count for no guard. The gate reads no source, so a receipt never
+  decides a merge. The reader page still asks the receipts store itself whether a receipt is the gate's (`gateStore`).
 - **The key.** Its public key is `5d29ebfdbff7362a5f871f86a1c6d71524fc260b65289d11578b692c3db974b9`, pinned in
   `site/reader.mjs` (`GATE`): the reader shows a receipt as the gate's only from a store bound to it alone.
   `gate-key.yml` makes it once on a runner and keeps it as `WARRANT_GATE_SEED` of the environment `gate`,

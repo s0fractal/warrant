@@ -1,6 +1,7 @@
 {
   "warrant": "sources/1",
   "sources": [
-    {"name": "claims-checker", "ref": "refs/heads/stores/claims-checker", "actors": ["claims-checker"]}
+    {"name": "claims-checker", "ref": "refs/heads/stores/claims-checker", "actors": ["claims-checker"]},
+    {"name": "receipts", "ref": "refs/heads/receipts", "actors": ["merge-gate"]}
   ]
 }
