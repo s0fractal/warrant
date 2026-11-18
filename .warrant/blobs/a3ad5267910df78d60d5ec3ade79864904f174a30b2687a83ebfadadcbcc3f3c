@@ -1,0 +1,162 @@
+# Codex roadmap verdict evidence: G10 / obligation 549de73d
+
+Verdict: challenge T 9efb025293df894e4d05b2f4fce572ba8921dba952621236368d94a7e5bb6ff5.
+Reviewed base M: b9c7d3b421f94ecdaf779977f8f3df98d9f67da8 (tree dbeb3578fefbecb6096c56571876afa83b8e973f).
+
+## P1: the gate merges a rules revert without the marker its subsequent decisions need
+
+At warrant/gate.py:1697-1699, merge_one supplies a custom GitHub merge message for the gate's exact revert, but never puts `warrant-gate revert of <full merge SHA>` in it. The GitHub adapter supplies this exact text as commit_message (warrant/gate.py:1601-1603). The marker open_revert puts on the revert branch's commit remains on the merge's second parent only. reverted() (1256-1257) and reverted_rules() (757-775) search the first-parent merge messages, so they do not see it.
+
+Reproduced with real local Git objects and signed fixture records, invoking the current GT.assess and GT.merge_one. The fixture GitHub adapter implements the requested merge with `git merge --no-ff` and the exact title/message passed by merge_one; no production code is changed. The rules revert is eligible, merge_one reports merged=true and as_assessed=true, but reverted=false and the reverted rules version is not void. The restored .warrant/v3.json then disagrees with the still-effective rules record: a later independently accepted ordinary PR, whose sole refusal is RULES_PROJECTION, is ineligible. This contradicts T's established assertion that the previous rules are in force again after the gate's revert.
+
+Positive control: the identical fixture adds only the machine-readable marker to the simulated merge commit message. reverted=true, the rules version is void, and the later accepted PR has no refusal. No source patch or live GitHub mutation was performed.
+
+The existing RC12 fixture at tests/gate_test.py:1444 manually authors a merge message containing the marker, without calling merge_one. RC12/RC13 and their mutants therefore test a history the production revert merge writer does not generate. A repair should preserve the marker in the first-parent merge commit (or provide an equally authenticated reader/writer contract), and exercise the real merge_one message through the subsequent rules assessment. File the fix and its regression/mutant by an ordinary constitutional PR, as D requires.
+
+## Scope and checks
+
+- Verified detached HEAD M, clean initial worktree, origin s0fractal/warrant, and `warrant.roadmap due --actor codex --json`: exact D/T/evidence/refs, subject null, requires empty.
+- MCP workspace signer codex is pinned and holds roadmap/acceptor. Context before verdict: T is the unique leaf, PENDING only one roadmap/acceptor acceptance, with no open requirement and no challenge on T.
+- Read the original 9e183284..8278d4a3 diff of warrant/gate.py, tools/gate.py (unchanged), .warrant/merge.json, .warrant/v3.json and AGENTS.md, current deciding code and relevant specification/repository documentation.
+- Read official PR metadata/descriptions for #350, #356, #365, #490, #502 and #507; checked their cited merges and 7ebf68c7 are ancestors of M. Read T and its two evidence records (these addresses name records, not blobs).
+- Full tests/gate_test.py: exit 0, 115 ok case lines, all passed, including E64b, E74-E83 and RC12/RC13.
+- tests/tools_test.py selected observer_cases and merged_cases: exit 0, OB1/MR1 passed.
+- Existing cited mutants G85, G86, G93, G94, G95, G96, G141, G142, G143, G144, G145: 11/11 killed by their own cases, with green harness baselines. No claim that the entire mutant matrix ran.
+- Before filing: roadmap check 121 lineages / 0 problems; claims check 143 live / 0 problems. Rechecked after filing in the final report.
+- Counterexample F1: exit 1 on the assertion described above. Marker-only positive control: exit 0.
+- No full core/agent/tools suites or full mutant matrix, no live merge/revert, no release action. This is a bounded merge-authority closure review, not an assertion about unrelated roadmap obligations or the completeness of the store.
+
+## Reproducer
+
+Run from the reviewed checkout. Requires the same Python dependencies as tests/gate_test.py. Save the code below outside the repository, set TMPDIR to an external scratch directory, and run `PYTHONDONTWRITEBYTECODE=1 python3 <probe.py>` (expected FAIL F1 / exit 1 at M). Repeat with `MARKER_CONTROL=1` (expected ok F1 / exit 0).
+
+```python
+"""Unsigned integration counterexample: use merge_one's actual message for a rules revert."""
+import json, os, sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / 'tests'))
+from gate_test import GT, Repo, git, green, PRES, NOW, REPO
+
+r = Repo(git_init=False)
+(r.dot / 'merge.json').write_text(json.dumps(PRES))
+r.put('alice', 'schema', GT.RULES_SCHEMA)
+g = r.put('alice', 'entity', dict(json.loads((r.dot / 'v3.json').read_text()), state='in force'), GT.RULES)
+git(r.root, 'init', '-q', '-b', 'master')
+r.commit('base, rules recorded')
+git(r.root, 'checkout', '-q', '-b', 'feature')
+r.profile['roles']['replayer'] = sorted(set(r.profile['roles']['replayer']) | {'eve'})
+r.write_config()
+n1 = r.put('bob', 'entity', dict(json.loads((r.dot / 'v3.json').read_text()), state='in force'), GT.RULES, lineage=g)
+v = r.entity('alice', 'pr-head@1', {'state':'open','repository':REPO,'pr':7,'title':'t'})
+r.commit('the rules change and its version')
+git(r.root, 'checkout', '-q', 'master')
+git(r.root, 'merge', '-q', '--no-ff', 'feature', '-m', f'Merge pull request #7\n\nwarrant-gate brake until {NOW + 3600}: #7 head version {v}')
+merge = git(r.root, 'rev-parse', 'HEAD')
+branch = f'gate/revert/7-{merge[:12]}'
+git(r.root, 'checkout', '-q', '-b', branch)
+git(r.root, 'checkout', f'{merge}^1', '--', '.warrant/v3.json')
+r.commit(f'Revert #7\n\nwarrant-gate revert of {merge}')
+rh = git(r.root, 'rev-parse', 'HEAD')
+pr = {'number':8,'state':'open','draft':False,'base':'master','head':rh,'labels':[], 'branch':branch,'head_repo':REPO,'author':'github-actions[bot]'}
+b = GT.Base(r.root, merge)
+a = GT.assess(r.root, b, pr, green(rh))
+assert a.eligible and a.facts.get('revert') == merge, a.reasons
+
+class GitHubFixture:
+    def pull(self, n): return pr
+    def tip(self, name): return merge
+    def merge(self, n, head, title, message):
+        self.message = title + '\n\n' + message
+        if os.environ.get('MARKER_CONTROL'):
+            self.message += f'\n\nwarrant-gate revert of {merge}\n'
+        git(r.root, 'checkout', '-q', 'master')
+        git(r.root, 'merge', '-q', '--no-ff', head, '-m', self.message)
+        self.sha = git(r.root, 'rev-parse', 'HEAD')
+        return {'merged':True, 'sha':self.sha}
+    def parents(self, sha): return GT._commit(r.root, sha)[0]
+    def dispatch(self, workflow, branch): pass
+
+gh = GitHubFixture()
+result = GT.merge_one(b, a, gh)
+assert result['merged'] and result['as_assessed'], result
+recognized = GT.reverted(r.root, gh.sha, merge)
+void = n1 in GT.reverted_rules(r.root, gh.sha)
+git(r.root, 'checkout', '-q', '-b', 'later')
+(r.root / 'notes.md').write_text('ordinary later change\n')
+x = r.commit('ordinary later change')
+v9 = r.entity('alice', 'pr-head@1', {'state':'open','repository':REPO,'pr':9,'title':'later'})
+h9 = r.entity('alice', 'pr-head@1', {'state':'head','commit':x,'tree':git(r.root,'rev-parse',f'{x}^{{tree}}')}, lineage=v9)
+r.attest('bob', h9)
+lh = r.commit('later accepted head')
+later = GT.assess(r.root, gh.sha, {'number':9,'state':'open','draft':False,'base':'master','head':lh,'labels':[], 'branch':'later','head_repo':REPO,'author':'alice'}, green(lh))
+print(json.dumps({'base_source':git(Path.cwd(),'rev-parse','HEAD'),'control':bool(os.environ.get('MARKER_CONTROL')), 'revert_eligible':a.eligible,'merged':result['merged'],'as_assessed':result['as_assessed'], 'actual_merge_message':gh.message,'reverted':recognized,'rules_version_void':void,'later_codes':later.codes(),'later_reasons':later.reasons}, indent=2))
+if recognized and void and later.eligible:
+    print('ok   F1 a gate-merged rules revert is recognized and permits later accepted changes')
+else:
+    print('FAIL F1 a gate-merged rules revert is invisible on first-parent history and blocks later accepted changes')
+    sys.exit(1)
+
+```
+
+## Counterexample output
+
+```text
+{
+  "base_source": "b9c7d3b421f94ecdaf779977f8f3df98d9f67da8",
+  "control": false,
+  "revert_eligible": true,
+  "merged": true,
+  "as_assessed": true,
+  "actual_merge_message": "Merge pull request #8 (the gate's revert of bd55997e208c, vetoed in its brake window)\n\nmerge-on-acceptance: revert of bd55997e208c74e8986dcb04fd94e0bb700cd47e: the change it reverts was vetoed in its brake window; head 65567e76bf7322909b4456eca61e9ce545c54a6d; base bd55997e208c74e8986dcb04fd94e0bb700cd47e. Required checks green at the head.",
+  "reverted": false,
+  "rules_version_void": false,
+  "later_codes": [
+    "RULES_PROJECTION"
+  ],
+  "later_reasons": [
+    [
+      "RULES_PROJECTION",
+      ".warrant/v3.json at the head is not the rules@1 version in force, b753aa320bb1: the file changed without a version of the rules, or a version names other rules than the file"
+    ]
+  ]
+}
+FAIL F1 a gate-merged rules revert is invisible on first-parent history and blocks later accepted changes
+
+```
+
+## Marker-only control output
+
+```text
+{
+  "base_source": "b9c7d3b421f94ecdaf779977f8f3df98d9f67da8",
+  "control": true,
+  "revert_eligible": true,
+  "merged": true,
+  "as_assessed": true,
+  "actual_merge_message": "Merge pull request #8 (the gate's revert of bd55997e208c, vetoed in its brake window)\n\nmerge-on-acceptance: revert of bd55997e208c74e8986dcb04fd94e0bb700cd47e: the change it reverts was vetoed in its brake window; head 65567e76bf7322909b4456eca61e9ce545c54a6d; base bd55997e208c74e8986dcb04fd94e0bb700cd47e. Required checks green at the head.\n\nwarrant-gate revert of bd55997e208c74e8986dcb04fd94e0bb700cd47e\n",
+  "reverted": true,
+  "rules_version_void": true,
+  "later_codes": [],
+  "later_reasons": []
+}
+ok   F1 a gate-merged rules revert is recognized and permits later accepted changes
+
+```
+
+## Existing targeted mutants
+
+```text
+G85 KILLED warrant/gate.py by tests/gate_test.py ['E74']
+G86 KILLED warrant/gate.py by tests/gate_test.py ['E75']
+G93 KILLED warrant/gate.py by tests/gate_test.py ['E80']
+G94 KILLED warrant/gate.py by tests/gate_test.py ['E81']
+G96 KILLED warrant/gate.py by tests/gate_test.py ['E83']
+G95 KILLED warrant/gate.py by tests/gate_test.py ['E82']
+G141 KILLED warrant/gate.py by tests/gate_test.py ['RC12']
+G142 KILLED warrant/gate.py by tests/gate_test.py ['RC12']
+G144 KILLED warrant/gate.py by tests/gate_test.py ['RC13']
+G143 KILLED warrant/gate.py by tests/gate_test.py ['RC12']
+G145 KILLED warrant/gate.py by tests/gate_test.py ['E64b']
+11 of 11 killed
+
+```
