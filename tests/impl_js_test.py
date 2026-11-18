@@ -1850,6 +1850,13 @@ def browser_receipts_cases():
         _, opened = _reader(b_pub, "--with", b_rc, "--lineage", o)
         _, plain = _reader(b_pub, "--lineage", o)
         _, handed = _reader(b_pub, "--with", b_rc, "--lineage", h)
+        # the store reads the receipts as its own too (a source, .warrant/sources.json): its trust binds merge-gate
+        line = (receipts / ".warrant" / "records.jsonl").read_text().splitlines()[-1]
+        pub.trust["keys"]["merge-gate"] = [forged_key.public]
+        pub.write_config()
+        with open(pub.dot / "records.jsonl", "a") as f:
+            f.write(line + "\n")
+        _, held = _reader(b_pub, "--with", b_rc, "--lineage", o)
     finally:
         for x in srvs:
             x.shutdown()
@@ -1863,6 +1870,10 @@ def browser_receipts_cases():
           and vs[forged].get("counted") is False and vs[forged].get("actor") == "merge-gate"
           and floor.get("reliance") == (plain.get("lineage") or {}).get("floor", {}).get("reliance")
           and floor.get("state") == (plain.get("lineage") or {}).get("floor", {}).get("state"), (vs, floor.get("reliance")))
+    hv = {v["id"]: v for v in (((held.get("lineage") or {}).get("floor", {}).get("outside") or {}).get("voices", []))}
+    check("J22 a receipt the store also holds as its own (the receipts read as a source) is still the gate's store's voice, "
+          "with what that store says of whose it is",
+          hv.get(forged, {}).get("receipt") == vs.get(forged, {}).get("receipt") and forged in hv, sorted(hv))
     check("J22 a merge the main store records as by hand is named on its lineage, with its merge commit and who recorded it, "
           "and no receipt is looked for beside it",
           hf.get("hand") == [{"id": hand, "actor": "bob", "at": hf.get("hand", [{}])[0].get("at"), "merge": "4" * 40}]

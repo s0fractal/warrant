@@ -513,7 +513,10 @@ function outside(r) {
     const admitted = new Set(o.r.rep.graph.nodes.map((n) => n[0]));
     for (const [id, rec] of [...o.r.recs].sort((a, b) => utf16(a[0], b[0]))) {
       const t = rec.body?.target;
-      if (!((rec.kind === "attest" || rec.kind === "challenge") && typeof t === "string" && versions.has(t)) || r.recs.has(id)) continue;
+      // a record this store holds too is not a voice from outside, except a receipt: the store may read the gate's
+      // receipts as a source (.warrant/sources.json), and only the gate's own store says whether it is the gate's
+      if (!((rec.kind === "attest" || rec.kind === "challenge") && typeof t === "string" && versions.has(t))
+          || (r.recs.has(id) && !receiptOf(rec, o.doc))) continue;
       if (!admitted.has(id)) { left.set(t, (left.get(t) || 0) + 1); continue; }
       if (!voices.has(t)) voices.set(t, []);
       voices.get(t).push({ id, store: o.name, address: o.address, kind: rec.kind, actor: rec.actor, at: rec.at, target: t,
