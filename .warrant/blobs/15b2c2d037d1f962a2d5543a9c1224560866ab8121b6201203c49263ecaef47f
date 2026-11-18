@@ -1,0 +1,81 @@
+# G11 closure verdict: deterministic impact ordering has no killing regression
+
+Actor: codex
+Base M: bad0734220e4fe08252cc861e753bd053c8eb771
+Duty D: 8c856b3b26355a6eaf27b32cc1404ada26b7528b6e567dc78f84bd0da0a7dc0e
+Closure T: 71bb81a073114266b8610044b50238b8468d2ab6ee868f82468e95e8930f4be5
+
+D explicitly owes deterministic JSON and a mutant for each claimed property. The present implementation sorts impact's rests_on_it correctly. This is a demonstrated gap in the required regression protection, not a claim that the unmodified implementation produced nondeterministic data. T's residual acknowledges this ordering gap; naming it does not satisfy the duty.
+
+## Surviving mutation
+
+warrant/graph.py:249, in impact:
+
+```diff
+-        rests = sorted({lineage_of(rep, n["id"]) for n in w["nodes"]} - {None, L})
++        rests = list({lineage_of(rep, n["id"]) for n in w["nodes"]} - {None, L})
+```
+
+The complete tests/tools_test.py and tests/agent_test.py each exit 0 and print all passed with this mutation. The tools run used an isolated copy of every tracked file, with a copy of the checkout's .git pointer for its read-only HEAD/tree queries. No production source was modified. The first tools run without Git metadata stopped in narrow_cases; after providing that read-only metadata, the complete rerun passed. The agent suite passed in the isolated copy as well.
+
+A separate probe creates a signed fixture with eight obligations referencing the same obligation, commits its two endpoints, and queries impact through tools/graph.py ask and warrant_agent.api graph (the backend of MCP warrant_graph). Under PYTHONHASHSEED=1,2,3, the clean implementation gives identical impact data; the mutation gives three different data digests for each interface. The probe compares data only, so this is not the expected change of code/lens identity caused by a mutation. The fixture's records and Git endpoints are deterministic.
+
+## Validation at M
+
+- Re-resolved HEAD and origin; roadmap due --actor codex --json matches D, T, evidence, references, no subject, and no requirements. MCP context under M's own package confirms T is pending one roadmap/acceptor attest, without an open requirement or an existing verdict on T.
+- Read docs/AGENT.md, docs/V3.md and docs/REPOSITORY.md, the shared graph and both interfaces, relevant tests and mutant definitions, the merged changes for #481, #491, #502, #533 and commit 1d9a32a699af823d4f402d4865dfd7e9207f0310. Read the four PR descriptions from GitHub. The old warrant_agent/graph.py path was intentionally moved to warrant/graph.py by 1d9a32a6.
+- Unmodified complete core, tools and agent suites: passed. The agent run includes the installed MCP SDK's stdio cases.
+- Registered mutants T321, T322, T323, T325, T326, T327, T354, T136, T124: 9/9 killed by their own named cases after clean section baselines, using tests/mutants.py run/failed helpers in an isolated copy. This is a targeted run, not the whole mutant matrix.
+- Unmodified roadmap check: 122 lineages, zero problems; claims check: 143 live claims, zero problems.
+- Test environment: Python 3.13.15, cryptography 50.0.2.
+
+## Required completion
+
+Add a regression that independently checks deterministic/sorted rests_on_it with multiple distinct dependent lineages (including the two interfaces), and register this ordering mutation in tests/mutants.py so it fails its own case. Alternatively, an authorized revision must change the duty's acceptance condition; a residual in its closure alone does not do so.
+
+## Reproduction probe
+
+Save the following as ordering-probe.py outside the checkout, beneath the review work directory. Run it with the checkout path as its one argument under each of PYTHONHASHSEED=1,2,3, first on M and then on an isolated copy with the one-line mutation above. Set TMPDIR beneath that review directory. It requires only the repository's existing test dependencies.
+
+```python
+import sys,json,importlib.util,hashlib
+from pathlib import Path
+root=Path(sys.argv[1]).resolve()
+sys.path[:0]=[str(root),str(root/"tests")]
+from world import Repo
+from warrant import repo as RP
+from warrant_agent import api
+from warrant_agent.config import Config
+spec=importlib.util.spec_from_file_location("graph_tool",root/"tools/graph.py")
+tg=importlib.util.module_from_spec(spec);spec.loader.exec_module(tg)
+r=Repo(git_init=True)
+base=r.commit("base")
+o=r.entity("alice","obligation@1",{"state":"open","statement":"root","serves":[]})
+want=[]
+for k in range(8):
+ want.append(r.entity("alice","obligation@1",{"state":"open","statement":f"dependent {k}","serves":[]},refs=[o]))
+head=r.commit("graph")
+rng=f"{base}..{head}"
+cfg=Config({"agent_api":"warrant-agent/3","workspaces":{"w":{"repo":str(r.root),"operations":["graph"]}}})
+a=api.call(cfg,"graph",{"workspace":"w","op":"impact","range":rng})["ok"]
+_,_,_,b=tg.ask(RP.Repo(r.root),"impact",[rng])
+out={}
+for name,d in (("agent",a["data"]),("tools",b)):
+ got=next(x for x in d["lineages"] if x["lineage"]==o)["rests_on_it"]
+ assert set(got)==set(want)
+ out[name]={"rests_on_it":got,"sorted":got==sorted(want),"sha256":hashlib.sha256(json.dumps(d,sort_keys=True,separators=(",",":")).encode()).hexdigest()}
+print(json.dumps(out,sort_keys=True))
+```
+
+Impact data SHA-256, compact JSON with sorted object keys (list order preserved):
+
+baseline
+  seed 1: agent 530bc3ef6d204cfb8b49231e63f4a1bb35fbc4418db0b3877226fcc4596295e2; tools 723ba64cbb00575235f74415b7211daea6f0ecc612fdd2a15dc9b8777df8fb83
+  seed 2: agent 530bc3ef6d204cfb8b49231e63f4a1bb35fbc4418db0b3877226fcc4596295e2; tools 723ba64cbb00575235f74415b7211daea6f0ecc612fdd2a15dc9b8777df8fb83
+  seed 3: agent 530bc3ef6d204cfb8b49231e63f4a1bb35fbc4418db0b3877226fcc4596295e2; tools 723ba64cbb00575235f74415b7211daea6f0ecc612fdd2a15dc9b8777df8fb83
+ordering-mutant
+  seed 1: agent 78e308669dbf2d7f72378f7f4e2c3089aa866a4aa9e3895a389a42bc296e6be8; tools 333f20cd8a1a70a2db37907ea01f9575f12c16c606e650450bc357b6ad98d9fa
+  seed 2: agent 53f5a0b7ed466fb0bacc89ecfe1de8732da8f7d7c48ba2525fa1c12e8b92d091; tools 7806785d82cfffdaf6d2fd5171232e39872deae59df49b682f93859640ac4dbc
+  seed 3: agent 77e0fa658a93a4e596efe9e7a974c53864353daf83c7463f1ad081c59bc89b6a; tools 094d6521a0cc55bff1fb5fab54e8af6846cc3d4d46934f383e3d5720f4022bd2
+
+Verdict: challenge T. No other roadmap version is judged by this record.
