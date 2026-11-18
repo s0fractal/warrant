@@ -20,6 +20,10 @@ interpreter's stack limit. Nothing is cached and no view is kept between calls.
   commit     {workspace, record}                       sign it as the configured signer and append it, a
                                                        compare-and-swap on the signer's chain head (record.prev)
   explain    {word}                                    the static glossary
+  find       {workspace, schema?, kind?, actor?, where?, text?, state?, leaves?, limit?}   records by what they say
+  inbox      {actor?}                                  what waits for the actor in every workspace (warrant_agent.work)
+  act        {workspace, act, ...; records?}           review-open | review-head | close | accept: the records an act
+                                                       files, previewed; with `records`, all signed and appended at once
 
 The signer is the operator's configuration: no request names a key, a path or another actor, and the
 seed is read only by commit. A record the engine would reject or list as a problem, or after which it would
@@ -27,6 +31,7 @@ refuse the store, is refused at prepare and at commit, never filed: both assess 
 import base64
 import json
 import os
+import sys
 import time
 
 from warrant import across as A
@@ -44,10 +49,12 @@ from warrant.store import Inadmissible, Refused, Snapshot
 
 from . import AGENT_API, adapter_id
 from . import glossary as GL
+from . import work as W
 from .config import OPERATIONS, repository_config
 from .errors import CODES, AgentError, need
 
 PACKAGE = V.PACKAGE
+_this = sys.modules[__name__]
 GRAPH_OPS = ("around", "path", "why", "grounded", "frontier", "ledger", "export", "impact", "delta")
 HANDOFF_OPS = ("export", "inspect", "import")
 
@@ -496,9 +503,23 @@ def explain(cfg, req):
     return GL.explain(req["word"])
 
 
+def find(cfg, req):
+    return W.find(_this, cfg, req)
+
+
+def inbox(cfg, req):
+    return W.inbox(_this, cfg, req)
+
+
+def act(cfg, req):
+    return W.act(_this, cfg, req)
+
+
 OPERATIONS_ = {"workspace": workspace, "context": context, "read": read, "graph": graph, "across": across,
-               "handoff": handoff, "prepare": prepare, "commit": commit, "explain": explain}
-assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across"}     # across asks each workspace for `graph`
+               "handoff": handoff, "prepare": prepare, "commit": commit, "explain": explain,
+               "find": find, "inbox": inbox, "act": act}
+# across asks each workspace for `graph`; find and inbox for `context`; act for `prepare`, and `commit` to file
+assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across", "find", "inbox", "act"}
 assert set(GL.TERMS) >= set(CODES) | set(A.REFERENCE_STATES)
 
 
