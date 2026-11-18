@@ -450,6 +450,7 @@ MUTANTS = [
     ("T196", "warrant/cli.py", '([] if a.no_mcp else EN.mcp(root))', '(EN.mcp(root) if a.no_mcp else [])', TOOLS, ["IN1", "IN3"]),
     ("T197", "warrant/cli.py", '                         if any(st["roles"].values()) else', '                         if True else', TOOLS, ["IN1"]),
     ("V106", E, ', "unicode": unicodedata.unidata_version}))', '}))', CORE, ["UC1"]),
+    ('T354', 'tools/graph.py', '        snap, _ = SRC.with_sources(repo.root, repo.store.snapshot(), SRC.config_doc(repo.root))\n', '        snap = repo.store.snapshot()\n', TOOLS, ['SR8']),
     ('G150', 'warrant/gate.py', ', "dispatch_failed": [], "sources": source_tips(b, gh)}', ', "dispatch_failed": []}', GATE, ['RC14']),
     ('G151', 'warrant/gate.py', '        out[x["name"]] = sha if S.hex_of(sha, 40) else None', '        out[x["name"]] = sha', GATE, ['E100']),
     ('G152', 'warrant/gate.py', '                and isinstance(x.get("ref"), str) and SOURCE_REF.match(x["ref"]) and ".." not in x["ref"]):', '                and isinstance(x.get("ref"), str)):', GATE, ['E100']),

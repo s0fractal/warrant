@@ -3203,6 +3203,16 @@ def sources_cases():
     decl = {"warrant": "sources/1", "sources": [{"name": "bob", "ref": "refs/heads/stores/bob", "actors": ["bob"]}]}
     (r.dot / "sources.json").write_text(json.dumps(decl))
     after = RP.Repo(r.root).report()
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("graph_tool", ROOT / "tools" / "graph.py")
+    TG = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TG)
+    asked = {}
+    for op in ("path", "why", "around"):
+        try:
+            asked[op] = TG.ask(RP.Repo(r.root), op, [acc])[2].get("target")
+        except RP.Failed as e:
+            asked[op] = e.code
     _, out = cli(r.root, "status", "--json")
     st = json.loads(out or "{}")
     (r.dot / "sources.json").write_text(json.dumps(dict(decl, sources=[dict(decl["sources"][0], ref="refs/heads/stores/nobody")])))
@@ -3212,6 +3222,8 @@ def sources_cases():
           "closes alice's obligation here, under this repository's receiver; with no declaration it does not",
           before["lineages"][o]["state"] == "open" and after["lineages"][o]["state"] == "done" and acc in after["_recs"], 
           (before["lineages"][o]["state"], after["lineages"][o]["state"]))
+    check("SR8 tools/graph.py path, why and around take the full id of a record a declared source holds, as the report "
+          "the query reads holds it (Codex 12f81d92)", asked == {"path": acc, "why": acc, "around": acc}, asked)
     check("SR2 a source cannot speak for another actor: eve's record there is left out, and status names how many",
           noise not in after["_recs"] and st.get("sources", [{}])[0].get("left_out", 0) >= 1
           and st.get("sources", [{}])[0].get("records") == 1, st.get("sources"))
