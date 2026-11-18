@@ -1,0 +1,97 @@
+Roadmap verdict evidence: receipts source does not refresh in the running Python reader
+
+Reviewer: codex
+Repository: s0fractal/warrant
+M: 0de788294965b1dbf5defddbaee36d2b03537a06
+Tree: 265ea82a4e163c54a4c44b0928649c08152f9238
+D: 69858a0eafe8bcbdcf798ea8bfcd207e460baaef5d9c63a58b976ce5b9443bbc
+T: 7037da8b61f893e74bdd17cc7064c62e94052b84b3d63d101ce659a8e8435c09
+
+P2: A running warrant serve does not see newly fetched merge receipts until a local store/config file changes or the reader restarts. D requires readers to see each merge through the receipts source. The declaration and key binding are present, but this reader's source-reading behavior is incomplete.
+
+Cause: warrant_agent/serve.py:247-257. Space._stamp reads only the local .warrant/*.json and *.jsonl files' sizes and mtimes. Space.report returns the cached report before Repo.report can read changed source refs (warrant/repo.py:61-64 and warrant/sources.py:108-121). Fetching refs/heads/receipts, including its ordinary refs/remotes/origin/receipts form, changes Git data alone, so a warmed server keeps the previous union indefinitely. This is local cache staleness even after the clone has obtained the receipts, not a claim that a reader must fetch the network itself. A source becoming available for the first time is the same missing cache dependency.
+
+Independent reproduction using actual gate receipts: with the checkout fixed at M, load Space at receipts tip 99606d1225b6e6edb44725c819c82ed2dfd19905 (98 receipts), then advance only its remote-tracking receipts ref to cbc96c14b1c7acab97ac3a7bac32f539537618fb (105). The warmed report stays the identical object and snapshot with 98 merge-gate records. A fresh Space and source read see 105; all 105 have basis SIGNED under M's trust. These Git-ref changes were made only in a disposable review copy.
+
+The self-contained fixture below uses deterministic test keys, two correctly formed signed receipts produced by warrant.receipt.file, and fresh temporary Git repositories. It requires no network or operator seeds. From a checkout of M, save it outside that checkout and run python3 /path/to/receipt_cache_probe.py with TMPDIR inside the review work directory. Expected: after the fetch, the warmed reader sees both signed observations as a fresh reader does. Observed: first=1, warmed=1, fresh=2; exit 1 with the named FAIL.
+
+```python
+"""Run from the checkout of M: python3 /path/to/receipt_cache_probe.py."""
+import json
+import sys
+from pathlib import Path
+
+sys.path[:0] = [str(Path.cwd()), str(Path.cwd() / "tests")]
+from world import Repo, KEYS, git
+from warrant import receipt as RC
+from warrant_agent.serve import Space
+
+r = Repo(git_init=True)
+target = r.entity("alice", "obligation@1", {"state": "open", "statement": "merge target", "serves": []})
+key = KEYS["eve"]  # deterministic fixture key, never an operator's key
+r.trust["keys"]["merge-gate"] = [key.public]
+r.write_config()
+(r.dot / "sources.json").write_text(json.dumps({"warrant": "sources/1", "sources": [
+    {"name": "receipts", "ref": "refs/heads/receipts", "actors": ["merge-gate"]}]}))
+source = r.home / "receipts"
+
+def add_receipt(n):
+    merge, tip, base = f"{n:040x}", "a" * 40, "b" * 40
+    gate = {"pr": n, "merged": True, "merge": merge, "head": tip, "base": base, "version": target}
+    pull = {"number": n, "merged": True, "merge_commit_sha": merge, "head": {"sha": tip}}
+    commit = {"sha": merge, "parents": [{"sha": base}, {"sha": tip}], "commit": {
+        "message": f"merge-on-acceptance: solo: head version {target} by claude at {tip}, one model family"}}
+    RC.file(source, gate, pull, commit, "acme/widget", key, at=1_900_000_000 + n)
+    if n == 1:
+        git(source, "init", "-q", "-b", "receipts")
+    git(source, "add", ".warrant")
+    git(source, "commit", "-q", "-m", f"fixture receipt {n}")
+    git(r.root, "fetch", "-q", str(source), "+refs/heads/receipts:refs/remotes/origin/receipts")
+
+def count(rep):
+    return sum(x["actor"] == "merge-gate" for x in rep["_recs"].values())
+
+add_receipt(1)
+space = Space({"warrant": str(r.root)})
+first = space.report("warrant")
+stamp = space._stamp(r.root)
+add_receipt(2)
+warm = space.report("warrant")
+fresh = Space({"warrant": str(r.root)}).report("warrant")
+result = {"first": count(first), "warmed": count(warm), "fresh": count(fresh),
+          "local_stamp_unchanged": stamp == space._stamp(r.root),
+          "same_cached_object": first is warm,
+          "fresh_snapshot_differs": fresh["snapshot"] != warm["snapshot"],
+          "all_fresh_receipts_signed": all(fresh["_basis"][i] == "SIGNED" for i, x in fresh["_recs"].items()
+                                           if x["actor"] == "merge-gate")}
+print(json.dumps(result, indent=1))
+assert result["first"] == 1 and result["fresh"] == 2 and result["all_fresh_receipts_signed"]
+if count(warm) != count(fresh):
+    print("FAIL RECEIPT_SOURCE_REFRESH warmed warrant serve hides the newly fetched signed merge receipt")
+    sys.exit(1)
+print("ok   RECEIPT_SOURCE_REFRESH warmed reader refreshed the receipts source")
+```
+
+Observed output:
+```text
+{
+ "first": 1,
+ "warmed": 1,
+ "fresh": 2,
+ "local_stamp_unchanged": true,
+ "same_cached_object": true,
+ "fresh_snapshot_differs": true,
+ "all_fresh_receipts_signed": true
+}
+FAIL RECEIPT_SOURCE_REFRESH warmed warrant serve hides the newly fetched signed merge receipt
+```
+
+Validation that passed at M:
+- Due listing and MCP context match D and T; T waits only for codex's roadmap/acceptor attest with no requires.
+- rules@1 version 6603fb96e359eb4e111146535e5de4a3383d40892c1df6ecfdd997045731fb82 is signed by claude and projects exactly to .warrant/v3.json. PR #521's gate merge cfdf765f5cfc6dc7530d57cc94512ae1b1c56676 carries the constitutional brake. merge-gate has the published pinned public key and no role.
+- tools_test sources_cases and receipt_cases: SR1-SR6, RC1-RC6 passed.
+- impl_js_test browser_sources_cases and browser_receipts_cases: JR1-JR3 and all four J22 checks passed, including the copied-receipt voice and forged-key controls.
+- 19 selected mutants killed by their own named cases: T332-T337, T255-T263, T266-T269.
+- roadmap check and claims check: zero problems.
+
+Scope and residuals: the browser source tests and initial Python union work; this objection is the running Python reader's cache. No claim that a receipt grants authority or meets a guard; it must not. No full repository suite or all-mutant run, live browser visual inspection, or GitHub CI rerun was performed. The base review worktree has no source refs, correctly named unavailable; the actual source and cache checks used the isolated review copy. No repository code was changed.
