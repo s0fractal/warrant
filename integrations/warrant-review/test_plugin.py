@@ -368,6 +368,19 @@ def store_rules():
     linked = r.commit("a link where a blob goes")
     check("W5", WAKER.tail_of(r.root, base, linked) == ([], {}),
           "a branch whose blob is a link (a mode other than a regular file) carries no verdict")
+    wgit(r.root, "checkout", "-q", "-b", "inherited", base)
+    (r.root / WAKER.BLOBS).mkdir(exist_ok=True)
+    kept = r.root / WAKER.BLOBS / __import__("hashlib").sha256(b"inherited").hexdigest()
+    kept.write_bytes(b"inherited")
+    held = r.commit("evidence the base already holds")
+    kept.write_bytes(b"changed")
+    changed = r.commit("the inherited evidence changed")
+    wgit(r.root, "checkout", "-q", "-b", "removed", held)
+    kept.unlink()
+    removed = r.commit("the inherited evidence removed")
+    check("W5b", WAKER.tail_of(r.root, held, changed) == ([], {}) and WAKER.tail_of(r.root, held, removed) == ([], {}),
+          "a branch that changes or removes evidence the base holds carries no verdict: only blobs it adds as regular files "
+          "count, never the base's copy in their place (Codex 799fcd93 on #211)")
     home = Path(tempfile.mkdtemp(prefix="codex-waker-delivery-"))
     subprocess.run(["git", "clone", "-q", "--bare", str(r.root), str(home / "warrant.git")], check=True)
     w = WAKER.Waker(entry(home, home / "trees"), replayers=home / "no-seeds", codex="/bin/codex", claude="/bin/claude")

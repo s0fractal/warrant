@@ -986,6 +986,30 @@ def freshness_cases():
           "accepts nothing on that witness", named == [], named)
 
 
+def drift_merge_cases():
+    """The first change since an acceptance is read over the whole history: after the accepted bytes were restored, a
+    merge that brings the changed bytes back is the change, never the acceptance's own commit (Codex ce0721c1)."""
+    r, L = drift_repo()
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    r.commit("the bytes change")
+    git(r.root, "checkout", "-qb", "side")
+    (r.root / "side.txt").write_text("unrelated\n")
+    r.commit("an unrelated change on a side line")
+    git(r.root, "checkout", "-q", "master")
+    (r.root / "lib" / "code.py").write_text("X = 1\n")
+    r.commit("the accepted bytes restored")
+    fresh, _ = gated(r, L)
+    git(r.root, "merge", "--no-ff", "--no-commit", "side")
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    merge = r.commit("a merge that brings the changed bytes back")
+    d, _ = gated(r, L)
+    row = next((f for f in d["files"] if f["path"] == "lib/code.py"), {})
+    check("DR35 restored bytes read UNCHANGED, and a merge that brings the changed bytes back is named as the change "
+          "(`since` the merge), not the acceptance's commit that held the accepted bytes (Codex ce0721c1)",
+          fresh["verdict"] == "UNCHANGED" and row.get("verdict") == "CHANGED" and row.get("detail") == f"since {merge[:12]}",
+          (fresh["verdict"], row))
+
+
 def drift_impact_cases():
     """`warrant drift --impact` (G14): what a change bears on, from the claims it makes stale."""
     r, L = drift_repo()
@@ -3268,6 +3292,7 @@ if __name__ == "__main__":
         pinned_cases,
         entry_cases,
         freshness_cases,
+        drift_merge_cases,
         drift_impact_cases,
         review_cases,
         review_join_cases,
