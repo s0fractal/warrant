@@ -127,6 +127,22 @@ export function rawSourceBase(ref, root) {
   return m ? `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${ref}/` : null;
 }
 
+// The commit a source's ref names now, for a store served from raw.githubusercontent.com: GitHub's commits API for
+// that repository and ref, its `sha` (Codex 7f09815d: a source read at a movable ref named no commit). Null when the
+// root is served elsewhere or GitHub does not answer with a commit id: the source is then read at its ref, and the
+// summary says that no commit was resolved. The source's lines are then read at that commit, not at the ref, so what
+// was read is named.
+const SHA40 = /^[0-9a-f]{40}$/;
+export async function githubCommit(ref, root, fetcher) {
+  const m = /^https:\/\/raw\.githubusercontent\.com\/([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100})\//.exec(root);
+  if (!m) return null;
+  try {
+    const raw = await get(`https://api.github.com/repos/${m[1]}/${m[2]}/commits/${ref}`, fetcher);
+    const sha = raw === null ? null : JSON.parse(new TextDecoder().decode(raw))?.sha;
+    return typeof sha === "string" && SHA40.test(sha) ? sha : null;
+  } catch { return null; }
+}
+
 // The declaration .warrant/sources.json holds at `root`: its document, or null when there is none.
 async function sourcesDoc(root, fetcher) {
   const raw = await get(root + ".warrant/sources.json", fetcher);
@@ -139,15 +155,16 @@ const actorOf = (line) => {
 };
 
 // {lines, sources, bases}: the store's own lines and each declared source's lines by its actors, in canonical order.
-async function withSources(root, own, backend, fetcher, sourceBase) {
+async function withSources(root, own, backend, fetcher, sourceBase, sourceCommit) {
   const dec = new TextDecoder(), byText = new Map(own.map((l) => [dec.decode(l), l])), sources = [], bases = [];
   for (const s of declaredSources(await sourcesDoc(root, fetcher))) {
-    const at = sourceBase(s.ref, root);
+    const commit = await sourceCommit(s.ref, root, fetcher); // NOSONAR S9382: sources in declared order
+    const at = sourceBase(commit ?? s.ref, root);
     const raw = at === null ? null : await get(at + ".warrant/records.jsonl", fetcher); // NOSONAR S9382: sources in declared order
     const mine = raw === null ? [] : split(raw).filter((l) => s.actors.includes(actorOf(l)));
     for (const l of mine) byText.set(dec.decode(l), l);
     if (raw !== null) bases.push(at);
-    sources.push({ name: s.name, ref: s.ref, base: raw === null ? null : at, records: mine.length,
+    sources.push({ name: s.name, ref: s.ref, commit: raw === null ? null : commit, base: raw === null ? null : at, records: mine.length,
                    left_out: raw === null ? 0 : split(raw).length - mine.length });
   }
   const lines = [...byText.values()];
@@ -180,14 +197,15 @@ async function canonicalOrder(lines, backend) {
 // beside its own lines each declared source's lines by that source's actors only (warrant/sources.py): a source decides
 // nothing by being read, a line by another actor there is left out and counted, a source not served is named, never
 // read as empty.
-export async function fetchStore(base, backend, { full = false, fetcher = globalThis.fetch, sourceBase = rawSourceBase } = {}) {
+export async function fetchStore(base, backend, { full = false, fetcher = globalThis.fetch, sourceBase = rawSourceBase,
+                                                 sourceCommit = githubCommit } = {}) {
   const root = base.endsWith("/") ? base : base + "/";
   const config = await get(root + ".warrant/v3.json", fetcher);
   if (config === null) throw new Refused(`${root}: no .warrant/v3.json`);
   let doc;
   try { doc = loadsLenient(new TextDecoder().decode(config)); } catch { throw new Refused(`${root}.warrant/v3.json: not JSON`); }
   const own = split((await get(root + ".warrant/records.jsonl", fetcher)) || new Uint8Array());
-  const { lines, sources, bases } = await withSources(root, own, backend, fetcher, sourceBase);
+  const { lines, sources, bases } = await withSources(root, own, backend, fetcher, sourceBase, sourceCommit);
   const { all, maps } = await named(lines, backend);
   const wanted = [...(full ? all : maps)].sort(utf16), got = new Array(wanted.length);
   let next = 0;

@@ -60,6 +60,9 @@ class Broken(Exception):
     """The receipt cannot be filed (its seed, its store): an error of the run."""
 
 
+SOURCE_NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+
+
 def _positive(v):
     return isinstance(v, int) and not isinstance(v, bool) and 0 < v < 2 ** 53
 
@@ -93,8 +96,15 @@ def body_of(merge, pull, commit, repository):
         raise Refused("the merge commit's message is not the gate's: the gate's key states only the gate's merges")
     if how == "revert":
         raise Refused("a revert of a vetoed merge targets a commit: it gets no receipt")
-    return {"target": v, "verdict": "merged", "merge": m, "tip": tip, "base": base, "how": how,
+    src = merge.get("sources", {})
+    if not (isinstance(src, dict) and all(isinstance(k, str) and SOURCE_NAME.fullmatch(k) and (x is None or S.hex_of(x, 40))
+                                          for k, x in src.items())):
+        raise Refused("the gate's result names its sources' tips in no form a receipt states")
+    body = {"target": v, "verdict": "merged", "merge": m, "tip": tip, "base": base, "how": how,
             "github": {"repository": repository, "pr": merge["pr"], "url": f"https://github.com/{repository}/pull/{merge['pr']}"}}
+    if src:                       # the commit each declared source's ref named at the merge (Codex 7f09815d); null: none
+        body["sources"] = dict(sorted(src.items()))
+    return body
 
 
 def doc_for(public):

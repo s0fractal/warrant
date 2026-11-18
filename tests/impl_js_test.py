@@ -1207,7 +1207,23 @@ def browser_sources_cases():
             json.dumps(READER.as_uri()), json.dumps(wm.as_uri()), json.dumps(str(wm)), json.dumps(base), mapping)
         p = subprocess.run([NODE, "--input-type=module", "-e", code], capture_output=True, text=True, check=False, timeout=600)
         return json.loads(p.stdout) if p.returncode == 0 and p.stdout else {"crash": p.stderr[-300:]}
+    sha = "ab" * 20
+    def pinned():                         # the source resolved to a commit: read there, and named
+        code = ("import * as R from %s; import { nodeBackend } from %s;"
+                " const b = await nodeBackend(); const sha = %s;"
+                " const store = await R.fetchStore(%s, b, { sourceCommit: async () => sha,"
+                "   sourceBase: (at) => at === sha ? %s : null });"
+                " const fake = async (u) => ({ status: 200, ok: true, arrayBuffer: async () => new TextEncoder().encode("
+                "   u === 'https://api.github.com/repos/o/r/commits/refs/heads/stores/bob' ? JSON.stringify({sha}) : '{\"sha\": \"nope\"}').buffer });"
+                " process.stdout.write(JSON.stringify({sources: store.sources,"
+                "   resolved: await R.githubCommit('refs/heads/stores/bob', 'https://raw.githubusercontent.com/o/r/master/', fake),"
+                "   bad: await R.githubCommit('refs/heads/x', 'https://raw.githubusercontent.com/o/r/master/', fake),"
+                "   elsewhere: await R.githubCommit('refs/heads/stores/bob', 'http://127.0.0.1:1/', fake)}));") % (
+            json.dumps(READER.as_uri()), json.dumps(wm.as_uri()), json.dumps(sha), json.dumps(base), json.dumps(base2))
+        p = subprocess.run([NODE, "--input-type=module", "-e", code], capture_output=True, text=True, check=False, timeout=600)
+        return json.loads(p.stdout) if p.returncode == 0 and p.stdout else {"crash": p.stderr[-300:]}
     try:
+        at = pinned()
         got = js(json.dumps(base2))
         gone = js("null")
         (r.dot / "sources.json").write_text(json.dumps(dict(decl, sources=[dict(decl["sources"][0], ref="HEAD")])))
@@ -1228,6 +1244,12 @@ def browser_sources_cases():
     check("JR2 a source not served where the reader can find it is named (base null, no records), and the store reads "
           "as its own records alone: the obligation stays open",
           g.get("base") is None and g.get("records") == 0 and (gone.get("states") or {}).get(o) == "open", (g, gone.get("crash")))
+    a = (at.get("sources") or [{}])[0]
+    check("JR4 a source is read at the commit its ref names, and the summary names that commit (Codex 7f09815d): read "
+          "there, its record joins; GitHub's commits API resolves the ref on raw.githubusercontent.com, an answer that is "
+          "no commit id resolves nothing, and a store served elsewhere resolves no commit",
+          a.get("commit") == sha and a.get("records") == 1 and at.get("resolved") == sha and at.get("bad") is None
+          and at.get("elsewhere") is None and src.get("commit") is None, (at, src))
     check("JR3 a malformed declaration (a ref outside refs/heads and refs/warrant) is refused, as SRC.declared refuses it",
           "refused" in bad and "source" in bad["refused"], bad)
 

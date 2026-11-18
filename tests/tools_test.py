@@ -2507,6 +2507,22 @@ def receipt_cases():
           "(nothing filed, nothing skipped); the gate's own identical receipt is answered as already filed",
           seen == {"unsigned": ("BROKEN", 1), "another key": ("BROKEN", 1), "a challenge under its own key": ("BROKEN", 1),
                    "says else": ("BROKEN", 1), "trusted": ("already", 1)}, seen)
+    tips = {"claims-checker": "4" * 40, "receipts": None}
+    named = RC.body_of(dict(gate, sources=tips), pull, commit, "acme/widget")
+    plain = RC.body_of(gate, pull, commit, "acme/widget")
+    bad = []
+    for wrong in ({"claims-checker": "x"}, {"Bad Name": "4" * 40}, ["claims-checker"]):
+        try:
+            RC.body_of(dict(gate, sources=wrong), pull, commit, "acme/widget")
+            bad.append(None)
+        except RC.Refused as e:
+            bad.append(str(e)[:40])
+        except Exception:         # noqa: BLE001 a crash is no refusal: the case fails on its assertion
+            bad.append(None)
+    check("RC7 a receipt names the commit each declared source's ref named at the merge, as the gate's result gives it "
+          "(null: none), so a reader can compare (Codex 7f09815d); with no sources it says nothing of them; a tip that is "
+          "no commit id, a name that is no source name, or no mapping is refused",
+          named.get("sources") == tips and "sources" not in plain and all(bad), (named, bad))
 
 
 def _bridge_step(home):
@@ -3128,6 +3144,39 @@ def across_checkout_cases():
           and len(once["stores"]) == 1 and once["stores"][0].get("read_as") == ["a", "same"], (got, got1, two["stores"]))
 
 
+def serve_source_cases():
+    """warrant serve's cache (warrant_agent/serve.py Space) is keyed by the commit each declared source's ref names as
+    well as by the store's files: a source that advances is read again with no local file touched (Codex c6be9748)."""
+    from warrant_agent import serve as SV
+    r = Repo(git_init=True)
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    (r.dot / "sources.json").write_text(json.dumps({"warrant": "sources/1", "sources": [
+        {"name": "bob", "ref": "refs/heads/stores/bob", "actors": ["bob"]}]}))
+    r.commit("the repository's store, a source declared")
+    side = Repo()
+    first = side.put("bob", "attest", {"target": o, "verdict": "seen"}, refs=[o])
+
+    def publish(parent=None):                        # the source branch by Git's plumbing: no file of the checkout moves
+        blob = subprocess.run(["git", "-C", str(r.root), "hash-object", "-w", "--stdin"], input=side.dot.joinpath("records.jsonl").read_bytes(),
+                              capture_output=True, check=True).stdout.decode().strip()
+        inner = subprocess.run(["git", "-C", str(r.root), "mktree"], input=f"100644 blob {blob}\trecords.jsonl\n".encode(),
+                               capture_output=True, check=True).stdout.decode().strip()
+        tree = subprocess.run(["git", "-C", str(r.root), "mktree"], input=f"040000 tree {inner}\t.warrant\n".encode(),
+                              capture_output=True, check=True).stdout.decode().strip()
+        c = git(r.root, "commit-tree", tree, *(["-p", parent] if parent else []), "-m", "bob's store")
+        git(r.root, "update-ref", "refs/heads/stores/bob", c)
+        return c
+    tip = publish()
+    space = SV.Space({"w": str(r.root)})
+    before = set(space.report("w")["_recs"])
+    second = side.put("bob", "attest", {"target": o, "verdict": "seen", "note": "again"}, refs=[o])
+    publish(tip)
+    after = set(space.report("w")["_recs"])
+    check("SR7 warrant serve reads a source again once its ref advances, with no local store file changed; the first "
+          "read had its first record only",
+          first in before and second not in before and {first, second} <= after, (sorted(before), sorted(after)))
+
+
 def sources_cases():
     """A store of an actor's own, read beside the repository's (warrant/sources.py): its records by the actors the
     declaration names count under the repository's receiver; records by anyone else there are left out and named; a
@@ -3154,6 +3203,16 @@ def sources_cases():
     decl = {"warrant": "sources/1", "sources": [{"name": "bob", "ref": "refs/heads/stores/bob", "actors": ["bob"]}]}
     (r.dot / "sources.json").write_text(json.dumps(decl))
     after = RP.Repo(r.root).report()
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("graph_tool", ROOT / "tools" / "graph.py")
+    TG = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TG)
+    asked = {}
+    for op in ("path", "why", "around"):
+        try:
+            asked[op] = TG.ask(RP.Repo(r.root), op, [acc])[2].get("target")
+        except RP.Failed as e:
+            asked[op] = e.code
     _, out = cli(r.root, "status", "--json")
     st = json.loads(out or "{}")
     (r.dot / "sources.json").write_text(json.dumps(dict(decl, sources=[dict(decl["sources"][0], ref="refs/heads/stores/nobody")])))
@@ -3163,6 +3222,8 @@ def sources_cases():
           "closes alice's obligation here, under this repository's receiver; with no declaration it does not",
           before["lineages"][o]["state"] == "open" and after["lineages"][o]["state"] == "done" and acc in after["_recs"], 
           (before["lineages"][o]["state"], after["lineages"][o]["state"]))
+    check("SR8 tools/graph.py path, why and around take the full id of a record a declared source holds, as the report "
+          "the query reads holds it (Codex 12f81d92)", asked == {"path": acc, "why": acc, "around": acc}, asked)
     check("SR2 a source cannot speak for another actor: eve's record there is left out, and status names how many",
           noise not in after["_recs"] and st.get("sources", [{}])[0].get("left_out", 0) >= 1
           and st.get("sources", [{}])[0].get("records") == 1, st.get("sources"))
@@ -3300,6 +3361,7 @@ if __name__ == "__main__":
         schemas_due_cases,
         status_brakes_cases,
         sources_cases,
+        serve_source_cases,
         first_contact_cases,
         across_checkout_cases,
         cli_cases,

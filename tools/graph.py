@@ -29,6 +29,7 @@ from warrant import claims as CL           # noqa: E402
 from warrant import drift as DR            # noqa: E402
 from warrant import review as RV           # noqa: E402
 from warrant import roadmap as RM          # noqa: E402
+from warrant import sources as SRC         # noqa: E402
 from warrant.repo import Failed, Repo, dump, main  # noqa: E402
 from warrant import graph as G             # noqa: E402
 
@@ -114,7 +115,8 @@ def ask(repo, cmd, rest):
         return rep, None, {"op": "export", "format": fmt}, G.dot(rep["graph"]) if fmt == "dot" else rep["graph"]
     if cmd in ("around", "path", "why", "grounded") and rest:
         rep = repo.report()
-        snap = repo.store.snapshot()
+        # the target is resolved in what the report read: the store with its declared sources beside it (Codex 12f81d92)
+        snap, _ = SRC.with_sources(repo.root, repo.store.snapshot(), SRC.config_doc(repo.root))
         ids = [i for i in list(snap.lines) + list(snap.blobs) if i.startswith(rest[0])]
         if len(set(ids)) != 1:
             raise Failed("TARGET", f"{rest[0]} names {len(set(ids))} records or blobs")
