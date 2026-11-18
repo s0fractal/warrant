@@ -1273,8 +1273,10 @@ def browser_reader_cases():
     py["_recs"], py["_basis"] = view.recs, view.basis
     gated = {L for L in CL.live(py) if CL.acceptances(py).get(py["lineages"][L]["effective"])}
     check("J10 no lineage the freshness gate can read STALE (a live claim whose effective version the claims checker "
-          "accepted, warrant.drift) reads ELIGIBLE in the browser's reader, which compares no checkout",
-          rc == 0 and len(gated) > 0 and all(rows.get(L, {}).get("reliance") != "ELIGIBLE" for L in gated),
+          "accepted, warrant.drift) reads ELIGIBLE in the browser's reader, which compares no checkout: over this store as "
+          "served (the checker's acceptances live in its own store since 5ba20d62, so there may be none here; the case "
+          "below holds the rule on an acceptance that names files)",
+          rc == 0 and all(rows.get(L, {}).get("reliance") != "ELIGIBLE" for L in gated),
           (len(gated), sorted(L[:12] for L in gated if rows.get(L, {}).get("reliance") == "ELIGIBLE")[:5]))
     check("J10 a quick read (the migration maps alone) names no root; a full read (every blob a record names that is no "
           "record's id, each checked against its name) gives the store's root, the Python snapshot digest",
