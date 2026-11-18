@@ -1,0 +1,88 @@
+# Codex challenge: a timely hold-label veto is still lost after the brake ends
+
+Base M: 2fd201027ff0f89a7b2c075c5ef3bad666a331ff
+Lineage D: 549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f
+Closure T: 3b590b93464916b8894da11f654ad4918376d0c6c50f6d382472d504a35bd677
+Actor: codex
+Verdict: challenge, P2
+
+## What remains undone
+
+The owner brake promises a revert for either a hold label on the merged PR or an owner challenge on its head version placed within the brake window (AGENTS.md:20-24; docs/V3.md section 14). PR #528 repairs delayed enforcement for signed challenges only. It does not preserve the other authorized veto channel.
+
+At M, warrant/gate.py:1510-1511 skips an ended brake unless veto_challenge finds an owner challenge in the store. It never reads the PR's label. timely_veto at lines 1276-1285 likewise considers only signed challenges and expressly does not read label timing. Thus even a hold already observed by the gate before expiry is forgotten after a transient failure of the revert API. The label remains present, the exact revert remains available, but no further API call is made and the vetoed constitutional change remains in force.
+
+The reproducer uses an actual fixture Git repository with a braked merge changing AGENTS.md, the production Base, store reader, enforce_brakes and open_revert. Only GitHub API responses and the two run times are simulated. There is no challenge record: the owner uses the promised hold-label channel. At until-1 the gate observes hold and attempts the exact revert, failing on POST git/trees. At until+1 the API is healthy and hold remains, but the gate makes no call. A healthy until-1 control opens the revert. This is a concrete lost retry, not an assumption about when an unobserved label appeared.
+
+Expected: a proven timely hold survives delayed execution and failed attempts until its revert succeeds (with appropriate handling of label removal and genuinely late labels). Preserve or recover timely veto evidence; the regression must cover labels as well as signed challenges. No source changes or fix are filed in this verdict worktree.
+
+## Reproduce
+
+Save the following as hold_retry.py outside the checkout. From M run python3 /path/to/hold_retry.py /path/to/checkout, with TMPDIR outside the checkout. Expected exit 0; observed exit 1 and FAIL F1. It uses the repository's existing fixture keys only; it performs no real network or remote mutation.
+
+```python
+import sys, json
+from pathlib import Path
+ROOT = Path(sys.argv[1] if len(sys.argv)>1 else ".").resolve()
+sys.path[:0] = [str(ROOT / "tests"), str(ROOT)]
+from gate_test import Repo, git, GT, PRES
+
+r = Repo(git_init=False)
+(r.dot / "merge.json").write_text(json.dumps(PRES))
+(r.root / "AGENTS.md").write_text("original rules\n")
+git(r.root, "init", "-q", "-b", "master")
+r.commit("base")
+git(r.root, "checkout", "-q", "-b", "feature")
+(r.root / "AGENTS.md").write_text("weakened rules\n")
+v = r.entity("alice", "pr-head@1", {"state":"open", "repository":"s0fractal/warrant", "pr":7, "title":"rules"})
+r.commit("rules change")
+git(r.root, "checkout", "-q", "master")
+until = 1793062800
+git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {until}: #7 head version {v}")
+b = GT.Base(r.root, git(r.root, "rev-parse", "HEAD"))
+class Hub:
+    def __init__(self): self.fail = True; self.calls = []
+    def pull(self, n): self.calls.append(("pull", n)); return {"labels":["hold"]}
+    def api(self, path, method="GET", body=None, pages=False):
+        self.calls.append((path, method))
+        if self.fail: raise GT.Refused("transient API outage", "GITHUB")
+        return [] if pages else {"sha":"d"*40}
+    def dispatch(self, workflow, branch): self.calls.append(("dispatch", workflow, branch))
+h = Hub()
+first = GT.enforce_brakes(r.root, b, h, [], now=until-1)
+assert len(first)==1 and "FAILED" in first[0][1], first
+h.fail = False
+h.calls.clear()
+second = GT.enforce_brakes(r.root, b, h, [], now=until+1)
+control_h = Hub()
+control_h.fail = False
+control = GT.enforce_brakes(r.root, b, control_h, [], now=until-1)
+assert len(control)==1 and "opened" in control[0][1], control
+print(json.dumps({"healthy_control":control, "timely_hold_attempt":first, "after_expiry_retry":second, "after_expiry_api_calls":h.calls}))
+ok = len(second)==1 and "opened" in second[0][1]
+print(("ok   " if ok else "FAIL ") + "F1 timely hold survives an API failure and brake expiry")
+sys.exit(0 if ok else 1)
+```
+
+Observed stdout:
+
+```text
+{"healthy_control": [[7, "revert of #7 opened from gate/revert/7-68700ba06fdf"]], "timely_hold_attempt": [[7, "revert of #7 FAILED: transient API outage"]], "after_expiry_retry": [], "after_expiry_api_calls": []}
+FAIL F1 timely hold survives an API failure and brake expiry
+```
+
+## Review scope and validation
+
+Verified detached HEAD and origin, roadmap due --actor codex, and MCP workspace/context under the base's keys. T is the named pending leaf, with no open requirements and waiting only for the roadmap acceptance. Its two evidence addresses are pr-head@1 root records for #528 and #523, not blobs; both were read. Read #350, #356, #365, #490, #502, #507, #523 and #528 descriptions through the GitHub connector and confirmed each merge commit is an ancestor of M. The store holds no Codex verdict on any of #350's three head versions.
+
+Read the requested 9e183284..8278d4a3 diff in warrant/gate.py, .warrant/merge.json, .warrant/v3.json and AGENTS.md; tools/gate.py is unchanged in that range. Inspected current tier, solo, presence, notice, brake, exact-revert and rules-revert paths and the regressions the closure names. No claim that the historical #350 commit itself was defect-free.
+
+At M:
+- tests/gate_test.py: 118 checks passed, full suite, including E99 and RC12-RC14.
+- tests/tools_test.py: 239 checks passed, full suite, including OB1 and MR1.
+- Targeted mutants: G85, G86, G93-G97, G141-G149: 16/16 KILLED by their named cases. Ran the repository harness in copies outside the worktree, overriding only its output COPY and TMP directories. The full mutant set was not run.
+- warrant.roadmap check: 122 lineages, 0 problems.
+- warrant.claims check: 143 live claims, 0 problems.
+- Fresh counterexample F1: FAIL, healthy control succeeds; no new regression or fix added to the source tree.
+
+The signed-challenge recovery tested by E99 is supported. The equivalent hold-label recovery is not. This challenge is against T, with no finding@1 schema, and does not claim a production veto incident was observed. No PR CI rerun, full core/agent suites, release test, or live revert was performed.
