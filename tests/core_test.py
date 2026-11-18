@@ -561,6 +561,63 @@ def migration_cases():
           crash is None and ["MIGRATION_MAP", m] in [[p[0], p[1]] for p in rep.get("problems", [])], (crash, rep.get("problems")))
 
 
+def canon_cases():
+    """jcs.canon's one-call path (json.dumps over a value it checked first) writes the bytes its token-by-token path
+    writes, on a seeded sample of the domain and on the cases where the two could part: a key outside the Basic
+    Multilingual Plane beside one in U+E000..U+FFFF (code point order and UTF-16 order disagree there), a lone
+    surrogate, an integer past ±(2^53-1), a float, a key that is no string, nesting past MAX_DEPTH."""
+    import random
+
+    def tokens(v):
+        out, st = [], [("v", v, 0)]
+        while st:
+            tag, x, d = st.pop()
+            if tag == "s":
+                out.append(x)
+                continue
+            if d > C.MAX_DEPTH:
+                raise C.NotCanonical("nested too deep")
+            t = C._scalar(x)
+            if t is not None:
+                out.append(t)
+            else:
+                C._push_container(st, x, d)
+        return "".join(out).encode("utf-8")
+
+    def both(v):
+        def one(f):
+            try:
+                return f(v)
+            except C.NotCanonical:
+                return "refused"
+            except Exception as e:               # anything else is a crash, which the token path never gives
+                return ("crash", type(e).__name__)
+        return one(C.canon), one(tokens)
+
+    rng = random.Random(7)
+    chars = ["a", "Z", "\u00e9", "\u2028", "\x00", "\x1f", '"', "\\", "\ue000", "\uffff", "\U0001f600", "\U00010000", "/"]
+
+    def text():
+        return "".join(rng.choice(chars) for _ in range(rng.randint(0, 4)))
+
+    def value(d=0):
+        k = rng.randint(0, 5 if d < 4 else 2)
+        return [lambda: rng.randint(-2**53 + 1, 2**53 - 1), text, lambda: rng.choice([True, False, None]),
+                lambda: rng.randint(-3, 3), lambda: [value(d + 1) for _ in range(rng.randint(0, 3))],
+                lambda: {text(): value(d + 1) for _ in range(rng.randint(0, 4))}][k]()
+    sample = [value() for _ in range(3000)]
+    deep = 0
+    for _ in range(C.MAX_DEPTH + 1):
+        deep = [deep]
+    edges = [{"\U00010000": 1, "\ue000": 2, "\uffff": 3, "a": 4}, {"\ue000": {"\U0001f600": [1]}}, "\ud800",
+             {"\udc00": 1}, 2**53, -(2**53), 1.0, {1: 2}, (1, 2), deep, [True, 1, "1"], {"": None}]
+    parted = [v for v in sample + edges if both(v)[0] != both(v)[1]]
+    check("K40 canon's one-call path writes what its token path writes: 3000 seeded values and each edge (a key outside "
+          "the BMP beside U+E000..U+FFFF ones, a lone surrogate as text or key, an integer past 2^53-1, a float, a key "
+          "that is no string, a tuple, nesting past MAX_DEPTH) give the same bytes or the same refusal",
+          not parted and both(edges[0])[0] == tokens(edges[0]), parted[:3])
+
+
 def main():
     lineage_cases()
     schema_cases()
@@ -571,6 +628,7 @@ def main():
     store_cases()
     chain_cases()
     migration_cases()
+    canon_cases()
     print(f"{'FAILED ' + str(len(FAILS)) if FAILS else 'all passed'}")
     return 1 if FAILS else 0
 
