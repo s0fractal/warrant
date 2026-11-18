@@ -343,8 +343,13 @@ def _assess(a):
         rep["_recs"], rep["_basis"] = view.recs, view.basis
         D.gate(rep, Path(store).resolve().parent)
         del rep["_recs"], rep["_basis"]
-    else:
-        rep = E.assess(Store(store).snapshot(), trust, profile, a.as_of)
+    else:                         # no checkout read beside it: a pinned lineage reads PINS_NOT_CHECKED (§10)
+        from . import drift as D
+        view = E.View(Store(store).snapshot(), trust, profile, a.as_of)
+        rep = view.report()
+        rep["_recs"], rep["_basis"] = view.recs, view.basis
+        D.not_checked(rep)
+        del rep["_recs"], rep["_basis"]
     if not a.lineage:
         return rep
     return {"lineage": rep["lineages"].get(a.lineage),
@@ -367,6 +372,10 @@ def status(a):
         from . import drift as D
         rep["_recs"], rep["_basis"] = view.recs, view.basis
         D.gate(rep, root)            # G14: a lineage whose acceptances name other bytes than HEAD's counts STALE here too
+    else:                            # no checkout compared: a pinned lineage reads PINS_NOT_CHECKED, never ELIGIBLE (§10)
+        from . import drift as D
+        rep["_recs"], rep["_basis"] = view.recs, view.basis
+        D.not_checked(rep)
     brakes = open_brakes(root) if a.as_of is None and Path(store).name == ".warrant" else None
     lineages, reliance = {}, {}
     for lin in rep["lineages"].values():

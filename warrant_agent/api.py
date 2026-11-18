@@ -365,6 +365,9 @@ def handoff(cfg, req):
         snap = Snapshot(own_lines(own) + lines, {**own.blobs, **blobs})
     _, view, _, _ = _assess(ws, snap)
     rep = view.report()
+    rep["_recs"], rep["_basis"] = view.recs, view.basis
+    D.not_checked(rep)               # a package is read with no tree beside it: never ELIGIBLE on pins nobody compared
+    del rep["_recs"], rep["_basis"]
     return _budget({**_header(rep), "package": pkg_snap.digest, "roots": V.describe(rep, req["package"]["roots"]),
                     "rejected": {i: w for i, w in rep["rejected"].items() if i in pkg_snap.lines}},
                    ws.limits["context_bytes"])

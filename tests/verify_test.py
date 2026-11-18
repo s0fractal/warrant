@@ -414,18 +414,20 @@ def pin_cases():
           "and exit 1, with the first commit that changed the file", (code0, ans0, code1, ans1))
 
     code, ans = ask(pkg, r)
-    check("U21", code == 0 and ans.get("checkout") is None and pins_of(ans, d) == {"verdict": "NOT_CHECKED", "acceptances": [
+    check("U21", code == 1 and ans.get("checkout") is None and root(ans, d).get("why_not") == ["PINS_NOT_CHECKED"]
+          and root(ans, d).get("lineage", {}).get("reliance") == "PINS_NOT_CHECKED" and pins_of(ans, d) == {"verdict": "NOT_CHECKED", "acceptances": [
               dict(row, verdict="NOT_CHECKED", files=[{"path": "lib/code.py", "blob": blob, "verdict": "NOT_CHECKED", "detail": ""}])]}
           and f"pins: {d[:12]}: the acceptance {a[:12]} by bob names 1 file; no checkout was given, so whether they are still "
               "those bytes is not checked" in ans.get("not_established", []),
-          "a pin and no checkout: listed with its path and blob as not checked, and said so; the gate is the rest", (code, ans))
+          "a pin and no checkout: listed with its path and blob as not checked, and said so; the lineage reads PINS_NOT_CHECKED, "
+          "never ELIGIBLE on pins nobody compared, and exit 1 (docs/V3.md §10; Codex bf09dd84)", (code, ans))
 
     def no_git(*_a, **_k):
         raise FileNotFoundError("git")
     empty = tempfile.mkdtemp(dir=TMP)
     code, ans = ask(pkg, r, "--checkout", stale, env={"PATH": empty}, patch=(P, "git", no_git))
     check("U22", code == 1 and root(ans, d).get("why_not") == ["PINS_NOT_CHECKED"] and ans.get("checkout") == {"tree": None}
-          and pins_of(ans, d).get("verdict") == "NOT_CHECKED" and root(ans, d).get("lineage", {}).get("reliance") == "ELIGIBLE"
+          and pins_of(ans, d).get("verdict") == "NOT_CHECKED" and root(ans, d).get("lineage", {}).get("reliance") == "PINS_NOT_CHECKED"
           and f"pins: {d[:12]}: the acceptance {a[:12]} by bob names 1 file; git is not available here, so whether they are still "
               "those bytes is not checked" in ans.get("not_established", []),
           "a checkout asked for and no git to read it: the pins read not checked, never fresh, and exit 1", (code, ans))
@@ -472,8 +474,9 @@ def pin_cases():
     check("U27", code == 1 and root(ans, ed).get("why_not") == ["STALE"]
           and pins_of(ans, ed) == {"verdict": "STALE", "acceptances": [{"attest": ea, "actor": "bob", "commit": ex, "verdict": "UNKNOWN", "files": []}]}
           and f"pins: {ed[:12]}: the acceptance {ea[:12]} by bob names its files in no form that can be compared" in ans.get("not_established", [])
-          and code2 == 0 and pins_of(ans2, ed).get("verdict") == "NOT_CHECKED",
-          "an acceptance whose `files` names nothing that can be compared: with a checkout it is not fresh, exit 1", (code, ans, code2))
+          and code2 == 1 and pins_of(ans2, ed).get("verdict") == "NOT_CHECKED",
+          "an acceptance whose `files` names nothing that can be compared: with a checkout it is not fresh, exit 1; without one "
+          "its pins are not checked, exit 1 too", (code, ans, code2))
 
     s, sx, _, sd = pinned()
     sa = s.attest("bob", sd)
@@ -951,6 +954,44 @@ def witness_cases():
           (back["absence"]["why"], ahead["absence"]["why"], code))
 
 
+def pins_reader_cases():
+    """Every reader of a store with no checkout beside it holds to tests/vectors/pins-not-checked.json (docs/V3.md §10):
+    `warrant assess --store`, `warrant status --store`, the agent's handoff inspect and `warrant verify` read the pinned
+    lineages PINS_NOT_CHECKED, never ELIGIBLE, and verify does not answer rely (Codex bf09dd84's reproducer)."""
+    from warrant_agent import api
+    from warrant_agent.config import Config
+    v = json.loads((ROOT / "tests" / "vectors" / "pins-not-checked.json").read_text())
+    pinned = sorted(L for L, x in v["expect"].items() if x == "PINS_NOT_CHECKED")
+    want = {L: "PINS_NOT_CHECKED" for L in pinned}
+    p = Path(TMP) / "pins-vector"
+    s = p / "store"
+    s.mkdir(parents=True)
+    (s / "records.jsonl").write_text("\n".join(v["lines"]) + "\n")
+    (s / "v3.json").write_text(json.dumps(v["v3"]))
+    for k in ("trust", "profile"):
+        (p / f"{k}.json").write_text(json.dumps(v["v3"][k]))
+    got = {}
+    for cmd in ("assess", "status"):
+        out = subprocess.run([sys.executable, "-m", "warrant", cmd, "--store", str(s), *(["--json"] if cmd == "status" else [])],
+                             cwd=p, env={**os.environ, "PYTHONPATH": str(ROOT)}, capture_output=True, text=True)
+        got[cmd] = json.loads(out.stdout) if out.returncode == 0 else out.stderr[-300:]
+    cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {
+        "store": str(s), "trust": str(p / "trust.json"), "profile": str(p / "profile.json"), "operations": ["handoff"]}}})
+    pkg = {"warrant": V.PACKAGE, "lines": v["lines"], "blobs": {}, "roots": pinned}
+    inspect = api.call(cfg, "handoff", {"workspace": "w", "op": "inspect", "alone": True, "package": pkg}).get("ok", {})
+    ans = V.verify(json.dumps(pkg).encode(), v["v3"]["trust"], v["v3"]["profile"])
+    counts = {}
+    for x in v["expect"].values():
+        counts[x] = counts.get(x, 0) + 1
+    check("VP1 with no checkout beside the store, assess --store, status --store, handoff inspect and verify read every "
+          "pinned lineage of the shared vector PINS_NOT_CHECKED, as the agent's context does; verify answers no rely",
+          isinstance(got["assess"], dict) and {L: got["assess"]["lineages"][L]["reliance"] for L in pinned} == want
+          and isinstance(got["status"], dict) and got["status"]["reliance"] == counts
+          and {L: inspect.get("roots", {}).get(L, {}).get("lineage", {}).get("reliance") for L in pinned} == want
+          and {L: ans["roots"][L]["lineage"]["reliance"] for L in pinned} == want and ans["rely"] is False
+          and all("PINS_NOT_CHECKED" in ans["roots"][L]["why_not"] for L in pinned), (got, inspect, ans.get("rely")))
+
+
 def refused_code(fn):
     try:
         fn()
@@ -970,6 +1011,7 @@ def main():
         signature_cases()
         merkle_cases()
         witness_cases()
+        pins_reader_cases()
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
     return finish("verify_test")

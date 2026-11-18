@@ -26,7 +26,7 @@ it in the witness's lineage: an older one, or one on another branch, is a rollba
 A root is a record id. It is relied on when it is the effective version of its lineage (docs/V3.md §3: a lineage
 that forks has none, and a version whose guard waits is not it), no counted challenge in the package stands against
 it, and, with --checkout, the files its acceptances name are still those bytes in that checkout's HEAD (warrant.pins;
-without a checkout they are listed, not checked). The roots are --require's, else the ones the package names.
+without a checkout they are listed, not checked, and a root they pin reads PINS_NOT_CHECKED, never relied on: §10). The roots are --require's, else the ones the package names.
 
 The answer keeps five things apart and never folds them into one word: `integrity` (the bytes are the bytes their
 names hash), `authenticity` (whose signatures verify under the receiver's trust), `completeness` (what the slice
@@ -403,8 +403,10 @@ def _root(snap, view, rep, nodes, out, i, checkout):
             why.append("STALE")
             if not why[:-1]:
                 root["lineage"]["reliance"] = "STALE"          # the receiver's tree read beside the package (docs/V3.md §15)
-        if pins["verdict"] == "NOT_CHECKED" and checkout is not None:
+        if pins["verdict"] == "NOT_CHECKED":       # no tree read beside it: never ELIGIBLE on pins nobody compared (§10)
             why.append("PINS_NOT_CHECKED")
+            if not why[:-1]:
+                root["lineage"]["reliance"] = "PINS_NOT_CHECKED"
     root["why_not"] = why
     root["rely"] = not why
     return root

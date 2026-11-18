@@ -1534,6 +1534,54 @@ def rules_revert_merge_cases():
           and n1 in GT.reverted_rules(r.root, gh.sha) and later.eligible, (a.reasons, result, later.reasons))
 
 
+def ended_brake_cases():
+    """A veto already in the base before the brake ended is enforced by a later run (a failed revert retried); one that
+    reached the base only after the end is not (Codex af30dd9b)."""
+    def world(late):
+        r = Repo(git_init=False, roles=dict(ROLES, challenger=["dave"]))
+        (r.dot / "merge.json").write_text(json.dumps(PRES))
+        (r.root / "AGENTS.md").write_text("original rules\n")
+        git(r.root, "init", "-q", "-b", "master")
+        r.commit("base")
+        git(r.root, "checkout", "-q", "-b", "feature")
+        (r.root / "AGENTS.md").write_text("weakened rules\n")
+        v = r.entity("alice", "pr-head@1", {"state": "open", "repository": "s0fractal/warrant", "pr": 7, "title": "rules"})
+        r.commit("rules change")
+        git(r.root, "checkout", "-q", "master")
+        until = 1793062800        # an hour after world.git's commit time, 2026-10-27T00:00:00Z
+        git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {until}: #7 head version {v}")
+        r.put("dave", "challenge", {"target": v, "statement": "Veto the changed rules"}, refs=[v])
+        git(r.root, "add", "-A")
+        when = f"@{until + (60 if late else -60)} +0000"   # the forge's time of the commit that brought the veto
+        subprocess.run(["git", "-C", str(r.root), "commit", "-q", "-m", "the owner's veto"], check=True, capture_output=True,
+                       env=dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                                GIT_COMMITTER_EMAIL="t@t", GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when))
+        return r, GT.Base(r.root, git(r.root, "rev-parse", "HEAD")), until
+
+    class Hub:
+        def __init__(self):
+            self.calls = []
+
+        def pull(self, n):
+            return {"labels": []}
+
+        def api(self, path, method="GET", body=None, pages=False):
+            self.calls.append((path, method))
+            return [] if pages else {"sha": "d" * 40}
+
+        def dispatch(self, workflow, branch):
+            self.calls.append(("dispatch", workflow, branch))
+
+    r, b, until = world(late=False)
+    timely = GT.enforce_brakes(r.root, b, Hub(), [], now=until + 1)
+    r2, b2, until2 = world(late=True)
+    hub = Hub()
+    tardy = GT.enforce_brakes(r2.root, b2, hub, [], now=until2 + 120)
+    check("E99 a veto in the base before its brake ended is enforced by a run after the end, so a failed revert is "
+          "retried; a veto that reached the base only after the end opens no revert (Codex af30dd9b)",
+          len(timely) == 1 and "opened" in timely[0][1] and tardy == [] and hub.calls == [], (timely, tardy, hub.calls))
+
+
 def rules_cases():
     """Stage 2a (the analysis session's decision for the owner, plan §10.3): the publisher's rules as rules@1 records,
     .warrant/v3.json their projection. The gate reads the head's records under the BASE's trust and profile."""
@@ -1794,6 +1842,7 @@ if __name__ == "__main__":
         rules_cases,
         rules_revert_cases,
         rules_revert_merge_cases,
+        ended_brake_cases,
         after_merge_cases,
         prerelease_cases,
         revert_pending_cases,
