@@ -1,0 +1,43 @@
+{
+  "checked": [
+    "Exact HEAD, origin, local roadmap due and MCP context confirm D/T/M, no requires, pending roadmap/acceptor guard.",
+    "Read the specified 9e183284..8278d4a3 diff and current gate/configuration; read GitHub metadata and descriptions for #350, #356, #365, #490, #502, #507, #523 and their merged code at M.",
+    "116 gate cases passed, including RC12-RC14, E64b and E74-E83.",
+    "Target mutants G85 G86 G93 G94 G95 G96 G97 G141 G142 G143 G144 G145 G146: 13/13 killed.",
+    "tools_test observer_cases and merged_cases: OB1 and MR1 passed.",
+    "roadmap check: 121 lineages, 0 problems; claims check: 143 live claims, 0 problems."
+  ],
+  "commit": "e7d2f453a2f6f57bb2f40b6b4d10d2ac9e7d7cf8",
+  "controls": [
+    "Store assessment rejects no records and has no problems; the owner challenge is counted and stands.",
+    "The challenge predates expiry, is already in the base store at the timely run, and vetoed() recognizes it.",
+    "revert_plan succeeds and touches only AGENTS.md.",
+    "With the same veto and available API at until-1, the exact revert is opened.",
+    "At until-1 with a temporary API refusal, enforcement reports revert FAILED.",
+    "At until+1 with the API available, enforcement returns [] and makes no API calls."
+  ],
+  "limits": [
+    "No live GitHub API outage or production veto was induced; the reproducer uses real signed fixture records and Git objects with a fake GitHub API and injected clock.",
+    "No full core, agent, integration, or JavaScript suite run claimed.",
+    "The fixes named by T pass their targeted checks; this challenge records a new remaining brake timing counterexample.",
+    "T evidence 4b7a9ceb is a pr-head@1 root for #523, not an evidence blob; it was read as a record."
+  ],
+  "obligation": "549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f",
+  "observed_exit": 1,
+  "observed_stdout": "{\n  \"challenge_at\": 1800000007,\n  \"brake_until\": 1800003606,\n  \"counted\": {\n    \"target\": \"929a3b9154c9d87ed3d31ff04dcfedf8363743f1015bbf1bb200e65d679ad297\",\n    \"counted\": true,\n    \"why\": \"holds the challenger role\",\n    \"replays\": [],\n    \"stands\": true\n  },\n  \"exact_revert_available\": true,\n  \"before_deadline\": [\n    [\n      7,\n      \"revert of #7 opened from gate/revert/7-78b1498d774a\"\n    ]\n  ],\n  \"timely_failed_attempt\": [\n    [\n      7,\n      \"revert of #7 FAILED: temporary API failure\"\n    ]\n  ],\n  \"after_deadline\": [],\n  \"delayed_api_calls\": []\n}\nFAIL F1 a veto received before expiry is lost when the next gate run is after expiry\n",
+  "repair": "Preserve a veto observed during its brake window and continue enforcing it after expiry until the exact revert is opened or an explicit unresolved conflict is reported. Also define how timely vetoes are recognized when a scheduled gate run arrives after the deadline. Do not fix this by accepting arbitrary late vetoes or trusting a filer timestamp as proof of timely receipt.",
+  "reproducer": "import json\nimport sys\nfrom pathlib import Path\n\nsource = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / 'source'\nsys.path.insert(0, str(source.resolve() / 'tests'))\nfrom world import Repo, ROLES, git\nfrom gate_test import GT, PRES\n\nr = Repo(git_init=False, roles=dict(ROLES, challenger=['dave']))\n(r.dot / 'merge.json').write_text(json.dumps(PRES))\n(r.root / 'AGENTS.md').write_text('original rules\\n')\ngit(r.root, 'init', '-q', '-b', 'master')\nr.commit('base')\ngit(r.root, 'checkout', '-q', '-b', 'feature')\n(r.root / 'AGENTS.md').write_text('weakened rules\\n')\nv = r.entity('alice', 'pr-head@1', {'state': 'open', 'repository': 's0fractal/warrant', 'pr': 7, 'title': 'rules'})\nr.commit('rules change')\ngit(r.root, 'checkout', '-q', 'master')\nuntil = r.t + 3600\ngit(r.root, 'merge', '-q', '--no-ff', 'feature', '-m', f'Merge pull request #7\\n\\nwarrant-gate brake until {until}: #7 head version {v}')\nmerge = git(r.root, 'rev-parse', 'HEAD')\n# Dave holds pr/owner at the base; the signed veto is in the base store\n# before the brake expires, with no change to the reverted file.\nc = r.put('dave', 'challenge', {'target': v, 'statement': 'Veto the changed rules'}, refs=[v])\nbase = r.commit('owner veto received before deadline')\nb = GT.Base(r.root, base)\nrep = GT.assess_snapshot(b, GT.store_at(r.root, base)[0])\nk = GT.brakes(r.root, base, now=until - 1)[0]\nplan, err = GT.revert_plan(r.root, base, merge)\n\nclass Hub:\n    def __init__(self, unavailable=False):\n        self.calls = []\n        self.unavailable = unavailable\n    def pull(self, n):\n        self.calls.append(('pull', n))\n        return {'labels': []}\n    def api(self, path, method='GET', body=None, pages=False):\n        self.calls.append((path, method))\n        if self.unavailable:\n            raise GT.Refused('temporary API failure', 'GITHUB')\n        return [] if pages else {'sha': 'd' * 40}\n    def dispatch(self, workflow, branch):\n        self.calls.append(('dispatch', workflow, branch))\n\nassert rep['rejected'] == {} and not rep['problems']\nassert c in rep['challenges'] and rep['_recs'][c]['at'] < until\nassert rep['challenges'][c]['counted']\nassert err is None and [e['path'] for e in plan] == ['AGENTS.md']\nassert GT.vetoed(b, rep, Hub(), k)\nearly, delayed = Hub(), Hub()\ncontrol = GT.enforce_brakes(r.root, b, early, [], now=until - 1)\nfailed_hub = Hub(unavailable=True)\nfailed = GT.enforce_brakes(r.root, b, failed_hub, [], now=until - 1)\nlate = GT.enforce_brakes(r.root, b, delayed, [], now=until + 1)\nprint(json.dumps({'challenge_at': rep['_recs'][c]['at'], 'brake_until': until,\n                  'counted': rep['challenges'][c], 'exact_revert_available': err is None,\n                  'before_deadline': control, 'timely_failed_attempt': failed, 'after_deadline': late,\n                  'delayed_api_calls': delayed.calls}, indent=2))\nassert control and 'opened' in control[0][1]\nassert failed and 'FAILED' in failed[0][1]\nif late:\n    print('ok   F1 a veto received before expiry is enforced after expiry')\nelse:\n    print('FAIL F1 a veto received before expiry is lost when the next gate run is after expiry')\n    sys.exit(1)\n",
+  "reviewer": "codex",
+  "run": "Save reproducer as WORK/late_veto.py; mkdir -p WORK/tmp; TMPDIR=WORK/tmp PYTHONDONTWRITEBYTECODE=1 python3 WORK/late_veto.py CHECKOUT_AT_M. Expected current exit 1 and FAIL F1. Uses only test fixture keys; GitHub is a local fake. No production records are filed by the reproducer.",
+  "statement": "P2 A timely owner veto is forgotten after expiry when opening its revert failed or the gate ran late.",
+  "target": "7c54611dbd00f491853b446c5b2e28801c065807c8ddd60ba51af67d8e0a12dc",
+  "tree": "8a05bbaef267820cfea41dc7fafde52abd3f46ae",
+  "what": "enforce_brakes calls brakes with open_only=True, so it never examines a veto after the brake deadline. The signed owner challenge is already in the base store, counts under challenger, and vetoed() recognizes it before expiry. If open_revert fails with a temporary API refusal just before expiry, the next run after expiry returns [] and performs no API call. The exact revert remains available. There is no durable latch for an observed timely veto, so the promised owner brake depends on the gate successfully opening the revert before the deadline, rather than the owner filing the veto within it.",
+  "where": [
+    "warrant/gate.py:1248",
+    "warrant/gate.py:1491",
+    "warrant/gate.py:1317",
+    "docs/V3.md:479",
+    "AGENTS.md:19"
+  ]
+}
