@@ -1,0 +1,160 @@
+# G14: unchecked pins still reported ELIGIBLE by JavaScript readers
+
+Actor: codex. Reviewed master 42e2b1c012d39aa989d15484a44c1c14a832767d.
+Obligation D: 9c7598ecdb5b2b2d1ee3027a046a1cb741a5140d5f634a4ee4ebed78d2d8cefb.
+Closure T: c3435055b8001c3b64d937728fbec02f646f90a6008bdf52470839b4f539e9f3.
+
+Verdict: challenge. D's every-reader requirement is not done at M.
+
+## Counterexample
+
+Use the existing mandatory tests/vectors/pins-not-checked.json unchanged. Its two live pinned claims
+(d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d and
+feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e)
+are expected to read PINS_NOT_CHECKED without a compared checkout. All of these return exit 0 and
+report both ELIGIBLE instead:
+
+- node impl-js/warrant.mjs assess --store STORE --config V3JSON
+- node impl-js/warrant.mjs verify PACKAGE --config V3JSON
+- node impl-js/read.mjs --base URL
+- node impl-js/read.mjs --base URL --summary
+
+The latter two are an actual HTTP client reading the fixture from a local static server, with no
+checkout and no request to compare pins; this is not merely a call to the pure engine. The HTTP
+summary reports zero rejected records. All three other vector lineages retain their expected states.
+The Python assess --store control on the exact same bytes passes the vector.
+
+## Code path and requirement
+
+impl-js/read.mjs:89 calls the pure assess and lines 90-95 publish its reliance directly, including
+in the user-facing summary. impl-js/warrant.mjs:1257 directly publishes the assessment in its CLI;
+inspectAlone at lines 1176-1187 describes roots from assessPrepared without applying the no-checkout
+rule, and the verify CLI at line 1261 exposes it. The Python handoff inspect now applies
+warrant.drift.not_checked (warrant_agent/api.py:369), so its JavaScript counterpart also diverges there.
+
+This contradicts D and docs/V3.md section 10, claim V3-10-1, which require every reader to pass this
+vector. #434 introduced the rule and tests A45/J23; #528 fixed four Python reader surfaces and added
+VP1, but neither merge fixed these JavaScript reader boundaries. Both merges are ancestors of M.
+Apply the no-checkout predicate at reader/presentation boundaries and add these readers to the
+shared-vector checks. No change to the pure engine's assessment semantics is requested.
+
+## Verification scope
+
+Verified git HEAD, clean initial worktree, origin, roadmap due --actor codex, and MCP context of T
+and its two evidence records under M's configuration. T's guard was PENDING only for one
+roadmap/acceptor acceptance, no requirements and no challenges on T. Read docs/AGENT.md,
+docs/V3.md sections 10/15, docs/REPOSITORY.md, merged diffs and GitHub PRs #434/#528.
+
+Passed checks (ok lines): {"agent-operations": 22, "browser-pins": 27, "verify-test": 57}.
+verify-test is the full tests/verify_test.py run, including U21/U22/U27, VP1 and the one-file
+verifier's cryptography and standard-library controls. agent-operations is only WARRANT_SECTION=operations
+of tests/agent_test.py, including A45. browser-pins invokes browser_reader_cases,
+browser_pins_cases and browser_pins_vector_cases from tests/impl_js_test.py, including J10/J11/J23;
+the full JavaScript differential suite was not run. The entire project suite and full mutant catalog
+were not run. Exact selected mutants, run by tests/mutants.py in isolated copies:
+T275, T276, T277, V107, V108, T346, T347, A211; all 8 KILLED by their own named cases.
+Roadmap check: 122 lineages, 0 problems. Claims check: 143 live, 0 problems.
+No source or regression changes are proposed in this verdict worktree.
+
+## Reproduction
+
+Save the following Python block outside the repository and run it from M's checkout with Node and
+Python (with the repository's normal Python dependencies) available. For the review run, TMPDIR
+was the dedicated review work directory. Exit 1 with four FAIL lines reproduces the finding;
+exit 0 means all these readers passed. The script only writes a temporary fixture and serves it
+on localhost; it changes no repository file.
+
+```python
+#!/usr/bin/env python3
+"""Run from the reviewed repository; exit 1 means the pins-vector counterexample remains."""
+import functools
+import http.server
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+from pathlib import Path
+
+ROOT = Path.cwd()
+VECTOR = json.loads((ROOT / 'tests/vectors/pins-not-checked.json').read_text())
+EXPECTED = VECTOR['expect']
+PINNED = {key: value for key, value in EXPECTED.items() if value == 'PINS_NOT_CHECKED'}
+failures = []
+
+
+def run(args, cwd=ROOT):
+    proc = subprocess.run(args, cwd=cwd, env={**os.environ, 'PYTHONPATH': str(ROOT)}, capture_output=True, text=True, check=True)
+    return json.loads(proc.stdout)
+
+
+def check(name, got, expected):
+    bad = {key: {'actual': got.get(key), 'expected': value}
+           for key, value in expected.items() if got.get(key) != value}
+    print(('FAIL ' if bad else 'ok   ') + name + ' ' + json.dumps(bad, sort_keys=True))
+    if bad:
+        failures.append(name)
+
+
+class Quiet(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+
+with tempfile.TemporaryDirectory(prefix='g14-pins-') as temporary:
+    home = Path(temporary)
+    store = home / '.warrant'
+    store.mkdir()
+    (store / 'records.jsonl').write_text('\n'.join(VECTOR['lines']) + '\n')
+    config = store / 'v3.json'
+    config.write_text(json.dumps(VECTOR['v3']))
+    for name in ('trust', 'profile'):
+        (home / (name + '.json')).write_text(json.dumps(VECTOR['v3'][name]))
+    package = home / 'package.json'
+    package.write_text(json.dumps({'warrant': 'package/3', 'lines': VECTOR['lines'],
+                                   'blobs': {}, 'roots': list(EXPECTED)}))
+    # A path named store forces the Python command's no-checkout branch.
+    plain_store = home / 'store'
+    plain_store.mkdir()
+    (plain_store / 'records.jsonl').write_bytes((store / 'records.jsonl').read_bytes())
+    (plain_store / 'v3.json').write_bytes(config.read_bytes())
+    python = run([sys.executable, '-m', 'warrant', 'assess', '--store', str(plain_store)], cwd=home)
+    check('PYTHON_ASSESS_CONTROL', {key: lin['reliance'] for key, lin in python['lineages'].items()}, EXPECTED)
+    for name, args, key in [
+        ('JS_ASSESS', ['assess', '--store', str(plain_store), '--config', str(config)], 'lineages'),
+        ('JS_VERIFY', ['verify', str(package), '--config', str(config)], 'roots'),
+    ]:
+        answer = run(['node', 'impl-js/warrant.mjs', *args])
+        got = {lineage: (answer[key][lineage]['reliance'] if key == 'lineages'
+                         else answer[key][lineage]['lineage']['reliance']) for lineage in EXPECTED}
+        check(name, got, EXPECTED)
+    server = http.server.ThreadingHTTPServer(
+        ('127.0.0.1', 0), functools.partial(Quiet, directory=str(home)))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = 'http://127.0.0.1:' + str(server.server_port)
+        for summary in (False, True):
+            answer = run(['node', 'impl-js/read.mjs', '--base', url] + (['--summary'] if summary else []))
+            got = {key: (lin[1] if summary else lin['reliance']) for key, lin in answer['lineages'].items()}
+            check('JS_HTTP_SUMMARY' if summary else 'JS_HTTP_FULL', got, EXPECTED)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+print('counterexample readers: ' + str(len(failures)))
+sys.exit(1 if failures else 0)
+```
+
+Observed output at M:
+
+```text
+ok   PYTHON_ASSESS_CONTROL {}
+FAIL JS_ASSESS {"d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d": {"actual": "ELIGIBLE", "expected": "PINS_NOT_CHECKED"}, "feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e": {"actual": "ELIGIBLE", "expected": "PINS_NOT_CHECKED"}}
+FAIL JS_VERIFY {"d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d": {"actual": "ELIGIBLE", "expected": "PINS_NOT_CHECKED"}, "feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e": {"actual": "ELIGIBLE", "expected": "PINS_NOT_CHECKED"}}
+FAIL JS_HTTP_FULL {"d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d": {"actual": "ELIGIBLE", "expected": "PINS_NOT_CHECKED"}, "feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e": {"actual": "ELIGIBLE", "expected": "PINS_NOT_CHECKED"}}
+FAIL JS_HTTP_SUMMARY {"d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d": {"actual": "ELIGIBLE", "expected": "PINS_NOT_CHECKED"}, "feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e": {"actual": "ELIGIBLE", "expected": "PINS_NOT_CHECKED"}}
+counterexample readers: 4
+```
