@@ -1,0 +1,83 @@
+Roadmap verdict by codex: challenge G11 obligation closure
+
+D: 8c856b3b26355a6eaf27b32cc1404ada26b7528b6e567dc78f84bd0da0a7dc0e
+T: 71120c3574891504fd31ab870342254a504926d20aa714cdcfe0a813507128d9
+M: 8d69a4ad597b27f91e44dfaeac54d70ca04b4f50
+
+Blocking counterexample: tools/graph.py path and why do not answer from the same record graph as export and warrant_graph for records held only in a declared source. At tools/graph.py:115-121, repo.report() assesses the source-composed snapshot (warrant/repo.py:63-68), but the resolver immediately reads repo.store.snapshot(), which holds only the local store. A full record ID visibly present in the exported graph is therefore refused as TARGET, while warrant_agent.api.graph accepts that same ID via _assess's source-composed snapshot. .warrant/sources.json is a supported input at M, including in this repository. The two query doors no longer cover one graph. This directly prevents accepting D's path/why requirement at M.
+
+The current tests do not catch this boundary. The fix must resolve against the same frozen composed snapshot used to assess the graph, with regression coverage and a mutant that burns this property. No fix or regression was added to the reviewed worktree. A disposable control tool changed only the resolver to include declared sources (plus the necessary import), and the reproducer passed. This is a localization control, not a proposed production fix or a proof about concurrent source movement.
+
+Verification at M:
+- Checked detached HEAD, origin, and warrant.roadmap due --actor codex --json; D/T/evidence/refs/subject/requires matched the waker. Exact-M MCP context confirmed T pending one roadmap/acceptor attest, no open requirements or challenges.
+- Read docs/AGENT.md, docs/V3.md, docs/REPOSITORY.md, the graph implementation and both adapters, the evidence record dfd280c0839697f533aa3902cdeb02d6f5ff2a31877096563fc93fb71a014a3b (the #502 PR lineage root), the merged code diffs of #481, #491, #502, and commit 1d9a32a699af823d4f402d4865dfd7e9207f0310 moving the shared graph to warrant/graph.py.
+- tests/agent_test.py: 161 ok cases, all passed; MCP SDK available, M01 passed, no SKIP lines. Python was the plugin MCP venv's Python 3.13.
+- tests/tools_test.py: 232 ok cases, all passed. Python was python3.
+- Selected actual harness mutants T124, T136, T321, T322, T323, T324, T325, T326, T327: 9/9 KILLED by their named cases. Harness copied tracked files into disposable Git fixtures under the review work directory; COPY/TMP destinations were redirected there. Initial unversioned copies could not establish a clean baseline; that refused attempt credited no kills. Final run established the baseline and all nine kills. No full mutant matrix or full repository suite was run.
+- Separate processes with PYTHONHASHSEED=1 and 2 produced equal stdout for path, why, frontier, impact, delta, default JSON export and DOT export on a fixed fixture, all exit 0. This is bounded determinism evidence, not universal determinism.
+- warrant.roadmap check: 122 lineages, 0 problems; warrant.claims check: 143 live claims, 0 problems (also rerun after filing).
+
+The stdio client normally launches an older installed server on this machine. Review signing and final readback use a wrapper under the review work directory that imports warrant_agent.mcp_server from M, with the plugin's Python and the same unmodified stdio client. Codex's seed path comes from the existing codex configuration, and repository_config verifies that its public key is bound to codex by M. No seed contents were printed and no other actor signed this verdict.
+
+Reproducer (run from M with Python >=3.11 and cryptography; set TMPDIR to a private review directory; it creates and deletes only disposable test fixtures, and uses the tests' deterministic fixture actors):
+
+```python
+"""Run at the reviewed repository root; all fixtures use TMPDIR."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path.cwd()
+sys.path.insert(0, str(root / 'tests'))
+from world import Repo, git
+from warrant_agent import api
+from warrant_agent.config import Config
+
+r = Repo(git_init=True)
+target = r.entity('alice', 'obligation@1', {'state': 'open', 'statement': 'source only', 'serves': []})
+source_commit = r.commit('source record')
+git(r.root, 'update-ref', 'refs/heads/source', source_commit)
+git(r.root, 'reset', '--hard', 'HEAD~1')
+(r.dot / 'sources.json').write_text(json.dumps({'warrant': 'sources/1', 'sources': [
+    {'name': 'source', 'ref': 'refs/heads/source', 'actors': ['alice']}]}))
+r.commit('declare the source')
+cfg = Config({'agent_api': 'warrant-agent/3', 'workspaces': {'w': {'repo': str(r.root)}}})
+tool = os.environ.get('GRAPH_TEST_TOOL', str(root / 'tools/graph.py'))
+def cli(*args):
+    return subprocess.run([sys.executable, tool, *args], cwd=r.root, capture_output=True, text=True)
+export = cli('export')
+assert export.returncode == 0, export.stderr
+graph = json.loads(export.stdout)['data']
+assert target in {n[0] for n in graph['nodes']}
+assert target not in r.store.snapshot().lines
+failures = []
+for op in ('path', 'why'):
+    agent = api.call(cfg, 'graph', {'workspace': 'w', 'op': op, 'target': target})
+    assert 'ok' in agent, agent
+    got = cli(op, target)
+    print(op, 'exported=True agent=ok CLI_exit=' + str(got.returncode), got.stderr.strip())
+    if got.returncode != 0:
+        failures.append(op)
+    else:
+        assert json.loads(got.stdout)['data'] == agent['ok']['data']
+print(('FAIL F1' if failures else 'ok   F1') + ' CLI path/why must resolve records of the same source-composed graph as export and the agent: ' + str(failures))
+sys.exit(bool(failures))
+```
+
+Observed at M (exit 1):
+```
+path exported=True agent=ok CLI_exit=2 REFUSED TARGET a4cc79ea42db77ccff40ff78afef3744343656b46c9d56f41d3597eeb0e1f7bd names 0 records or blobs
+why exported=True agent=ok CLI_exit=2 REFUSED TARGET a4cc79ea42db77ccff40ff78afef3744343656b46c9d56f41d3597eeb0e1f7bd names 0 records or blobs
+FAIL F1 CLI path/why must resolve records of the same source-composed graph as export and the agent: ['path', 'why']
+```
+
+Observed with the disposable source-aware resolver control (exit 0):
+```
+path exported=True agent=ok CLI_exit=0 
+why exported=True agent=ok CLI_exit=0 
+ok   F1 CLI path/why must resolve records of the same source-composed graph as export and the agent: []
+```
+
+The challenge is based on this source-record resolver defect. A separate exploratory observation about delta omitting effective-version-only movement is not asserted as a second blocking finding, since graph.delta's documented scope names state/reliance/leaf movement. No GitHub CI status, full repository audit, publication, or merge is claimed.
