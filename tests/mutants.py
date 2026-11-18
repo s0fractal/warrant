@@ -450,6 +450,7 @@ MUTANTS = [
     ("T196", "warrant/cli.py", '([] if a.no_mcp else EN.mcp(root))', '(EN.mcp(root) if a.no_mcp else [])', TOOLS, ["IN1", "IN3"]),
     ("T197", "warrant/cli.py", '                         if any(st["roles"].values()) else', '                         if True else', TOOLS, ["IN1"]),
     ("V106", E, ', "unicode": unicodedata.unidata_version}))', '}))', CORE, ["UC1"]),
+    ('T355', 'warrant/graph.py', '        rests = sorted({lineage_of(rep, n["id"]) for n in w["nodes"]} - {None, L})\n', '        rests = list({lineage_of(rep, n["id"]) for n in w["nodes"]} - {None, L})\n', TOOLS, ['DR17c']),
     ('T354', 'tools/graph.py', '        snap, _ = SRC.with_sources(repo.root, repo.store.snapshot(), SRC.config_doc(repo.root))\n', '        snap = repo.store.snapshot()\n', TOOLS, ['SR8']),
     ('G150', 'warrant/gate.py', ', "dispatch_failed": [], "sources": source_tips(b, gh)}', ', "dispatch_failed": []}', GATE, ['RC14']),
     ('G151', 'warrant/gate.py', '        out[x["name"]] = sha if S.hex_of(sha, 40) else None', '        out[x["name"]] = sha', GATE, ['E100']),

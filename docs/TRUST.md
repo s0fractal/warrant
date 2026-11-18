@@ -10,6 +10,12 @@ text is [V3.md](V3.md); the open questions are its §12.
 
 - **Who signed each record.** Every record is signed by an Ed25519 key over its
   id. A line whose signature does not verify is rejected and counts for nothing.
+  One exception, by the reader's choice: a record carried over from Warrant 2
+  (`basis: MIGRATED`, `sig: null`) counts on the word of a migrator the reader's
+  profile names, not on its author's signature (V3.md §9). This repository's
+  store holds 1,446 of them. A reader whose profile names no migrator rejects
+  them; one that names it trusts that migrator for what they say, and the report
+  marks each such record's basis.
 - **What a version needs before it counts.** A version's guard names who must
   attest it (roles, a quorum, a verdict to match, lineages it requires). The
   version is effective only when its guard is met under the reader's profile,
@@ -36,6 +42,10 @@ text is [V3.md](V3.md); the open questions are its §12.
 
 ## What no store can give
 
+- **That this copy is the only one.** A writer can hand two readers two
+  histories, each consistent alone. Equivocation is seen only where both meet:
+  a reader keeps what it accepted before and checks the next copy extends it
+  (`warrant verify --extends`), or compares copies with another reader.
 - **Completeness.** A store cannot show that it holds every record that exists;
   every report says `completeness: UNATTESTED`. A publisher can leave out a
   challenge it received. What is absent is not "there is none".
@@ -64,7 +74,7 @@ text is [V3.md](V3.md); the open questions are its §12.
 | a version that accepts itself | its own actor never meets its guard |
 | an impostor binding a known name to its own key | the reader's own trust; in an overlay a binding the sources disagree on is not admitted |
 | a challenge kept out of the publisher's store | an overlay over the stores the reader chooses |
-| a writer showing two histories | its chain forks, and `warrant status` lists the fork |
+| a writer showing two histories | its chain forks once both are read together, and `warrant status` lists the fork; one history read alone shows none, so a reader must hold what it saw before (its last accepted snapshot, `--extends`, V3.md §16) or read the other copy |
 | a store too large to read | admission limits, refused as RESOURCE_LIMIT, never answered in part |
 | text in a record steering an agent | every answer is marked untrusted; records are data |
 | a store copying another's name | its identity is the root of its rules@1 lineage, signed under its own binding, not its `repository` string |

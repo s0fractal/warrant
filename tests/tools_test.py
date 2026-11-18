@@ -1727,6 +1727,20 @@ def impact_cases():
     check("DR17b impact says when what rests on a lineage was cut at the walk's bound (complete false), not a shorter "
           "list as if whole (Codex 78eb7170)", cut["complete"] is False and len(cut["rests_on_it"]) < 5
           and full["complete"] is True and len(full["rests_on_it"]) == 5, (cut, full))
+    wide = Repo()
+    hub = wide.entity("alice", "obligation@1", {"state": "open", "statement": "the hub", "serves": []})
+    for k in range(8):                             # eight lineages resting on one: a set's order is the hash seed's
+        wide.entity("alice", "obligation@1", {"state": "open", "statement": f"rests {k}", "serves": []}, refs=[hub])
+    row = next(e for e in G.impact(Repo().report(), wide.report())["lineages"] if e["lineage"] == hub)
+    code = ("import json, sys; sys.path[:0] = [%r, %r]; from world import Repo; from warrant import graph as G;"
+            " r = Repo(); print(json.dumps(G.impact(Repo().report(), json.loads(%r))))") % (
+        str(ROOT / "tests"), str(ROOT), json.dumps(wide.report()))
+    runs = {subprocess.run([sys.executable, "-c", code], env=dict(os.environ, PYTHONHASHSEED=str(seed)),
+                           capture_output=True, text=True).stdout for seed in (1, 2, 3)}
+    check("DR17c impact lists what rests on a lineage in one order, its ids sorted, whatever the hash seed: eight "
+          "dependents, three seeds, one answer (Codex cce71f72)",
+          len(row["rests_on_it"]) == 8 and row["rests_on_it"] == sorted(row["rests_on_it"]) and len(runs) == 1
+          and next(iter(runs)).strip(), (row["rests_on_it"], len(runs)))
     check("DR17 a lineage removed by the later report is read in the earlier one, whatever else has its address",
           blob == x and x not in {n[0] for n in rep1["graph"]["nodes"]}
           and isinstance(got, dict) and got["gone"] and got["schema"] == "obligation@1" and got["state"] == "open", got)
