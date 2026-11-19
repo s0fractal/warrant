@@ -1701,61 +1701,61 @@ def orphan_revert_cases():
 
 
 def revert_ci_cases():
-    """The gate's revert pull request whose required workflow never started (the dispatch at its opening failed) is
-    dispatched again by a later run, and one that has a run is not; a pull request of code is never dispatched for
-    (Codex ed9e05dd)."""
+    """The gate's revert whose required check's latest check run is missing, or ended without checking (cancelled and
+    the like), has its workflow dispatched again by a later run; a live, passed or failed latest run is left; the
+    latest is chosen as the check itself chooses it, by check run, so an older success or a re-run hides nothing; a
+    pull request of code or of verdicts is never dispatched for (Codex ed9e05dd, 1f63af34, a7f444b3, ef248b18,
+    7325d8e5)."""
     r, _ = braked_world(1793062800)
     b = GT.Base(r.root, git(r.root, "rev-parse", "HEAD"))
     head, branch = "e" * 40, "gate/revert/7-0123456789ab"
+    req = b.gate["required"]
 
     class Hub:
-        def __init__(self, ran, status="queued", conclusion=None, older=False):
-            self.ran, self.calls, self.status, self.conclusion, self.older = ran, [], status, conclusion, older
+        def __init__(self, *runs):                 # each run: (check run id, workflow run id, status, conclusion)
+            self.runs, self.calls = runs, []
 
         def api(self, path, method="GET", body=None, pages=False):
             self.calls.append((path, method))
             if path.startswith("pulls/"):
                 return {"state": "open", "head": {"sha": head}}
-            if path.startswith("actions/runs?") and "event=" not in path:
-                older = [{"id": 5, "path": w, "head_sha": head, "event": "workflow_dispatch", "status": "completed",
-                          "conclusion": "success"} for w in self.ran if self.older]
-                return {"workflow_runs": older + [{"id": 9, "path": w, "head_sha": head, "event": "workflow_dispatch",
-                                                   "status": self.status, "conclusion": self.conclusion} for w in self.ran]}
             return {"workflow_runs": []} if path.startswith("actions/runs?") else {}
+
+        def checks(self, sha):
+            return {"check_runs": [{"id": cid, "name": c["check"], "head_sha": head, "status": st, "conclusion": co,
+                                    "app": {"slug": GT.ACTIONS_APP}, "check_suite": {"id": 1000 + wid}}
+                                   for c in req for cid, wid, st, co in self.runs],
+                    "workflow_runs": [{"check_suite_id": 1000 + wid, "path": c["workflow"], "head_sha": head}
+                                      for c in req for _, wid, _, _ in self.runs]}
 
         def dispatch(self, workflow, ref):
             self.calls.append(("dispatch", workflow, ref))
     pr = {"number": 8, "head": head, "head_repo": b.repository, "branch": branch}
-    revert = types.SimpleNamespace(pr=pr, facts={"revert": "1" * 40}, shared=[], reasons=[("CHECK_MISSING", "x")])
-    code = types.SimpleNamespace(pr=pr, facts={}, shared=[], reasons=[("CHECK_MISSING", "x")])
-    want = sorted({c["workflow"] for c in b.gate["required"]})
-    verdicts = types.SimpleNamespace(pr=pr, facts={"verdicts": ["v"]}, shared=[], reasons=[("CHECK_MISSING", "x")])
-    none, some, other, carried = Hub([]), Hub(want), Hub([]), Hub([])
-    got = GT.approve_held(b, none, [revert])
-    GT.approve_held(b, some, [revert])
-    GT.approve_held(b, other, [code])
-    GT.approve_held(b, carried, [verdicts])           # a verdicts pull request's CI is the carry's (refresh_verdicts)
-    cancelled, finished = Hub(want, "completed", "cancelled"), Hub(want, "completed", "success")
-    GT.approve_held(b, cancelled, [revert])
-    GT.approve_held(b, finished, [revert])
-    red = types.SimpleNamespace(pr=pr, facts={"revert": "1" * 40}, shared=[], reasons=[("CHECK_RED", "x")])
-    red_cancelled, red_failed = Hub(want, "completed", "cancelled"), Hub(want, "completed", "failure")
-    GT.approve_held(b, red_cancelled, [red])
-    GT.approve_held(b, red_failed, [red])
-    over = Hub(want, "completed", "cancelled", older=True)      # an older success, the latest cancelled
-    GT.approve_held(b, over, [red])
+    as_ = lambda facts, code: types.SimpleNamespace(pr=pr, facts=facts, shared=[], reasons=[(code, "x")])  # noqa: E731
+    revert, red = as_({"revert": "1" * 40}, "CHECK_MISSING"), as_({"revert": "1" * 40}, "CHECK_RED")
+    want = [(w, branch) for w in sorted({c["workflow"] for c in req})]
     sent = lambda h: [c[1:] for c in h.calls if c[0] == "dispatch"]  # noqa: E731
-    check("E103 the gate's revert with no run of a required workflow at its head is dispatched again on its branch; one "
-          "with a live or finished run is not, while a cancelled run stands for none, its check read missing or red; a run "
-          "that failed stays red; each workflow's latest run decides, an older success not hiding a cancelled latest; nor "
-          "is a pull request of code or of verdicts waiting for its checks (Codex ed9e05dd, 1f63af34, a7f444b3, ef248b18)",
-          sent(none) == [(w, branch) for w in want] and want and any("again" in x[1] for x in got)
-          and sent(some) == [] and sent(other) == [] and sent(carried) == []
-          and sent(cancelled) == [(w, branch) for w in want] and sent(finished) == []
-          and sent(red_cancelled) == [(w, branch) for w in want] and sent(red_failed) == []
-          and sent(over) == [(w, branch) for w in want],
-          (sent(none), sent(some), sent(cancelled), sent(red_cancelled), sent(red_failed), got))
-
+    cases = {
+        "none": (Hub(), revert, want),
+        "queued": (Hub((9, 9, "queued", None)), revert, []),
+        "cancelled": (Hub((9, 9, "completed", "cancelled")), red, want),
+        "passed": (Hub((9, 9, "completed", "success")), revert, []),
+        "failed": (Hub((9, 9, "completed", "failure")), red, []),
+        "older success, latest cancelled": (Hub((5, 5, "completed", "success"), (9, 9, "completed", "cancelled")), red, want),
+        "a re-run of an older run cancelled": (Hub((5, 9, "completed", "success"), (12, 5, "completed", "cancelled")), red, want),
+        "an older cancel, latest passed": (Hub((5, 5, "completed", "cancelled"), (9, 9, "completed", "success")), revert, []),
+        "code": (Hub(), as_({}, "CHECK_MISSING"), []),
+        "verdicts": (Hub(), as_({"verdicts": ["v"]}, "CHECK_MISSING"), []),
+    }
+    got = {}
+    for name, (h, a, _) in cases.items():
+        GT.approve_held(b, h, [a])
+        got[name] = sent(h)
+    check("E103 the gate's revert is dispatched again when its required check's latest check run is missing or ended "
+          "without checking (cancelled, an older success or a re-run of an older run hiding nothing), and left when it "
+          "is queued, passed or failed; pull requests of code or of verdicts are not dispatched for (Codex ed9e05dd, "
+          "1f63af34, a7f444b3, ef248b18, 7325d8e5)",
+          want and got == {name: w for name, (_, _, w) in cases.items()}, got)
 
 def rules_cases():
     """Stage 2a (the analysis session's decision for the owner, plan §10.3): the publisher's rules as rules@1 records,

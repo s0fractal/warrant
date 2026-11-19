@@ -610,19 +610,37 @@ def check_reasons(required, checks, head):
     return out
 
 
+def latest_check(c, checks, head):
+    """Required check `c`'s latest check run at `head` from its own workflow (the highest check run id: each attempt,
+    a re-run's included, is a check run of its own), or None: the run check_reasons and checks_completed read."""
+    suites = {w.get("check_suite_id"): w.get("path") for w in checks.get("workflow_runs", [])
+              if isinstance(w, dict) and w.get("head_sha") == head}
+    ours = [r for r in checks.get("check_runs", []) if isinstance(r, dict) and r.get("name") == c["check"]
+            and r.get("head_sha") == head and (r.get("app") or {}).get("slug") == ACTIONS_APP
+            and suites.get((r.get("check_suite") or {}).get("id")) == c["workflow"]]
+    return max(ours, key=lambda r: r.get("id", 0)) if ours else None
+
+
+def stalled(required, checks, head):
+    """The workflows of the required checks whose latest check run at `head` is missing or ended without checking
+    (cancelled, skipped, ...): what the gate's revert dispatches again. Read by the same choice of run as the check
+    itself, so the retry and the gate's reading never disagree (Codex 7325d8e5: a workflow run's id is no attempt's)."""
+    out = set()
+    for c in required:
+        last = latest_check(c, checks, head)
+        if last is None or (last.get("status") == "completed" and last.get("conclusion") in ENDED_WITHOUT_CHECK):
+            out.add(c["workflow"])
+    return sorted(out)
+
+
 def checks_completed(required, checks, head):
     """The time (seconds since the epoch, GitHub's clock) the last of the required checks completed at `head`: of each
     check, its latest run there from its own workflow; None when one has not completed or its time cannot be read."""
-    suites = {w.get("check_suite_id"): w.get("path") for w in checks.get("workflow_runs", [])
-              if isinstance(w, dict) and w.get("head_sha") == head}
     out = 0
     for c in required:
-        ours = [r for r in checks.get("check_runs", []) if isinstance(r, dict) and r.get("name") == c["check"]
-                and r.get("head_sha") == head and (r.get("app") or {}).get("slug") == ACTIONS_APP
-                and suites.get((r.get("check_suite") or {}).get("id")) == c["workflow"]]
-        if not ours:
+        last = latest_check(c, checks, head)
+        if last is None:
             return None
-        last = max(ours, key=lambda r: r.get("id", 0))
         try:
             out = max(out, calendar.timegm(time.strptime(last.get("completed_at") or "", STAMP)))
         except ValueError:
@@ -1517,14 +1535,7 @@ def approve_held(b, gh, found):
             # a cancelled check reads CHECK_RED, not missing (Codex a7f444b3): either way only a workflow with no run that
             # checked something is dispatched again; a run that failed stays red
             if a.facts.get("revert") and codes & {"CHECK_MISSING", "CHECK_RED"}:
-                every = gh.api(f"actions/runs?head_sha={_sha(head)}&per_page=100").get("workflow_runs", [])
-                latest = {}                           # the check reads each workflow's latest run (Codex ef248b18)
-                for w in every:
-                    if w.get("head_sha") == head and isinstance(w.get("id"), int) and w["id"] > latest.get(w.get("path"), {}).get("id", -1):
-                        latest[w.get("path")] = w
-                live = {p for p, w in latest.items()
-                        if not (w.get("status") == "completed" and w.get("conclusion") in ENDED_WITHOUT_CHECK)}
-                for wf in sorted(required - live):
+                for wf in stalled(b.gate["required"], gh.checks(head), head):
                     gh.dispatch(wf, a.pr["branch"])
                     out.append((n, f"dispatched {wf} again on {a.pr['branch']}"))
         except Refused as e:
