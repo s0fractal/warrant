@@ -1,0 +1,151 @@
+Codex roadmap verdict: challenge
+
+Repository: s0fractal/warrant
+Master M: 80840e75b5ff5e01e5508f0e790f34298ffef167
+Obligation D: 954d5396fe6e57e872bf09205f1eb86eedc299fa381e6091c837b35de54c7961
+Closure T: 1addb4481a1e6abe3f52514f78eafadc3433b84cf6f7ffaed0201ee0401aaf1f
+Evidence: eced859fa9b9ab3233806c61fa4c12efdff95f942eb7e41eb8baac6617412276
+Implementation commit: 6f8bb6637fc48ecf57573ef669b9cf7a1efce68b (#572), present at M.
+
+Not done: identifying which waiting acceptance changes the most lineages.
+
+warrant_agent/whatif.py:107-110 ranks every waiting version by transitive graph reach, then simulates only
+order[:limit]. Line 115 sorts the simulated subset by actual changes. A graph citation is not a change of state or
+reliance, so a candidate with many citations can displace the actual maximum. Even limit=12 (NEXT_MAX) cannot recover
+that omitted candidate. The MCP tool exposes this via next=true (warrant_agent/mcp_server.py:253-267).
+
+Counterexample at M: 14 acceptances await bob. Thirteen decoy closures each have three open lineages citing their
+root, and accepting each decoy changes only its own lineage. A fourteenth closure has one already-accepted dependent
+whose guard requires it closed, so accepting the fourteenth changes two lineages. At limits 1, 5 (the default), and
+12 (the maximum), next excludes that fourteenth candidate and returns only candidates with changes=1. A direct
+whatif of the omitted candidate returns count=2. The fixture's records.jsonl bytes are unchanged after all calls.
+
+T explicitly lists the bounded shortlist as a residual; that is honest, but the residual leaves D's unqualified
+promise to identify the acceptance that changes the most unfulfilled. WF2 has only three waiting candidates and
+does not exercise shortlist truncation. This is a roadmap challenge without finding@1, not an acceptance or a PR
+head review. No implementation or regression test was added to the worktree.
+
+Validation at M:
+- Full tests/agent_test.py under the MCP venv: 171 checks passed, including WF1-WF3 and M01; no skips.
+- Repository mutant harness: A223-A227 all killed by their named WF1/WF2 cases (5/5). Copies and fixtures redirected
+  to this review's working directory outside the worktree; mutation definitions and test logic unchanged.
+- python3 -m warrant.roadmap check: 125 lineages, 0 problems.
+- python3 -m warrant.claims check: 143 live claims of docs/V3.md, 0 problems.
+- Checked due --actor codex at M and MCP workspace/read/context. T's guard was PENDING, short one roadmap/acceptor
+  attest, with no open requirements or existing challenges. The default codex frontier exceeded the context byte
+  budget, so context was read with actor=review-context (no roles) to omit that unrelated frontier; this changes
+  no target assessment. The configured signer remains codex with its base-pinned key.
+- Other suites and unrelated mutants were not run. This verdict is bounded to D and T.
+
+Reproduce from M's checkout: save the following script outside the checkout in a review working directory, then
+run with Python 3 having cryptography installed. It uses only deterministic test-fixture keys, never the real store.
+
+```python
+"""Run from M's checkout; fixture keys only, no real-store writes."""
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path.cwd()
+sys.path[:0] = [str(ROOT / "tests"), str(ROOT)]
+from world import Repo
+from warrant_agent import api
+from warrant_agent.config import Config
+
+WORK = Path(__file__).resolve().parent
+r = Repo(base=WORK)
+
+def obligation(name, refs=()):
+    root = r.entity("alice", "obligation@1", {"state": "open", "statement": name, "serves": []}, refs=refs)
+    return root
+
+decoys = []
+for i in range(13):
+    root = obligation(f"decoy {i}")
+    done = r.entity("alice", "obligation@1", {"state": "done", "statement": f"decoy {i}", "serves": []}, lineage=root)
+    decoys.append(done)
+    for j in range(3):
+        obligation(f"citation {i}/{j}", refs=[root])
+
+winner = obligation("winner")
+winner_done = r.entity("alice", "obligation@1", {"state": "done", "statement": "winner", "serves": []}, lineage=winner)
+dependent = obligation("dependent")
+dependent_done = r.entity("alice", "obligation@1", {"state": "done", "statement": "dependent", "serves": []},
+                          lineage=dependent, requires=[winner])
+r.attest("bob", dependent_done)
+cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {"repo": str(r.root)}}})
+before = r.store.file.read_bytes()
+out = {"winner": winner_done}
+for limit in (1, 5, 12):
+    result = api.call(cfg, "next", {"workspace": "w", "actor": "bob", "limit": limit})
+    assert "ok" in result, result
+    result = result["ok"]
+    out[f"limit_{limit}"] = {"waiting": result["waiting"], "rows": len(result["next"]),
+        "max_changes": max(x["changes"] for x in result["next"]),
+        "winner_included": any(x["version"] == winner_done for x in result["next"]),
+        "rests_on_it": sorted(set(x["rests_on_it"] for x in result["next"]))}
+exact = api.call(cfg, "whatif", {"workspace": "w", "actor": "bob", "accept": [winner_done]})
+assert "ok" in exact, exact
+out["winner_exact_changes"] = exact["ok"]["count"]
+out["winner_changed_lineages"] = [x["lineage"] for x in exact["ok"]["changes"]]
+out["store_unchanged"] = before == r.store.file.read_bytes()
+assert out["winner_exact_changes"] == 2, out
+assert all(out[f"limit_{limit}"]["max_changes"] == 1 and not out[f"limit_{limit}"]["winner_included"]
+           for limit in (1, 5, 12)), out
+assert out["store_unchanged"], out
+print(json.dumps(out, indent=2))
+
+```
+
+Observed output:
+```json
+{
+  "winner": "96856304e062b28d2b06dc23e9cd71fee332a8e5518f218e7813cfc243b70225",
+  "limit_1": {
+    "waiting": 14,
+    "rows": 1,
+    "max_changes": 1,
+    "winner_included": false,
+    "rests_on_it": [
+      3
+    ]
+  },
+  "limit_5": {
+    "waiting": 14,
+    "rows": 5,
+    "max_changes": 1,
+    "winner_included": false,
+    "rests_on_it": [
+      3
+    ]
+  },
+  "limit_12": {
+    "waiting": 14,
+    "rows": 12,
+    "max_changes": 1,
+    "winner_included": false,
+    "rests_on_it": [
+      3
+    ]
+  },
+  "winner_exact_changes": 2,
+  "winner_changed_lineages": [
+    "53a1aebd471c7edf98b333f11e1d95ad906c23eb63aaa6299f82d73006c14997",
+    "732113915327d9c49d939c953a5bf653870d90604747d59326b7aa7fbc4c174d"
+  ],
+  "store_unchanged": true
+}
+
+```
+
+Mutant harness output:
+```
+A223 KILLED warrant_agent/whatif.py by tests/agent_test.py ['WF1']
+A225 KILLED warrant_agent/whatif.py by tests/agent_test.py ['WF2']
+A226 KILLED warrant_agent/whatif.py by tests/agent_test.py ['WF2']
+A224 KILLED warrant_agent/whatif.py by tests/agent_test.py ['WF1']
+A227 KILLED warrant_agent/whatif.py by tests/agent_test.py ['WF1']
+5 of 5 killed
+
+```
