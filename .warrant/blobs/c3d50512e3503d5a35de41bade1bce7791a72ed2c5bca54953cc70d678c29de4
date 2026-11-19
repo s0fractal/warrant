@@ -1,0 +1,250 @@
+# Codex roadmap verdict evidence at 2ae7f9c1dffb39fbec160a1a7aae4a65749ff611
+
+D: 49dc6627383f4327154a18fe8d3e2e72ede21a64c5bc3dcb947d10c75ebf7872
+T: 17d314e7d1a738ca5c471f94584e37d5642666a144415ccb65a905e6e08bbf1e
+Actor: codex
+
+## P2: Source commit resolution escapes the aggregate byte bound
+
+T says every byte read is charged to one store_bytes budget. At M, warrant_agent/remote.py:68-78
+fetches each GitHub commits API response with a separate fixed 1 MiB limit, parses it, and returns
+only the SHA. Remote._source at lines 180-187 never charges those response bytes to Remote.budget.
+The remote publisher chooses the declared source refs and can choose the commit's message length.
+This is a bypass of the operator's aggregate limit, not a claim that each individual HTTP read is
+unbounded. Multiple sources repeat the uncharged fetch.
+
+A valid fixture store with one declared source succeeds with store_bytes=6091 after receiving
+71193 bytes. Of those, the resolver response is 65614 bytes (valid JSON with a SHA and a 64 KiB
+commit message). The source's records file is empty. The same fixture with a small SHA-only
+resolver response receives 5630 bytes and succeeds within the same bound.
+
+Expected: account for resolver responses in the same remaining budget before parsing; once an
+answer cannot fit that policy, refuse or report the source unread without reading past its allowed
+budget. Do not silently grant every declared source another 1 MiB outside the configured bound.
+
+The reproduction substitutes only DNS and HTTP transport. The checked-in _checked, _get,
+source_commit, Remote, API, engine and MCP handler execute unchanged. No external endpoint was
+contacted for the counterexample. It is a controlled protocol-input test, not a live GitHub incident.
+
+The transport probe repeats the overflow through warrant_remote over stdio MCP and the supplied
+warrant-mcp-call client, using the source at M. The production signing call uses a separate server
+launcher with no transport substitution.
+
+## Validation
+
+- Verified detached HEAD and origin, clean worktree at M, roadmap due --actor codex, D/T, evidence
+  records for PRs #566 and #568, T's PENDING guard with no open requirements, and codex's roles/key.
+- Read docs/AGENT.md, docs/V3.md, docs/REPOSITORY.md, implementation, tests, mutants and merged
+  commits 6d81c9872960a159d900246dd9db6965b82fc720, cb93356d33b9971414a1076ab3a19bb15eae1c07,
+  and 5e1a88020120d66052735088f1560b3c7ba1d902.
+- Full tests/agent_test.py under Python 3.13.15: 168 cases passed, no skips, including MCP M01/M02
+  and remote RE1-RE7. Mutants A212-A222: 11/11 killed. Existing RE6 replaces source_commit with a
+  lambda, so it does not exercise the uncharged commits API response.
+- roadmap check: 123 lineages, 0 problems; claims check: 143 live claims, 0 problems (before verdict).
+- No broader repository suite or live performance claim is made. No code was changed.
+
+## Reproduction
+
+From the exact M checkout with the MCP Python (cryptography and MCP SDK installed), save the
+following scripts together in one review directory outside the checkout. Set TMPDIR to a directory
+inside it. Run counterexamples.py from the checkout root. The budget assertion verifies the defect;
+it is not a new passing regression check or a proposed patch. The M source and tests stay unchanged.
+The script also records a separate source-404 observation: after resolving a source, a missing records
+file aborts the whole read with NOT_FOUND rather than listing it in sources_not_read. The verdict's
+blocking reason is the demonstrated byte-budget bypass.
+
+```python
+import io
+import json
+import sys
+from unittest.mock import patch
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / "tests"))
+from world import Repo
+from warrant_agent import api
+from warrant_agent.config import Config
+from warrant_agent import remote as RM
+from warrant_agent.errors import AgentError
+import urllib.error
+
+r = Repo()
+r.entity("alice", "obligation@1", {"state": "open", "statement": "remote obligation", "serves": []})
+base = "https://raw.githubusercontent.com/example/remote/main/"
+sha = "ab" * 20
+source_base = "https://raw.githubusercontent.com/example/remote/" + sha + "/"
+ref = "refs/heads/stores/checker"
+resolver = "https://api.github.com/repos/example/remote/commits/" + ref
+receiver = (r.dot / "v3.json").read_bytes()
+records = (r.dot / "records.jsonl").read_bytes()
+sources = json.dumps({"warrant": "sources/1", "sources": [{"name": "checker", "ref": ref, "actors": ["carol"]}]}).encode()
+resolve_bytes = json.dumps({"sha": sha, "commit": {"message": "x" * 65536}}).encode()
+files = {base + ".warrant/v3.json": receiver, base + ".warrant/records.jsonl": records,
+         base + ".warrant/sources.json": sources, resolver: resolve_bytes,
+         source_base + ".warrant/records.jsonl": b""}
+bound = len(receiver) + len(records) + len(sources) + 512
+cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"me": {"repo": str(r.root), "limits": {"store_bytes": bound}}}})
+read_log = []
+class Reply(io.BytesIO):
+    def __init__(self, url, data):
+        super().__init__(data)
+        self.url = url
+    def read(self, count=-1):
+        data = super().read(count)
+        read_log.append({"url": self.url, "requested": count, "received": len(data)})
+        return data
+class Transport:
+    def open(self, request, timeout=None):
+        url = request.full_url
+        if url not in files:
+            raise urllib.error.HTTPError(url, 404, "missing", {}, None)
+        return Reply(url, files[url])
+
+with patch.object(RM.urllib.request, "build_opener", return_value=Transport()), patch.object(RM.socket, "getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 443))]):
+    result = api.call(cfg, "remote", {"url": base, "op": "status"})
+    budget_case = {"store_bytes": bound, "actual_response_bytes": sum(x["received"] for x in read_log),
+                   "read_log": list(read_log), "result": result}
+    print("BUDGET " + json.dumps(budget_case, sort_keys=True))
+    assert "ok" in result and budget_case["actual_response_bytes"] > bound
+    read_log.clear()
+    files[resolver] = json.dumps({"sha": sha}).encode()
+    control = api.call(cfg, "remote", {"url": base, "op": "status"})
+    control_case = {"store_bytes": bound, "actual_response_bytes": sum(x["received"] for x in read_log), "succeeded": "ok" in control}
+    print("CONTROL " + json.dumps(control_case, sort_keys=True))
+    assert "ok" in control and control_case["actual_response_bytes"] <= bound
+    del files[source_base + ".warrant/records.jsonl"]
+    missing = api.call(cfg, "remote", {"url": base, "op": "status"})
+    print("MISSING_SOURCE " + json.dumps(missing, sort_keys=True))
+    assert missing.get("error") == "NOT_FOUND"
+```
+
+API output:
+
+```text
+BUDGET {"actual_response_bytes": 71193, "read_log": [{"received": 898, "requested": 6092, "url": "https://raw.githubusercontent.com/example/remote/main/.warrant/v3.json"}, {"received": 4566, "requested": 5194, "url": "https://raw.githubusercontent.com/example/remote/main/.warrant/records.jsonl"}, {"received": 115, "requested": 628, "url": "https://raw.githubusercontent.com/example/remote/main/.warrant/sources.json"}, {"received": 65614, "requested": 1048577, "url": "https://api.github.com/repos/example/remote/commits/refs/heads/stores/checker"}, {"received": 0, "requested": 513, "url": "https://raw.githubusercontent.com/example/remote/abababababababababababababababababababab/.warrant/records.jsonl"}], "result": {"ok": {"adapter": "4824a57f970e4986359ace48863bb1695c14c5ca36632c21308d9a39b80e07b7", "agent_api": "warrant-agent/3", "as_of": 1800000006, "assessment": "7772e3bfa6e8fabdf23e6711bb5e9a7ea9c75b2ad2b46a21472f820d8b22fd6b", "basis": {"MIGRATED": 0, "SIGNED": 6}, "canonical": true, "challenges_standing": 0, "code": "7606ea7094c8b3728d7bc96b8125b41d3316fdebad96fbfbe344db6f5e9ee8cb", "completeness": "UNATTESTED", "identity": {"identity": null, "why": "no rules@1 genesis: the store is named only by where it is read"}, "lineages": {"obligation@1 open": 1}, "problems": 0, "profile": "29ebae39ddd49f341d962cd95086621105afc198f3895ee30d5e65fa32ea9a50", "records": 6, "rejected": 0, "reliance": {"ELIGIBLE": 1}, "repository": "s0fractal/warrant", "snapshot": "d2f62a68be2ab2718ca8bce42eda869387192fd0efd2de3acafb65dd5d1187d4", "sources": [{"commit": "abababababababababababababababababababab", "left_out": 0, "name": "checker", "records": 0, "ref": "refs/heads/stores/checker"}], "sources_not_read": [], "trust": "177f151242ed377923122cd44a305f5cfd0795204e4c45eb1280c94daab50ec3", "trusted": ["alice", "bob", "carol", "dave", "eve"], "under": null, "url": "https://raw.githubusercontent.com/example/remote/main/"}}, "store_bytes": 6091}
+CONTROL {"actual_response_bytes": 5630, "store_bytes": 6091, "succeeded": true}
+MISSING_SOURCE {"error": "NOT_FOUND", "message": "https://raw.githubusercontent.com/example/remote/abababababababababababababababababababab/.warrant/records.jsonl: HTTP 404"}
+```
+
+## MCP transport probe
+
+The following executable server wrapper is an observed-run harness with absolute paths for this
+review. For a relocated reproduction, update its checkout/review paths and interpreter, and pass it
+as WARRANT_AGENT_MCP to warrant-mcp-call with --config <review>/transport-config.json and the
+request remote '{"url":"https://raw.githubusercontent.com/example/remote/main/","op":"status"}'.
+
+```python
+#!/Users/s0fractal/.warrant/codex-mcp/bin/python
+import contextlib
+import io
+import json
+import runpy
+import sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, '/Users/s0fractal/Projects/.worktrees/codex-review/accept-17d314e7d1a7-0-2ae7f9c1dffb')
+root = Path('/Users/s0fractal/.warrant/work/codex/17d314e7d1a7')
+with contextlib.redirect_stdout(io.StringIO()):
+    n = runpy.run_path(str(root / "counterexamples.py"))
+n["files"][n["source_base"] + ".warrant/records.jsonl"] = b""
+n["files"][n["resolver"]] = n["resolve_bytes"]
+n["read_log"].clear()
+(root / "transport-config.json").write_text(json.dumps({"agent_api": "warrant-agent/3", "workspaces": {"me": {"repo": str(n["r"].root), "limits": {"store_bytes": n["bound"]}}}}))
+from warrant_agent.mcp_server import main
+RM = n["RM"]
+try:
+    with patch.object(RM.urllib.request, "build_opener", return_value=n["Transport"]()), patch.object(RM.socket, "getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 443))]):
+        main()
+finally:
+    (root / "mcp-transport-bytes.json").write_text(json.dumps({"store_bytes": n["bound"], "actual_response_bytes": sum(x["received"] for x in n["read_log"]), "read_log": n["read_log"]}, indent=1))
+```
+
+MCP transport accounting:
+
+```json
+{
+ "store_bytes": 6091,
+ "actual_response_bytes": 71193,
+ "read_log": [
+  {
+   "url": "https://raw.githubusercontent.com/example/remote/main/.warrant/v3.json",
+   "requested": 6092,
+   "received": 898
+  },
+  {
+   "url": "https://raw.githubusercontent.com/example/remote/main/.warrant/records.jsonl",
+   "requested": 5194,
+   "received": 4566
+  },
+  {
+   "url": "https://raw.githubusercontent.com/example/remote/main/.warrant/sources.json",
+   "requested": 628,
+   "received": 115
+  },
+  {
+   "url": "https://api.github.com/repos/example/remote/commits/refs/heads/stores/checker",
+   "requested": 1048577,
+   "received": 65614
+  },
+  {
+   "url": "https://raw.githubusercontent.com/example/remote/abababababababababababababababababababab/.warrant/records.jsonl",
+   "requested": 513,
+   "received": 0
+  }
+ ]
+}
+```
+
+Successful MCP result:
+
+```json
+{
+ "assessment": "7772e3bfa6e8fabdf23e6711bb5e9a7ea9c75b2ad2b46a21472f820d8b22fd6b",
+ "snapshot": "d2f62a68be2ab2718ca8bce42eda869387192fd0efd2de3acafb65dd5d1187d4",
+ "trust": "177f151242ed377923122cd44a305f5cfd0795204e4c45eb1280c94daab50ec3",
+ "profile": "29ebae39ddd49f341d962cd95086621105afc198f3895ee30d5e65fa32ea9a50",
+ "as_of": 1800000006,
+ "code": "7606ea7094c8b3728d7bc96b8125b41d3316fdebad96fbfbe344db6f5e9ee8cb",
+ "completeness": "UNATTESTED",
+ "canonical": true,
+ "basis": {
+  "SIGNED": 6,
+  "MIGRATED": 0
+ },
+ "adapter": "4824a57f970e4986359ace48863bb1695c14c5ca36632c21308d9a39b80e07b7",
+ "agent_api": "warrant-agent/3",
+ "rejected": 0,
+ "problems": 0,
+ "url": "https://raw.githubusercontent.com/example/remote/main/",
+ "under": null,
+ "repository": "s0fractal/warrant",
+ "identity": {
+  "identity": null,
+  "why": "no rules@1 genesis: the store is named only by where it is read"
+ },
+ "records": 6,
+ "lineages": {
+  "obligation@1 open": 1
+ },
+ "reliance": {
+  "ELIGIBLE": 1
+ },
+ "challenges_standing": 0,
+ "trusted": [
+  "alice",
+  "bob",
+  "carol",
+  "dave",
+  "eve"
+ ],
+ "sources": [
+  {
+   "name": "checker",
+   "ref": "refs/heads/stores/checker",
+   "commit": "abababababababababababababababababababab",
+   "records": 0,
+   "left_out": 0
+  }
+ ],
+ "sources_not_read": []
+}
+```
