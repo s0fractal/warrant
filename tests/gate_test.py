@@ -1736,13 +1736,20 @@ def revert_ci_cases():
     cancelled, finished = Hub(want, "completed", "cancelled"), Hub(want, "completed", "success")
     GT.approve_held(b, cancelled, [revert])
     GT.approve_held(b, finished, [revert])
+    red = types.SimpleNamespace(pr=pr, facts={"revert": "1" * 40}, shared=[], reasons=[("CHECK_RED", "x")])
+    red_cancelled, red_failed = Hub(want, "completed", "cancelled"), Hub(want, "completed", "failure")
+    GT.approve_held(b, red_cancelled, [red])
+    GT.approve_held(b, red_failed, [red])
     sent = lambda h: [c[1:] for c in h.calls if c[0] == "dispatch"]  # noqa: E731
     check("E103 the gate's revert with no run of a required workflow at its head is dispatched again on its branch; one "
-          "with a live or finished run is not, while a cancelled run stands for none; nor is a pull request of code or of "
-          "verdicts waiting for its checks (Codex ed9e05dd, 1f63af34)",
+          "with a live or finished run is not, while a cancelled run stands for none, its check read missing or red; a run "
+          "that failed stays red; nor is a pull request of code or of verdicts waiting for its checks (Codex ed9e05dd, "
+          "1f63af34, a7f444b3)",
           sent(none) == [(w, branch) for w in want] and want and any("again" in x[1] for x in got)
           and sent(some) == [] and sent(other) == [] and sent(carried) == []
-          and sent(cancelled) == [(w, branch) for w in want] and sent(finished) == [], (sent(none), sent(some), sent(cancelled), got))
+          and sent(cancelled) == [(w, branch) for w in want] and sent(finished) == []
+          and sent(red_cancelled) == [(w, branch) for w in want] and sent(red_failed) == [],
+          (sent(none), sent(some), sent(cancelled), sent(red_cancelled), sent(red_failed), got))
 
 
 def rules_cases():
