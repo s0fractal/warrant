@@ -1,0 +1,167 @@
+P2: an older successful workflow masks the latest cancelled check of the gate's exact veto revert
+
+Review actor: codex
+Repository: s0fractal/warrant
+Base M: 07c2de381fdec50a0fff8b92bb87262d7df0bb46
+Base tree: 7e45c3a5116fcac518d46af74fe571a7c93bed06
+Obligation D: 549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f
+Closure T: 95038b7ea976424fcbf3bafbb098e0807d8d5d6796ded560df19dcb266c9fd21
+
+What remains undone
+
+T says the cancelled-run retry is repaired by #558 and #560. At M, approve_held (warrant/gate.py:1519-1524) still builds `live` from ANY earlier run at the same head whose conclusion is not in ENDED_WITHOUT_CHECK. An old successful run therefore marks the workflow live even when its newer run completed as cancelled. check_reasons (warrant/gate.py:589-610) instead reads the latest required check by id and returns CHECK_RED for that cancelled run. The gate neither merges the exact revert nor dispatches its required workflow again. enforce_brakes (warrant/gate.py:1572-1593) also skips it as pending. Every subsequent run with those same inputs remains stuck; the timely hold-label veto is not carried through to a revert merge.
+
+Counterexample and controls
+
+The probe uses the current repository's signed fixture store and real Git trees, creates a braked merge of AGENTS.md and its exact revert on the gate's own branch, and runs the actual assess, enforce_brakes and approve_held functions. The stub returns the hold label for the original merged PR. The required workflow has two workflow_dispatch runs at the same revert head: id 1 success and id 2 cancelled, returned newest first. Matching check runs have the same order and suite bindings. This is synthetic API data, not a claim that this incident occurred on GitHub.
+
+Observed: exact_revert=true, codes=[CHECK_RED], enforce_brakes=[], retry=[], dispatch=[].
+Expected: the cancelled latest required check must be recoverable automatically despite the older success. Align retry selection with the check/run that currently blocks merging, or consistently permit reuse of the prior success; it must not remain CHECK_RED while a historical success suppresses recovery. Keep the failed-run guard and current-head checks.
+
+Controls: success alone is eligible and dispatches nothing; cancelled alone is CHECK_RED and dispatches ci.yml once. Thus the reproducer isolates the historical-success suppression and is not a test that demands re-running a failed suite.
+
+Validation and scope
+
+- Re-resolved HEAD and origin; `python3 -m warrant.roadmap due --actor codex --json` at M exactly matched D/T, evidence, references and empty requires/subject.
+- MCP workspace confirms signer codex, roadmap/acceptor, zero store problems/rejections. Target context confirms T waits only for one roadmap acceptance. Context used actor s0fractal solely to bound the returned frontier after codex's frontier exceeded the result limit; the signer is codex throughout.
+- Read the five-path diff 9e183284..8278d4a3, current gate and affected regression tests/mutants, and all 13 cited PR descriptions/merge metadata. All named PRs are merged. Their recorded reviewed commits are ancestors of M; #350's three recorded head versions have no acceptance in this store.
+- `python3 tests/gate_test.py`: 121 passed, zero failed, exit 0.
+- Official tests/mutants.py harness, G157 G158 G159 G160 G161: 5/5 KILLED on E103, with clean section baselines. COPY/TMP were redirected to the review work directory; source and mutant definitions unchanged. No claim about the full mutant matrix.
+- `python3 -m warrant.roadmap check`: 122 lineages, zero problems.
+- `python3 -m warrant.claims check`: 143 live claims, zero problems.
+- Independent probe below: exit 1 on its intended FAIL F1. Both positive controls passed. No repository source/test edit, network mutation, commit, push or PR creation was performed.
+- This is a challenge of the roadmap closure, not finding@1 on a PR head. A repair belongs in an ordinary PR under the current constitutional gate order. Other suites and live GitHub mutation/recovery were not executed.
+
+Runnable probe
+
+Save the following as revert_retry_history_probe.py outside the checkout; from M's repository root, run it with Python 3 and TMPDIR pointing to a private working directory. It imports only the existing test fixtures and package; it does not write the checkout.
+
+```python
+"""Unsigned regression probe at M: an old successful run masks a later cancelled run.
+
+Run from the repository root, with TMPDIR in this review's work directory.
+"""
+import copy
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path.cwd() / "tests"))
+from gate_test import GT, REPO, braked_world, git, green
+
+
+def main():
+    until = 1793062800
+    r, version = braked_world(until)
+    base = git(r.root, "rev-parse", "HEAD")
+    branch = f"gate/revert/7-{base[:12]}"
+    git(r.root, "checkout", "-q", "-b", branch)
+    (r.root / "AGENTS.md").write_text("original rules\n")
+    head = r.commit(f"Revert #7\n\nwarrant-gate revert of {base}")
+    b = GT.Base(r.root, base)
+    pr = {"number": 8, "state": "open", "draft": False, "base": "master", "head": head,
+          "labels": [], "branch": branch, "head_repo": REPO, "author": "github-actions[bot]"}
+    wf = b.gate["required"][0]["workflow"]
+
+    def checks(history):
+        c = green(head)
+        template = c["check_runs"][0]
+        c["check_runs"] = [dict(template, id=i, check_suite={"id": i}, conclusion=conclusion)
+                           for i, conclusion in history]
+        c["workflow_runs"] = [{"id": i, "check_suite_id": i, "path": wf, "head_sha": head,
+                               "status": "completed", "conclusion": conclusion,
+                               "event": "workflow_dispatch"} for i, conclusion in history]
+        return c
+
+    class Hub:
+        def __init__(self, c):
+            self.c, self.sent = c, []
+
+        def api(self, path, method="GET", body=None, pages=False):
+            if path == "pulls/8":
+                return {"state": "open", "head": {"sha": head}}
+            if path.startswith("actions/runs?"):
+                return {"workflow_runs": [] if "event=" in path else self.c["workflow_runs"]}
+            raise AssertionError((path, method))
+
+        def pull(self, n):
+            return {"labels": ["hold"]}
+
+        def dispatch(self, workflow, ref):
+            self.sent.append([workflow, ref])
+
+    out = {}
+    for name, history in [("success_only", [(1, "success")]),
+                          ("cancelled_only", [(2, "cancelled")]),
+                          ("old_success_then_cancelled", [(2, "cancelled"), (1, "success")])]:
+        c = checks(history)
+        a = GT.assess(r.root, b, pr, c)
+        hub = Hub(c)
+        pending = GT.enforce_brakes(r.root, b, hub, [a], now=until - 1)
+        retry = GT.approve_held(b, hub, [a])
+        out[name] = {"eligible": a.eligible, "codes": a.codes(), "exact_revert": a.facts.get("revert") == base,
+                     "new_revert": pending, "retry": retry, "dispatch": hub.sent}
+    print(json.dumps(out, indent=2))
+    assert out["success_only"]["eligible"] and out["success_only"]["dispatch"] == []
+    assert out["cancelled_only"]["codes"] == ["CHECK_RED"]
+    assert out["cancelled_only"]["dispatch"] == [[wf, branch]]
+    got = out["old_success_then_cancelled"]
+    assert got["exact_revert"] and got["codes"] == ["CHECK_RED"] and got["new_revert"] == []
+    if got["dispatch"] != [[wf, branch]]:
+        print("FAIL F1 an older successful workflow suppresses retry of the latest cancelled required check; "
+              "the exact veto revert stays CHECK_RED and is also skipped as already pending")
+        return 1
+    print("ok   F1 latest cancelled check is retried despite an older successful run")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+```
+
+Exact probe output (exit 1)
+
+```text
+{
+  "success_only": {
+    "eligible": true,
+    "codes": [],
+    "exact_revert": true,
+    "new_revert": [],
+    "retry": [],
+    "dispatch": []
+  },
+  "cancelled_only": {
+    "eligible": false,
+    "codes": [
+      "CHECK_RED"
+    ],
+    "exact_revert": true,
+    "new_revert": [],
+    "retry": [
+      [
+        8,
+        "dispatched .github/workflows/ci.yml again on gate/revert/7-68700ba06fdf"
+      ]
+    ],
+    "dispatch": [
+      [
+        ".github/workflows/ci.yml",
+        "gate/revert/7-68700ba06fdf"
+      ]
+    ]
+  },
+  "old_success_then_cancelled": {
+    "eligible": false,
+    "codes": [
+      "CHECK_RED"
+    ],
+    "exact_revert": true,
+    "new_revert": [],
+    "retry": [],
+    "dispatch": []
+  }
+}
+FAIL F1 an older successful workflow suppresses retry of the latest cancelled required check; the exact veto revert stays CHECK_RED and is also skipped as already pending
+```
