@@ -1,0 +1,434 @@
+{
+  "D": "49dc6627383f4327154a18fe8d3e2e72ede21a64c5bc3dcb947d10c75ebf7872",
+  "M": "4df1ab82c228adb5cb66fb0511c34c331f871710",
+  "T": "53e327ab217cd7398734235ed08febb90439d50e96d5ebceab12ce4d4aa5fec1",
+  "actor": "codex",
+  "additional_bound_counterexample": {
+    "expected": "Apply the configured result budget to status, as to the other remote readers.",
+    "observed": "With context_bytes=128, MCP remote status returns a 1033-byte structured result successfully; remote find with the same bound refuses with RESOURCE_LIMIT.",
+    "where": [
+      "warrant_agent/remote.py:228"
+    ]
+  },
+  "blocking_counterexamples": [
+    {
+      "cause": "The root records are fetched against the full budget but never spent from it. Migration maps and source records then get that same budget again.",
+      "expected": "Charge every fetched store record and migration-map byte to the shared bound and refuse an over-budget store before assessment.",
+      "observed": "The MCP status call succeeds for 5326 bytes of records plus a 150-byte migration map (5476 total) with store_bytes=5327. The local workspace reader refuses exactly the same store with RESOURCE_LIMIT.",
+      "where": [
+        "warrant_agent/remote.py:134",
+        "warrant_agent/remote.py:135",
+        "warrant_agent/remote.py:138",
+        "warrant_agent/remote.py:160"
+      ]
+    },
+    {
+      "cause": "Migration-map discovery dereferences an unvalidated record before Snapshot can reject the bad line.",
+      "expected": "Skip malformed envelopes during map discovery and let the store reader report rejection without aborting the read.",
+      "observed": "Appending the line {\"record\":null} to a readable store makes remote status raise AttributeError in the API and return the generic MCP internal tool error. A local read still succeeds, counting that malformed line as rejected.",
+      "where": [
+        "warrant_agent/remote.py:47",
+        "warrant_agent/remote.py:50",
+        "warrant_agent/remote.py:51",
+        "warrant_agent/remote.py:137"
+      ]
+    }
+  ],
+  "reproduction": {
+    "instructions": "Save reproduction_source as probe_remote.py in a writable review directory outside the checkout. From a checkout of M run TMPDIR=<that directory> <Python with cryptography and mcp installed> <that directory>/probe_remote.py. The script serves only a test fixture on an explicitly operator-allowed loopback host and launches the checkout MCP server over stdio. It makes no production-store or key changes.",
+    "reproduction_source": "import asyncio\nimport functools\nimport http.server\nimport json\nimport os\nimport sys\nimport threading\nfrom pathlib import Path\n\nROOT = Path.cwd()\nsys.path[:0] = [str(ROOT), str(ROOT / \"tests\")]\nfrom world import Repo\nfrom warrant import records as R\nfrom warrant.jcs import canon\nfrom warrant_agent import api\nfrom warrant_agent.config import Config\nfrom mcp import ClientSession\nfrom mcp.client.stdio import StdioServerParameters, stdio_client\n\nWORK = Path(__file__).resolve().parent\nr = Repo(base=WORK, roles={\"schema/author\": [\"alice\"], \"roadmap/acceptor\": [\"bob\"], \"migrator\": [\"carol\"]})\no = r.entity(\"alice\", \"obligation@1\", {\"state\": \"open\", \"statement\": \"bounded remote fixture\", \"serves\": []})\nold, line = R.line(R.record(\"entity\", \"dave\", 5, {\"state\": \"open\", \"statement\": \"carried over\", \"serves\": []}, \"obligation@1\"), None)\nr.store.add_lines([line])\nh = r.store.put_blob(canon({\"map\": [[old, [\"11\" * 32], []]]}))\nr.put(\"carol\", \"attest\", {\"target\": h, \"verdict\": \"migrated\"}, R.MIGRATION, refs=[h])\nrecords = (r.dot / \"records.jsonl\").read_bytes()\nblob_size = (r.dot / \"blobs\" / h).stat().st_size\nclass Quiet(http.server.SimpleHTTPRequestHandler):\n    def log_message(self, *args):\n        pass\nsrv = http.server.ThreadingHTTPServer((\"127.0.0.1\", 0), functools.partial(Quiet, directory=str(r.root)))\nthreading.Thread(target=srv.serve_forever, daemon=True).start()\nurl = f\"http://127.0.0.1:{srv.server_address[1]}/\"\nlimit = len(records) + 1\nbase_doc = {\"agent_api\": \"warrant-agent/3\", \"remote\": {\"allow_hosts\": [\"127.0.0.1\"]},\n            \"workspaces\": {\"me\": {\"repo\": str(r.root), \"limits\": {\"store_bytes\": limit}}}}\nconfig = WORK / \"probe-config.json\"\nconfig.write_text(json.dumps(base_doc))\n\nasync def mcp_call(request):\n    params = StdioServerParameters(command=sys.executable,\n                                  args=[\"-m\", \"warrant_agent.mcp_server\", \"--config\", str(config)],\n                                  env=dict(os.environ, PYTHONPATH=str(ROOT)))\n    async with stdio_client(params) as (rd, wr):\n        async with ClientSession(rd, wr) as session:\n            await session.initialize()\n            result = await session.call_tool(\"warrant_remote\", request)\n            return {\"is_error\": result.is_error, \"structured\": result.structured_content,\n                    \"text\": [getattr(x, \"text\", \"\") for x in result.content]}\n\nout = {\"commit\": \"4df1ab82c228adb5cb66fb0511c34c331f871710\", \"record_bytes\": len(records),\n       \"migration_map_bytes\": blob_size, \"total_store_bytes\": len(records)+blob_size, \"store_bytes_limit\": limit}\ntry:\n    req = {\"url\": url, \"op\": \"status\"}\n    out[\"over_budget_api\"] = api.call(Config(base_doc), \"remote\", req)\n    out[\"over_budget_mcp\"] = asyncio.run(mcp_call(req))\n    out[\"local_budget_control\"] = api.call(Config(base_doc), \"workspace\", {\"workspace\": \"me\"})\n    base_doc[\"workspaces\"][\"me\"][\"limits\"] = {\"context_bytes\": 128}\n    config.write_text(json.dumps(base_doc))\n    out[\"tiny_output_status_mcp\"] = asyncio.run(mcp_call(req))\n    out[\"tiny_output_find_control\"] = api.call(Config(base_doc), \"remote\", {\"url\": url, \"op\": \"find\"})\n    base_doc[\"workspaces\"][\"me\"][\"limits\"] = {}\n    config.write_text(json.dumps(base_doc))\n    (r.dot / \"records.jsonl\").write_bytes(records + b'{\"record\":null}\\n')\n    out[\"malformed_mcp\"] = asyncio.run(mcp_call(req))\n    try:\n        out[\"malformed_api\"] = api.call(Config(base_doc), \"remote\", req)\n    except Exception as exc:\n        out[\"malformed_api\"] = {\"exception\": type(exc).__name__, \"message\": str(exc)}\n    out[\"malformed_local_control\"] = api.call(Config(base_doc), \"workspace\", {\"workspace\": \"me\"})\nfinally:\n    srv.shutdown()\n(WORK / \"probe-results.json\").write_text(json.dumps(out, indent=2))\nfor name, value in out.items():\n    if name.endswith(\"mcp\"):\n        structured = value.get(\"structured\") or {}\n        print(name, json.dumps({\"is_error\": value[\"is_error\"], \"records\": structured.get(\"records\"),\n                               \"result_bytes\": len(json.dumps(structured).encode()), \"text\": value[\"text\"] if value[\"is_error\"] else None}))\n    elif name.endswith(\"api\") or name.endswith(\"control\"):\n        print(name, json.dumps(value)[:400])\n    else:\n        print(name, value)\n",
+    "results": {
+      "commit": "4df1ab82c228adb5cb66fb0511c34c331f871710",
+      "local_budget_control": {
+        "error": "RESOURCE_LIMIT",
+        "message": "the store holds 5476 bytes; this workspace admits 5327"
+      },
+      "malformed_api": {
+        "exception": "AttributeError",
+        "message": "'NoneType' object has no attribute 'get'"
+      },
+      "malformed_local_control": {
+        "ok": {
+          "workspaces": [
+            {
+              "adapter": "c47c7d05288b7fe0e0bf1ea35c3f26c4de750b672a96e26f93fe91e8815f884f",
+              "agent_api": "warrant-agent/3",
+              "as_of": 1800000007,
+              "assessment": "13b64d513a66c0476549dc174b653befbcfc92ba2c247f8f3ebe62777eda75f6",
+              "basis": {
+                "MIGRATED": 1,
+                "SIGNED": 7
+              },
+              "canonical": false,
+              "code": "7606ea7094c8b3728d7bc96b8125b41d3316fdebad96fbfbe344db6f5e9ee8cb",
+              "completeness": "UNATTESTED",
+              "lineages": {
+                "obligation@1 open": 2
+              },
+              "operations": [
+                "commit",
+                "context",
+                "explain",
+                "graph",
+                "handoff",
+                "prepare",
+                "read",
+                "workspace"
+              ],
+              "problems": 0,
+              "profile": "75fa05a4a2d433b9c654e31bbc6cad44cc5a607091e26ce74ec9f3ed873f751b",
+              "rejected": 1,
+              "roles": [],
+              "schemas": {
+                "claim@1": "1d013886e323a241a295593f6c9aca6c3d8dd8acd91c34bc950dd804e5b2d268",
+                "finding@1": "df5e9b7a684b1d24b120b2d46699dfffcc5b944aa3c120b1b38bc1931bd650e6",
+                "goal@1": "7f82b32cb613835a636a4e9cca53f42b993781b3165cb2a20dfd1f04954e8310",
+                "obligation@1": "9f348763d11aafb03f87a8c3a6fdaf2f9394572420c97e3d36714129dd232078",
+                "pr-head@1": "edd74312aa3df52b586eecd0d66f703c6d27024f4b73e5828caafc19f0382f0f"
+              },
+              "signer": null,
+              "snapshot": "035e89499fde23c5b43857a58f0a969d0d7087a8b7e35e6d375f0fce1d549e43",
+              "trust": "177f151242ed377923122cd44a305f5cfd0795204e4c45eb1280c94daab50ec3",
+              "workspace": "me"
+            }
+          ]
+        }
+      },
+      "malformed_mcp": {
+        "is_error": true,
+        "structured": null,
+        "text": [
+          "Error executing tool warrant_remote"
+        ]
+      },
+      "migration_map_bytes": 150,
+      "over_budget_api": {
+        "ok": {
+          "adapter": "c47c7d05288b7fe0e0bf1ea35c3f26c4de750b672a96e26f93fe91e8815f884f",
+          "agent_api": "warrant-agent/3",
+          "as_of": 1800000007,
+          "assessment": "b18fbb77b72117be34c11e4327ccab16e9807d3c6ef90690d32e70f74bc55d5c",
+          "basis": {
+            "MIGRATED": 1,
+            "SIGNED": 7
+          },
+          "canonical": true,
+          "challenges_standing": 0,
+          "code": "7606ea7094c8b3728d7bc96b8125b41d3316fdebad96fbfbe344db6f5e9ee8cb",
+          "completeness": "UNATTESTED",
+          "identity": {
+            "identity": null,
+            "why": "no rules@1 genesis: the store is named only by where it is read"
+          },
+          "lineages": {
+            "obligation@1 open": 2
+          },
+          "problems": 0,
+          "profile": "75fa05a4a2d433b9c654e31bbc6cad44cc5a607091e26ce74ec9f3ed873f751b",
+          "records": 8,
+          "rejected": 0,
+          "reliance": {
+            "ELIGIBLE": 2
+          },
+          "repository": "s0fractal/warrant",
+          "snapshot": "4dab8a5a5ad95c07627967cda4d4022d855c0c5d1e0f797f92c2fa14a457dab7",
+          "sources": [],
+          "sources_not_read": [],
+          "trust": "177f151242ed377923122cd44a305f5cfd0795204e4c45eb1280c94daab50ec3",
+          "trusted": [
+            "alice",
+            "bob",
+            "carol",
+            "dave",
+            "eve"
+          ],
+          "under": null,
+          "url": "http://127.0.0.1:52375/"
+        }
+      },
+      "over_budget_mcp": {
+        "is_error": false,
+        "structured": {
+          "adapter": "c47c7d05288b7fe0e0bf1ea35c3f26c4de750b672a96e26f93fe91e8815f884f",
+          "agent_api": "warrant-agent/3",
+          "as_of": 1800000007,
+          "assessment": "b18fbb77b72117be34c11e4327ccab16e9807d3c6ef90690d32e70f74bc55d5c",
+          "basis": {
+            "MIGRATED": 1,
+            "SIGNED": 7
+          },
+          "canonical": true,
+          "challenges_standing": 0,
+          "code": "7606ea7094c8b3728d7bc96b8125b41d3316fdebad96fbfbe344db6f5e9ee8cb",
+          "completeness": "UNATTESTED",
+          "identity": {
+            "identity": null,
+            "why": "no rules@1 genesis: the store is named only by where it is read"
+          },
+          "lineages": {
+            "obligation@1 open": 2
+          },
+          "problems": 0,
+          "profile": "75fa05a4a2d433b9c654e31bbc6cad44cc5a607091e26ce74ec9f3ed873f751b",
+          "records": 8,
+          "rejected": 0,
+          "reliance": {
+            "ELIGIBLE": 2
+          },
+          "repository": "s0fractal/warrant",
+          "snapshot": "4dab8a5a5ad95c07627967cda4d4022d855c0c5d1e0f797f92c2fa14a457dab7",
+          "sources": [],
+          "sources_not_read": [],
+          "trust": "177f151242ed377923122cd44a305f5cfd0795204e4c45eb1280c94daab50ec3",
+          "trusted": [
+            "alice",
+            "bob",
+            "carol",
+            "dave",
+            "eve"
+          ],
+          "under": null,
+          "url": "http://127.0.0.1:52375/"
+        },
+        "text": [
+          "{\n  \"assessment\": \"b18fbb77b72117be34c11e4327ccab16e9807d3c6ef90690d32e70f74bc55d5c\",\n  \"snapshot\": \"4dab8a5a5ad95c07627967cda4d4022d855c0c5d1e0f797f92c2fa14a457dab7\",\n  \"trust\": \"177f151242ed377923122cd44a305f5cfd0795204e4c45eb1280c94daab50ec3\",\n  \"profile\": \"75fa05a4a2d433b9c654e31bbc6cad44cc5a607091e26ce74ec9f3ed873f751b\",\n  \"as_of\": 1800000007,\n  \"code\": \"7606ea7094c8b3728d7bc96b8125b41d3316fdebad96fbfbe344db6f5e9ee8cb\",\n  \"completeness\": \"UNATTESTED\",\n  \"canonical\": true,\n  \"basis\": {\n    \"SIGNED\": 7,\n    \"MIGRATED\": 1\n  },\n  \"adapter\": \"c47c7d05288b7fe0e0bf1ea35c3f26c4de750b672a96e26f93fe91e8815f884f\",\n  \"agent_api\": \"warrant-agent/3\",\n  \"rejected\": 0,\n  \"problems\": 0,\n  \"url\": \"http://127.0.0.1:52375/\",\n  \"under\": null,\n  \"repository\": \"s0fractal/warrant\",\n  \"identity\": {\n    \"identity\": null,\n    \"why\": \"no rules@1 genesis: the store is named only by where it is read\"\n  },\n  \"records\": 8,\n  \"lineages\": {\n    \"obligation@1 open\": 2\n  },\n  \"reliance\": {\n    \"ELIGIBLE\": 2\n  },\n  \"challenges_standing\": 0,\n  \"trusted\": [\n    \"alice\",\n    \"bob\",\n    \"carol\",\n    \"dave\",\n    \"eve\"\n  ],\n  \"sources\": [],\n  \"sources_not_read\": []\n}"
+        ]
+      },
+      "record_bytes": 5326,
+      "store_bytes_limit": 5327,
+      "tiny_output_find_control": {
+        "error": "RESOURCE_LIMIT",
+        "message": "the result is 2426 bytes; this workspace answers 128 (name fewer targets, or read one)"
+      },
+      "tiny_output_status_mcp": {
+        "is_error": false,
+        "structured": {
+          "adapter": "c47c7d05288b7fe0e0bf1ea35c3f26c4de750b672a96e26f93fe91e8815f884f",
+          "agent_api": "warrant-agent/3",
+          "as_of": 1800000007,
+          "assessment": "b18fbb77b72117be34c11e4327ccab16e9807d3c6ef90690d32e70f74bc55d5c",
+          "basis": {
+            "MIGRATED": 1,
+            "SIGNED": 7
+          },
+          "canonical": true,
+          "challenges_standing": 0,
+          "code": "7606ea7094c8b3728d7bc96b8125b41d3316fdebad96fbfbe344db6f5e9ee8cb",
+          "completeness": "UNATTESTED",
+          "identity": {
+            "identity": null,
+            "why": "no rules@1 genesis: the store is named only by where it is read"
+          },
+          "lineages": {
+            "obligation@1 open": 2
+          },
+          "problems": 0,
+          "profile": "75fa05a4a2d433b9c654e31bbc6cad44cc5a607091e26ce74ec9f3ed873f751b",
+          "records": 8,
+          "rejected": 0,
+          "reliance": {
+            "ELIGIBLE": 2
+          },
+          "repository": "s0fractal/warrant",
+          "snapshot": "4dab8a5a5ad95c07627967cda4d4022d855c0c5d1e0f797f92c2fa14a457dab7",
+          "sources": [],
+          "sources_not_read": [],
+          "trust": "177f151242ed377923122cd44a305f5cfd0795204e4c45eb1280c94daab50ec3",
+          "trusted": [
+            "alice",
+            "bob",
+            "carol",
+            "dave",
+            "eve"
+          ],
+          "under": null,
+          "url": "http://127.0.0.1:52375/"
+        },
+        "text": [
+          "{\n  \"assessment\": \"b18fbb77b72117be34c11e4327ccab16e9807d3c6ef90690d32e70f74bc55d5c\",\n  \"snapshot\": \"4dab8a5a5ad95c07627967cda4d4022d855c0c5d1e0f797f92c2fa14a457dab7\",\n  \"trust\": \"177f151242ed377923122cd44a305f5cfd0795204e4c45eb1280c94daab50ec3\",\n  \"profile\": \"75fa05a4a2d433b9c654e31bbc6cad44cc5a607091e26ce74ec9f3ed873f751b\",\n  \"as_of\": 1800000007,\n  \"code\": \"7606ea7094c8b3728d7bc96b8125b41d3316fdebad96fbfbe344db6f5e9ee8cb\",\n  \"completeness\": \"UNATTESTED\",\n  \"canonical\": true,\n  \"basis\": {\n    \"SIGNED\": 7,\n    \"MIGRATED\": 1\n  },\n  \"adapter\": \"c47c7d05288b7fe0e0bf1ea35c3f26c4de750b672a96e26f93fe91e8815f884f\",\n  \"agent_api\": \"warrant-agent/3\",\n  \"rejected\": 0,\n  \"problems\": 0,\n  \"url\": \"http://127.0.0.1:52375/\",\n  \"under\": null,\n  \"repository\": \"s0fractal/warrant\",\n  \"identity\": {\n    \"identity\": null,\n    \"why\": \"no rules@1 genesis: the store is named only by where it is read\"\n  },\n  \"records\": 8,\n  \"lineages\": {\n    \"obligation@1 open\": 2\n  },\n  \"reliance\": {\n    \"ELIGIBLE\": 2\n  },\n  \"challenges_standing\": 0,\n  \"trusted\": [\n    \"alice\",\n    \"bob\",\n    \"carol\",\n    \"dave\",\n    \"eve\"\n  ],\n  \"sources\": [],\n  \"sources_not_read\": []\n}"
+        ]
+      },
+      "total_store_bytes": 5476
+    }
+  },
+  "review": "Roadmap closure counterexamples at exact base M",
+  "validation": {
+    "agent_test": "167 checks passed, including RE1-RE6 and stdio MCP M01-M02; no skips",
+    "claims_check": "143 live of docs/V3.md; 0 problems before verdict",
+    "live_mcp_status": {
+      "adapter": "c47c7d05288b7fe0e0bf1ea35c3f26c4de750b672a96e26f93fe91e8815f884f",
+      "agent_api": "warrant-agent/3",
+      "as_of": 1795104627,
+      "assessment": "31ddf59552d4ad18756702ddb1534b44f3682ce2c398449a02b7a82e25b658f8",
+      "basis": {
+        "MIGRATED": 1446,
+        "SIGNED": 7867
+      },
+      "canonical": true,
+      "challenges_standing": 58,
+      "code": "7606ea7094c8b3728d7bc96b8125b41d3316fdebad96fbfbe344db6f5e9ee8cb",
+      "completeness": "UNATTESTED",
+      "identity": {
+        "by": "rules@1",
+        "identity": "441842d1b43a097e146b38e715c7afc00c503ece97b430ee5642cdb35e43caa3"
+      },
+      "lineages": {
+        "claim@1 backed": 142,
+        "claim@1 informative": 1,
+        "claim@1 retired": 362,
+        "goal@1 met": 2,
+        "goal@1 open": 15,
+        "obligation@1 done": 57,
+        "obligation@1 open": 23,
+        "obligation@1 released": 26,
+        "pr-head@1 head": 61,
+        "pr-head@1 open": 109,
+        "rules@1 in force": 1,
+        "v2-transition@1 carried": 3
+      },
+      "problems": 0,
+      "profile": "25f24e892ab371358b537ac8bc7e94bd7e0fc7b314258f969280a04e7e082aff",
+      "records": 9313,
+      "rejected": 0,
+      "reliance": {
+        "ELIGIBLE": 660,
+        "PINS_NOT_CHECKED": 142
+      },
+      "repository": "s0fractal/warrant",
+      "snapshot": "b3200cca61f768cfb31c62c64e2c93836945c4018e3c27567dc236377facca81",
+      "sources": [
+        {
+          "commit": "c7c15cfede78b4aa6fd42f17a3c8f097271e47de",
+          "left_out": 0,
+          "name": "claims-checker",
+          "records": 6186,
+          "ref": "refs/heads/stores/claims-checker"
+        },
+        {
+          "commit": "b54098cf9c12ddf9ae8afbd800dd822eadb20537",
+          "left_out": 0,
+          "name": "receipts",
+          "records": 144,
+          "ref": "refs/heads/receipts"
+        }
+      ],
+      "sources_not_read": [],
+      "trust": "0ddada5e9f29f24634cf441b70f3ad7d24afe84e8f158ca120a29771ca8859d8",
+      "trusted": [
+        "checker sha256:dd56e635635051d550e0fd8a9d8074ce0fb989df48d6b7c3da9769f8cff8826f",
+        "claims-checker",
+        "claude",
+        "codex",
+        "merge-gate",
+        "review-replayer",
+        "s0fractal"
+      ],
+      "under": null,
+      "url": "https://raw.githubusercontent.com/s0fractal/warrant/4df1ab82c228adb5cb66fb0511c34c331f871710/"
+    },
+    "mutants": {
+      "definition": "01f0e3563e6bbf743331fe195dcfe5e7495d3fc5b885af36ec641eac54093958",
+      "rows": [
+        {
+          "detail": "",
+          "failed": [
+            "RE4"
+          ],
+          "id": "A212",
+          "outcome": "KILLED",
+          "rc": 1,
+          "sections": [
+            "remote_cases"
+          ]
+        },
+        {
+          "detail": "",
+          "failed": [
+            "RE4"
+          ],
+          "id": "A213",
+          "outcome": "KILLED",
+          "rc": 1,
+          "sections": [
+            "remote_cases"
+          ]
+        },
+        {
+          "detail": "",
+          "failed": [
+            "RE5"
+          ],
+          "id": "A214",
+          "outcome": "KILLED",
+          "rc": 1,
+          "sections": [
+            "remote_cases"
+          ]
+        },
+        {
+          "detail": "",
+          "failed": [
+            "RE3"
+          ],
+          "id": "A215",
+          "outcome": "KILLED",
+          "rc": 1,
+          "sections": [
+            "remote_cases"
+          ]
+        },
+        {
+          "detail": "",
+          "failed": [
+            "RE1"
+          ],
+          "id": "A216",
+          "outcome": "KILLED",
+          "rc": 1,
+          "sections": [
+            "remote_cases"
+          ]
+        },
+        {
+          "detail": "",
+          "failed": [
+            "RE6"
+          ],
+          "id": "A217",
+          "outcome": "KILLED",
+          "rc": 1,
+          "sections": [
+            "remote_cases"
+          ]
+        },
+        {
+          "detail": "",
+          "failed": [
+            "RE6"
+          ],
+          "id": "A218",
+          "outcome": "KILLED",
+          "rc": 1,
+          "sections": [
+            "remote_cases"
+          ]
+        },
+        {
+          "detail": "",
+          "failed": [
+            "RE6"
+          ],
+          "id": "A219",
+          "outcome": "KILLED",
+          "rc": 1,
+          "sections": [
+            "remote_cases"
+          ]
+        }
+      ]
+    },
+    "roadmap_check": "123 lineages; 0 problems before verdict",
+    "scope": "Live root was read at M; its declared source refs resolved to the source commits listed in live_mcp_status. No claim that source branch tips were frozen at M. No checkout code from the remote store was executed. Other suites and full mutant matrix were not run."
+  },
+  "verdict": "challenge"
+}
