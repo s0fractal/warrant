@@ -29,7 +29,7 @@ import urllib.request
 from warrant import graph as G
 from warrant.records import MIGRATION
 from warrant import sources as SRC
-from warrant.store import Refused, Snapshot, _line_id
+from warrant.store import Snapshot, _line_id
 
 from .errors import AgentError, need
 
@@ -117,7 +117,7 @@ def _get(url, limit):
             data = r.read(limit + 1)
     except urllib.error.HTTPError as e:
         raise AgentError("NOT_FOUND" if e.code == 404 else "REFUSED", f"{url}: HTTP {e.code}") from None
-    except (urllib.error.URLError, OSError, ValueError) as e:
+    except (OSError, ValueError) as e:            # urllib.error.URLError is an OSError
         raise AgentError("REFUSED", f"{url}: not fetched ({type(e).__name__})") from None
     need(len(data) <= limit, "RESOURCE_LIMIT", f"{url} is larger than this server reads ({limit} bytes)")
     return data
@@ -129,55 +129,68 @@ class Remote:
     repo, signer = None, None
 
     def __init__(self, url, limits, under=None):
-        self.name, self.limits = url, limits
-        doc_raw = _get(url + FILES[0], 1 << 20)
-        try:
-            doc = json.loads(doc_raw)
-            assert isinstance(doc, dict) and isinstance(doc.get("trust"), dict) and isinstance(doc.get("profile"), dict)
-        except (ValueError, AssertionError):
-            raise AgentError("BAD_REQUEST", f"{url}{FILES[0]} is no repository's receiver") from None
-        self.doc = doc
-        lines = [x + b"\n" for x in _get(url + FILES[1], limits["store_bytes"]).split(b"\n") if x]
-        blobs, budget = {}, limits["store_bytes"]
+        self.name, self.limits, self.url = url, limits, url
+        self.doc = self._receiver_doc()
+        self.budget = limits["store_bytes"]
+        lines = [x + b"\n" for x in _get(url + FILES[1], self.budget).split(b"\n") if x]
+        blobs = {}
         for h in _maps(lines):                    # a migration's map: its records count only with it (as site/ reads it)
-            blobs[h] = _get(f"{url}.warrant/blobs/{h}", budget)
-            budget -= len(blobs[h])
-            need(budget > 0, "RESOURCE_LIMIT", f"{url}: the migration maps are larger than this server reads")
+            blobs[h] = self._spend(_get(f"{url}.warrant/blobs/{h}", self.budget), "the migration maps")
         try:
             self.snap = Snapshot(lines, blobs)
-        except (Refused, ValueError) as e:
+        except ValueError as e:                  # store.Refused included
             raise AgentError("RESOURCE_LIMIT" if "limit" in str(e) else "REFUSED", str(e)) from None
-        self._receiver = under.receiver() if under is not None else (doc["trust"], doc["profile"])
+        self._receiver = under.receiver() if under is not None else (self.doc["trust"], self.doc["profile"])
         self.sources, self.sources_not_read = [], []
-        try:
-            decl = SRC.declared(json.loads(_get(url + ".warrant/sources.json", 1 << 16)))
-        except AgentError as e:
-            decl = []
-            if e.code != "NOT_FOUND":
-                self.sources_not_read = ["(sources.json not read)"]
-        except ValueError:
-            decl, self.sources_not_read = [], ["(sources.json malformed)"]
         extra = set()
-        for x in decl:                            # each at the commit its ref names, by its actors only (sources.py)
-            commit = source_commit(url, x["ref"])
-            base = source_base(url, commit) if commit else None
-            if base is None:
-                self.sources_not_read.append(x["name"])
-                continue
-            got = [ln + b"\n" for ln in _get(base + FILES[1], budget).split(b"\n") if ln]
-            mine = [ln for ln in got if _actor(ln) in x["actors"]]
-            budget -= sum(map(len, got))
-            need(budget > 0, "RESOURCE_LIMIT", f"{url}: its sources are larger than this server reads")
-            extra |= set(mine)
-            self.sources.append({"name": x["name"], "ref": x["ref"], "commit": commit, "records": len(mine),
-                                 "left_out": len(got) - len(mine)})
+        for x in self._declared():               # each at the commit its ref names, by its actors only (sources.py)
+            extra |= self._source(x)
         if extra:
             self.snap = Snapshot(sorted(set(self.snap.raw) | extra, key=_line_id), self.snap.blobs)
+
+    def _receiver_doc(self):
+        try:
+            doc = json.loads(_get(self.url + FILES[0], 1 << 20))
+        except ValueError:
+            doc = None
+        if not (isinstance(doc, dict) and isinstance(doc.get("trust"), dict) and isinstance(doc.get("profile"), dict)):
+            raise AgentError("BAD_REQUEST", f"{self.url}{FILES[0]} is no repository's receiver")
+        return doc
+
+    def _spend(self, data, what):
+        self.budget -= len(data)
+        need(self.budget > 0, "RESOURCE_LIMIT", f"{self.url}: {what} are larger than this server reads")
+        return data
+
+    def _declared(self):
+        """The sources its .warrant/sources.json declares; none when it has none; a declaration that cannot be read is
+        named under sources_not_read."""
+        try:
+            return SRC.declared(json.loads(_get(self.url + ".warrant/sources.json", 1 << 16)))
+        except AgentError as e:
+            if e.code != "NOT_FOUND":
+                self.sources_not_read.append("(sources.json not read)")
+        except ValueError:
+            self.sources_not_read.append("(sources.json malformed)")
+        return []
+
+    def _source(self, x):
+        """The lines of source `x` by its actors, read at the commit its ref names, or none (and it is named unread)."""
+        commit = source_commit(self.url, x["ref"])
+        base = source_base(self.url, commit) if commit else None
+        if base is None:
+            self.sources_not_read.append(x["name"])
+            return set()
+        got = [ln + b"\n" for ln in self._spend(_get(base + FILES[1], self.budget), "its sources").split(b"\n") if ln]
+        mine = [ln for ln in got if _actor(ln) in x["actors"]]
+        self.sources.append({"name": x["name"], "ref": x["ref"], "commit": commit, "records": len(mine),
+                             "left_out": len(got) - len(mine)})
+        return set(mine)
 
     def receiver(self):
         return self._receiver
 
-    def permit(self, op):
+    def permit(self, _op):                   # every read is permitted: the operator allowed the address
         return None
 
     def open(self):
@@ -227,5 +240,5 @@ class _Cfg:
     def __init__(self, ws):
         self.workspaces = {"remote": ws}
 
-    def workspace(self, name):
+    def workspace(self, _name):
         return self.workspaces["remote"]
