@@ -1,16 +1,8 @@
 import sys
 from world import KEYS, check, finish
+from pact_review_world import snap, pid, trust, comms
 from warrant import pact as P, records as R, jcs as C
-from warrant.store import Snapshot
 
-def snap(envs):
-    return Snapshot([C.canon(e) + b"\n" for e in envs], {}, sort=True)
-
-def pid(env):
-    return R.rid(env["record"])
-
-trust = {"warrant": "trust/3", "keys": {a: [k.public] for a, k in KEYS.items()}}
-comms = {"alice": {"gives": ["signed"]}, "bob": {"gives": ["published"]}}
 
 prior = R.record("schema", "alice", 1, {"name": "prior@1", "fields": {"state": "str"},
     "states": {"open": None}, "closed": [], "successors": {}})
