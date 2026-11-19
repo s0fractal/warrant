@@ -2293,6 +2293,11 @@ def tails_cases():
           "byte for byte the same (P10)", pages(cold) == first == again, [len(x) for x in first])
 
 
+def delegate_section_cases():
+    from delegate_test import delegate_cases
+    delegate_cases()
+
+
 if __name__ == "__main__":
     sys.exit(run_sections([
         operations,
@@ -2305,6 +2310,7 @@ if __name__ == "__main__":
         work_cases,
         remote_cases,
         agent_whatif_cases,
+        delegate_section_cases,
         mcp_cases,
         home_cases,
         across_cases,
