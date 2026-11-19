@@ -1480,6 +1480,9 @@ def refresh_verdicts(root, b, gh, found):
 
 
 HELD = {"CHECK_MISSING", "CHECK_PENDING", "CHECK_RED"}
+# a run that ended so, cancelled before it checked anything, leaves the check missing: it does not stand for a run of
+# its workflow at the head, so the gate's revert is dispatched again (Codex 1f63af34)
+ENDED_WITHOUT_CHECK = {"cancelled", "skipped", "stale", "timed_out", "startup_failure"}
 
 
 def approve_held(b, gh, found):
@@ -1513,7 +1516,9 @@ def approve_held(b, gh, found):
             # timely veto is not left at CHECK_MISSING for good (Codex ed9e05dd); any run at the head, of any event, counts
             if a.facts.get("revert") and "CHECK_MISSING" in codes:
                 every = gh.api(f"actions/runs?head_sha={_sha(head)}&per_page=100").get("workflow_runs", [])
-                for wf in sorted(required - {w.get("path") for w in every if w.get("head_sha") == head}):
+                live = {w.get("path") for w in every if w.get("head_sha") == head
+                        and not (w.get("status") == "completed" and w.get("conclusion") in ENDED_WITHOUT_CHECK)}
+                for wf in sorted(required - live):
                     gh.dispatch(wf, a.pr["branch"])
                     out.append((n, f"dispatched {wf} again on {a.pr['branch']}"))
         except Refused as e:
