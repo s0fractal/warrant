@@ -8,9 +8,10 @@ are read once per call, bounded by the operator's `store_bytes`, and assessed in
   - under the publisher's own rules (`under` omitted): what that store counts, as it would answer itself;
   - under one of this agent's workspaces (`under: NAME`): that workspace's trust and profile, so a record counts here
     only when this agent's own rules say so (a name means what its trust binds it to, not what the publisher says).
-`status` gives its identity (the root of its rules@1 lineage), the lineages by schema and state, the challenges
-standing and the sources its .warrant/sources.json declares, which this read does not take in (so a claim whose
-acceptances live in a source reads as waiting here); `find` and `context` answer as warrant_find and warrant_context do for a local workspace. No checkout is
+Each source its .warrant/sources.json declares is read at the commit its ref names now (GitHub's commits API, for a
+root on raw.githubusercontent.com), by its declared actors only, as warrant/sources.py reads one; a source this read
+cannot resolve is named under `sources_not_read`, never read as empty. `status` gives its identity (the root of its
+rules@1 lineage), the lineages by schema and state, the challenges standing and each source with its commit; `find` and `context` answer as warrant_find and warrant_context do for a local workspace. No checkout is
 read beside it, so a pinned lineage reads PINS_NOT_CHECKED, never ELIGIBLE (docs/V3.md section 10), and blobs are not
 fetched: a cited blob reads unavailable, never absent.
 
@@ -27,7 +28,8 @@ import urllib.request
 
 from warrant import graph as G
 from warrant.records import MIGRATION
-from warrant.store import Refused, Snapshot
+from warrant import sources as SRC
+from warrant.store import Refused, Snapshot, _line_id
 
 from .errors import AgentError, need
 
@@ -49,6 +51,35 @@ def _maps(lines):
         if r.get("kind") == "attest" and r.get("schema") == MIGRATION and isinstance(t, str) and HEX64.fullmatch(t):
             out.add(t)
     return sorted(out)
+
+
+def _actor(line):
+    try:
+        return json.loads(line)["record"]["actor"]
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+RAW = re.compile(r"https://raw\.githubusercontent\.com/([A-Za-z0-9_.-]{1,100})/([A-Za-z0-9_.-]{1,100})/")
+
+
+def source_commit(url, ref):
+    """The commit `ref` names now in the repository a raw.githubusercontent.com root serves, by GitHub's commits API;
+    None elsewhere or when GitHub names none (the source is then named as not read, never read as empty)."""
+    m = RAW.match(url)
+    if not m:
+        return None
+    try:
+        sha = json.loads(_get(f"https://api.github.com/repos/{m[1]}/{m[2]}/commits/{ref}", 1 << 20)).get("sha")
+    except (AgentError, ValueError, AttributeError):
+        return None
+    return sha if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) else None
+
+
+def source_base(url, commit):
+    """Where a source is served at `commit` beside the root `url`: the same repository at that commit."""
+    m = RAW.match(url)
+    return f"https://raw.githubusercontent.com/{m[1]}/{m[2]}/{commit}/" if m else None
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -117,13 +148,31 @@ class Remote:
         except (Refused, ValueError) as e:
             raise AgentError("RESOURCE_LIMIT" if "limit" in str(e) else "REFUSED", str(e)) from None
         self._receiver = under.receiver() if under is not None else (doc["trust"], doc["profile"])
-        try:                                      # its declared sources are named, not read yet: no record of theirs counts
-            src = json.loads(_get(url + ".warrant/sources.json", 1 << 16))
-            self.sources = sorted(x["name"] for x in src.get("sources", []) if isinstance(x, dict) and isinstance(x.get("name"), str))
+        self.sources, self.sources_not_read = [], []
+        try:
+            decl = SRC.declared(json.loads(_get(url + ".warrant/sources.json", 1 << 16)))
         except AgentError as e:
-            self.sources = [] if e.code == "NOT_FOUND" else ["(sources.json not read)"]
-        except (ValueError, AttributeError, TypeError):
-            self.sources = ["(sources.json not read)"]
+            decl = []
+            if e.code != "NOT_FOUND":
+                self.sources_not_read = ["(sources.json not read)"]
+        except ValueError:
+            decl, self.sources_not_read = [], ["(sources.json malformed)"]
+        extra = set()
+        for x in decl:                            # each at the commit its ref names, by its actors only (sources.py)
+            commit = source_commit(url, x["ref"])
+            base = source_base(url, commit) if commit else None
+            if base is None:
+                self.sources_not_read.append(x["name"])
+                continue
+            got = [ln + b"\n" for ln in _get(base + FILES[1], budget).split(b"\n") if ln]
+            mine = [ln for ln in got if _actor(ln) in x["actors"]]
+            budget -= sum(map(len, got))
+            need(budget > 0, "RESOURCE_LIMIT", f"{url}: its sources are larger than this server reads")
+            extra |= set(mine)
+            self.sources.append({"name": x["name"], "ref": x["ref"], "commit": commit, "records": len(mine),
+                                 "left_out": len(got) - len(mine)})
+        if extra:
+            self.snap = Snapshot(sorted(set(self.snap.raw) | extra, key=_line_id), self.snap.blobs)
 
     def receiver(self):
         return self._receiver
@@ -167,8 +216,9 @@ def remote(api, cfg, req):
             "identity": G.identity(rep, snap), "records": len(snap.lines), "lineages": dict(sorted(counts.items())),
             "reliance": dict(sorted(reliance.items())), "challenges_standing": challenges,
             "trusted": sorted(ws.receiver()[0].get("keys", {})),
-            # what the publisher reads beside its store and this read does not: their records do not count here
-            "sources_not_read": ws.sources}
+            # the sources it declares, each read at the commit its ref names, by its actors only; and those this
+            # read could not take in, whose records do not count here
+            "sources": ws.sources, "sources_not_read": ws.sources_not_read}
 
 
 class _Cfg:

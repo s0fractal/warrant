@@ -740,6 +740,11 @@ def remote_cases():
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(r.root)))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_address[1]}/"
+    side = Repo()                                          # the source: carol's acceptance of alice's obligation, eve's noise
+    side.attest("carol", o, verdict="seen")
+    side.entity("eve", "obligation@1", {"state": "open", "statement": "not carol's", "serves": []})
+    (r.root / "src" / ".warrant").mkdir(parents=True)
+    (r.root / "src" / ".warrant" / "records.jsonl").write_bytes((side.dot / "records.jsonl").read_bytes())
     me = Repo()                                            # this agent's own rules: bob's key is not in its trust
     me.trust["keys"].pop("bob")
     me.write_config()
@@ -751,6 +756,15 @@ def remote_cases():
         found = api.call(cfg, "remote", {"url": url, "op": "find", "text": "OWED BY"}).get("ok", {})
         mine = api.call(cfg, "remote", {"url": url, "op": "find", "schema": "obligation@1", "under": "me"}).get("ok", {})
         ctx = api.call(cfg, "remote", {"url": url, "op": "context", "targets": [o[:12]]}).get("ok", {})
+        from warrant_agent import remote as RMT
+        was = RMT.source_commit, RMT.source_base
+        RMT.source_commit = lambda u, ref: "ab" * 20 if ref == "refs/heads/stores/checker" else None
+        RMT.source_base = lambda u, c: u + "src/" if c == "ab" * 20 else None
+        try:
+            srcd = api.call(cfg, "remote", {"url": url, "op": "status"}).get("ok", {})
+            seen = api.call(cfg, "remote", {"url": url, "op": "find", "actor": "carol", "where": {"verdict": "seen"}}).get("ok", {})
+        finally:
+            RMT.source_commit, RMT.source_base = was
         refused = [api.call(closed, "remote", {"url": "https://127.0.0.1:1/", "op": "status"}).get("error"),
                    api.call(closed, "remote", {"url": url, "op": "status"}).get("error"),
                    api.call(cfg, "remote", {"url": url + "moved/", "op": "status"}).get("error"),
@@ -771,6 +785,12 @@ def remote_cases():
           (st.get("records"), len(own.lines), st.get("lineages"), counts, st.get("sources_not_read")))
     check("RE5 a migrated record counts by its migration's map, which the read fetches with the records: basis "
           "MIGRATED, nothing rejected", (st.get("basis") or {}).get("MIGRATED") == 1 and st.get("rejected") == 0, st.get("basis"))
+    check("RE6 a declared source is read at the commit its ref names, by its actors only: carol's record joins the "
+          "store, eve's there is left out and counted, and the summary names the commit (Codex 7f09815d's rule, remote)",
+          srcd.get("sources") == [{"name": "checker", "ref": "refs/heads/stores/checker", "commit": "ab" * 20,
+                                   "records": 1, "left_out": len((side.dot / "records.jsonl").read_bytes().splitlines()) - 1}]
+          and srcd.get("sources_not_read") == [] and [x["actor"] for x in seen.get("records", [])] == ["carol"],
+          (srcd.get("sources"), srcd.get("sources_not_read"), seen))
     check("RE2 find and context read it as they read a local workspace: text in any case, the full id, its lineage",
           [x["id"] for x in found.get("records", [])] == [o] and o in (ctx.get("targets") or {}), (found, ctx))
     check("RE3 under one of this agent's workspaces the store is read under that workspace's rules: a key its trust "
