@@ -27,6 +27,7 @@ import urllib.parse
 import urllib.request
 
 from warrant import graph as G
+from warrant import shapes as S
 from warrant.records import MIGRATION
 from warrant import sources as SRC
 from warrant.store import Snapshot, _line_id
@@ -36,7 +37,6 @@ from .errors import AgentError, need
 OPS = ("status", "find", "context")
 TIMEOUT = 20
 FILES = (".warrant/v3.json", ".warrant/records.jsonl")
-HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
 def _maps(lines):
@@ -48,7 +48,7 @@ def _maps(lines):
         except (ValueError, KeyError, TypeError):
             continue
         t = (r.get("body") or {}).get("target") if isinstance(r, dict) else None
-        if r.get("kind") == "attest" and r.get("schema") == MIGRATION and isinstance(t, str) and HEX64.fullmatch(t):
+        if r.get("kind") == "attest" and r.get("schema") == MIGRATION and S.hex64(t):
             out.add(t)
     return sorted(out)
 
@@ -73,7 +73,7 @@ def source_commit(url, ref):
         sha = json.loads(_get(f"https://api.github.com/repos/{m[1]}/{m[2]}/commits/{ref}", 1 << 20)).get("sha")
     except (AgentError, ValueError, AttributeError):
         return None
-    return sha if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) else None
+    return sha if S.hex_of(sha, 40) else None
 
 
 def source_base(url, commit):
