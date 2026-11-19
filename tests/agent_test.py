@@ -771,8 +771,24 @@ def remote_cases():
                    api.call(cfg, "remote", {"url": url[:-1], "op": "status"}).get("error"),
                    api.call(cfg, "remote", {"url": "http://example.com/", "op": "status"}).get("error"),
                    api.call(cfg, "remote", {"url": url, "op": "delete"}).get("error")]
+        size = len((r.dot / "v3.json").read_bytes()) + len((r.dot / "records.jsonl").read_bytes())
+        tight = Config(dict(doc, workspaces={"me": {"repo": str(me.root), "limits": {"store_bytes": size + 1}}}))  # the map is over
+        over = api.call(tight, "remote", {"url": url, "op": "status"}).get("error")
+        small = Config(dict(doc, workspaces={"me": {"repo": str(me.root), "limits": {"context_bytes": 128}}}))
+        terse = api.call(small, "remote", {"url": url, "op": "status"}).get("error")
+        with open(r.dot / "records.jsonl", "ab") as f:
+            f.write(b'{"record":null}\n')
+        try:
+            bad = api.call(cfg, "remote", {"url": url, "op": "status"})
+        except Exception as e:                     # noqa: BLE001 a crash is no answer: the case fails on its assertion
+            bad = {"error": f"crash: {type(e).__name__}"}
     finally:
         srv.shutdown()
+    check("RE7 every byte read counts against store_bytes (records, receiver, maps, sources: one over is refused), "
+          "status answers within context_bytes, and a line that is no record is rejected as the engine rejects it, "
+          "never an error of the server (Codex 86bc524b)",
+          over == "RESOURCE_LIMIT" and terse == "RESOURCE_LIMIT" and (bad.get("ok") or {}).get("rejected") == 1,
+          (over, terse, bad.get("error") or (bad.get("ok") or {}).get("rejected")))
     own = r.store.snapshot()
     local = r.report()
     counts = {}

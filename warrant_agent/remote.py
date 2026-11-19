@@ -47,17 +47,19 @@ def _maps(lines):
             r = json.loads(ln)["record"]
         except (ValueError, KeyError, TypeError):
             continue
-        t = (r.get("body") or {}).get("target") if isinstance(r, dict) else None
-        if r.get("kind") == "attest" and r.get("schema") == MIGRATION and S.hex64(t):
+        b = r.get("body") if isinstance(r, dict) else None   # a line that is no record is the engine's to reject
+        t = b.get("target") if isinstance(b, dict) else None
+        if isinstance(r, dict) and r.get("kind") == "attest" and r.get("schema") == MIGRATION and S.hex64(t):
             out.add(t)
     return sorted(out)
 
 
 def _actor(line):
     try:
-        return json.loads(line)["record"]["actor"]
+        r = json.loads(line)["record"]
     except (ValueError, KeyError, TypeError):
         return None
+    return r.get("actor") if isinstance(r, dict) else None
 
 
 RAW = re.compile(r"https://raw\.githubusercontent\.com/([A-Za-z0-9_.-]{1,100})/([A-Za-z0-9_.-]{1,100})/")
@@ -130,9 +132,9 @@ class Remote:
 
     def __init__(self, url, limits, under=None):
         self.name, self.limits, self.url = url, limits, url
+        self.budget = limits["store_bytes"]       # every byte read counts: receiver, records, maps, sources (Codex 86bc524b)
         self.doc = self._receiver_doc()
-        self.budget = limits["store_bytes"]
-        lines = [x + b"\n" for x in _get(url + FILES[1], self.budget).split(b"\n") if x]
+        lines = [x + b"\n" for x in self._spend(_get(url + FILES[1], self.budget), "its records").split(b"\n") if x]
         blobs = {}
         for h in _maps(lines):                    # a migration's map: its records count only with it (as site/ reads it)
             blobs[h] = self._spend(_get(f"{url}.warrant/blobs/{h}", self.budget), "the migration maps")
@@ -150,7 +152,7 @@ class Remote:
 
     def _receiver_doc(self):
         try:
-            doc = json.loads(_get(self.url + FILES[0], 1 << 20))
+            doc = json.loads(self._spend(_get(self.url + FILES[0], min(1 << 20, self.budget)), "its receiver"))
         except ValueError:
             doc = None
         if not (isinstance(doc, dict) and isinstance(doc.get("trust"), dict) and isinstance(doc.get("profile"), dict)):
@@ -159,14 +161,15 @@ class Remote:
 
     def _spend(self, data, what):
         self.budget -= len(data)
-        need(self.budget > 0, "RESOURCE_LIMIT", f"{self.url}: {what} are larger than this server reads")
+        need(self.budget >= 0, "RESOURCE_LIMIT", f"{self.url}: with {what} it is larger than this server reads")
         return data
 
     def _declared(self):
         """The sources its .warrant/sources.json declares; none when it has none; a declaration that cannot be read is
         named under sources_not_read."""
         try:
-            return SRC.declared(json.loads(_get(self.url + ".warrant/sources.json", 1 << 16)))
+            return SRC.declared(json.loads(self._spend(_get(self.url + ".warrant/sources.json", min(1 << 16, self.budget)),
+                                                       "its sources declaration")))
         except AgentError as e:
             if e.code != "NOT_FOUND":
                 self.sources_not_read.append("(sources.json not read)")
@@ -225,13 +228,13 @@ def remote(api, cfg, req):
     reliance = {}
     for lin in rep["lineages"].values():
         reliance[lin["reliance"]] = reliance.get(lin["reliance"], 0) + 1
-    return {**api._header(rep), "url": url, "under": req.get("under"), "repository": ws.doc.get("repository"),
+    return api._budget({**api._header(rep), "url": url, "under": req.get("under"), "repository": ws.doc.get("repository"),
             "identity": G.identity(rep, snap), "records": len(snap.lines), "lineages": dict(sorted(counts.items())),
             "reliance": dict(sorted(reliance.items())), "challenges_standing": challenges,
             "trusted": sorted(ws.receiver()[0].get("keys", {})),
             # the sources it declares, each read at the commit its ref names, by its actors only; and those this
             # read could not take in, whose records do not count here
-            "sources": ws.sources, "sources_not_read": ws.sources_not_read}
+            "sources": ws.sources, "sources_not_read": ws.sources_not_read}, ws.limits["context_bytes"])
 
 
 class _Cfg:
