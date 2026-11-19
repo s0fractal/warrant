@@ -1514,7 +1514,9 @@ def approve_held(b, gh, found):
                     out.append((n, f"approved the held run {int(w['id'])} of {w.get('path')} at {head[:12]}"))
             # the gate's revert whose required workflow never started (its dispatch failed): dispatched again, so a
             # timely veto is not left at CHECK_MISSING for good (Codex ed9e05dd); any run at the head, of any event, counts
-            if a.facts.get("revert") and "CHECK_MISSING" in codes:
+            # a cancelled check reads CHECK_RED, not missing (Codex a7f444b3): either way only a workflow with no run that
+            # checked something is dispatched again; a run that failed stays red
+            if a.facts.get("revert") and codes & {"CHECK_MISSING", "CHECK_RED"}:
                 every = gh.api(f"actions/runs?head_sha={_sha(head)}&per_page=100").get("workflow_runs", [])
                 live = {w.get("path") for w in every if w.get("head_sha") == head
                         and not (w.get("status") == "completed" and w.get("conclusion") in ENDED_WITHOUT_CHECK)}
