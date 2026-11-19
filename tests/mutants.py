@@ -1119,6 +1119,21 @@ MUTANTS = [
     ("BM13", "warrant/board.py", "    if other:                                           # a field of ours' name", "    if False:                                           # a field of ours' name", TOOLS, ["BD7"]),
     ("BM12", "warrant/board.py", "        for k in ([kind] if kind else OWNERS):", "        for k in OWNERS:", TOOLS, ["BD6"]),
     ("BM10", "warrant/board.py", '    if todo["describe"]:', "    if True:", TOOLS, ["BD4"]),
+    # attenuating capability delegation (warrant/delegate.py, docs/DELEGATION.md)
+    ("DG1", "warrant/delegate.py", "            if not (cap.roles <= held):", "            if False:", "tests/delegate_test.py", ["DG04"]),
+    ("DG2", "warrant/delegate.py", "            if widened:", "            if False:", "tests/delegate_test.py", ["DG05"]),
+    ("DG3", "warrant/delegate.py", "            if p_cap.max_depth < 1 or cap.max_depth >= p_cap.max_depth:", "            if False:", "tests/delegate_test.py", ["DG06"]),
+    ("DG4", "warrant/delegate.py", '            if p_res["status"] != "ACTIVE":', "            if False:", "tests/delegate_test.py", ["DG07"]),
+    ("DG5", "warrant/delegate.py", "    if forks:\n        return \"FORKED\"", "    if False:\n        return \"FORKED\"", "tests/delegate_test.py", ["DG10"]),
+    ("DG6", "warrant/delegate.py", "    if standing:\n        return \"CHALLENGED\"", "    if False:\n        return \"CHALLENGED\"", "tests/delegate_test.py", ["DG11"]),
+    ("DG7", "warrant/delegate.py", "        if eff_as_of < eff.not_before:", "        if False:", "tests/delegate_test.py", ["DG12"]),
+    ("DG8", "warrant/delegate.py", "        if eff_as_of > eff.not_after:", "        if False:", "tests/delegate_test.py", ["DG12"]),
+    ("DG9", "warrant/delegate.py", '            if t_rec["actor"] in ancestors:', "            if False:", "tests/delegate_test.py", ["DG14"]),
+    ("DG10", "warrant/delegate.py", '            if t_delegated_root is not None and t_delegated_root == grant["root_issuer"]:', "            if False:", "tests/delegate_test.py", ["DG14"]),
+    ("DG11", "warrant/delegate.py", '                    if (t, g["root_issuer"]) in attested_principals:', "                    if False:", "tests/delegate_test.py", ["DG15"]),
+    ("DG12", "warrant/delegate.py", '            if g_roles and not (set(eff["roles"]) & g_roles):', "            if False:", "tests/delegate_test.py", ["DG16"]),
+    ("DG13", "warrant/delegate.py", "    aug_lines = [C.canon(e) + b\"\\n\" for rid, envs in snap.lines.items() if rid not in refused_ids for e in envs]",
+     "    aug_lines = [C.canon(e) + b\"\\n\" for rid, envs in snap.lines.items() for e in envs]", "tests/delegate_test.py", ["DG14"]),
 ]
 
 

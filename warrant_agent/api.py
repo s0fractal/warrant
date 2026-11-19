@@ -55,6 +55,7 @@ from . import AGENT_API, adapter_id
 from . import glossary as GL
 from . import remote as RM_
 from . import whatif as WI
+from . import delegate as DG
 from . import work as W
 from .config import OPERATIONS, repository_config
 from .errors import CODES, AgentError, need
@@ -536,12 +537,16 @@ def next_(cfg, req):
     return WI.next_(_this, cfg, req)
 
 
+def delegate(cfg, req):
+    return DG.delegate(_this, cfg, req)
+
+
 OPERATIONS_ = {"workspace": workspace, "context": context, "read": read, "graph": graph, "across": across,
                "handoff": handoff, "prepare": prepare, "commit": commit, "explain": explain,
                "find": find, "inbox": inbox, "act": act, "remote": remote,
-               "whatif": whatif, "next": next_}
+               "whatif": whatif, "next": next_, "delegate": delegate}
 # across asks each workspace for `graph`; find and inbox for `context`; act for `prepare`, and `commit` to file
-assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across", "find", "inbox", "act", "remote", "whatif", "next"}
+assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across", "find", "inbox", "act", "remote", "whatif", "next", "delegate"}
 assert set(GL.TERMS) >= set(CODES) | set(A.REFERENCE_STATES)
 
 
