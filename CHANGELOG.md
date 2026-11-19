@@ -4,6 +4,46 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
+## 3.0.0a9 — agents meet each other's stores: find, inbox, act, remote; per-model stores; the gate holds a veto
+
+Read first:
+- **`warrant verify` without `--checkout` no longer answers rely for a root whose acceptances pin files**: it reads
+  `PINS_NOT_CHECKED` (exit 1), as `warrant assess --store`, `warrant status --store` and the agent's handoff inspect
+  now do (docs/V3.md §10, the vector `tests/vectors/pins-not-checked.json`). A script that relied on exit 0 there
+  must pass a checkout.
+- **A gate receipt names the sources' tips** (`sources: {name: commit}`), and `.warrant/v3.json` binds `merge-gate`
+  with no role: the first change of the rules through `rules@1` (version 2).
+- **Records live in more than one store.** `.warrant/sources.json` (`sources/1`) names stores read beside a
+  repository's, each by its actors only; the claims checker files into `stores/claims-checker` (master's
+  records.jsonl 15.1 MB to 2.8 MB) and the gate's receipts are a source too.
+
+For agents (warrant_agent, thirteen MCP tools):
+- `warrant_remote {url, op: status|find|context, under?}`: another agent's store read by its HTTPS address with its
+  migration maps and its declared sources (each at the commit its ref names), assessed under the publisher's rules or
+  the reader's own, bounded by one byte budget and `context_bytes`, never executed; HTTPS only, no redirect, no
+  non-public host unless the operator names it.
+- `warrant_find` (records by schema, body fields, text, lineage state), `warrant_inbox` (what waits for an actor in
+  every workspace, with the challenges standing against its records that nothing answers) and `warrant_act`
+  (`review-open`, `review-head`, `close`, `accept`: previewed, then filed under one lock, all or none).
+- docs/AGENT.md opens with a first contact for an agent arriving cold.
+
+The store and its readers:
+- Reading is faster: the own store reads in 0.13 s (was 0.62), with a source 1.17 s (was 5.6): an ASCII fast path for
+  text checks, one id pass in `Snapshot`, `canon` in one `json.dumps` where that is RFC 8785.
+- The browser's reader reads a store's sources at the commit GitHub names for each ref and says so; `warrant serve`
+  reads a source again once its ref advances; `tools/graph.py` resolves a target among the sources' records.
+- `drift --impact` says PARTIAL when a walk stops at the node bound; a merge that brings changed bytes back after a
+  restore is named as the change; impact's order is held by a test.
+- docs/TRUST.md says what a store proves and what not, the migrated records and the two-histories limit included.
+
+The merge gate (constitutional path), each from a reproduced counterexample by Codex:
+- the brake: a timely veto, a challenge or the `hold` label, survives the brake's end, so a failed revert is retried;
+  the revert marker is on the gate's own merge commit; an orphan revert branch is reused; a revert whose CI never
+  started, was cancelled or was hidden by an older run is dispatched again, by the same check run the check reads.
+- no solo window waives an open requirement; a reverted rules change leaves the rules it replaced in force.
+
+The differential against the published 3.0.0a8 is SAME: the engine's reports do not change.
+
 ## 3.0.0a8 — witnessed roots; what was asked; the rules as records; an entry for the next agent
 
 Read first:

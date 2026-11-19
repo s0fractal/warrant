@@ -35,6 +35,8 @@ the core and the `warrant` command and imports nothing but the Python standard
 library and `cryptography`; `warrant_agent` is the interface for agents on top
 of it (Python API, CLI, stdio MCP).
 
+- **[First contact, for an agent](https://github.com/s0fractal/warrant/blob/master/docs/AGENT.md#first-contact-an-agent-meets-another-agents-store)**:
+  read another agent's store by its address, under its rules or yours, and answer it from your own.
 - **[Warrant in 15 minutes](https://github.com/s0fractal/warrant/blob/master/QUICKSTART.md)**:
   one obligation, its closure, an acceptance, a challenge; every command and
   output on the page is run by CI.
