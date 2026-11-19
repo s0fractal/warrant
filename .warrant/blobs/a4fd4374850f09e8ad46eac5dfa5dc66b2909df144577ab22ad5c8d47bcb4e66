@@ -1,0 +1,67 @@
+Codex verdict evidence for G14 at exact master M 6141fe08359237284cac48c11241ffaa9e3a1cca
+D: d3c195c6fcc6016a55a8a772cd7af5ece514a24ddf44966831f05f0ad6351c4e
+T: fa40ebe2cf97d1826a648554a441f7c046523921936e21256b92987544bd13c0
+Verdict: challenge; the full obligation is not done.
+
+Verified roadmap due --actor codex --json at M and MCP context: T is signed by claude, is D's pending leaf, waits for one roadmap/acceptor acceptance, and has no open requirements. Read the evidence record and merged source for #299 (5e5a91c1aaa287159afce258d784c217a713b651) and #528 (0048f66150e5e251bf65baa56b2a88324f9c1698), and both PR descriptions. The earlier partial-walk defect is fixed at M; DR34 passes. These are distinct counterexamples to the remaining promise.
+
+F1: --across silently drops foreign records without a lineage.
+D specifically owes the records of Home's other stores that rest on affected claims. A second store holds a signed bob attest with target/ref equal to the source claim version. That record is admitted and reached by across.reach. After the source claim's pinned file changes, drift.impact(..., readings) nevertheless returns elsewhere=[], stores=[], complete=true. _elsewhere at warrant/drift.py:276 requires the reached id to be in view.root_of; attests and challenges have no lineage, so they are filtered out. Report these reached records with their store and id, preserving that store's assessment. The walk must not claim a complete answer that hides them. This case is ordinary signed graph data; no invalid input or changed bound is involved.
+
+F2: the default CLI answer omits the required identity.
+D owes an answer that keeps root, lens and checkout. warrant/drift.py:357 constructs all three, but lines 358-361 preserve them only with --json. The normal --impact BASE..HEAD output leads with the count yet contains none of the root, lens or checkout tree. Keep the count first and include the computed identity in the text output too. This is specific to the text path; JSON carries the fields correctly.
+
+Checks at M:
+- tests/tools_test.py sections drift_cases,pinned_cases,drift_merge_cases,drift_impact_cases: all passed (exit 0).
+- Existing mutant harness with its baseline section discovery explicitly limited to drift_impact_cases: T127,T128,T129,T130,T131,T132,T133,T134,T135,T136,T141,T142,T143,T144,T145,T348,T349: 17/17 KILLED by their named cases. Exact replacements, section map, clean baseline, and stop-on-named-case kill predicate unchanged. No claim of a full mutant or full suite run.
+- python3 -m warrant.roadmap check: 122 lineages, 0 problems.
+- python3 -m warrant.claims check: 143 live claims, 0 problems.
+- Isolated additional reproduction below prints FAIL F1 and FAIL F2 at M. Fixture signatures use only the repository's deterministic test keys; no checker identity or seed was used.
+
+Run the script from outside the worktree with TMPDIR set to a review work directory and PYTHONDONTWRITEBYTECODE=1. ROOT can be changed to another checkout of M. It creates only temporary fixture repositories.
+
+--- counterexamples.py ---
+import contextlib
+import io
+import json
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path('/Users/s0fractal/Projects/.worktrees/codex-review/accept-fa40ebe2cf97-0-6141fe083592')
+sys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]
+from tools_test import drift_repo
+from world import Repo
+from warrant import across as A, cli as CLI, drift as D, repo as RP
+
+r, claim = drift_repo()
+other = Repo()
+foreign = other.attest('bob', claim, verdict='seen')
+base = r.commit('a fresh claim')
+(r.root / 'lib' / 'code.py').write_text('X = 2\n')
+head = r.commit('change the accepted file')
+readings = A.home_readings({'repositories': {'here': {'path': str(r.root)}, 'there': {'path': str(other.root)}}})
+rep = RP.Repo(r.root).report()
+m = D.impact(rep, r.root, head, base, readings)
+depth, complete = A.reach([rep, *(x.rep for x in readings if x.why is None)], rep['lineages'][claim]['versions'])
+print('FOREIGN_RECORD', json.dumps({'claim':claim,'foreign_attest':foreign,'reached':foreign in depth,'complete':complete,'impact':m},sort_keys=True))
+print(('ok   ' if m['stores'] == ['there'] else 'FAIL ') + 'F1 --across must name the other store holding an attest that rests directly on the stale claim')
+
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = CLI.main(['drift', '--root', str(r.root), f'--impact={base}..{head}'])
+text = out.getvalue()
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    jcode = CLI.main(['drift', '--root', str(r.root), f'--impact={base}..{head}', '--json'])
+answer = json.loads(out.getvalue())
+print('TEXT',json.dumps({'code':code,'text':text,'json_code':jcode,'json_identity':{k:answer[k] for k in ('root','lens','checkout')}}))
+print(('ok   ' if all(str(answer[k]) in text for k in ('root','lens')) and answer['checkout']['tree'] in text else 'FAIL ') + 'F2 default impact text must retain root, lens and checkout while leading with the count')
+
+--- observed stdout ---
+ACCEPT V3-3-1 6d1f302603cf
+claims checker: 1 of 1 backed claims run, 0 fresh at this commit
+FOREIGN_RECORD {"claim": "6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3", "complete": true, "foreign_attest": "38c634de46b9a3494b938632b39de19334de2dba9c6d1e2f5494202604c972a4", "impact": {"affected": [], "already_stale": [], "base": "ef63d2513bb1b7561fbc3dec0263f0bc42db6d04", "changed": ["lib/code.py"], "complete": true, "head": "902fdf60dbde708e1007a2547fb4092e355ea3ef", "in_no_acceptance": [], "stale": [{"commit": "9817c5cf51d48ff26be3407fa7e1a9773e350284", "complete": true, "elsewhere": [], "files": [{"detail": "since 902fdf60dbde", "path": "lib/code.py", "verdict": "CHANGED"}], "id": "V3-3-1", "lineage": "6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3", "rests_on_it": [], "verdict": "CHANGED"}], "stores": [], "unavailable": []}, "reached": true}
+FAIL F1 --across must name the other store holding an attest that rests directly on the stale claim
+TEXT {"code": 1, "text": "impact: 1 stale claim(s) -> 0 lineage(s) resting on them\nSTALE V3-3-1 (6d1f302603cf), accepted at 9817c5cf51d4\n  CHANGED lib/code.py since 902fdf60dbde\nchanged since ef63d2513bb1: 1 file(s), 0 in no acceptance\n", "json_code": 1, "json_identity": {"root": "0a38fead705ddad649ca0d5fc4e2d250ecd1d817a4e76bc0577be9435a934848", "lens": "35bb0dbfc01352d82046c78b73d9f11dae499b90d0f2eb042850865480a58508", "checkout": {"claims": true, "tree": "fbe5c2a8c8be47d9a1b57795b79236ef0e8d90b4"}}}
+FAIL F2 default impact text must retain root, lens and checkout while leading with the count
