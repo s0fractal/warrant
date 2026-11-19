@@ -817,6 +817,45 @@ def remote_cases():
           refused == ["NOT_PERMITTED", "BAD_REQUEST", "REFUSED", "BAD_REQUEST", "BAD_REQUEST", "BAD_REQUEST"], refused)
 
 
+def agent_whatif_cases():
+    """Before an agent acts (warrant_agent.whatif): what would change without some records or with an acceptance, and
+    which of its waiting acceptances changes the most; nothing is filed."""
+    r = Repo()
+    a = r.entity("alice", "obligation@1", {"state": "open", "statement": "first", "serves": []})
+    a_done = r.entity("alice", "obligation@1", {"state": "done", "statement": "first", "serves": []}, lineage=a)
+    b = r.entity("alice", "obligation@1", {"state": "open", "statement": "second", "serves": []})
+    b_done = r.entity("alice", "obligation@1", {"state": "done", "statement": "second", "serves": []}, lineage=b,
+                      requires=[a])
+    lone = r.entity("alice", "obligation@1", {"state": "open", "statement": "alone", "serves": []})
+    lone_done = r.entity("alice", "obligation@1", {"state": "done", "statement": "alone", "serves": []}, lineage=lone)
+    r.attest("bob", b_done)                                # b's closure waits only for a to be done now
+    for k in range(2):                                     # two more closures waiting for bob, each changing only itself
+        c = r.entity("alice", "obligation@1", {"state": "open", "statement": f"other {k}", "serves": []})
+        r.entity("alice", "obligation@1", {"state": "done", "statement": f"other {k}", "serves": []}, lineage=c)
+    r.attest("bob", lone_done)
+    ch = r.put("bob", "challenge", {"target": lone_done, "statement": "not so"}, refs=[lone_done])
+    cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {"repo": str(r.root)}}})
+    lines = len(r.store.lines())
+    acc = api.call(cfg, "whatif", {"workspace": "w", "accept": [a_done], "actor": "bob"}).get("ok", {})
+    gone = api.call(cfg, "whatif", {"workspace": "w", "without": [ch]}).get("ok", {})
+    nxt = api.call(cfg, "next", {"workspace": "w", "actor": "bob"}).get("ok", {})
+    moved = {x["lineage"] for x in acc.get("changes", [])}
+    first = (nxt.get("next") or [{}])[0]
+    check("WF1 whatif: bob's supposed acceptance of a's closure makes a done and, through b's requirement, b too; a "
+          "challenge supposed absent frees the lineage it held; nothing is filed",
+          moved == {a, b} and lone in {x["lineage"] for x in gone.get("changes", [])} and len(r.store.lines()) == lines,
+          (acc.get("changes"), gone.get("changes")))
+    check("WF2 next: of the acceptances waiting for bob, the one with a lineage resting on it and the most changes comes "
+          "first (a's closure: two lineages), with what rests on it counted",
+          first.get("version") == a_done and first.get("changes") == 2 and first.get("rests_on_it") == 1
+          and [x["changes"] for x in nxt.get("next", [])] == [2, 1, 1], nxt.get("next"))
+    bad = [api.call(cfg, "whatif", {"workspace": "w"}).get("error"),
+           api.call(cfg, "next", {"workspace": "w", "actor": "bob", "limit": 0}).get("error"),
+           api.call(cfg, "next", {"workspace": "w"}).get("error")]
+    check("WF3 a hypothesis names something, a limit is in range, and next needs an actor (a signer or `actor`)",
+          bad == ["BAD_REQUEST", "BAD_REQUEST", "BAD_REQUEST"], bad)
+
+
 def mcp_cases():
     try:
         import mcp  # noqa: F401
@@ -855,9 +894,9 @@ def mcp_cases():
           not pre.is_error and not filed.is_error and not box.is_error
           and (filed.structured_content or {}).get("filed") == (pre.structured_content or {}).get("ids") and len(got) == 2,
           (pre, filed, box, found))
-    check("M01 stdio MCP: thirteen tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
+    check("M01 stdio MCP: fourteen tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
           names == sorted(["warrant_" + n for n in ("workspace", "context", "read", "graph", "across", "handoff", "prepare", "commit", "explain",
-                                                         "find", "inbox", "act", "remote")])
+                                                         "find", "inbox", "act", "remote", "whatif")])
           and not c.is_error and (c.structured_content or {}).get("filed", {}).get("actor") == "bob"
           and bad.is_error and "NOT_FOUND" in bad.content[0].text, (names, c, bad))
 
@@ -2263,6 +2302,7 @@ if __name__ == "__main__":
         roadmap_parity_cases,
         work_cases,
         remote_cases,
+        agent_whatif_cases,
         mcp_cases,
         home_cases,
         across_cases,
