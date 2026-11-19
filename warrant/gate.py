@@ -1285,6 +1285,27 @@ def timely_veto(root, b, k):
     return veto_challenge(b, assess_snapshot(b, snap), k)
 
 
+LABEL_RETRY = 7 * 86400   # how long after its end a brake's hold label is still read: a failed revert retried
+
+
+def held_now(b, gh):
+    """The numbers of the pull requests that carry the hold label now: one paged read of GitHub's issues."""
+    name = b.gate["hold_label"]
+    return {i.get("number") for page in gh.api(f"issues?state=all&labels={name}&per_page=100", pages=True) for i in page
+            if any((x or {}).get("name") == name for x in i.get("labels") or [])}
+
+
+def timely_label(b, gh, k):
+    """Why an ended brake `k` stands vetoed by the hold label put on in time, or None: GitHub's issue events show the
+    label put on its pull request last at or before the brake's end (Codex 714914541fc5: a timely label veto whose
+    revert failed was lost once the brake had ended). The caller has seen the label on it now (held_now)."""
+    name = b.gate["hold_label"]
+    put = [_epoch(e.get("created_at")) for page in gh.api(f"issues/{int(k['pr'])}/events?per_page=100", pages=True)
+           for e in page if e.get("event") == "labeled" and (e.get("label") or {}).get("name") == name]
+    put = [t for t in put if t is not None]
+    return f"the label {name!r} on #{k['pr']}, put on before its brake ended" if put and max(put) <= k["until"] else None
+
+
 def _kept(path):
     """A revert never takes records back: the store is append-only, and its history stays whole."""
     return path == RECORDS or path.startswith(BLOBS)
@@ -1505,14 +1526,21 @@ def enforce_brakes(root, b, gh, found, now=None):
     rep = assess_snapshot(b, snap)
     pending = {a.facts.get("revert") for a in found if a.facts.get("revert")}
     out, now = [], time.time() if now is None else now
+    held = None
     for k in brakes(root, b.commit, now, open_only=False):
         ended = k["until"] <= now
-        if ended and not veto_challenge(b, rep, k):     # the cheap test first: most ended brakes were never vetoed
+        challenged = ended and veto_challenge(b, rep, k)
+        recent = ended and now - k["until"] < LABEL_RETRY
+        if recent and held is None:
+            held = held_now(b, gh)                    # one read for every recently ended brake
+        labelled = recent and k["pr"] in held
+        if ended and not (challenged or labelled):     # the cheap tests first: most ended brakes were never vetoed
             continue
         if reverted(root, b.commit, k["merge"]) or k["merge"] in pending:
             continue
-        # ended: only a veto standing now that was in the base before the end, so a failed revert is retried
-        why = timely_veto(root, b, k) if ended else vetoed(b, rep, gh, k)
+        # ended: only a veto that stood before the end and stands now, so a failed revert is retried
+        why = ((challenged and timely_veto(root, b, k)) or (labelled and timely_label(b, gh, k))) if ended \
+            else vetoed(b, rep, gh, k)
         if why:
             out.append((k["pr"], open_revert(root, b, gh, k, why)))
     return out
