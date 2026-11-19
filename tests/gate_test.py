@@ -1579,7 +1579,8 @@ def ended_brake_cases():
     tardy = GT.enforce_brakes(r2.root, b2, hub, [], now=until2 + 120)
     check("E99 a veto in the base before its brake ended is enforced by a run after the end, so a failed revert is "
           "retried; a veto that reached the base only after the end opens no revert (Codex af30dd9b)",
-          len(timely) == 1 and "opened" in timely[0][1] and tardy == [] and hub.calls == [], (timely, tardy, hub.calls))
+          len(timely) == 1 and "opened" in timely[0][1] and tardy == []
+          and all(m == "GET" and p.startswith("issues?") for p, m in hub.calls), (timely, tardy, hub.calls))
 
 
 def source_tip_cases():
@@ -1616,6 +1617,54 @@ def source_tip_cases():
           got == {"claims-checker": "4" * 40, "gone": None, "odd": None} and none == {}
           and sorted(asked) == ["git/ref/heads/stores/claims-checker", "git/ref/heads/stores/gone", "git/ref/heads/stores/odd"],
           (got, none, asked))
+
+
+def ended_label_cases():
+    """A hold label put on a pull request before its brake ended is a veto a later run still enforces (a failed revert
+    retried); one put on after the end is not; a label taken off is none; a brake ended more than LABEL_RETRY ago asks
+    GitHub nothing (Codex 714914541fc5)."""
+    r = Repo(git_init=False)
+    (r.dot / "merge.json").write_text(json.dumps(PRES))
+    (r.root / "AGENTS.md").write_text("original rules\n")
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("base")
+    git(r.root, "checkout", "-q", "-b", "feature")
+    (r.root / "AGENTS.md").write_text("weakened rules\n")
+    v = r.entity("alice", "pr-head@1", {"state": "open", "repository": "s0fractal/warrant", "pr": 7, "title": "rules"})
+    r.commit("rules change")
+    git(r.root, "checkout", "-q", "master")
+    until = 1793062800
+    git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {until}: #7 head version {v}")
+    b = GT.Base(r.root, git(r.root, "rev-parse", "HEAD"))
+    stamp = lambda t: GT.time.strftime(GT.STAMP, GT.time.gmtime(t))  # noqa: E731
+
+    class Hub:
+        def __init__(self, on, put):
+            self.on, self.put, self.calls = on, put, []
+
+        def pull(self, n):
+            return {"labels": ["hold"] if self.on else []}
+
+        def api(self, path, method="GET", body=None, pages=False):
+            self.calls.append((path, method))
+            if path.startswith("issues?"):
+                return [[{"number": 7, "labels": [{"name": "hold"}]}]] if self.on else [[]]
+            if path.startswith("issues/7/events"):
+                return [[{"event": "labeled", "label": {"name": "hold"}, "created_at": stamp(self.put)}]]
+            return [] if pages else {"sha": "d" * 40}
+
+        def dispatch(self, workflow, branch):
+            self.calls.append(("dispatch", workflow, branch))
+    timely, late, off, old = Hub(True, until - 60), Hub(True, until + 60), Hub(False, until - 60), Hub(True, until - 60)
+    got = {name: GT.enforce_brakes(r.root, b, h, [], now=t) for name, h, t in (
+        ("timely", timely, until + 120), ("late", late, until + 120), ("off", off, until + 120),
+        ("old", old, until + GT.LABEL_RETRY + 1))}
+    check("E101 an ended brake whose hold label was put on before the end is enforced by a later run (the revert opened "
+          "again); a label put on after the end or taken off is no veto, and a brake ended more than LABEL_RETRY ago asks "
+          "GitHub nothing (Codex 714914541fc5)",
+          len(got["timely"]) == 1 and "opened" in got["timely"][0][1] and got["late"] == [] and got["off"] == []
+          and got["old"] == [] and old.calls == [] and not any(p.startswith("issues/7/events") for p, _ in off.calls),
+          (got, off.calls, old.calls))
 
 
 def rules_cases():
@@ -1879,6 +1928,7 @@ if __name__ == "__main__":
         rules_revert_cases,
         rules_revert_merge_cases,
         ended_brake_cases,
+        ended_label_cases,
         source_tip_cases,
         after_merge_cases,
         prerelease_cases,
