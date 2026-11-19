@@ -53,7 +53,7 @@ SCHEMA = {
     "fields": {
         "state": "str",
         "parties": "strs",
-        "commitments": "dict",
+        "commitments": "obj",
         "expires_at": "int",
         "purpose": "str",
         "arbiter": "str?",
@@ -150,7 +150,7 @@ def parse_proposal(rec):
     """Parse and validate a `pact@1` proposal entity record, returning (spec, error)."""
     if not isinstance(rec, dict) or rec.get("kind") != "entity" or rec.get("schema") != SCHEMA_NAME:
         return None, "NOT_PACT_PROPOSAL"
-    if rec.get("lineage") is not None or rec.get("prev") is not None:
+    if rec.get("lineage") is not None:          # a lineage root; `prev` is its actor's chain, not its lineage (Codex F5)
         return None, "PROPOSAL_MUST_BE_ROOT"
     body = rec.get("body")
     if not isinstance(body, dict):
@@ -345,6 +345,9 @@ def resolve_pacts(snap: Snapshot, trust: dict, as_of: int):
     if not (R.is_int(as_of) and as_of >= 0):
         raise ValueError("as_of must be a non-negative integer")
     valid, all_recs = _extract_verified_records(snap, trust)
+    # the evaluation horizon: a record dated after as_of is not yet there (Codex F1)
+    valid = {i: r for i, r in valid.items() if R.is_int(r.get("at")) and r["at"] <= as_of}
+    all_recs = {i: r for i, r in all_recs.items() if R.is_int(r.get("at")) and r["at"] <= as_of}
 
     # Index all pact@1 proposal entities (including untrusted/invalid ones so they report INVALID)
     proposals = {}
@@ -624,6 +627,37 @@ def resolve_pacts(snap: Snapshot, trust: dict, as_of: int):
 # ---------------------------------------------------------------- escrow bridge with grant@1
 
 
+def _bindings(snap, pacts, grants):
+    """{grant_id: [(pact_id, pact_entry)]} of the escrow bindings that hold: a pact names the grant, and the grant's
+    issuer bound it, as the pact's proposer or as a party that accepted it; a pact between others cannot freeze a
+    grant its issuer never put in escrow (Codex F3)."""
+    out = {}
+    for pid, p in sorted(pacts.items()):
+        if p["status"] == "INVALID":
+            continue
+        envs = snap.lines.get(pid) or []
+        proposer = envs[0]["record"].get("actor") if envs and isinstance(envs[0].get("record"), dict) else None
+        for gid in p["escrow_grants"]:
+            g = grants.get(gid)
+            issuer = g["issuer"] if g is not None else None
+            if issuer is not None and issuer in p["parties"] and (issuer == proposer or issuer in p["accepted"]):
+                out.setdefault(gid, []).append((pid, p))
+    return out
+
+
+def frozen_grants(snap, trust, profile, as_of, grants):
+    """The grants escrow freezes at `as_of`: each bound (_bindings) to a pact not in the state its escrow mode needs,
+    and every grant delegated from one of them (its chain names it). warrant.delegate.assess_delegated refuses a record
+    under any of them (Codex F2: the freeze was only displayed)."""
+    pacts = resolve_pacts(snap, trust, as_of)
+    frozen = set()
+    for gid, bound in _bindings(snap, pacts, grants).items():
+        for _pid, p in bound:
+            if p["status"] != ("ACTIVE" if p["escrow_mode"] == "active" else "SETTLED"):
+                frozen.add(gid)
+    return {g for g, x in grants.items() if g in frozen or frozen & set(x.get("chain") or [])}
+
+
 def resolve_escrow(snap: Snapshot, trust: dict, profile: dict, as_of: int):
     """Resolve every escrowed `grant@1` bound to any `pact@1` in `snap`.
 
@@ -633,13 +667,7 @@ def resolve_escrow(snap: Snapshot, trust: dict, profile: dict, as_of: int):
     """
     grants = D.resolve_grants(snap, trust, profile, as_of)
     pacts = resolve_pacts(snap, trust, as_of)
-
-    bindings = {}  # grant_id -> list of (pact_id, pact_entry)
-    for pid, p in sorted(pacts.items()):
-        if p["status"] == "INVALID":
-            continue
-        for gid in p["escrow_grants"]:
-            bindings.setdefault(gid, []).append((pid, p))
+    bindings = _bindings(snap, pacts, grants)
 
     escrow = {}
     for gid, bound_pacts in sorted(bindings.items()):

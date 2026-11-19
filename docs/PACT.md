@@ -27,7 +27,9 @@ A proposal is a root `entity` record (`schema: "pact@1"`, `state: "proposed"`) w
 - `expires_at`: non-negative integer timestamp.
 - `arbiter` *(optional)*: neutral actor id strictly outside `parties` (`ARBITER_IS_PARTY` refused).
 - `escrow_grants` *(optional)* & `escrow_mode` (`"active"` | `"settled"`): `grant@1` ids whose
-  executability is gated by the pact's resolved state.
+  executability is gated by the pact's resolved state. A binding holds only when the grant's issuer is a party
+  that bound it, as the pact's proposer or by accepting it: a pact between others never freezes a grant.
+- The proposal is a lineage root (`lineage` null); its `prev` is its actor's chain, which may hold earlier records.
 
 | State | Condition |
 | :--- | :--- |
@@ -51,7 +53,10 @@ A proposal is a root `entity` record (`schema: "pact@1"`, `state: "proposed"`) w
   may file `pact/settle` or `pact/breach`.
 - **Escrow freeze (`PC-7`):** `resolve_escrow` gates every bound `grant@1` on both `grant.status == "ACTIVE"`
   and the binding pact holding the required state (`ACTIVE` or `SETTLED`). Any breach/withdrawal/expiry
-  immediately freezes the escrowed capability.
+  immediately freezes the escrowed capability, and every grant delegated from it: `warrant.delegate.assess_delegated`
+  reads such a grant as `ESCROW_FROZEN` and admits no record under it (`frozen_grants`).
+- **One horizon:** a pact is resolved from the records dated at or before `as_of`; a later accept, fulfilment,
+  withdrawal or arbiter record does not change an earlier view.
 
 ## 3. Computed-Loss Composition Algebra (Default-Deny Frame Law)
 

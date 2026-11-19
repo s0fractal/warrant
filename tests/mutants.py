@@ -1120,6 +1120,12 @@ MUTANTS = [
     ("BM12", "warrant/board.py", "        for k in ([kind] if kind else OWNERS):", "        for k in OWNERS:", TOOLS, ["BD6"]),
     ("BM10", "warrant/board.py", '    if todo["describe"]:', "    if True:", TOOLS, ["BD4"]),
     # attenuating capability delegation (warrant/delegate.py, docs/DELEGATION.md)
+    ('PC90', 'warrant/pact.py', '    valid = {i: r for i, r in valid.items() if R.is_int(r.get("at")) and r["at"] <= as_of}\n', '', 'tests/pact_test.py', ['PR1']),
+    ('PC91', 'warrant/delegate.py', '        grants[gid] = dict(grants[gid], status="ESCROW_FROZEN")   # a frozen grant admits nothing (Codex F2)', '        pass', 'tests/pact_test.py', ['PR2']),
+    ('PC92', 'warrant/pact.py', '            if issuer is not None and issuer in p["parties"] and (issuer == proposer or issuer in p["accepted"]):', '            if True:', 'tests/pact_test.py', ['PR3']),
+    ('PC93', 'warrant/pact.py', '        "commitments": "obj",', '        "commitments": "dict",', 'tests/pact_test.py', ['PR4']),
+    ('PC94', 'warrant/pact.py', '    if rec.get("lineage") is not None:          # a lineage root', '    if rec.get("lineage") is not None or rec.get("prev") is not None:          # a lineage root', 'tests/pact_test.py', ['PR5']),
+    ('PC95', 'warrant/pact.py', '    return {g for g, x in grants.items() if g in frozen or frozen & set(x.get("chain") or [])}', '    return {g for g, x in grants.items() if g in frozen}', 'tests/pact_test.py', ['PR6']),
     ("DG1", "warrant/delegate.py", "            if not (cap.roles <= held):", "            if False:", "tests/delegate_test.py", ["DG04"]),
     ("DG2", "warrant/delegate.py", "            if widened:", "            if False:", "tests/delegate_test.py", ["DG05"]),
     ("DG3", "warrant/delegate.py", "            if p_cap.max_depth < 1 or cap.max_depth >= p_cap.max_depth:", "            if False:", "tests/delegate_test.py", ["DG06"]),

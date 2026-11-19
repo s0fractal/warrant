@@ -7,6 +7,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from world import Repo, check, run_sections
 
@@ -130,11 +131,14 @@ def pact_cases():
     ful_post = P.make_fulfill("bob", sb, pid, evidence_digest=_h("ev-post"), delivered=["published", "signed"], at=105)
     r_time = P.resolve_pacts(_snap_from_envs([prop, acc_a, acc_b, ful_pre, ful_post]), trust, as_of=30).get(pid, {})
     time_codes = {e.get("code") for e in r_time.get("refused_events", [])}
-    check("PC06 fulfillment before activation or after expires_at is refused",
+    r_late = P.resolve_pacts(_snap_from_envs([prop, acc_a, acc_b, ful_pre, ful_post]), trust, as_of=110).get(pid, {})
+    late_codes = {e.get("code") for e in r_late.get("refused_events", [])}
+    check("PC06 fulfillment before activation or after expires_at is refused, each read when it is there: at 30 the "
+          "fulfilment dated 105 does not exist yet; at 110 it is refused as after expiry (Codex F1)",
           r_time.get("status") == "ACTIVE" and r_time.get("fulfilled") == {}
-          and "FULFILL_BEFORE_ACTIVATION" in time_codes
-          and "FULFILL_AFTER_EXPIRY" in time_codes,
-          r_time)
+          and "FULFILL_BEFORE_ACTIVATION" in time_codes and "FULFILL_AFTER_EXPIRY" not in time_codes
+          and "FULFILL_AFTER_EXPIRY" in late_codes,
+          (r_time, r_late))
 
     # PC07: equivocation detection — conflicting signed fulfill digests trigger BREACHED + dual-record proof
     ful_a_1 = P.make_fulfill("alice", sa, pid, evidence_digest=_h("ev-a-v1"), delivered=["signed", "auth"], at=20)
@@ -341,5 +345,24 @@ def pact_cases():
           (st_res, es_res, co_res, bad_op, cli_run.returncode))
 
 
+def review_cases():
+    """Codex's five reproducers on #577, each its own file under tests/, run as they were written: a pact reads only
+    records dated by its horizon (F1), escrow freezes delegated admission (F2), only an issuer binds its grant (F3),
+    the schema is one the engine admits (F4), and a proposal may follow its actor's earlier records (F5)."""
+    import subprocess
+    here = Path(__file__).resolve().parent
+    for case, name, what in (("PR1", "time", "a pact reads no record dated after its horizon"),
+                             ("PR2", "escrow", "a breached escrow refuses the delegated record"),
+                             ("PR3", "binding", "an unrelated pact cannot freeze another issuer's grant"),
+                             ("PR4", "schema", "the pact@1 schema is admitted by the V3 engine"),
+                             ("PR5", "chain", "a proposal may follow an earlier record of its actor"),
+                             ("PR6", "descendant", "a breached escrow freezes the grants delegated from it too")):
+        out = subprocess.run([sys.executable, str(here / f"pact_review_{name}_test.py")], capture_output=True,
+                             text=True, cwd=here.parent, timeout=600)
+        check(f"{case} {what} (Codex's reproducer, tests/pact_review_{name}_test.py)",
+              out.returncode == 0 and "\nok   " in "\n" + out.stdout and "FAIL" not in out.stdout,
+              (out.stdout + out.stderr)[-400:])
+
+
 if __name__ == "__main__":
-    sys.exit(run_sections([pact_cases]))
+    sys.exit(run_sections([pact_cases, review_cases]))
