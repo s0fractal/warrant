@@ -1,0 +1,263 @@
+Codex roadmap verdict: P2 challenge of G10 closure
+
+Repository: s0fractal/warrant
+M: 833484a6bd4dc68e4cc50f26bc6687c15799c898
+D: 549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f
+T: eb4f86a300ab79a31c21af6a6ba72bbbf4c94cc80c41df727bae24837ed54d02
+
+Finding: A cancelled required check strands the gate's exact veto revert.
+
+Locations at M:
+- warrant/gate.py:605-609: check_reasons maps an existing completed required check whose conclusion is cancelled to CHECK_RED.
+- warrant/gate.py:1517-1523: approve_held consults ENDED_WITHOUT_CHECK and re-dispatches a revert's workflow only when CHECK_MISSING is present.
+- warrant/gate.py:1570-1576: enforce_brakes treats the assessed exact revert as pending and opens no replacement, even while its check is red.
+- tests/gate_test.py:1725-1745: E103 supplies CHECK_MISSING directly to its cancellation example, so it never tests the CHECK_RED result of an existing cancelled check.
+
+Trigger and consequence:
+The owner vetoes a braked constitutional change in time. The gate opens its exact revert. CI is cancelled after the required test check has been created; both that check and its workflow report completed/cancelled. The real assessment recognizes the exact revert and returns only CHECK_RED. approve_held returns no dispatch, and enforce_brakes returns no action because the exact revert is pending. Repeated identical reads cannot progress. The merged change remains despite the timely veto unless a person restarts CI. #558 handles cancellation before the required check exists, but its repair does not cover cancellation after that check exists. This leaves D's brake enforcement unfinished.
+
+Observed in signed-store/Git fixtures at M (not an operation on GitHub):
+- Required check absent, workflow cancelled: CHECK_MISSING; one ci.yml re-dispatch (control).
+- Required check exists, completed/cancelled; workflow completed/cancelled: CHECK_RED; zero dispatches; no replacement revert (counterexample).
+- Required check exists, completed/timed_out; workflow completed/timed_out: same fixture result.
+- Required check and workflow successful: eligible; zero dispatches (control).
+The cancellation counterexample alone supports the finding. The timed-out row is another supplied API-shaped fixture; no live GitHub timeout delivery was observed.
+
+An isolated in-memory control widening only the CHECK_MISSING retry entry condition to CHECK_MISSING or CHECK_RED allows the existing ENDED_WITHOUT_CHECK filter to run and makes F1 pass. It preserves the successful control. This is causal evidence, not a reviewed or committed fix; a production repair needs its own ordinary PR, regression case and mutant.
+
+Review scope and validation:
+- Verified detached HEAD M, origin, clean initial worktree, roadmap due --actor codex, D/T/evidence/references/no subject/no requires, and MCP context: T's guard PENDING only for one roadmap/acceptor acceptance; codex is the configured signer with that role. Context used actor=s0fractal to bound the frontier output; this did not change the signer or target assessment.
+- Read the specified 9e183284..8278d4a3 diff of gate.py, tools/gate.py, merge.json, v3.json and AGENTS.md (tools/gate.py unchanged); read current gate paths, policy, tests and the later named repair diffs. Read docs/AGENT.md, docs/V3.md and docs/REPOSITORY.md.
+- Read all twelve referenced PRs through GitHub GET; confirmed their merge commits are ancestors of M through local first-parent history. #350 was merged by s0fractal; #356 likewise; the later named fixes by github-actions[bot]. The store has three #350 head versions and no codex attest on any of them.
+- Read T and its six evidence records (pr-head@1 roots, not evidence blobs); all present. T's established and residual claims were read, not adopted as instructions.
+- python3 tests/gate_test.py: exit 0, 121 checks passed.
+- python3 tests/tools_test.py: exit 0, 240 checks passed.
+- python3 -m warrant.roadmap check: 122 lineages, zero problems.
+- python3 -m warrant.claims check: 143 live claims, zero problems.
+- Selected mutants: 36/36 killed on their own named cases, with the repository harness's clean section baselines. Copies and temporary files were redirected to this review's work directory. Selected ids: G160, G157, G158, G159, G147, G148, G153, G155, G156, G154, G59, G85, G60, G61, G62, G63, G64, G86, G65, G66, G67, G68, G69, G70, G96, G97, G93, G94, G95, G141, G142, G143, G144, G146, G149, G145.
+- Reproducer below: exit 1 and FAIL F1 at unchanged M; in-memory control: exit 0 and ok F1.
+- Boundary test B1 passed; artifact checks stopped because local Python 3.15 lacks setuptools. No full mutant matrix, full CI, real GitHub cancellation, workflow dispatch, or production fix was performed.
+
+Run the reproducer from a checkout of M, saving the Python block below as a file outside the checkout. Set TMPDIR to a directory in the review's work area. It imports this commit's tests/gate_test.py fixtures, creates only disposable Git/store fixtures, and makes no network calls.
+
+```python
+"""G10 counterexample: cancellation after the required check exists blocks retries."""
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path.cwd()
+sys.path.insert(0, str(ROOT / "tests"))
+import gate_test as F
+from warrant import gate as G
+
+
+def main():
+    until = 1793062800 + 86400
+    r, version = F.braked_world(until, dict(F.ROLES, challenger=["dave"]))
+    merge = F.git(r.root, "rev-parse", "HEAD")
+    r.put("dave", "challenge", {"target": version, "statement": "Veto changed rules"}, refs=[version])
+    base = r.commit("timely veto")
+    b = G.Base(r.root, base)
+    F.git(r.root, "checkout", "-q", "-b", f"gate/revert/7-{merge[:12]}")
+    (r.root / "AGENTS.md").write_text("original rules\n")
+    head = r.commit(f"Revert #7\n\nwarrant-gate revert of {merge}")
+    pr = {"number": 8, "state": "open", "draft": False, "base": "master", "head": head,
+          "labels": [], "branch": f"gate/revert/7-{merge[:12]}",
+          "head_repo": b.repository, "author": "github-actions[bot]"}
+
+    class Hub:
+        def __init__(self, conclusion):
+            self.conclusion, self.calls = conclusion, []
+
+        def pull(self, n):
+            return {"labels": []}
+
+        def api(self, path, method="GET", body=None, pages=False):
+            self.calls.append((path, method))
+            if path.startswith("pulls/"):
+                return {"state": "open", "head": {"sha": head}}
+            if path.startswith("actions/runs?"):
+                if "event=" in path:
+                    return {"workflow_runs": []}
+                return {"workflow_runs": [{"id": 9, "head_sha": head, "path": ".github/workflows/ci.yml",
+                                            "event": "workflow_dispatch", "status": "completed",
+                                            "conclusion": self.conclusion}]}
+            raise AssertionError((path, method))
+
+        def dispatch(self, workflow, branch):
+            self.calls.append(("dispatch", workflow, branch))
+
+    outcomes = []
+    for label, check_conclusion, workflow_conclusion in (
+            ("missing check, cancelled workflow", None, "cancelled"),
+            ("existing cancelled check", "cancelled", "cancelled"),
+            ("existing timed-out check", "timed_out", "timed_out"),
+            ("successful control", "success", "success")):
+        checks = F.green(head)
+        if check_conclusion is None:
+            checks["check_runs"] = []
+        else:
+            checks["check_runs"][0]["conclusion"] = check_conclusion
+        a = G.assess(r.root, b, pr, checks, now=until - 10)
+        assert a.facts.get("revert") == merge, a.reasons
+        gh = Hub(workflow_conclusion)
+        retries = G.approve_held(b, gh, [a])
+        enforced = G.enforce_brakes(r.root, b, gh, [a], now=until - 10)
+        sent = [c for c in gh.calls if c[0] == "dispatch"]
+        assert enforced == [], enforced
+        outcomes.append({"case": label, "codes": a.codes(), "exact_revert": True,
+                         "dispatches": sent, "enforce_brakes": enforced, "retry_result": retries})
+    print(json.dumps({"reviewed_commit": F.git(ROOT, "rev-parse", "HEAD"), "outcomes": outcomes}, indent=2))
+    assert outcomes[0]["dispatches"] and not outcomes[3]["dispatches"], outcomes
+    ok = bool(outcomes[1]["dispatches"] and outcomes[2]["dispatches"])
+    print(("ok   " if ok else "FAIL ") + "F1 cancelled/timed-out required checks must not strand an exact veto revert")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+```
+
+Unchanged M output:
+```text
+{
+  "reviewed_commit": "833484a6bd4dc68e4cc50f26bc6687c15799c898",
+  "outcomes": [
+    {
+      "case": "missing check, cancelled workflow",
+      "codes": [
+        "CHECK_MISSING"
+      ],
+      "exact_revert": true,
+      "dispatches": [
+        [
+          "dispatch",
+          ".github/workflows/ci.yml",
+          "gate/revert/7-1c3d292db9ef"
+        ]
+      ],
+      "enforce_brakes": [],
+      "retry_result": [
+        [
+          8,
+          "dispatched .github/workflows/ci.yml again on gate/revert/7-1c3d292db9ef"
+        ]
+      ]
+    },
+    {
+      "case": "existing cancelled check",
+      "codes": [
+        "CHECK_RED"
+      ],
+      "exact_revert": true,
+      "dispatches": [],
+      "enforce_brakes": [],
+      "retry_result": []
+    },
+    {
+      "case": "existing timed-out check",
+      "codes": [
+        "CHECK_RED"
+      ],
+      "exact_revert": true,
+      "dispatches": [],
+      "enforce_brakes": [],
+      "retry_result": []
+    },
+    {
+      "case": "successful control",
+      "codes": [],
+      "exact_revert": true,
+      "dispatches": [],
+      "enforce_brakes": [],
+      "retry_result": []
+    }
+  ]
+}
+FAIL F1 cancelled/timed-out required checks must not strand an exact veto revert
+
+```
+
+In-memory control output:
+```text
+{
+  "reviewed_commit": "833484a6bd4dc68e4cc50f26bc6687c15799c898",
+  "outcomes": [
+    {
+      "case": "missing check, cancelled workflow",
+      "codes": [
+        "CHECK_MISSING"
+      ],
+      "exact_revert": true,
+      "dispatches": [
+        [
+          "dispatch",
+          ".github/workflows/ci.yml",
+          "gate/revert/7-1c3d292db9ef"
+        ]
+      ],
+      "enforce_brakes": [],
+      "retry_result": [
+        [
+          8,
+          "dispatched .github/workflows/ci.yml again on gate/revert/7-1c3d292db9ef"
+        ]
+      ]
+    },
+    {
+      "case": "existing cancelled check",
+      "codes": [
+        "CHECK_RED"
+      ],
+      "exact_revert": true,
+      "dispatches": [
+        [
+          "dispatch",
+          ".github/workflows/ci.yml",
+          "gate/revert/7-1c3d292db9ef"
+        ]
+      ],
+      "enforce_brakes": [],
+      "retry_result": [
+        [
+          8,
+          "dispatched .github/workflows/ci.yml again on gate/revert/7-1c3d292db9ef"
+        ]
+      ]
+    },
+    {
+      "case": "existing timed-out check",
+      "codes": [
+        "CHECK_RED"
+      ],
+      "exact_revert": true,
+      "dispatches": [
+        [
+          "dispatch",
+          ".github/workflows/ci.yml",
+          "gate/revert/7-1c3d292db9ef"
+        ]
+      ],
+      "enforce_brakes": [],
+      "retry_result": [
+        [
+          8,
+          "dispatched .github/workflows/ci.yml again on gate/revert/7-1c3d292db9ef"
+        ]
+      ]
+    },
+    {
+      "case": "successful control",
+      "codes": [],
+      "exact_revert": true,
+      "dispatches": [],
+      "enforce_brakes": [],
+      "retry_result": []
+    }
+  ]
+}
+ok   F1 cancelled/timed-out required checks must not strand an exact veto revert
+
+```
