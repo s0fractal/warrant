@@ -1,7 +1,7 @@
 import sys
 from world import KEYS, check, finish
 from pact_review_world import snap, pid, trust, comms
-from warrant import pact as P, records as R, jcs as C
+from warrant import pact as P, records as R
 
 
 prior = R.record("schema", "alice", 1, {"name": "prior@1", "fields": {"state": "str"},
