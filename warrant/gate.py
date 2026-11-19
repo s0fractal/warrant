@@ -1484,7 +1484,8 @@ HELD = {"CHECK_MISSING", "CHECK_PENDING", "CHECK_RED"}
 
 def approve_held(b, gh, found):
     """[(pr, outcome)]: the gate approves a pull_request run GitHub holds for approval (action_required) at the head of
-    a pull request it assessed as verdicts only, from a branch of this repository, refused for nothing but its checks,
+    a pull request it assessed as verdicts only or as its own revert, and starts again a required workflow its revert
+    has no run of, from a branch of this repository, refused for nothing but its checks,
     whose head is still the one assessed; of the required workflows only. Such a head adds records and blobs alone, so
     the run is the base's workflow on data. GitHub held these runs for the bot's pull requests when they were opened as
     well as when their branch moved (#389, 2026-11-13, after #379 and #382), and the owner approved each by hand.
@@ -1493,9 +1494,10 @@ def approve_held(b, gh, found):
     out = []
     required = {c["workflow"] for c in b.gate["required"]}
     for a in found:
-        if not a.facts.get("verdicts") or a.pr.get("head_repo") != b.repository:
+        if not (a.facts.get("verdicts") or a.facts.get("revert")) or a.pr.get("head_repo") != b.repository:
             continue
-        if {c for c, _ in a.reasons + a.shared} - HELD:
+        codes = {c for c, _ in a.reasons + a.shared}
+        if codes - HELD:
             continue
         n, head = a.pr["number"], a.pr["head"]
         try:
@@ -1507,6 +1509,13 @@ def approve_held(b, gh, found):
                 if w.get("conclusion") == "action_required" and w.get("path") in required and w.get("head_sha") == head:
                     gh.api(f"actions/runs/{int(w['id'])}/approve", "POST")
                     out.append((n, f"approved the held run {int(w['id'])} of {w.get('path')} at {head[:12]}"))
+            # the gate's revert whose required workflow never started (its dispatch failed): dispatched again, so a
+            # timely veto is not left at CHECK_MISSING for good (Codex ed9e05dd); any run at the head, of any event, counts
+            if a.facts.get("revert") and "CHECK_MISSING" in codes:
+                every = gh.api(f"actions/runs?head_sha={_sha(head)}&per_page=100").get("workflow_runs", [])
+                for wf in sorted(required - {w.get("path") for w in every if w.get("head_sha") == head}):
+                    gh.dispatch(wf, a.pr["branch"])
+                    out.append((n, f"dispatched {wf} again on {a.pr['branch']}"))
         except Refused as e:
             out.append((n, f"approving a held run FAILED: {e}"))
         except (KeyError, TypeError, ValueError) as e:
