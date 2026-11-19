@@ -1356,7 +1356,13 @@ def open_revert(root, b, gh, k, why):
         msg = f"Revert #{k['pr']} (vetoed in its brake window)\n\nwarrant-gate revert of {k['merge']}\nvetoed: {why}\n"
         commit = gh.api("git/commits", "POST", {"message": msg, "tree": tree, "parents": [b.commit]})["sha"]
         branch = f"{REVERT_BRANCH}{k['pr']}-{k['merge'][:12]}"
-        gh.api("git/refs", "POST", {"ref": f"refs/heads/{branch}", "sha": commit})
+        try:
+            gh.api("git/refs", "POST", {"ref": f"refs/heads/{branch}", "sha": commit})
+        except Refused:
+            # the branch is left from an attempt that failed after making it (Codex 548288f90134): it is the gate's
+            # own name, and no open pull request reverts this merge (enforce_brakes skips one that does), so it is
+            # moved to this revert and the attempt goes on
+            gh.api(f"git/refs/heads/{branch}", "PATCH", {"sha": commit, "force": True})
         try:
             held, unknown = published_with(root, gh, k["merge"])
         except (Refused, AttributeError, TypeError, KeyError, ValueError):     # an answer that is no list of tags: not read
@@ -1518,6 +1524,28 @@ def _branch_tip(gh, name):
         raise
 
 
+def _held(b, gh, k, now, held):
+    """Whether ended brake `k` is recent enough for its label to be read and its pull request carries the hold label
+    now; `held` is filled on first use with the pull requests that carry it (one read per run)."""
+    if now - k["until"] >= LABEL_RETRY:
+        return False
+    if not held:
+        held.append(held_now(b, gh))
+    return k["pr"] in held[0]
+
+
+def _ended_veto_seen(b, gh, rep, k, now, held):
+    """Whether an ended brake has a veto standing now: a veto challenge, or (recently ended) the hold label."""
+    return bool(veto_challenge(b, rep, k)) or _held(b, gh, k, now, held)
+
+
+def _timely(root, b, gh, rep, k, now, held):
+    """Why an ended brake's veto stood before its end and stands now (a challenge in the base by then, or the label put
+    on by then), so a failed revert is retried; None otherwise."""
+    return ((veto_challenge(b, rep, k) and timely_veto(root, b, k))
+            or (_held(b, gh, k, now, held) and timely_label(b, gh, k)) or None)
+
+
 def enforce_brakes(root, b, gh, found, now=None):
     """[(pr, outcome)] of each merge whose brake is open, vetoed, not reverted and with no revert pending: an open pull
     request the gate assessed as the exact revert of that merge (_revert_only). A branch's name alone is no revert
@@ -1525,22 +1553,14 @@ def enforce_brakes(root, b, gh, found, now=None):
     snap, _ = store_at(root, b.commit)
     rep = assess_snapshot(b, snap)
     pending = {a.facts.get("revert") for a in found if a.facts.get("revert")}
-    out, now = [], time.time() if now is None else now
-    held = None
+    out, now, held = [], time.time() if now is None else now, []
     for k in brakes(root, b.commit, now, open_only=False):
         ended = k["until"] <= now
-        challenged = ended and veto_challenge(b, rep, k)
-        recent = ended and now - k["until"] < LABEL_RETRY
-        if recent and held is None:
-            held = held_now(b, gh)                    # one read for every recently ended brake
-        labelled = recent and k["pr"] in held
-        if ended and not (challenged or labelled):     # the cheap tests first: most ended brakes were never vetoed
+        if ended and not _ended_veto_seen(b, gh, rep, k, now, held):     # the cheap tests first: most were never vetoed
             continue
         if reverted(root, b.commit, k["merge"]) or k["merge"] in pending:
             continue
-        # ended: only a veto that stood before the end and stands now, so a failed revert is retried
-        why = ((challenged and timely_veto(root, b, k)) or (labelled and timely_label(b, gh, k))) if ended \
-            else vetoed(b, rep, gh, k)
+        why = _timely(root, b, gh, rep, k, now, held) if ended else vetoed(b, rep, gh, k)
         if why:
             out.append((k["pr"], open_revert(root, b, gh, k, why)))
     return out

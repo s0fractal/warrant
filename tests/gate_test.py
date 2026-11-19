@@ -1534,22 +1534,28 @@ def rules_revert_merge_cases():
           and n1 in GT.reverted_rules(r.root, gh.sha) and later.eligible, (a.reasons, result, later.reasons))
 
 
+def braked_world(until, roles=None):
+    """(repo, head version) of a base whose last merge, #7, weakened AGENTS.md under a brake until `until`."""
+    r = Repo(git_init=False, roles=roles)
+    (r.dot / "merge.json").write_text(json.dumps(PRES))
+    (r.root / "AGENTS.md").write_text("original rules\n")
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("base")
+    git(r.root, "checkout", "-q", "-b", "feature")
+    (r.root / "AGENTS.md").write_text("weakened rules\n")
+    v = r.entity("alice", "pr-head@1", {"state": "open", "repository": "s0fractal/warrant", "pr": 7, "title": "rules"})
+    r.commit("rules change")
+    git(r.root, "checkout", "-q", "master")
+    git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {until}: #7 head version {v}")
+    return r, v
+
+
 def ended_brake_cases():
     """A veto already in the base before the brake ended is enforced by a later run (a failed revert retried); one that
     reached the base only after the end is not (Codex af30dd9b)."""
     def world(late):
-        r = Repo(git_init=False, roles=dict(ROLES, challenger=["dave"]))
-        (r.dot / "merge.json").write_text(json.dumps(PRES))
-        (r.root / "AGENTS.md").write_text("original rules\n")
-        git(r.root, "init", "-q", "-b", "master")
-        r.commit("base")
-        git(r.root, "checkout", "-q", "-b", "feature")
-        (r.root / "AGENTS.md").write_text("weakened rules\n")
-        v = r.entity("alice", "pr-head@1", {"state": "open", "repository": "s0fractal/warrant", "pr": 7, "title": "rules"})
-        r.commit("rules change")
-        git(r.root, "checkout", "-q", "master")
         until = 1793062800        # an hour after world.git's commit time, 2026-10-27T00:00:00Z
-        git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {until}: #7 head version {v}")
+        r, v = braked_world(until, dict(ROLES, challenger=["dave"]))
         r.put("dave", "challenge", {"target": v, "statement": "Veto the changed rules"}, refs=[v])
         git(r.root, "add", "-A")
         when = f"@{until + (60 if late else -60)} +0000"   # the forge's time of the commit that brought the veto
@@ -1623,18 +1629,8 @@ def ended_label_cases():
     """A hold label put on a pull request before its brake ended is a veto a later run still enforces (a failed revert
     retried); one put on after the end is not; a label taken off is none; a brake ended more than LABEL_RETRY ago asks
     GitHub nothing (Codex 714914541fc5)."""
-    r = Repo(git_init=False)
-    (r.dot / "merge.json").write_text(json.dumps(PRES))
-    (r.root / "AGENTS.md").write_text("original rules\n")
-    git(r.root, "init", "-q", "-b", "master")
-    r.commit("base")
-    git(r.root, "checkout", "-q", "-b", "feature")
-    (r.root / "AGENTS.md").write_text("weakened rules\n")
-    v = r.entity("alice", "pr-head@1", {"state": "open", "repository": "s0fractal/warrant", "pr": 7, "title": "rules"})
-    r.commit("rules change")
-    git(r.root, "checkout", "-q", "master")
     until = 1793062800
-    git(r.root, "merge", "-q", "--no-ff", "feature", "-m", f"Merge pull request #7\n\nwarrant-gate brake until {until}: #7 head version {v}")
+    r, _ = braked_world(until)
     b = GT.Base(r.root, git(r.root, "rev-parse", "HEAD"))
     stamp = lambda t: GT.time.strftime(GT.STAMP, GT.time.gmtime(t))  # noqa: E731
 
@@ -1665,6 +1661,43 @@ def ended_label_cases():
           len(got["timely"]) == 1 and "opened" in got["timely"][0][1] and got["late"] == [] and got["off"] == []
           and got["old"] == [] and old.calls == [] and not any(p.startswith("issues/7/events") for p, _ in off.calls),
           (got, off.calls, old.calls))
+
+
+def orphan_revert_cases():
+    """A revert attempt that made its branch and then failed leaves the branch behind; the next attempt moves it to its
+    revert and opens the pull request, never fails on the name forever (Codex 548288f90134)."""
+    until = 1793062800 + 86400
+    r, v = braked_world(until, dict(ROLES, challenger=["dave"]))
+    r.put("dave", "challenge", {"target": v, "statement": "Veto the changed rules"}, refs=[v])
+    b = GT.Base(r.root, r.commit("the owner's veto"))
+
+    class Hub:
+        def __init__(self):
+            self.refs, self.calls, self.fail_pull = set(), [], True
+
+        def pull(self, n):
+            return {"labels": []}
+
+        def api(self, path, method="GET", body=None, pages=False):
+            self.calls.append((path, method))
+            if path == "git/refs" and method == "POST":
+                if body["ref"] in self.refs:
+                    raise GT.Refused("Reference already exists (HTTP 422)", "GITHUB")
+                self.refs.add(body["ref"])
+            if path == "pulls" and method == "POST" and self.fail_pull:
+                self.fail_pull = False
+                raise GT.Refused("temporary API failure (HTTP 502)", "GITHUB")
+            return [] if pages else {"sha": "d" * 40}
+
+        def dispatch(self, workflow, branch):
+            self.calls.append(("dispatch", workflow, branch))
+    gh = Hub()
+    first = GT.enforce_brakes(r.root, b, gh, [], now=until - 10)
+    second = GT.enforce_brakes(r.root, b, gh, [], now=until - 5)
+    moved = [c for c in gh.calls if c[1] == "PATCH" and c[0].startswith("git/refs/heads/gate/revert/7-")]
+    check("E102 a revert that failed after making its branch is retried: the next run moves the gate's own branch to "
+          "its revert and opens the pull request (Codex 548288f90134)",
+          "FAILED" in first[0][1] and "opened" in second[0][1] and len(moved) == 1, (first, second, gh.calls))
 
 
 def rules_cases():
@@ -1929,6 +1962,7 @@ if __name__ == "__main__":
         rules_revert_merge_cases,
         ended_brake_cases,
         ended_label_cases,
+        orphan_revert_cases,
         source_tip_cases,
         after_merge_cases,
         prerelease_cases,
