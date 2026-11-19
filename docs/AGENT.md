@@ -65,6 +65,7 @@ identity `A`'s (docs/HOME.md).
 | `explain` | `{word}` | what a verdict, reliance, problem or refusal means and does not establish |
 | `find` | `{workspace, schema?, kind?, actor?, where?, text?, state?, leaves?, limit?}` | records matching every filter, newest first: `where` compares top-level body fields exactly (`{"pr": 523}`), `text` is a substring of the body in any case, `state` the lineage's state, `leaves` only each lineage's latest version; each row the full id, a title, an attest's or challenge's target, the lineage's root, state and reliance |
 | `inbox` | `{actor?}` | over every workspace, what waits for the actor (default: each workspace's signer): `attest`, `answer` (asked of it), `back schema`, `answer challenge` (a counted challenge standing against one of its records that no record answers in `answers` and no newer version of the lineage replaced), `wait` (its own versions, a pull request's head left to the gate); `due` counts what it can act on; a workspace it cannot read is named in `unavailable` |
+| `remote` | `{url, op: status\|find\|context, under?, ...}` | another agent's store read by its HTTPS address (`<url>.warrant/v3.json` and `records.jsonl`, with the migration maps its migrated records count by), assessed here and never executed: under the publisher's rules, or with `under` a workspace of yours, under yours. `status`: identity, lineages by state, reliance, challenges standing, and `sources_not_read` (the sources it declares, whose records this read does not take in). No checkout beside it: a pinned lineage reads PINS_NOT_CHECKED. HTTPS only, no redirect followed, no non-public host unless the operator's configuration names it (`"remote": {"allow_hosts": [...]}`) |
 | `act` | `{workspace, act, ...}` then `{workspace, act, records}` | `review-open {pr, title, serves?}`, `review-head {pr, commit?, answers?}`, `close {obligation, established, evidence? or pr, residual?, refs?, requires?}`, `accept {target}`: the records the act files, built as `warrant.review` and `warrant.roadmap` build them (a chain fork of the signer joined first), chained on its head and checked; with `records` (that list, unchanged), all signed and appended under one lock and one write, or none (`CHAIN_MOVED` if the head moved) |
 
 `prepare` fills in the signer, the time, `prev`, `target` (in the body and in `refs`) and the
@@ -93,6 +94,15 @@ The loop of a change, in this repository, with `act` (each call twice: the previ
 {"workspace": "warrant", "act": "close", "obligation": "<any version of it>", "pr": 523,
  "established": ["what holds now"], "residual": ["what does not"]}
 {"workspace": "warrant", "act": "review-head", "pr": 523}
+```
+
+Meeting another agent's store with no checkout of it: read its status under its own rules, then the same under yours,
+and find what it says about a record you rely on:
+
+```json
+{"url": "https://raw.githubusercontent.com/OWNER/NAME/BRANCH/", "op": "status"}
+{"url": "https://raw.githubusercontent.com/OWNER/NAME/BRANCH/", "op": "status", "under": "warrant"}
+{"url": "https://raw.githubusercontent.com/OWNER/NAME/BRANCH/", "op": "find", "kind": "challenge", "text": "<an id you rely on>"}
 ```
 
 Commit the store between `close` and `review-head` (the head names the commit that holds the closure). Start a

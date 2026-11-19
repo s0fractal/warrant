@@ -118,6 +118,11 @@ class Config:
         api = doc.get("agent_api") if isinstance(doc, dict) else None
         need(api in (AGENT_API, V2_API), "UNSUPPORTED_VERSION", f"configuration must declare agent_api {AGENT_API!r}")
         need(isinstance(doc.get("workspaces"), dict) and doc["workspaces"], "BAD_REQUEST", "workspaces is a non-empty object")
+        rem = doc.get("remote", {})
+        need(isinstance(rem, dict) and set(rem) <= {"allow_hosts"} and isinstance(rem.get("allow_hosts", []), list)
+             and all(isinstance(h, str) and h for h in rem.get("allow_hosts", [])), "BAD_REQUEST",
+             "remote is {allow_hosts?: [host names this server may read a store from over a non-public address]}")
+        self.remote = {"allow_hosts": list(rem.get("allow_hosts", []))}
         self.workspaces = {}
         for name, w in doc["workspaces"].items():
             need(HANDLE.match(name) is not None, "BAD_REQUEST", "workspace names are local handles")

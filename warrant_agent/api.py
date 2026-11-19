@@ -22,6 +22,8 @@ interpreter's stack limit. Nothing is cached and no view is kept between calls.
   explain    {word}                                    the static glossary
   find       {workspace, schema?, kind?, actor?, where?, text?, state?, leaves?, limit?}   records by what they say
   inbox      {actor?}                                  what waits for the actor in every workspace (warrant_agent.work)
+  remote     {url, op: status|find|context, under?, ...}   another agent's store read by its HTTPS address
+                                                       (warrant_agent.remote), under its rules or a workspace's
   act        {workspace, act, ...; records?}           review-open | review-head | close | accept: the records an act
                                                        files, previewed; with `records`, all signed and appended at once
 
@@ -49,6 +51,7 @@ from warrant.store import Inadmissible, Refused, Snapshot
 
 from . import AGENT_API, adapter_id
 from . import glossary as GL
+from . import remote as RM_
 from . import work as W
 from .config import OPERATIONS, repository_config
 from .errors import CODES, AgentError, need
@@ -518,11 +521,15 @@ def act(cfg, req):
     return W.act(_this, cfg, req)
 
 
+def remote(cfg, req):
+    return RM_.remote(_this, cfg, req)
+
+
 OPERATIONS_ = {"workspace": workspace, "context": context, "read": read, "graph": graph, "across": across,
                "handoff": handoff, "prepare": prepare, "commit": commit, "explain": explain,
-               "find": find, "inbox": inbox, "act": act}
+               "find": find, "inbox": inbox, "act": act, "remote": remote}
 # across asks each workspace for `graph`; find and inbox for `context`; act for `prepare`, and `commit` to file
-assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across", "find", "inbox", "act"}
+assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across", "find", "inbox", "act", "remote"}
 assert set(GL.TERMS) >= set(CODES) | set(A.REFERENCE_STATES)
 
 

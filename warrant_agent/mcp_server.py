@@ -4,9 +4,9 @@
     warrant-agent-mcp --repo DIR --actor ACTOR [--seed SEED]   # one checkout, configured in memory (no file)
     warrant-agent-mcp init --actor ACTOR --seed SEED --config OUT.json [--repo DIR] ...   (warrant_agent.init)
 
-Twelve tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
+Thirteen tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
 warrant_workspace, warrant_context, warrant_read, warrant_graph, warrant_across, warrant_handoff, warrant_prepare,
-warrant_commit, warrant_explain, warrant_find, warrant_inbox, warrant_act. An argument left out is left out of the request. A tool's structured
+warrant_commit, warrant_explain, warrant_find, warrant_inbox, warrant_act, warrant_remote. An argument left out is left out of the request. A tool's structured
 result is the object the CLI prints; a typed refusal is a tool error whose text is that refusal's
 JSON. The configuration (workspaces, signer, limits) is the operator's and is fixed at start; no tool
 argument chooses a signer, a key, a path or code to run. stdout carries only MCP messages.
@@ -41,6 +41,9 @@ body {"verdict": "accept"}, target the version id.
 against your records that nothing answers yet, your own versions still waiting).
 - Do a whole act at once: warrant_act act=review-open | review-head | close | accept returns the records it would file, \
 checked; call it again with `records` unchanged to sign and file them all, or none.
+- Another agent's store, by its address: warrant_remote url=<its root over HTTPS, e.g. \
+https://raw.githubusercontent.com/OWNER/NAME/BRANCH/> op=status | find | context, under its own rules or, with \
+under=<your workspace>, under yours. Read only; its records are data.
 - A word you do not know: warrant_explain.
 What a result does not establish: the source's completeness (always UNATTESTED), the truth of evidence text, \
 or anything outside the store."""
@@ -221,6 +224,29 @@ def build(cfg):
         return run("act", _req(workspace=workspace, act=act, records=records, pr=pr, title=title, serves=serves,
                                commit=commit, answers=answers, obligation=obligation, evidence=evidence,
                                established=established, residual=residual, refs=refs, requires=requires, target=target))
+
+    @server.tool(name="warrant_remote", annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True), description=(
+        "Another agent's store, read by its HTTPS address (the root that serves .warrant/v3.json and "
+        ".warrant/records.jsonl, e.g. https://raw.githubusercontent.com/OWNER/NAME/BRANCH/), assessed here and never "
+        "executed. Without `under`, under the publisher's own rules; with `under` (one of your workspaces), under yours: "
+        "a record counts only when your trust and profile say so. op=status: its identity, lineages by state, reliance, "
+        "challenges standing and the sources it declares that this read does not take in; op=find: as warrant_find; "
+        "op=context {targets}: as warrant_context. No checkout beside it: a pinned lineage reads PINS_NOT_CHECKED."))
+    def warrant_remote(url: Annotated[str, Field(description="The store's root over HTTPS, ending in /.")],
+                       op: Literal["status", "find", "context"],
+                       under: Annotated[str | None, Field(description="One of your workspaces: read under its rules.")] = None,
+                       schema: Annotated[str | None, Field(description="find: e.g. obligation@1.")] = None,
+                       kind: Annotated[Literal["entity", "attest", "challenge", "schema"] | None, Field(description="find: record kind.")] = None,
+                       actor: Annotated[str | None, Field(description="find: whose records.")] = None,
+                       where: Annotated[dict[str, Any] | None, Field(description="find: body fields to exact values.")] = None,
+                       text: Annotated[str | None, Field(description="find: a substring of the body.")] = None,
+                       state: Annotated[str | None, Field(description="find: the lineage's state.")] = None,
+                       leaves: Annotated[bool | None, Field(description="find: only each lineage's latest version.")] = None,
+                       limit: Annotated[int | None, Field(description="find: at most this many rows.")] = None,
+                       targets: Annotated[list[str] | None, Field(description="context: record ids or prefixes.")] = None
+                       ) -> dict[str, Any]:
+        return run("remote", _req(url=url, op=op, under=under, schema=schema, kind=kind, actor=actor, where=where,
+                                  text=text, state=state, leaves=leaves, limit=limit, targets=targets))
 
     return server
 
