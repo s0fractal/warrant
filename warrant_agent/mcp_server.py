@@ -277,6 +277,18 @@ def build(cfg):
                          ) -> dict[str, Any]:
         return run("delegate", _req(workspace=workspace, op=op, as_of=as_of))
 
+    @server.tool(name="warrant_pact", annotations=reads, description=(
+        "Bilateral/multilateral cryptographic pacts and computed-loss composition (`pact@1`, docs/PACT.md). Read only. "
+        "op=status: resolve every pact@1 contract (activation, fulfillment, equivocation, breach, expiry). "
+        "op=escrow: resolve pact-bound grant@1 escrow permissions. "
+        "op=compose: compose ordered pact_ids under the default-deny computed-loss frame law."))
+    def warrant_pact(workspace: Workspace,
+                     op: Literal["status", "escrow", "compose"],
+                     as_of: Annotated[int | None, Field(description="Unix timestamp to evaluate pacts at.")] = None,
+                     pact_ids: Annotated[list[str] | None, Field(description="Ordered 64-hex pact ids for op=compose.")] = None,
+                     ) -> dict[str, Any]:
+        return run("pact", _req(workspace=workspace, op=op, as_of=as_of, pact_ids=pact_ids))
+
     return server
 
 

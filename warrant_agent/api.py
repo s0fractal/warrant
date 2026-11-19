@@ -56,6 +56,7 @@ from . import glossary as GL
 from . import remote as RM_
 from . import whatif as WI
 from . import delegate as DG
+from . import pact as PC
 from . import work as W
 from .config import OPERATIONS, repository_config
 from .errors import CODES, AgentError, need
@@ -541,12 +542,16 @@ def delegate(cfg, req):
     return DG.delegate(_this, cfg, req)
 
 
+def pact(cfg, req):
+    return PC.pact(_this, cfg, req)
+
+
 OPERATIONS_ = {"workspace": workspace, "context": context, "read": read, "graph": graph, "across": across,
                "handoff": handoff, "prepare": prepare, "commit": commit, "explain": explain,
                "find": find, "inbox": inbox, "act": act, "remote": remote,
-               "whatif": whatif, "next": next_, "delegate": delegate}
+               "whatif": whatif, "next": next_, "delegate": delegate, "pact": pact}
 # across asks each workspace for `graph`; find and inbox for `context`; act for `prepare`, and `commit` to file
-assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across", "find", "inbox", "act", "remote", "whatif", "next", "delegate"}
+assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across", "find", "inbox", "act", "remote", "whatif", "next", "delegate", "pact"}
 assert set(GL.TERMS) >= set(CODES) | set(A.REFERENCE_STATES)
 
 

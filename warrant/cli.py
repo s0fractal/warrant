@@ -547,6 +547,9 @@ def main(argv=None):
     if argv[:1] == ["verify"]:
         from . import verify
         return verify.main(argv[1:])
+    if argv[:1] == ["pact"]:
+        from . import pact
+        return pact.main(argv[1:])
     if argv[:1] == ["resolve"]:
         from . import resolve
         return resolve.run(argv[1:])
