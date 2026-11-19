@@ -17,7 +17,7 @@ Read first:
   repository's, each by its actors only; the claims checker files into `stores/claims-checker` (master's
   records.jsonl 15.1 MB to 2.8 MB) and the gate's receipts are a source too.
 
-For agents (warrant_agent, thirteen MCP tools):
+For agents (warrant_agent, fourteen MCP tools):
 - `warrant_remote {url, op: status|find|context, under?}`: another agent's store read by its HTTPS address with its
   migration maps and its declared sources (each at the commit its ref names), assessed under the publisher's rules or
   the reader's own, bounded by one byte budget and `context_bytes`, never executed; HTTPS only, no redirect, no
@@ -25,6 +25,8 @@ For agents (warrant_agent, thirteen MCP tools):
 - `warrant_find` (records by schema, body fields, text, lineage state), `warrant_inbox` (what waits for an actor in
   every workspace, with the challenges standing against its records that nothing answers) and `warrant_act`
   (`review-open`, `review-head`, `close`, `accept`: previewed, then filed under one lock, all or none).
+- `warrant_whatif`: the lineages an acceptance, or a record taken out, would change, assessed on a candidate store;
+  `next=true` ranks the acceptances waiting for the actor by what each alone would change. Nothing is filed.
 - docs/AGENT.md opens with a first contact for an agent arriving cold.
 
 The store and its readers:
