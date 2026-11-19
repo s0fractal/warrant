@@ -44,6 +44,9 @@
  "repository": "s0fractal/warrant",
  "trust": {
   "keys": {
+   "antigravity": [
+    "12f24607dd04d6b21d375d16c2cb3b4db524427030e3fb9835d613fa30b83c06"
+   ],
    "checker sha256:dd56e635635051d550e0fd8a9d8074ce0fb989df48d6b7c3da9769f8cff8826f": [
     "32ad176c555160997f6b00e50057fc06c33267e300f7cd5a9ef5a8d3368e9a21"
    ],
