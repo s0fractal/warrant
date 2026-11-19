@@ -887,18 +887,21 @@ def mcp_cases():
                 box = await s.call_tool("warrant_inbox", {})
                 found = await s.call_tool("warrant_find", {"workspace": "w", "kind": "attest", "actor": "bob"})
                 dg = await s.call_tool("warrant_delegate", {"workspace": "w", "op": "grants"})
-                return names, c, bad, pre, filed, box, found, dg
-    names, c, bad, pre, filed, box, found, dg = asyncio.run(run())
+                pc = await s.call_tool("warrant_pact", {"workspace": "w", "op": "status"})
+                return names, c, bad, pre, filed, box, found, dg, pc
+    names, c, bad, pre, filed, box, found, dg, pc = asyncio.run(run())
     got = [x["id"] for x in (found.structured_content or {}).get("records", [])]
     check("M02 stdio MCP: warrant_act previews then files an acceptance as the configured signer; warrant_inbox answers "
-          "over the workspaces; warrant_find names both of the signer's attests; warrant_delegate answers grants",
-          not pre.is_error and not filed.is_error and not box.is_error and not dg.is_error
+          "over the workspaces; warrant_find names both of the signer's attests; warrant_delegate answers grants; "
+          "warrant_pact answers status",
+          not pre.is_error and not filed.is_error and not box.is_error and not dg.is_error and not pc.is_error
           and (dg.structured_content or {}).get("warrant") == "delegation/1"
+          and (pc.structured_content or {}).get("warrant") == "pact/1"
           and (filed.structured_content or {}).get("filed") == (pre.structured_content or {}).get("ids") and len(got) == 2,
-          (pre, filed, box, found, dg))
-    check("M01 stdio MCP: fifteen tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
+          (pre, filed, box, found, dg, pc))
+    check("M01 stdio MCP: sixteen tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
           names == sorted(["warrant_" + n for n in ("workspace", "context", "read", "graph", "across", "handoff", "prepare", "commit", "explain",
-                                                         "find", "inbox", "act", "remote", "whatif", "delegate")])
+                                                         "find", "inbox", "act", "remote", "whatif", "delegate", "pact")])
           and not c.is_error and (c.structured_content or {}).get("filed", {}).get("actor") == "bob"
           and bad.is_error and "NOT_FOUND" in bad.content[0].text, (names, c, bad))
 
@@ -2298,6 +2301,11 @@ def delegate_section_cases():
     delegate_cases()
 
 
+def pact_section_cases():
+    from pact_test import pact_cases
+    pact_cases()
+
+
 if __name__ == "__main__":
     sys.exit(run_sections([
         operations,
@@ -2311,6 +2319,7 @@ if __name__ == "__main__":
         remote_cases,
         agent_whatif_cases,
         delegate_section_cases,
+        pact_section_cases,
         mcp_cases,
         home_cases,
         across_cases,

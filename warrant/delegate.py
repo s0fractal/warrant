@@ -824,6 +824,9 @@ def assess_delegated(snap, trust, profile, as_of=None):
     base_rep = base_view.report()
     eff_as_of = base_view.as_of
     grants = resolve_grants(snap, trust, profile, eff_as_of)
+    from . import pact as P                       # here, not at the top: pact imports this module
+    for gid in P.frozen_grants(snap, trust, profile, eff_as_of, grants):
+        grants[gid] = dict(grants[gid], status="ESCROW_FROZEN")   # a frozen grant admits nothing (Codex F2)
 
     # Index ALL grants (active and inactive) by (delegate, delegate_key)
     active_by_pair = {}
