@@ -1,0 +1,277 @@
+# Codex roadmap verdict evidence: G10, remaining revert CI recovery gap
+
+Reviewed base M: 8abbb9f350e50abc78dd7fb9f3d8154bb0946ee3
+Obligation lineage D: 549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f
+Closure version T: d162be447e06c2141cd6f7b856c245805cb0661989e2b80386d3d33962935d85
+
+## Verdict: challenge, P2
+
+The ordinary-PR fixes named by T are present, but the owner's veto can still be left unenforced when the exact revert's workflow has terminated without producing its required check. In warrant/gate.py:1514-1518, approve_held subtracts every required workflow that has any run at the revert head, ignoring that run's status and conclusion. A completed cancelled run therefore suppresses all future dispatches although check_reasons still reports CHECK_MISSING. enforce_brakes:1565-1573 also skips the merge because this exact revert is already pending. Repeated gate passes make no recovery write, so the unchanged revert stays blocked indefinitely without outside intervention. This is a missing-check recovery failure, not a request to waive red checks or merge without CI.
+
+The controlled fixture below constructs a real merge of AGENTS.md under a brake, a signed fixture actor's timely veto, and the exact revert in a separate fixture Git repository. The actual gate assessment recognizes facts.revert and refuses it only for CHECK_MISSING. Its simulated GitHub API reports a completed/cancelled workflow_dispatch run for the required workflow at exactly that revert head, and no check runs. Two passes through the actual enforce_brakes and approve_held make no recovery write. Controls: the same exact revert with no workflow run dispatches CI; a queued run is correctly left alone. GitHub documents cancellation of queued workflows (https://docs.github.com/en/actions/how-tos/manage-workflow-runs/cancel-a-workflow-run) and reports completed/cancelled runs through its run-list API (https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2022-11-28). The missing-check state is supplied by the fixture; no live GitHub cancellation experiment was made and no live veto is claimed to have been lost.
+
+Expected: recover a terminal workflow that cannot produce the missing required check, while preserving the green-check requirement and leaving active runs alone. A fix belongs in an ordinary constitutional pull request with a regression case and a mutant, under D's stated procedure.
+
+## What was checked
+
+- HEAD and origin verified: M above, s0fractal/warrant, initially clean.
+- warrant.roadmap due --actor codex --json matches D, T, G10, five evidence record IDs, all eleven PR references, and empty subject/requires. MCP workspace confirmed signer codex and roadmap/acceptor; context confirmed T is the pending leaf with one missing acceptance and no open requirement/challenge.
+- Read the specified 9e183284..8278d4a3 diff for warrant/gate.py, tools/gate.py (unchanged), .warrant/merge.json, .warrant/v3.json and AGENTS.md; read current gate paths, fixtures, configuration and normative/operator docs. PR #350's merge store contains three head versions and no codex attest/challenge targeting any of them at that merge.
+- Read all five evidence references as records. Checked GitHub PR metadata for #350, #356, #365, #490, #502, #507, #523, #528, #552, #554 and #556, and matched their merge commits on M's first-parent history. Read 7ebf68c7's fixes and the current implementations/regression cases for the earlier challenges. #556 is M.
+- tests/gate_test.py: all 121 checks passed.
+- tests/tools_test.py selected observer_cases and merged_cases: OB1 and MR1 passed.
+- Mutants: G59-G70, G85-G86, G93-G97, G123, G125, G141-G149, G153-G159: 37/37 KILLED on their own named cases (25 prior and 12 recent). Harness matrices retained outside the checkout. The initial 12-mutant harness used its default build directory; those generated files were moved out and removed from the checkout before filing. The subsequent 25-mutant run placed copies and fixtures in the external work directory.
+- warrant.roadmap check: 122 lineages, 0 problems. warrant.claims check: 143 live, 0 problems (before filing; rechecked afterwards).
+- Fresh controlled F1 reproduces at M, with C1/C2 controls passing.
+
+Not run: full tools, core, agent, browser, waker suites; every remaining mutant; live GitHub merge, cancellation or workflow recovery. Tests use fixture keys only. This verdict signs only as codex through MCP; no source fix, Git commit, push, merge or PR is made by this review.
+
+## Runnable counterexample
+
+Save the following as revert_missing_check.py outside the checkout. From an unchanged checkout of M, run with its dependencies and a TMPDIR outside the checkout:
+
+    TMPDIR=/path/to/review/tmp python3 /path/to/review/revert_missing_check.py
+
+Expected at M: exit 1, C1 and C2 pass, F1 fails. The output contains all simulated API calls and exact assessment codes.
+
+```python
+"""Run from the reviewed checkout; uses only fixture Git repositories and a fake forge."""
+import json
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path.cwd()), str(Path.cwd() / 'tests')]
+from gate_test import GT, ROLES, braked_world, git
+
+until = 1793062800
+r, version = braked_world(until, dict(ROLES, challenger=['dave']))
+r.put('dave', 'challenge', {'target': version, 'statement': 'Veto this rules change'}, refs=[version])
+base = r.commit('timely veto')
+b = GT.Base(r.root, base)
+merge = GT.brakes(r.root, base, now=until - 1)[0]['merge']
+branch = f'gate/revert/7-{merge[:12]}'
+git(r.root, 'checkout', '-q', '-b', branch)
+(r.root / 'AGENTS.md').write_text('original rules\n')
+head = r.commit(f'Revert #7\n\nwarrant-gate revert of {merge}')
+pr = {'number': 8, 'state': 'open', 'draft': False, 'base': 'master', 'head': head,
+      'labels': [], 'branch': branch, 'head_repo': b.repository, 'author': 'github-actions[bot]'}
+workflow = b.gate['required'][0]['workflow']
+
+class Hub:
+    def __init__(self, status, conclusion):
+        self.calls = []
+        self.run = {'id': 91, 'path': workflow, 'head_sha': head, 'check_suite_id': 91,
+                    'event': 'workflow_dispatch', 'status': status, 'conclusion': conclusion}
+    def api(self, path, method='GET', body=None, pages=False):
+        self.calls.append([method, path])
+        if path.startswith('pulls/'):
+            return {'state': 'open', 'head': {'sha': head}}
+        if path.startswith('actions/runs?'):
+            return {'workflow_runs': [] if 'event=pull_request' in path or self.run['status'] == 'absent' else [self.run]}
+        if pages:
+            return [[]]
+        return {}
+    def dispatch(self, workflow, branch):
+        self.calls.append(['DISPATCH', workflow, branch])
+
+results = []
+# A completed cancelled workflow, with no job check, is the defect. Queued is a control:
+# a live workflow must be left alone while it can still create its job.
+for status, conclusion in [('completed', 'cancelled'), ('queued', None), ('absent', None)]:
+    gh = Hub(status, conclusion)
+    checks = {'check_runs': [], 'workflow_runs': [] if status == 'absent' else [gh.run]}
+    a = GT.assess(r.root, b, pr, checks, now=until - 1)
+    assert a.facts.get('revert') == merge, (a.facts, a.reasons)
+    assert a.codes() == ['CHECK_MISSING'], a.reasons
+    rounds = []
+    for _ in range(2):
+        rounds.append({'brake': GT.enforce_brakes(r.root, b, gh, [a], now=until - 1),
+                       'recovery': GT.approve_held(b, gh, [a])})
+    results.append({'status': status, 'conclusion': conclusion, 'codes': a.codes(),
+                    'exact_revert': True, 'rounds': rounds, 'calls': gh.calls,
+                    'recovery_writes': [c for c in gh.calls if c[0] != 'GET']})
+print(json.dumps(results, indent=2))
+assert not results[1]['recovery_writes'], 'queued control should be left running'
+print('ok   C1 a queued workflow is left alone')
+assert results[2]['recovery_writes'], 'absent-run control must dispatch CI'
+print('ok   C2 absent workflow is dispatched')
+if not results[0]['recovery_writes']:
+    print('FAIL F1 a terminal cancelled workflow without the required check permanently suppresses revert CI recovery')
+    sys.exit(1)
+print('ok   F1 a terminal cancelled workflow without the required check is retried')
+```
+
+## Observed output at M
+
+```text
+[
+  {
+    "status": "completed",
+    "conclusion": "cancelled",
+    "codes": [
+      "CHECK_MISSING"
+    ],
+    "exact_revert": true,
+    "rounds": [
+      {
+        "brake": [],
+        "recovery": []
+      },
+      {
+        "brake": [],
+        "recovery": []
+      }
+    ],
+    "calls": [
+      [
+        "GET",
+        "pulls/8"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&event=pull_request&per_page=100"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&per_page=100"
+      ],
+      [
+        "GET",
+        "pulls/8"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&event=pull_request&per_page=100"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&per_page=100"
+      ]
+    ],
+    "recovery_writes": []
+  },
+  {
+    "status": "queued",
+    "conclusion": null,
+    "codes": [
+      "CHECK_MISSING"
+    ],
+    "exact_revert": true,
+    "rounds": [
+      {
+        "brake": [],
+        "recovery": []
+      },
+      {
+        "brake": [],
+        "recovery": []
+      }
+    ],
+    "calls": [
+      [
+        "GET",
+        "pulls/8"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&event=pull_request&per_page=100"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&per_page=100"
+      ],
+      [
+        "GET",
+        "pulls/8"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&event=pull_request&per_page=100"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&per_page=100"
+      ]
+    ],
+    "recovery_writes": []
+  },
+  {
+    "status": "absent",
+    "conclusion": null,
+    "codes": [
+      "CHECK_MISSING"
+    ],
+    "exact_revert": true,
+    "rounds": [
+      {
+        "brake": [],
+        "recovery": [
+          [
+            8,
+            "dispatched .github/workflows/ci.yml again on gate/revert/7-e2e812b29fdd"
+          ]
+        ]
+      },
+      {
+        "brake": [],
+        "recovery": [
+          [
+            8,
+            "dispatched .github/workflows/ci.yml again on gate/revert/7-e2e812b29fdd"
+          ]
+        ]
+      }
+    ],
+    "calls": [
+      [
+        "GET",
+        "pulls/8"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&event=pull_request&per_page=100"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&per_page=100"
+      ],
+      [
+        "DISPATCH",
+        ".github/workflows/ci.yml",
+        "gate/revert/7-e2e812b29fdd"
+      ],
+      [
+        "GET",
+        "pulls/8"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&event=pull_request&per_page=100"
+      ],
+      [
+        "GET",
+        "actions/runs?head_sha=59b1b530a0c43b09b223df62f3d372a7e70440e3&per_page=100"
+      ],
+      [
+        "DISPATCH",
+        ".github/workflows/ci.yml",
+        "gate/revert/7-e2e812b29fdd"
+      ]
+    ],
+    "recovery_writes": [
+      [
+        "DISPATCH",
+        ".github/workflows/ci.yml",
+        "gate/revert/7-e2e812b29fdd"
+      ],
+      [
+        "DISPATCH",
+        ".github/workflows/ci.yml",
+        "gate/revert/7-e2e812b29fdd"
+      ]
+    ]
+  }
+]
+ok   C1 a queued workflow is left alone
+ok   C2 absent workflow is dispatched
+FAIL F1 a terminal cancelled workflow without the required check permanently suppresses revert CI recovery
+```
