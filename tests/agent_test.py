@@ -886,17 +886,19 @@ def mcp_cases():
                                                            "records": (pre.structured_content or {}).get("records")})
                 box = await s.call_tool("warrant_inbox", {})
                 found = await s.call_tool("warrant_find", {"workspace": "w", "kind": "attest", "actor": "bob"})
-                return names, c, bad, pre, filed, box, found
-    names, c, bad, pre, filed, box, found = asyncio.run(run())
+                dg = await s.call_tool("warrant_delegate", {"workspace": "w", "op": "grants"})
+                return names, c, bad, pre, filed, box, found, dg
+    names, c, bad, pre, filed, box, found, dg = asyncio.run(run())
     got = [x["id"] for x in (found.structured_content or {}).get("records", [])]
     check("M02 stdio MCP: warrant_act previews then files an acceptance as the configured signer; warrant_inbox answers "
-          "over the workspaces; warrant_find names both of the signer's attests",
-          not pre.is_error and not filed.is_error and not box.is_error
+          "over the workspaces; warrant_find names both of the signer's attests; warrant_delegate answers grants",
+          not pre.is_error and not filed.is_error and not box.is_error and not dg.is_error
+          and (dg.structured_content or {}).get("warrant") == "delegation/1"
           and (filed.structured_content or {}).get("filed") == (pre.structured_content or {}).get("ids") and len(got) == 2,
-          (pre, filed, box, found))
-    check("M01 stdio MCP: fourteen tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
+          (pre, filed, box, found, dg))
+    check("M01 stdio MCP: fifteen tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
           names == sorted(["warrant_" + n for n in ("workspace", "context", "read", "graph", "across", "handoff", "prepare", "commit", "explain",
-                                                         "find", "inbox", "act", "remote", "whatif")])
+                                                         "find", "inbox", "act", "remote", "whatif", "delegate")])
           and not c.is_error and (c.structured_content or {}).get("filed", {}).get("actor") == "bob"
           and bad.is_error and "NOT_FOUND" in bad.content[0].text, (names, c, bad))
 

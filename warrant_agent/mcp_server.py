@@ -266,6 +266,17 @@ def build(cfg):
             return run("next", _req(workspace=workspace, actor=actor, limit=limit))
         return run("whatif", _req(workspace=workspace, without=without, accept=accept, actor=actor))
 
+    @server.tool(name="warrant_delegate", annotations=reads, description=(
+        "Attenuating cryptographic capability delegation (`grant@1`, docs/DELEGATION.md). Read only. "
+        "op=grants: resolve every grant@1 lineage under this workspace's trust and profile (effective attenuated "
+        "capability, revocation, fork, challenge, depth, window, root anchor). "
+        "op=assess: scoped assessment with active delegations, anti-laundering, No-Sybil-Inflation and diff vs static."))
+    def warrant_delegate(workspace: Workspace,
+                         op: Literal["grants", "assess"],
+                         as_of: Annotated[int | None, Field(description="Unix timestamp to evaluate grants at.")] = None,
+                         ) -> dict[str, Any]:
+        return run("delegate", _req(workspace=workspace, op=op, as_of=as_of))
+
     return server
 
 

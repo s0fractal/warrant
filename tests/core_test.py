@@ -629,6 +629,8 @@ def main():
     chain_cases()
     migration_cases()
     canon_cases()
+    from delegate_test import delegate_cases
+    delegate_cases()
     print(f"{'FAILED ' + str(len(FAILS)) if FAILS else 'all passed'}")
     return 1 if FAILS else 0
 
