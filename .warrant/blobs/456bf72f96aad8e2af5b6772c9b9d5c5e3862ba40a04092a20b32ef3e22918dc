@@ -1,0 +1,128 @@
+# Codex challenge of G10 closure T
+
+Repository: s0fractal/warrant
+Base M: 0b51d059c16aabf7b971eac86550e8baee9bf6c1
+Tree: 8efc9f5c5eef3547b9ae4aa6661579e56658bd0a
+Obligation D: 549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f
+Closure T: 8eaafb8b91dc2d11f309a494d494d7bc72d7f57e39c4437fe5aac9ede19455bd
+Reviewer and signer: codex
+
+## P2: an older workflow's cancelled re-run still strands the exact revert
+
+At warrant/gate.py:1521-1526, approve_held chooses each workflow's highest workflow run id. check_reasons (lines 589-610) instead chooses the highest check run id. Those orders need not agree across workflow re-runs. A re-run keeps its workflow run ID and the original SHA; its attempt and check are later. The retry therefore still differs from the merge predicate, despite T's assertion that #562 made them agree.
+
+Concrete sequence on the same exact revert head:
+
+1. Workflow run 5 exists; workflow run 9 subsequently completes successfully, producing required check 10.
+2. Run 5 is re-run later (attempt 2) and cancelled, producing required check 20 in suite 5. Run 9 remains successful.
+3. The actual gate predicate reads check 20, returns CHECK_RED, and recognizes facts.revert as the braked merge's exact revert.
+4. approve_held reads run 9 as latest, counts its success as live, and dispatches nothing. Two invocations both dispatch nothing. enforce_brakes skips a new revert while this exact one is pending, so the owner's veto remains unenforced without an outside action.
+
+Expected: align the retry with the required check/attempt the merge predicate actually selected, and retry its cancelled workflow. Do not treat a workflow's original numeric ID as the chronology of its attempts. Preserve refusal of genuinely failed checks and avoid retrying an unrelated live attempt.
+
+GitHub's primary documentation confirms the underlying rerun identity: GITHUB_RUN_ID does not change on re-run; GITHUB_RUN_ATTEMPT increments. Re-runs use the original GITHUB_SHA and GITHUB_REF.
+- https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+- https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs
+
+## Reproduction
+
+Fixture-only: actual GT.assess and GT.approve_held, real signed fixture store and exact Git revert, mocked read-only GitHub responses. No workflow was cancelled or dispatched on GitHub. Save this Python block in review scratch and run it from the M checkout, with TMPDIR also in review scratch. It exits 1 on the F1 assertion at M. Both controls pass. The test file is evidence here, not a staged red CI change.
+
+```python
+"""Run from the reviewed checkout; fixture-only, with no GitHub writes.
+
+An earlier workflow run is re-run after a newer run succeeded at the same head.
+GitHub preserves workflow run IDs on re-run; the re-run's check has a new ID.
+"""
+import json
+import sys
+import time
+from pathlib import Path
+
+sys.path[:0] = [str(Path.cwd() / "tests"), str(Path.cwd())]
+import gate_test as T
+
+GT, git = T.GT, T.git
+r, version = T.braked_world(int(time.time()) + 3600)
+base = git(r.root, "rev-parse", "HEAD")
+branch = f"gate/revert/7-{base[:12]}"
+git(r.root, "checkout", "-q", "-b", branch)
+(r.root / "AGENTS.md").write_text("original rules\n")
+head = r.commit(f"Revert #7\n\nwarrant-gate revert of {base}")
+b = GT.Base(r.root, base)
+pr = {"number": 8, "state": "open", "draft": False, "base": "master", "head": head,
+      "labels": [], "branch": branch, "head_repo": b.repository, "author": "github-actions[bot]"}
+wf = ".github/workflows/ci.yml"
+
+
+def workflow(wid, conclusion, attempt=1):
+    return {"id": wid, "path": wf, "head_sha": head, "check_suite_id": wid,
+            "event": "workflow_dispatch", "status": "completed", "conclusion": conclusion,
+            "run_attempt": attempt}
+
+
+def check(cid, suite, conclusion):
+    return {"id": cid, "name": "test", "head_sha": head, "app": {"slug": "github-actions"},
+            "check_suite": {"id": suite}, "status": "completed", "conclusion": conclusion}
+
+
+class Hub:
+    def __init__(self, workflows):
+        self.workflows, self.dispatched = workflows, []
+
+    def api(self, path, method="GET", body=None, pages=False):
+        assert method == "GET", (path, method)
+        if path.startswith("pulls/"):
+            return {"state": "open", "head": {"sha": head}}
+        if path.startswith("actions/runs?"):
+            return {"workflow_runs": [] if "event=" in path else self.workflows}
+        raise AssertionError(path)
+
+    def dispatch(self, workflow, ref):
+        self.dispatched.append((workflow, ref))
+
+
+def scenario(label, workflows, checks, expected_codes, expected_dispatch):
+    a = GT.assess(r.root, b, pr, {"workflow_runs": workflows, "check_runs": checks})
+    assert set(a.codes()) == expected_codes, a.reasons
+    assert a.facts.get("revert") == base, a.facts
+    hub = Hub(workflows)
+    GT.approve_held(b, hub, [a])
+    GT.approve_held(b, hub, [a])  # unchanged next gate invocation
+    print(json.dumps({"scenario": label, "codes": a.codes(), "dispatches_after_two_runs": hub.dispatched}))
+    ok = hub.dispatched == expected_dispatch
+    print(("ok   " if ok else "FAIL ") + label, flush=True)
+    return ok
+
+
+assert scenario("C1_success", [workflow(9, "success")], [check(10, 9, "success")], set(), [])
+assert scenario("C2_cancelled_new_run", [workflow(9, "cancelled"), workflow(5, "success")],
+                [check(20, 9, "cancelled"), check(10, 5, "success")], {"CHECK_RED"}, [(wf, branch)] * 2)
+ok = scenario("F1_cancelled_rerun_of_older_workflow", [workflow(9, "success"), workflow(5, "cancelled", 2)],
+              [check(20, 5, "cancelled"), check(10, 9, "success")], {"CHECK_RED"}, [(wf, branch)] * 2)
+sys.exit(0 if ok else 1)
+
+```
+
+Observed (exit 1):
+
+```text
+{"scenario": "C1_success", "codes": [], "dispatches_after_two_runs": []}
+ok   C1_success
+{"scenario": "C2_cancelled_new_run", "codes": ["CHECK_RED"], "dispatches_after_two_runs": [[".github/workflows/ci.yml", "gate/revert/7-73c93bb599a4"], [".github/workflows/ci.yml", "gate/revert/7-73c93bb599a4"]]}
+ok   C2_cancelled_new_run
+{"scenario": "F1_cancelled_rerun_of_older_workflow", "codes": ["CHECK_RED"], "dispatches_after_two_runs": []}
+FAIL F1_cancelled_rerun_of_older_workflow
+```
+
+## Scope and validation
+
+- Verified detached HEAD M and origin https://github.com/s0fractal/warrant.git; initial worktree clean.
+- Re-ran warrant.roadmap due --actor codex --json: exact D, T, evidence, references, no subject or requirements, and codex's pending verdict. MCP context confirmed authentic T, guard PENDING only for roadmap/acceptor, no counted challenge, no store problems. MCP workspace confirmed signer codex and roadmap/acceptor.
+- Read the specified #350 diff 9e183284..8278d4a3, the current tier/solo/revert/check paths, the profile and merge configuration, and GitHub metadata/descriptions for #350, #356, #365, #490, #502, #507, #523, #528, #552, #554, #556, #558, #560, #562. Their merge commits are ancestors of M. The supplied evidence IDs resolve to the named PR roots in the signed store. #562 is M.
+- python3 tests/gate_test.py: exit 0, 121 case lines, all passed.
+- python3 tests/tools_test.py: exit 0, 240 case lines, all passed.
+- Selected existing mutants: 38/38 KILLED on their own cases, clean section baselines; IDs: G59, G60, G61, G62, G63, G64, G65, G66, G67, G68, G69, G70, G85, G86, G93, G94, G95, G96, G97, G141, G142, G143, G144, G145, G146, G147, G148, G149, G153, G154, G155, G156, G157, G158, G159, G160, G161, G162. The full mutant set was not run. These existing cases do not cover the re-run ordering counterexample.
+- python3 -m warrant.roadmap check: 122 lineages, 0 problems.
+- python3 -m warrant.claims check: 143 live claims, 0 problems.
+- Full core, agent, JavaScript and release suites were not run; no live GitHub incident is asserted by this fixture. No code fix, commit, branch switch, push or pull request is part of this verdict. The remaining work is an ordinary constitutional pull request fixing and covering this case, followed by a new closure version.
