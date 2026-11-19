@@ -1709,15 +1709,16 @@ def revert_ci_cases():
     head, branch = "e" * 40, "gate/revert/7-0123456789ab"
 
     class Hub:
-        def __init__(self, ran):
-            self.ran, self.calls = ran, []
+        def __init__(self, ran, status="queued", conclusion=None):
+            self.ran, self.calls, self.status, self.conclusion = ran, [], status, conclusion
 
         def api(self, path, method="GET", body=None, pages=False):
             self.calls.append((path, method))
             if path.startswith("pulls/"):
                 return {"state": "open", "head": {"sha": head}}
             if path.startswith("actions/runs?") and "event=" not in path:
-                return {"workflow_runs": [{"id": 9, "path": w, "head_sha": head, "event": "workflow_dispatch"} for w in self.ran]}
+                return {"workflow_runs": [{"id": 9, "path": w, "head_sha": head, "event": "workflow_dispatch",
+                                           "status": self.status, "conclusion": self.conclusion} for w in self.ran]}
             return {"workflow_runs": []} if path.startswith("actions/runs?") else {}
 
         def dispatch(self, workflow, ref):
@@ -1732,11 +1733,16 @@ def revert_ci_cases():
     GT.approve_held(b, some, [revert])
     GT.approve_held(b, other, [code])
     GT.approve_held(b, carried, [verdicts])           # a verdicts pull request's CI is the carry's (refresh_verdicts)
+    cancelled, finished = Hub(want, "completed", "cancelled"), Hub(want, "completed", "success")
+    GT.approve_held(b, cancelled, [revert])
+    GT.approve_held(b, finished, [revert])
     sent = lambda h: [c[1:] for c in h.calls if c[0] == "dispatch"]  # noqa: E731
     check("E103 the gate's revert with no run of a required workflow at its head is dispatched again on its branch; one "
-          "with a run is not, nor is a pull request of code or of verdicts waiting for its checks (Codex ed9e05dd)",
+          "with a live or finished run is not, while a cancelled run stands for none; nor is a pull request of code or of "
+          "verdicts waiting for its checks (Codex ed9e05dd, 1f63af34)",
           sent(none) == [(w, branch) for w in want] and want and any("again" in x[1] for x in got)
-          and sent(some) == [] and sent(other) == [] and sent(carried) == [], (sent(none), sent(some), sent(other), got))
+          and sent(some) == [] and sent(other) == [] and sent(carried) == []
+          and sent(cancelled) == [(w, branch) for w in want] and sent(finished) == [], (sent(none), sent(some), sent(cancelled), got))
 
 
 def rules_cases():
