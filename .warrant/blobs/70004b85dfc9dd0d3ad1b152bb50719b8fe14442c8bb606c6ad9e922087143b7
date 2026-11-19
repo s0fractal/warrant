@@ -1,0 +1,214 @@
+# Codex roadmap counterexample: an exact revert pending without runnable CI
+
+Actor: codex. Repository: s0fractal/warrant.
+M: 59df3561fa3535894e4bcb3e8c8aa938d453a9c4
+Tree: f7f0a124b9d7bf15443f0e409d9687b18f70bc3c
+D: 549de73d915fe7e3fd89023623b2dcb115e9243d3f8894135124c39f1e90209f
+T: 75f677b9ea6aa01cac587f4a677463a954a23d109a9a7b5344a8c6180dd07fed
+
+P1: A timely veto's exact revert is abandoned after one workflow-dispatch failure following successful PR creation.
+
+At warrant/gate.py:1380-1385, open_revert creates its PR and then dispatches its required workflows. A transient refusal of that dispatch returns FAILED, leaving the exact revert PR open. On every later run, _revert_only recognizes the real exact revert even though its required check is missing, so enforce_brakes includes its merge in pending (1555) and skips it (1561-1562). No later dispatch occurs. refresh_verdicts and approve_held both skip it because it is a revert, not verdicts-only (1400 onward, 1494). Thus the veto remains unenforced without intervention although the API recovered, no content conflict exists, and the veto stands.
+
+This is the next partial-failure boundary after #554's repair: E102 fails creation of the PR after its branch exists; it does not fail dispatch after the PR exists. The code must safely resume the exact pending revert's missing CI, checking the assessed head and required workflows, rather than treating a pending PR as completion of every creation step. This is work for an ordinary constitutional-path pull request; no product change is made by this review.
+
+The fixture creates real signed fixture records and real Git trees, commits and refs. Its API adapter injects one HTTP-502-style Refused exception from dispatch after the PR has been created. On the next three runs (before and after the brake ends), GT.assess finds the exact revert but refuses it only for CHECK_MISSING. enforce_brakes, refresh_verdicts and approve_held all return no action: total dispatch attempts stays one, approval attempts zero, CI never starts. With dispatch succeeding, the same scenario is merge-eligible on all three runs. The approval-required bot PR run is explicitly present in the failure fixture.
+
+GitHub's current documentation states that GITHUB_TOKEN-created PR opened/synchronize/reopened events create approval-required runs, while workflow_dispatch starts runs directly:
+https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs
+The fixture includes that approval-required state; it does not rely on the repository documentation's older assumption that opening the bot PR starts no run. No live API failure or real stalled revert is claimed.
+
+## Checks at M
+
+- Independently verified HEAD, origin, due --actor codex, lineage, target, evidence ids, empty requirements and pending guard through the worktree's CLI and MCP. MCP signer codex is bound by the base; no other actor signed.
+- Read 9e183284..8278d4a3 for all five named paths (tools/gate.py has no change), current gate, tier/profile configuration and agent rules. Read the four evidence records through MCP; these are signed pr-head roots, not blobs.
+- Read PR metadata/descriptions for #350, #356, #365, #490, #502, #507, #523, #528, #552 and #554; verified their merge commits are ancestors of M and traced the named repair paths and witnesses on M.
+- python3 tests/gate_test.py: exit 0; 120 cases passed.
+- python3 tests/mutants.py G145 G146 G147 G148 G149 G153 G154 G155 G156: exit 0; 9/9 killed on their declared cases.
+- python3 -m warrant.roadmap check: 122 lineages, 0 problems.
+- python3 -m warrant.claims check: 143 live claims, 0 problems.
+- New counterexample below: exit 1, FAIL F1 on M, with successful-dispatch control eligible.
+- Not run: full repository suites, full mutant matrix, live merge/revert operations, or publication. A passed suite and these killed mutants do not settle this counterexample.
+
+## Reproduce
+
+Save the following Python block as revert_dispatch_probe.py in the review working directory outside the checkout. Run with M checked out, using the review directory for fixture scratch:
+
+    TMPDIR=<review-work> PYTHONDONTWRITEBYTECODE=1 python3 <review-work>/revert_dispatch_probe.py <checkout>
+
+Expected on M: exit 1 and FAIL F1. No network, signer seed or edits to the reviewed checkout are used by this probe. Script SHA-256: 54f254af399494bcc7119065c5ca296869b045774672f33e8d78205c6272c449.
+
+```python
+"""Unsigned reproduction at the checkout passed as argv[1]. No network and no checkout edits."""
+import json
+import pathlib
+import sys
+sys.path[:0] = [str(pathlib.Path(sys.argv[1]) / 'tests'), sys.argv[1]]
+from gate_test import GT, ROLES, braked_world, git, plumb, green
+
+
+def scenario(fail_dispatch):
+    until = 1793062800 + 86400
+    r, v = braked_world(until, dict(ROLES, challenger=['dave']))
+    r.put('dave', 'challenge', {'target': v, 'statement': 'Veto the changed rules'}, refs=[v])
+    b = GT.Base(r.root, r.commit('the owner vetoed in time'))
+
+    held_run = lambda head: dict(id=99, path='.github/workflows/ci.yml', head_sha=head, check_suite_id=99, conclusion='action_required', event='pull_request')
+
+    class Hub:
+        def __init__(self):
+            self.pr = None
+            self.calls = []
+            self.dispatches = 0
+            self.started = False
+        def pull(self, n):
+            return {'labels': []}
+        def api(self, path, method='GET', body=None, pages=False):
+            self.calls.append([path, method])
+            if path == 'git/trees' and method == 'POST':
+                index = str(r.home / 'api.index')
+                plumb(r.root, 'read-tree', body['base_tree'], index=index)
+                for e in body['tree']:
+                    if e['sha'] is None:
+                        plumb(r.root, 'update-index', '--force-remove', e['path'], index=index)
+                    else:
+                        plumb(r.root, 'update-index', '--add', '--cacheinfo',
+                              f"{e['mode']},{e['sha']},{e['path']}", index=index)
+                return {'sha': plumb(r.root, 'write-tree', index=index)}
+            if path == 'git/commits' and method == 'POST':
+                return {'sha': plumb(r.root, 'commit-tree', body['tree'], '-p', body['parents'][0],
+                                     '-m', body['message'])}
+            if path == 'git/refs' and method == 'POST':
+                git(r.root, 'update-ref', body['ref'], body['sha'])
+                return {}
+            if path == 'pulls' and method == 'POST':
+                head = git(r.root, 'rev-parse', body['head'])
+                self.pr = dict(number=8, state='open', draft=False, base='master', head=head,
+                               labels=[], branch=body['head'], head_repo=b.repository,
+                               author='github-actions[bot]')
+                return {'number': 8}
+            if path == 'pulls/8':
+                return {'state': 'open', 'head': {'sha': self.pr['head']}}
+            if path.startswith('actions/runs?'):
+                return {'workflow_runs': [held_run(self.pr['head'])]}
+            if path == 'actions/runs/99/approve':
+                self.started = True
+                return {}
+            if path.startswith('tags?'):
+                return [[]]
+            raise AssertionError((path, method, body))
+        def dispatch(self, workflow, branch):
+            self.dispatches += 1
+            self.calls.append(['dispatch', workflow, branch])
+            if fail_dispatch and self.dispatches == 1:
+                raise GT.Refused('temporary HTTP 502 on workflow dispatch', 'GITHUB')
+            self.started = True
+
+    hub = Hub()
+    first = GT.enforce_brakes(r.root, b, hub, [], now=until - 10)
+    assert hub.pr is not None, first
+    assert ('FAILED' in first[0][1]) == fail_dispatch, first
+    later = []
+    for offset in (-5, 1, 120):
+        checks = green(hub.pr['head']) if hub.started else {'check_runs': [], 'workflow_runs': [held_run(hub.pr['head'])]}
+        a = GT.assess(r.root, b, hub.pr, checks)
+        assert a.facts.get('revert'), a.reasons
+        later.append({'eligible': a.eligible, 'codes': a.codes(),
+                      'enforce': GT.enforce_brakes(r.root, b, hub, [a], now=until + offset),
+                      'refresh': GT.refresh_verdicts(r.root, b, hub, [a]),
+                      'approve': GT.approve_held(b, hub, [a])})
+    return {'first': first, 'later': later, 'dispatch_attempts': hub.dispatches, 'ci_started': hub.started, 'bot_pr_run': 'action_required', 'approval_attempts': sum(x[0] == 'actions/runs/99/approve' for x in hub.calls)}
+
+control = scenario(False)
+bad = scenario(True)
+assert control['ci_started'] and all(x['eligible'] for x in control['later']), control
+assert not bad['ci_started'] and bad['dispatch_attempts'] == 1, bad
+assert all(x['codes'] == ['CHECK_MISSING'] and not x['eligible'] for x in bad['later']), bad
+print(json.dumps({'control': control, 'failed_dispatch': bad}, indent=2))
+print('FAIL F1 a transient dispatch failure after the exact revert PR opens is never retried or approved; the timely veto stays blocked by CHECK_MISSING')
+sys.exit(1)
+```
+
+## Observed output
+
+```text
+{
+  "control": {
+    "first": [
+      [
+        7,
+        "revert of #7 opened from gate/revert/7-1c3d292db9ef"
+      ]
+    ],
+    "later": [
+      {
+        "eligible": true,
+        "codes": [],
+        "enforce": [],
+        "refresh": [],
+        "approve": []
+      },
+      {
+        "eligible": true,
+        "codes": [],
+        "enforce": [],
+        "refresh": [],
+        "approve": []
+      },
+      {
+        "eligible": true,
+        "codes": [],
+        "enforce": [],
+        "refresh": [],
+        "approve": []
+      }
+    ],
+    "dispatch_attempts": 1,
+    "ci_started": true,
+    "bot_pr_run": "action_required",
+    "approval_attempts": 0
+  },
+  "failed_dispatch": {
+    "first": [
+      [
+        7,
+        "revert of #7 FAILED: temporary HTTP 502 on workflow dispatch"
+      ]
+    ],
+    "later": [
+      {
+        "eligible": false,
+        "codes": [
+          "CHECK_MISSING"
+        ],
+        "enforce": [],
+        "refresh": [],
+        "approve": []
+      },
+      {
+        "eligible": false,
+        "codes": [
+          "CHECK_MISSING"
+        ],
+        "enforce": [],
+        "refresh": [],
+        "approve": []
+      },
+      {
+        "eligible": false,
+        "codes": [
+          "CHECK_MISSING"
+        ],
+        "enforce": [],
+        "refresh": [],
+        "approve": []
+      }
+    ],
+    "dispatch_attempts": 1,
+    "ci_started": false,
+    "bot_pr_run": "action_required",
+    "approval_attempts": 0
+  }
+}
+FAIL F1 a transient dispatch failure after the exact revert PR opens is never retried or approved; the timely veto stays blocked by CHECK_MISSING
+```
