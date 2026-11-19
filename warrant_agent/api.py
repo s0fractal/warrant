@@ -22,6 +22,8 @@ interpreter's stack limit. Nothing is cached and no view is kept between calls.
   explain    {word}                                    the static glossary
   find       {workspace, schema?, kind?, actor?, where?, text?, state?, leaves?, limit?}   records by what they say
   inbox      {actor?}                                  what waits for the actor in every workspace (warrant_agent.work)
+  whatif     {workspace, without?, accept?, actor?}   what would change without some records or with acceptances
+  next       {workspace, actor?, limit?}               which waiting acceptance of the actor changes the most
   remote     {url, op: status|find|context, under?, ...}   another agent's store read by its HTTPS address
                                                        (warrant_agent.remote), under its rules or a workspace's
   act        {workspace, act, ...; records?}           review-open | review-head | close | accept: the records an act
@@ -52,6 +54,7 @@ from warrant.store import Inadmissible, Refused, Snapshot
 from . import AGENT_API, adapter_id
 from . import glossary as GL
 from . import remote as RM_
+from . import whatif as WI
 from . import work as W
 from .config import OPERATIONS, repository_config
 from .errors import CODES, AgentError, need
@@ -525,11 +528,20 @@ def remote(cfg, req):
     return RM_.remote(_this, cfg, req)
 
 
+def whatif(cfg, req):
+    return WI.whatif(_this, cfg, req)
+
+
+def next_(cfg, req):
+    return WI.next_(_this, cfg, req)
+
+
 OPERATIONS_ = {"workspace": workspace, "context": context, "read": read, "graph": graph, "across": across,
                "handoff": handoff, "prepare": prepare, "commit": commit, "explain": explain,
-               "find": find, "inbox": inbox, "act": act, "remote": remote}
+               "find": find, "inbox": inbox, "act": act, "remote": remote,
+               "whatif": whatif, "next": next_}
 # across asks each workspace for `graph`; find and inbox for `context`; act for `prepare`, and `commit` to file
-assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across", "find", "inbox", "act", "remote"}
+assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across", "find", "inbox", "act", "remote", "whatif", "next"}
 assert set(GL.TERMS) >= set(CODES) | set(A.REFERENCE_STATES)
 
 

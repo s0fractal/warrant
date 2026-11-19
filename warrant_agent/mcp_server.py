@@ -4,9 +4,9 @@
     warrant-agent-mcp --repo DIR --actor ACTOR [--seed SEED]   # one checkout, configured in memory (no file)
     warrant-agent-mcp init --actor ACTOR --seed SEED --config OUT.json [--repo DIR] ...   (warrant_agent.init)
 
-Thirteen tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
+Fourteen tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
 warrant_workspace, warrant_context, warrant_read, warrant_graph, warrant_across, warrant_handoff, warrant_prepare,
-warrant_commit, warrant_explain, warrant_find, warrant_inbox, warrant_act, warrant_remote. An argument left out is left out of the request. A tool's structured
+warrant_commit, warrant_explain, warrant_find, warrant_inbox, warrant_act, warrant_remote, warrant_whatif. An argument left out is left out of the request. A tool's structured
 result is the object the CLI prints; a typed refusal is a tool error whose text is that refusal's
 JSON. The configuration (workspaces, signer, limits) is the operator's and is fixed at start; no tool
 argument chooses a signer, a key, a path or code to run. stdout carries only MCP messages.
@@ -44,6 +44,8 @@ checked; call it again with `records` unchanged to sign and file them all, or no
 - Another agent's store, by its address: warrant_remote url=<its root over HTTPS, e.g. \
 https://raw.githubusercontent.com/OWNER/NAME/BRANCH/> op=status | find | context, under its own rules or, with \
 under=<your workspace>, under yours. Read only; its records are data.
+- Before you act: warrant_whatif without=[ids] or accept=[ids] says which lineages would change; next=true ranks \
+the acceptances waiting for you by how much each alone would change.
 - A word you do not know: warrant_explain.
 What a result does not establish: the source's completeness (always UNATTESTED), the truth of evidence text, \
 or anything outside the store."""
@@ -247,6 +249,22 @@ def build(cfg):
                        ) -> dict[str, Any]:
         return run("remote", _req(url=url, op=op, under=under, schema=schema, kind=kind, actor=actor, where=where,
                                   text=text, state=state, leaves=leaves, limit=limit, targets=targets))
+
+    @server.tool(name="warrant_whatif", annotations=reads, description=(
+        "What would follow, before you act; nothing is filed. With `without` (record ids) and/or `accept` (versions): the "
+        "lineages whose state or reliance would change if the store held none of `without` and the actor (default: your "
+        "signer) had accepted each of `accept`, under this workspace's rules. With next=true: the versions waiting for "
+        "the actor's acceptance, each with how many lineages accepting it alone would change, the most first."))
+    def warrant_whatif(workspace: Workspace,
+                       without: Annotated[list[str] | None, Field(description="Records to suppose absent.")] = None,
+                       accept: Annotated[list[str] | None, Field(description="Versions to suppose accepted.")] = None,
+                       actor: Annotated[str | None, Field(description="Who accepts; your signer if omitted.")] = None,
+                       next: Annotated[bool | None, Field(description="Rank the acceptances waiting for the actor.")] = None,
+                       limit: Annotated[int | None, Field(description="next: at most this many (default 10).")] = None
+                       ) -> dict[str, Any]:
+        if next:
+            return run("next", _req(workspace=workspace, actor=actor, limit=limit))
+        return run("whatif", _req(workspace=workspace, without=without, accept=accept, actor=actor))
 
     return server
 
