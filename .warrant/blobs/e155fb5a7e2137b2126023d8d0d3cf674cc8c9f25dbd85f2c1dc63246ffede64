@@ -1,0 +1,121 @@
+# G11 roadmap closure: counterexamples at 648cc23c047c765efcfca71b5ce339f10c39cdb3
+
+Reviewer: codex. Verdict: challenge; the obligation is not done.
+D: d6f9652ec1a7e12cb54b68644845a85108857400f12c2930f03ea1aed7288cc0
+T: a3f780c834d2de3ae8f46850f9038c2179c9df239ce1e375e8e30c1c24983b83
+M: 648cc23c047c765efcfca71b5ce339f10c39cdb3
+
+The due command at M reproduces the supplied D/T/evidence/references/requirements. MCP context confirms T's guard is PENDING for one roadmap/acceptor acceptance with no open requirement. The cited evidence address 4359631940e511b3a0b2a4a43479f0c6189696a61191d883ac02b65a84445e11 is the pr-head@1 root for PR #486, not a blob. PR #477 binds pagination in across's lens; PR #486 adds full root and per-view lens labels. Those repairs are present. They do not establish completeness of the deciding inputs.
+
+## Counterexample 1: the claims view reads unbound configuration
+
+At tools/graph.py:39-44, code_id excludes the entire .warrant tree from the HEAD entries and dirty status. warrant/claims.py:310-333 reads .warrant/claims.json's source and retired lists to select claims and render history. The store snapshot contains records and blobs, not this configuration. The report checkout names the HEAD tree and presence of claims, not this working configuration's bytes.
+
+In an isolated copy at M, render views-json; append docs/HISTORY.md to the valid retired list in .warrant/claims.json; render again. CLAIMS.md gains `Claims of the retired source docs/HISTORY.md (history): 0 lineages.` but retains exactly the same root and lens. This uses unchanged deciding code and the normal command; no monkeypatch or clock change. Both calls succeed.
+
+## Counterexample 2: two different deciding tool modules share a lens
+
+The same code_id names HEAD tree entries and only bool(dirty), not the executing tools/graph.py bytes. In the isolated copy, change the witnesses heading to `# Witness ledger variant A`, render views-json in a fresh process, then change it to `# Witness ledger variant B` and render in another fresh process. Both are dirty under the same HEAD; the root and WITNESSES.md lens are equal while the rendered bytes differ. The executed deciding module changed without changing the lens. The engine's code hash covers warrant/*.py, not tools/graph.py. This test concerns the commands' supported working-tree execution; no clean-tree precondition is enforced by these read commands.
+
+Expected: bind all deciding configuration and executing adapter bytes in the result identity, or refuse a state whose deciding bytes are outside that identity. Merely adding root/lens labels and checking two hash seeds on one set of inputs cannot prove the obligation.
+
+## Exact observed identities and byte hashes
+
+```json
+[
+  {
+    "case": "claims_configuration_not_bound",
+    "view": "CLAIMS.md",
+    "same_identity": true,
+    "different_bytes": true,
+    "identity": "root `f93ccc835ba84750e7a808732b1361a090078faa555ede8dae929be6384cd37d` \u00b7 lens `c8be7b91c9ed3fa645ab2c105f6e89b60e2d0ad373721ea5be88bebe5570a060`",
+    "before_sha256": "33f4793584629375d4a4cbf692e2383c7976206d39356a50dd188910279160e5",
+    "after_sha256": "f96d4a897bddc45b6800f779ab95d22c5b1ec051c9e1af0b65dde8b51b8bb0f7",
+    "before_only": [],
+    "after_only": [
+      "Claims of the retired source docs/HISTORY.md (history): 0 lineages."
+    ]
+  },
+  {
+    "case": "deciding_tool_bytes_not_bound",
+    "view": "WITNESSES.md",
+    "same_identity": true,
+    "different_bytes": true,
+    "identity": "root `f93ccc835ba84750e7a808732b1361a090078faa555ede8dae929be6384cd37d` \u00b7 lens `c24144d283bd496568e04f36316703e2ea2580ee1b129caaa7424d96afc8e129`",
+    "before_sha256": "a98079e987b392d4391f17be2e2b171e0b4a0cbb244926808a03dfc9bcd2989b",
+    "after_sha256": "392041192bd1aa94beb5b293f43bd7aa8663a4d8f9a1cc1b0ec7c05feddc1b1e",
+    "before_only": [
+      "# Witness ledger variant A"
+    ],
+    "after_only": [
+      "# Witness ledger variant B"
+    ]
+  }
+]
+```
+
+## Reproduction used
+
+The script below was run outside the review worktree against a disposable clone. Its finally block restores both files. To repeat elsewhere, change base to a review working directory, create `base/subject` as a local clone checked out at M, and run with Python >=3.11 and cryptography installed. It writes only in that review working directory and disposable clone.
+
+```python
+import hashlib, json, os, subprocess
+from pathlib import Path
+
+base = Path('/Users/s0fractal/.warrant/work/codex/a3f780c834d2')
+repo = base / 'subject'
+script = repo / 'tools/graph.py'
+cfg = repo / '.warrant/claims.json'
+original_script, original_cfg = script.read_bytes(), cfg.read_bytes()
+
+def views(label):
+    r = subprocess.run(['python3', '-B', 'tools/graph.py', 'views-json'], cwd=repo, capture_output=True, check=True,
+                       env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'))
+    (base / (label + '.json')).write_bytes(r.stdout)
+    return json.loads(r.stdout)
+
+def compare(label, a, b, name):
+    av, bv = a[name], b[name]
+    ai, bi = av.splitlines()[2], bv.splitlines()[2]
+    out = {'case': label, 'view': name, 'same_identity': ai == bi, 'different_bytes': av != bv,
+           'identity': ai, 'before_sha256': hashlib.sha256(av.encode()).hexdigest(),
+           'after_sha256': hashlib.sha256(bv.encode()).hexdigest(),
+           'before_only': [x for x in av.splitlines() if x not in bv.splitlines()][:4],
+           'after_only': [x for x in bv.splitlines() if x not in av.splitlines()][:4]}
+    print(json.dumps(out, sort_keys=True), flush=True)
+    return out
+
+try:
+    a = views('baseline')
+    doc = json.loads(original_cfg)
+    doc['retired'].append('docs/HISTORY.md')
+    cfg.write_text(json.dumps(doc))
+    b = views('config-change')
+    result1 = compare('claims_configuration_not_bound', a, b, 'CLAIMS.md')
+    cfg.write_bytes(original_cfg)
+    for variant in ('A', 'B'):
+        script.write_bytes(original_script.replace(b'out = ["# Witness ledger",',
+                           ('out = ["# Witness ledger variant ' + variant + '",').encode()))
+        assert script.read_bytes() != original_script
+        if variant == 'A':
+            a = views('code-A')
+        else:
+            b = views('code-B')
+    result2 = compare('deciding_tool_bytes_not_bound', a, b, 'WITNESSES.md')
+    (base / 'counterexamples.json').write_text(json.dumps([result1, result2], indent=2))
+    assert all(x['same_identity'] and x['different_bytes'] for x in [result1, result2])
+finally:
+    cfg.write_bytes(original_cfg)
+    script.write_bytes(original_script)
+
+```
+
+## Checks and boundaries
+
+- Python 3.15.2. All counterexample renders use fresh Python processes and -B.
+- Read merged patches and PR metadata for https://github.com/s0fractal/warrant/pull/477 and https://github.com/s0fractal/warrant/pull/486; inspected commit 1d9a32a699af823d4f402d4865dfd7e9207f0310 and current graph/view identity paths.
+- tests/tools_test.py, section drift_impact_cases: 13 checks passed, including DR25b and DR25c.
+- tests/agent_test.py, sections operations and across_cases: 48 checks passed, including A15, X15b and X19. graph_range_cases is omitted from that file's normal section list at M; invoked directly with run_sections: A51 passed. An initial named-section invocation was refused as NO_SUCH_SECTION, not counted as a pass.
+- Existing mutants T320 (X15b) and T324 (DR25c): 2/2 KILLED by their own cases.
+- tools/graph.py views --check: passed in the restored isolated copy (hash seeds 1 and 2).
+- These are bounded G11 checks, not a full suite or a full mutant sweep. No fix or new regression/mutant is being proposed in this verdict-only worktree.
