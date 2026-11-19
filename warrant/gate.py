@@ -1518,8 +1518,12 @@ def approve_held(b, gh, found):
             # checked something is dispatched again; a run that failed stays red
             if a.facts.get("revert") and codes & {"CHECK_MISSING", "CHECK_RED"}:
                 every = gh.api(f"actions/runs?head_sha={_sha(head)}&per_page=100").get("workflow_runs", [])
-                live = {w.get("path") for w in every if w.get("head_sha") == head
-                        and not (w.get("status") == "completed" and w.get("conclusion") in ENDED_WITHOUT_CHECK)}
+                latest = {}                           # the check reads each workflow's latest run (Codex ef248b18)
+                for w in every:
+                    if w.get("head_sha") == head and isinstance(w.get("id"), int) and w["id"] > latest.get(w.get("path"), {}).get("id", -1):
+                        latest[w.get("path")] = w
+                live = {p for p, w in latest.items()
+                        if not (w.get("status") == "completed" and w.get("conclusion") in ENDED_WITHOUT_CHECK)}
                 for wf in sorted(required - live):
                     gh.dispatch(wf, a.pr["branch"])
                     out.append((n, f"dispatched {wf} again on {a.pr['branch']}"))

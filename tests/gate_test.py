@@ -1709,16 +1709,18 @@ def revert_ci_cases():
     head, branch = "e" * 40, "gate/revert/7-0123456789ab"
 
     class Hub:
-        def __init__(self, ran, status="queued", conclusion=None):
-            self.ran, self.calls, self.status, self.conclusion = ran, [], status, conclusion
+        def __init__(self, ran, status="queued", conclusion=None, older=False):
+            self.ran, self.calls, self.status, self.conclusion, self.older = ran, [], status, conclusion, older
 
         def api(self, path, method="GET", body=None, pages=False):
             self.calls.append((path, method))
             if path.startswith("pulls/"):
                 return {"state": "open", "head": {"sha": head}}
             if path.startswith("actions/runs?") and "event=" not in path:
-                return {"workflow_runs": [{"id": 9, "path": w, "head_sha": head, "event": "workflow_dispatch",
-                                           "status": self.status, "conclusion": self.conclusion} for w in self.ran]}
+                older = [{"id": 5, "path": w, "head_sha": head, "event": "workflow_dispatch", "status": "completed",
+                          "conclusion": "success"} for w in self.ran if self.older]
+                return {"workflow_runs": older + [{"id": 9, "path": w, "head_sha": head, "event": "workflow_dispatch",
+                                                   "status": self.status, "conclusion": self.conclusion} for w in self.ran]}
             return {"workflow_runs": []} if path.startswith("actions/runs?") else {}
 
         def dispatch(self, workflow, ref):
@@ -1740,15 +1742,18 @@ def revert_ci_cases():
     red_cancelled, red_failed = Hub(want, "completed", "cancelled"), Hub(want, "completed", "failure")
     GT.approve_held(b, red_cancelled, [red])
     GT.approve_held(b, red_failed, [red])
+    over = Hub(want, "completed", "cancelled", older=True)      # an older success, the latest cancelled
+    GT.approve_held(b, over, [red])
     sent = lambda h: [c[1:] for c in h.calls if c[0] == "dispatch"]  # noqa: E731
     check("E103 the gate's revert with no run of a required workflow at its head is dispatched again on its branch; one "
           "with a live or finished run is not, while a cancelled run stands for none, its check read missing or red; a run "
-          "that failed stays red; nor is a pull request of code or of verdicts waiting for its checks (Codex ed9e05dd, "
-          "1f63af34, a7f444b3)",
+          "that failed stays red; each workflow's latest run decides, an older success not hiding a cancelled latest; nor "
+          "is a pull request of code or of verdicts waiting for its checks (Codex ed9e05dd, 1f63af34, a7f444b3, ef248b18)",
           sent(none) == [(w, branch) for w in want] and want and any("again" in x[1] for x in got)
           and sent(some) == [] and sent(other) == [] and sent(carried) == []
           and sent(cancelled) == [(w, branch) for w in want] and sent(finished) == []
-          and sent(red_cancelled) == [(w, branch) for w in want] and sent(red_failed) == [],
+          and sent(red_cancelled) == [(w, branch) for w in want] and sent(red_failed) == []
+          and sent(over) == [(w, branch) for w in want],
           (sent(none), sent(some), sent(cancelled), sent(red_cancelled), sent(red_failed), got))
 
 
