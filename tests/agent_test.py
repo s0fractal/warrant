@@ -709,6 +709,98 @@ def work_cases():
           [u["workspace"] for u in ok(box).get("unavailable", [])] == ["gone"] if "ok" in box else box.get("error") is not None, box)
 
 
+def remote_cases():
+    """Another agent's store read by its address (warrant_agent.remote): assessed as its own clone would be under the
+    publisher's rules, or under this agent's own, never executed; the sources it declares are named as not read; only
+    an address the operator allows when it is not public, and no redirect followed (agent-to-agent first contact)."""
+    import functools
+    import http.server
+    from warrant.jcs import canon as JCS_canon
+    r = Repo(roles=dict(ROLES, migrator=["carol"]))
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "owed by alice", "serves": []})
+    b = r.entity("bob", "obligation@1", {"state": "open", "statement": "bob's word", "serves": []})
+    old, line = R.line(R.record("entity", "dave", 5, {"state": "open", "statement": "carried over", "serves": []}, "obligation@1"), None)
+    r.store.add_lines([line])                              # unsigned: it counts only through a migration's map
+    h = r.store.put_blob(JCS_canon({"map": [[old, ["11" * 32], []]]}))
+    r.put("carol", "attest", {"target": h, "verdict": "migrated"}, R.MIGRATION, refs=[h])
+    (r.dot / "sources.json").write_text(json.dumps({"warrant": "sources/1", "sources": [
+        {"name": "checker", "ref": "refs/heads/stores/checker", "actors": ["carol"]}]}))
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            if self.path.startswith("/moved/"):
+                self.send_response(302)
+                self.send_header("Location", "/" + self.path[len("/moved/"):])
+                self.end_headers()
+                return
+            super().do_GET()
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(r.root)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}/"
+    side = Repo()                                          # the source: carol's acceptance of alice's obligation, eve's noise
+    side.attest("carol", o, verdict="seen")
+    side.entity("eve", "obligation@1", {"state": "open", "statement": "not carol's", "serves": []})
+    (r.root / "src" / ".warrant").mkdir(parents=True)
+    (r.root / "src" / ".warrant" / "records.jsonl").write_bytes((side.dot / "records.jsonl").read_bytes())
+    me = Repo()                                            # this agent's own rules: bob's key is not in its trust
+    me.trust["keys"].pop("bob")
+    me.write_config()
+    doc = {"agent_api": "warrant-agent/3", "remote": {"allow_hosts": ["127.0.0.1"]},
+           "workspaces": {"me": {"repo": str(me.root)}}}
+    cfg, closed = Config(doc), Config({k: v for k, v in doc.items() if k != "remote"})
+    try:
+        st = api.call(cfg, "remote", {"url": url, "op": "status"}).get("ok", {})
+        found = api.call(cfg, "remote", {"url": url, "op": "find", "text": "OWED BY"}).get("ok", {})
+        mine = api.call(cfg, "remote", {"url": url, "op": "find", "schema": "obligation@1", "under": "me"}).get("ok", {})
+        ctx = api.call(cfg, "remote", {"url": url, "op": "context", "targets": [o[:12]]}).get("ok", {})
+        from warrant_agent import remote as RMT
+        was = RMT.source_commit, RMT.source_base
+        RMT.source_commit = lambda u, ref: "ab" * 20 if ref == "refs/heads/stores/checker" else None
+        RMT.source_base = lambda u, c: u + "src/" if c == "ab" * 20 else None
+        try:
+            srcd = api.call(cfg, "remote", {"url": url, "op": "status"}).get("ok", {})
+            seen = api.call(cfg, "remote", {"url": url, "op": "find", "actor": "carol", "where": {"verdict": "seen"}}).get("ok", {})
+        finally:
+            RMT.source_commit, RMT.source_base = was
+        refused = [api.call(closed, "remote", {"url": "https://127.0.0.1:1/", "op": "status"}).get("error"),
+                   api.call(closed, "remote", {"url": url, "op": "status"}).get("error"),
+                   api.call(cfg, "remote", {"url": url + "moved/", "op": "status"}).get("error"),
+                   api.call(cfg, "remote", {"url": url[:-1], "op": "status"}).get("error"),
+                   api.call(cfg, "remote", {"url": "http://example.com/", "op": "status"}).get("error"),
+                   api.call(cfg, "remote", {"url": url, "op": "delete"}).get("error")]
+    finally:
+        srv.shutdown()
+    own = r.store.snapshot()
+    local = r.report()
+    counts = {}
+    for lin in local["lineages"].values():
+        counts[f"{lin['schema']} {lin['state']}"] = counts.get(f"{lin['schema']} {lin['state']}", 0) + 1
+    check("RE1 a store read by its address answers as its own clone does under the publisher's rules: the same "
+          "records and lineages, and the sources it declares named as not read",
+          st.get("records") == len(own.lines) and st.get("lineages") == counts and counts.get("obligation@1 open") == 3
+          and st.get("sources_not_read") == ["checker"] and st.get("rejected") == 0,
+          (st.get("records"), len(own.lines), st.get("lineages"), counts, st.get("sources_not_read")))
+    check("RE5 a migrated record counts by its migration's map, which the read fetches with the records: basis "
+          "MIGRATED, nothing rejected", (st.get("basis") or {}).get("MIGRATED") == 1 and st.get("rejected") == 0, st.get("basis"))
+    check("RE6 a declared source is read at the commit its ref names, by its actors only: carol's record joins the "
+          "store, eve's there is left out and counted, and the summary names the commit (Codex 7f09815d's rule, remote)",
+          srcd.get("sources") == [{"name": "checker", "ref": "refs/heads/stores/checker", "commit": "ab" * 20,
+                                   "records": 1, "left_out": len((side.dot / "records.jsonl").read_bytes().splitlines()) - 1}]
+          and srcd.get("sources_not_read") == [] and [x["actor"] for x in seen.get("records", [])] == ["carol"],
+          (srcd.get("sources"), srcd.get("sources_not_read"), seen))
+    check("RE2 find and context read it as they read a local workspace: text in any case, the full id, its lineage",
+          [x["id"] for x in found.get("records", [])] == [o] and o in (ctx.get("targets") or {}), (found, ctx))
+    check("RE3 under one of this agent's workspaces the store is read under that workspace's rules: a key its trust "
+          "does not bind counts nothing, whatever the publisher binds",
+          [x["id"] for x in mine.get("records", [])] == [o] and b not in str(mine), mine)
+    check("RE4 a non-public host the operator does not name is refused, a redirect is not followed, an address that "
+          "is no store root, plain HTTP (to a host the operator does not name, or a public one) and an unknown op are refused",
+          refused == ["NOT_PERMITTED", "BAD_REQUEST", "REFUSED", "BAD_REQUEST", "BAD_REQUEST", "BAD_REQUEST"], refused)
+
+
 def mcp_cases():
     try:
         import mcp  # noqa: F401
@@ -747,9 +839,9 @@ def mcp_cases():
           not pre.is_error and not filed.is_error and not box.is_error
           and (filed.structured_content or {}).get("filed") == (pre.structured_content or {}).get("ids") and len(got) == 2,
           (pre, filed, box, found))
-    check("M01 stdio MCP: twelve tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
+    check("M01 stdio MCP: thirteen tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON",
           names == sorted(["warrant_" + n for n in ("workspace", "context", "read", "graph", "across", "handoff", "prepare", "commit", "explain",
-                                                         "find", "inbox", "act")])
+                                                         "find", "inbox", "act", "remote")])
           and not c.is_error and (c.structured_content or {}).get("filed", {}).get("actor") == "bob"
           and bad.is_error and "NOT_FOUND" in bad.content[0].text, (names, c, bad))
 
@@ -2154,6 +2246,7 @@ if __name__ == "__main__":
         memory_cases,
         roadmap_parity_cases,
         work_cases,
+        remote_cases,
         mcp_cases,
         home_cases,
         across_cases,
