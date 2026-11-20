@@ -396,6 +396,27 @@ def witness_cases():
     check("WT15 handoff export carries witness blobs through fulfillment refs so remote settlement reproduces",
           all(s1 == s2 == "SETTLED" and has_b for _, s1, s2, has_b in ho_ok), ho_ok)
 
+    # WT16: Duplicate or inconsistent viability state sets are refused and cannot unlock escrow (Codex P2)
+    base_cert = {
+        "schema": "vars1-coalition-viability@1", "label": "half", "live_env": True, "dead_pairs": [],
+        "safe": ["0", "1"], "angelic_viability": ["0", "1"], "controllable_viability": ["0"],
+        "blocked_states": ["1"], "sovereign_ratio": 0.5, "policy": {"0": "act"},
+        "policy_verified": True, "policy_info": {"verified_states": 1},
+    }
+    dup_dig, dup_raw = _cert_blob(dict(base_cert, controllable_viability=["0", "0"]))
+    ovl_dig, ovl_raw = _cert_blob(dict(base_cert, controllable_viability=["0", "1"], blocked_states=["1"], sovereign_ratio=1.0))
+    rat_dig, rat_raw = _cert_blob(dict(base_cert, sovereign_ratio=1.0))
+    snap_badv = _snap([], {dup_dig: dup_raw, ovl_dig: ovl_raw, rat_dig: rat_raw})
+    spec_100 = {"verifier": "vars1-coalition-viability@1", "params": {"min_sovereign_bps": 10000}}
+    v_dup = W.verify_witness(spec_100, dup_dig, snap_badv, {}, 20)
+    v_ovl = W.verify_witness(spec_100, ovl_dig, snap_badv, {}, 20)
+    v_rat = W.verify_witness(spec_100, rat_dig, snap_badv, {}, 20)
+    check("WT16 duplicate viability states, overlapping sets, and inconsistent sovereign_ratio fail closed",
+          v_dup == (False, "DUPLICATE_VIABILITY_STATES")
+          and v_ovl == (False, "INCONSISTENT_VIABILITY_SETS")
+          and v_rat == (False, "INCONSISTENT_SOVEREIGN_RATIO"),
+          (v_dup, v_ovl, v_rat))
+
 
 if __name__ == "__main__":
     sys.exit(run_sections([witness_cases]))

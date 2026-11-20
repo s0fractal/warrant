@@ -1171,7 +1171,7 @@ MUTANTS = [
     ("WT1", "warrant/witness.py", "    if hashlib.sha256(blob).hexdigest() != digest:", "    if False:", "tests/witness_test.py", ["WT01"]),
     ("WT2", "warrant/witness.py", '    if body.get("live_env") is not True:', "    if False:", "tests/witness_test.py", ["WT02"]),
     ("WT3", "warrant/witness.py", '    if body.get("policy_verified") is not True:', "    if False:", "tests/witness_test.py", ["WT02"]),
-    ("WT4", "warrant/witness.py", "            if len(ctrl) * 10000 < min_bps * len(ang):", "            if False:", "tests/witness_test.py", ["WT02"]),
+    ("WT4", "warrant/witness.py", "            if len(ctrl_keys) * 10000 < min_bps * len(ang_keys):", "            if False:", "tests/witness_test.py", ["WT02"]),
     ("WT5", "warrant/witness.py", "    if spent > budget or spent + rem != budget:", "    if False:", "tests/witness_test.py", ["WT03"]),
     ("WT6", "warrant/witness.py", '    if body.get("partiality_inflated") is not False:', "    if False:", "tests/witness_test.py", ["WT03"]),
     ("WT7", "warrant/witness.py", "    if not (R.is_int(at) and at <= as_of):", "    if False:", "tests/witness_test.py", ["WT04"]),
@@ -1205,6 +1205,14 @@ MUTANTS = [
      '    rec = R.record("attest", actor, at, body, refs=refs)',
      '    rec = R.record("attest", actor, at, body, refs=[pact_id])',
      "tests/witness_test.py", ["WT15"]),
+    ("WT17", "warrant/witness.py",
+     "        if k in keys:\n            return None",
+     "        if False:\n            return None",
+     "tests/witness_test.py", ["WT16"]),
+    ("WT18", "warrant/witness.py",
+     '    if (ctrl_keys & blocked_keys) or (ctrl_keys | blocked_keys) != ang_keys:',
+     "    if False:",
+     "tests/witness_test.py", ["WT16"]),
 ]
 
 

@@ -127,6 +127,17 @@ def _load_canonical_cert(digest, snap, expected_schema):
     return body, None
 
 
+def _unique_state_set(items):
+    """Return canonical JSON key set for `items`, or None if any state appears more than once."""
+    keys = set()
+    for x in items:
+        k = json.dumps(x, sort_keys=True, separators=(",", ":"))
+        if k in keys:
+            return None
+        keys.add(k)
+    return keys
+
+
 def _verify_coalition_viability(digest, params, snap, valid_recs, as_of):
     """Verify a `minds/coalition.py` `vars1-coalition-viability@1` certificate blob."""
     body, err = _load_canonical_cert(digest, snap, "vars1-coalition-viability@1")
@@ -138,19 +149,30 @@ def _verify_coalition_viability(digest, params, snap, valid_recs, as_of):
         return False, "POLICY_UNVERIFIED"
     ctrl = body.get("controllable_viability")
     blocked = body.get("blocked_states")
+    ang = body.get("angelic_viability")
     ratio = body.get("sovereign_ratio")
-    if not (isinstance(ctrl, list) and isinstance(blocked, list) and _is_num(ratio)):
+    if not (isinstance(ctrl, list) and isinstance(blocked, list) and isinstance(ang, list) and _is_num(ratio)):
         return False, "MALFORMED_VIABILITY_FIELDS"
     if not (0 <= ratio <= 1):
         return False, "BAD_SOVEREIGN_RATIO"
+
+    ctrl_keys = _unique_state_set(ctrl)
+    blocked_keys = _unique_state_set(blocked)
+    ang_keys = _unique_state_set(ang)
+    if ctrl_keys is None or blocked_keys is None or ang_keys is None:
+        return False, "DUPLICATE_VIABILITY_STATES"
+    if (ctrl_keys & blocked_keys) or (ctrl_keys | blocked_keys) != ang_keys:
+        return False, "INCONSISTENT_VIABILITY_SETS"
+    expected_ratio = (len(ctrl_keys) / len(ang_keys)) if ang_keys else 1.0
+    if abs(ratio - expected_ratio) > 1e-6:
+        return False, "INCONSISTENT_SOVEREIGN_RATIO"
 
     min_bps = params.get("min_sovereign_bps")
     if min_bps is not None:
         if not (R.is_int(min_bps) and 0 <= min_bps <= 10000):
             return False, "BAD_PARAM_MIN_SOVEREIGN_BPS"
-        ang = body.get("angelic_viability")
-        if isinstance(ang, list) and len(ang) > 0:
-            if len(ctrl) * 10000 < min_bps * len(ang):
+        if len(ang_keys) > 0:
+            if len(ctrl_keys) * 10000 < min_bps * len(ang_keys):
                 return False, "SOVEREIGN_RATIO_BELOW_THRESHOLD"
         elif ratio * 10000.0 + 1e-9 < min_bps:
             return False, "SOVEREIGN_RATIO_BELOW_THRESHOLD"
@@ -159,16 +181,15 @@ def _verify_coalition_viability(digest, params, snap, valid_recs, as_of):
     if max_blocked is not None:
         if not (R.is_int(max_blocked) and max_blocked >= 0):
             return False, "BAD_PARAM_MAX_BLOCKED"
-        if len(blocked) > max_blocked:
+        if len(blocked_keys) > max_blocked:
             return False, "BLOCKED_STATES_EXCEEDED"
 
     req_states = params.get("required_states")
     if req_states is not None:
         if not isinstance(req_states, list):
             return False, "BAD_PARAM_REQUIRED_STATES"
-        ctrl_keys = {json.dumps(x, sort_keys=True) for x in ctrl}
         for st in req_states:
-            if json.dumps(st, sort_keys=True) not in ctrl_keys:
+            if json.dumps(st, sort_keys=True, separators=(",", ":")) not in ctrl_keys:
                 return False, "REQUIRED_STATE_NOT_VIABLE"
 
     return True, "OK"
