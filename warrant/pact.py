@@ -1037,6 +1037,12 @@ def main(argv=None):
     p_co.add_argument("pact_ids", nargs="+", help="Ordered pact ids to compose")
     p_co.add_argument("--as-of", type=int, default=None)
 
+    p_dr = sub.add_parser("dream", help="Synthesize lossless proof-carrying pact chains satisfying goal labels")
+    p_dr.add_argument("--goal", action="append", required=True, help="Target guarantee label (repeatable)")
+    p_dr.add_argument("--max-steps", type=int, default=4)
+    p_dr.add_argument("--max-expansions", type=int, default=256)
+    p_dr.add_argument("--as-of", type=int, default=None)
+
     args = ap.parse_args(argv)
     rep = RP.Repo(args.root)
     trust, profile, _ = rep.config()
@@ -1048,6 +1054,16 @@ def main(argv=None):
         out = {"as_of": eff_as_of, "pacts": resolve_pacts(snap, trust, eff_as_of)}
     elif args.cmd == "escrow":
         out = resolve_escrow(snap, trust, profile, eff_as_of)
+    elif args.cmd == "dream":
+        from . import dream as DR
+        try:
+            out = DR.dream_pacts(
+                snap, trust, eff_as_of,
+                goal_gives=args.goal, max_steps=args.max_steps, max_expansions=args.max_expansions,
+            )
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}), file=sys.stderr)
+            return 2
     else:
         try:
             out = compose_pacts(snap, trust, args.pact_ids, eff_as_of)
