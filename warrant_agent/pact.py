@@ -6,17 +6,23 @@
     compose  compose ordered `pact_ids` under the default-deny computed-loss frame law
 
 Read-only: nothing is filed; nothing alters the workspace's trust or profile."""
+from warrant import dream as DR
 from warrant import pact as P
 from warrant import records as R
 from warrant import shapes as S
 
 from .errors import need
 
-OPS = ("status", "escrow", "compose")
+OPS = ("status", "escrow", "compose", "dream")
 
 
 def pact(api, cfg, req):
-    api._closed(req, ("workspace", "op"), ("as_of", "pact_ids"))
+    api._closed(
+        req,
+        ("workspace", "op"),
+        ("as_of", "pact_ids", "goal_gives", "initial_gives", "required_witnesses",
+         "boundary", "max_steps", "max_expansions"),
+    )
     op = req["op"]
     need(op in OPS, "BAD_REQUEST", f"op is one of {list(OPS)}")
     as_of = req.get("as_of")
@@ -46,6 +52,31 @@ def pact(api, cfg, req):
             "workspace": ws.name,
             "as_of": eff_as_of,
             "escrow": res["escrow"],
+        }
+        return api._budget(out, ws.limits["context_bytes"])
+
+    if op == "dream":
+        goal_gives = req.get("goal_gives")
+        need(isinstance(goal_gives, list) and len(goal_gives) >= 1,
+             "BAD_REQUEST", "dream requires a non-empty goal_gives list")
+        try:
+            dream_out = DR.dream_pacts(
+                snap, trust, eff_as_of,
+                goal_gives=goal_gives,
+                initial_gives=req.get("initial_gives") or (),
+                required_witnesses=req.get("required_witnesses"),
+                boundary=req.get("boundary"),
+                max_steps=req.get("max_steps", 4),
+                max_expansions=req.get("max_expansions", 256),
+            )
+        except ValueError as exc:
+            need(False, "BAD_REQUEST", str(exc))
+        out = {
+            "warrant": "pact/1",
+            "op": "dream",
+            "workspace": ws.name,
+            "as_of": eff_as_of,
+            "dream": dream_out,
         }
         return api._budget(out, ws.limits["context_bytes"])
 

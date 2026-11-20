@@ -106,6 +106,7 @@ that seam offline and fail-closed:
 python3 -m warrant pact status [--as-of T]
 python3 -m warrant pact escrow [--as-of T]
 python3 -m warrant pact compose PACT_ID_1 PACT_ID_2 ... [--as-of T]
+python3 -m warrant pact dream --goal LABEL [--goal LABEL ...] [--max-steps N] [--max-expansions M] [--as-of T]
 ```
 
-Agent API / MCP tool: `warrant_pact` with `op: "status" | "escrow" | "compose"`.
+Agent API / MCP tool: `warrant_pact` with `op: "status" | "escrow" | "compose" | "dream"` (offline lossless chain synthesis with diagnostic `prescriptions`, `warrant.dream`).
