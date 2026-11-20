@@ -92,6 +92,9 @@ that seam offline and fail-closed:
   - `vars1-trajectory-mass@1` — verifies `minds/trajectory.py` certificates (`trajectory_safe is True`,
     unique `act_id`s, zero counted refutations, exact integer mass & total-weight accounting,
     `min_mass`, `min_steps`, `max_horizon`, `max_refuted`).
+  - `vars1-compatibility@1` — verifies `minds/compatibility.py` non-manipulative compatibility
+    certificates (cross-field standing/refusal consistency, `compatible is True` unless
+    `allow_refusal=True`, `require_entities`, `require_claim`, `require_context`).
   - `warrant-record@1` — verifies a signature-verified Warrant 3 record dated `<= as_of`.
 - Unknown verifiers fail closed (`UNKNOWN_VERIFIER`). A `pact/fulfill` failing any witness check is
   refused (`UNGROUNDED_GUARANTEE`), preventing settlement and keeping `escrow_mode="settled"` grants
