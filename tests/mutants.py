@@ -1201,6 +1201,10 @@ MUTANTS = [
      '                for _, other_c in sorted(spec["commitments"].items()):\n                    for rlbl, rwspec in sorted(other_c["required_witnesses"].items()):',
      '                for _p, other_c in sorted(spec["commitments"].items()):\n                    if _p == party:\n                        continue\n                    for rlbl, rwspec in sorted(other_c["required_witnesses"].items()):',
      "tests/witness_test.py", ["WT14"]),
+    ("WT16", "warrant/pact.py",
+     '    rec = R.record("attest", actor, at, body, refs=refs)',
+     '    rec = R.record("attest", actor, at, body, refs=[pact_id])',
+     "tests/witness_test.py", ["WT15"]),
 ]
 
 

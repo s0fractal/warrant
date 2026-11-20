@@ -352,6 +352,50 @@ def witness_cases():
           and esc_self["escrow_allowed"] is False and dg_self["status"] == "ESCROW_FROZEN",
           (res_self["status"], res_self["fulfilled"], esc_self["escrow_allowed"], dg_self["status"]))
 
+    # WT15: Handoff export carries witness blobs via fulfillment refs for both evidence_digest & witness_digests (Codex P2)
+    import base64
+    from warrant_agent import api as agent_api
+    from warrant_agent.config import Config
+
+    ho_ok = []
+    for per_label in (False, True):
+        src = Repo()
+        src.put("alice", "schema", P.SCHEMA)
+        t0 = src.t + 10
+        bdig = src.blob(b"proof-carrying-handoff-blob")
+        pr_h = P.make_proposal(
+            "alice", sa, parties=["alice", "bob"],
+            commitments={
+                "alice": {"gives": ["verified"], "witnesses": {"verified": {"verifier": "sha256-blob@1"}}},
+                "bob": {"gives": ["done"]},
+            }, expires_at=t0 + 100, purpose="handoff witness refs", at=t0,
+        )
+        pid_h = R.rid(pr_h["record"])
+        ful_h = P.make_fulfill(
+            "alice", sa, pid_h,
+            evidence_digest="b" * 64 if per_label else bdig,
+            delivered=["verified"],
+            witness_digests={"verified": bdig} if per_label else None, at=t0 + 3,
+        )
+        src.store.add_lines([C.canon(e) + b"\n" for e in [
+            pr_h, P.make_accept("alice", sa, pid_h, at=t0 + 1), P.make_accept("bob", sb, pid_h, at=t0 + 2),
+            ful_h, P.make_fulfill("bob", sb, pid_h, evidence_digest="a" * 64, delivered=["done"], at=t0 + 4),
+        ]])
+        cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {
+            "repo": str(src.root), "signer": {"actor": "bob", "key": str(src.seed("bob"))},
+        }}})
+        pkg = agent_api.call(cfg, "handoff", {"workspace": "w", "op": "export", "targets": [pid_h]})["ok"]["package"]
+        recv = Snapshot([x.encode() + b"\n" for x in pkg["lines"]],
+                        {h: base64.b64decode(b) for h, b in pkg["blobs"].items()})
+        ho_ok.append((
+            per_label,
+            P.resolve_pacts(src.store.snapshot(), src.trust, t0 + 10)[pid_h]["status"],
+            P.resolve_pacts(recv, src.trust, t0 + 10)[pid_h]["status"],
+            bdig in pkg["blobs"] and bdig in ful_h["record"]["refs"],
+        ))
+    check("WT15 handoff export carries witness blobs through fulfillment refs so remote settlement reproduces",
+          all(s1 == s2 == "SETTLED" and has_b for _, s1, s2, has_b in ho_ok), ho_ok)
+
 
 if __name__ == "__main__":
     sys.exit(run_sections([witness_cases]))

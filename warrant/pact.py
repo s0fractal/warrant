@@ -277,12 +277,14 @@ def make_proposal(actor, seed_hex, *, parties, commitments, expires_at, purpose,
     }
     if arbiter is not None:
         body["arbiter"] = arbiter
+    refs = []
     if escrow_grants:
         body["escrow_grants"] = sorted(escrow_grants)
         body["escrow_mode"] = escrow_mode
+        refs.extend(g for g in body["escrow_grants"] if S.hex64(g))
     if boundary is not None:
         body["boundary"] = sorted(boundary)
-    rec = R.record("entity", actor, at, body, schema=SCHEMA_NAME)
+    rec = R.record("entity", actor, at, body, schema=SCHEMA_NAME, refs=refs)
     return _sign_env(rec, seed_hex)
 
 
@@ -316,9 +318,15 @@ def make_fulfill(actor, seed_hex, pact_id, *, evidence_digest, delivered, witnes
         "evidence_digest": evidence_digest,
         "delivered": sorted(delivered),
     }
+    refs = [pact_id]
+    if S.hex64(evidence_digest):
+        refs.append(evidence_digest)
     if witness_digests is not None:
         body["witness_digests"] = dict(sorted(witness_digests.items()))
-    rec = R.record("attest", actor, at, body, refs=[pact_id])
+        for wdig in body["witness_digests"].values():
+            if S.hex64(wdig):
+                refs.append(wdig)
+    rec = R.record("attest", actor, at, body, refs=refs)
     return _sign_env(rec, seed_hex)
 
 
@@ -342,7 +350,8 @@ def make_breach(actor, seed_hex, pact_id, *, defaulter, evidence_digest, reason,
         "evidence_digest": evidence_digest,
         "reason": reason,
     }
-    rec = R.record("challenge", actor, at, body, refs=[pact_id])
+    refs = [pact_id] + ([evidence_digest] if S.hex64(evidence_digest) else [])
+    rec = R.record("challenge", actor, at, body, refs=refs)
     return _sign_env(rec, seed_hex)
 
 
