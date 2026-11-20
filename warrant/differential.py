@@ -30,6 +30,7 @@ from pathlib import Path
 
 from . import engine as E
 from . import jcs as C
+from . import sources
 from .store import Store, dot_of, read_inside
 
 FORMAT = "differential/1"
@@ -130,15 +131,29 @@ def git_bytes(root, cmd, *args, options=()):
 
 
 def rewritten(root, ref):
-    """{records: [line], blobs: [name]}: what the store at `ref` (n's tag) holds that this checkout's store does not.
-    Blobs by name: the store refuses one not named by its hash."""
+    """{records: [line], blobs: [name], sources?: [unavailable name]}: what the store at `ref` (n's tag) holds that
+    this checkout's store does not. The store is the repository's as it is read: its own records with those its
+    declared sources hold by their actors (warrant/sources.py), so a record moved to a source (the claims checker's
+    acceptances, 2026-11-18) is kept, not gone (Codex on the 3.0.0a9 closure, 40e9bfb0). A source whose ref this
+    clone lacks is named unavailable, never read as empty. Blobs by name: the store refuses one not named by its
+    hash."""
     dot = dot_of(root)
     then = {x for x in git_bytes(root, "show", f"{ref}:.warrant/records.jsonl").split(b"\n") if x.strip()}
     now = {x for x in (dot / "records.jsonl").read_bytes().split(b"\n") if x.strip()}
     named = git_bytes(root, "ls-tree", ref, "--", ".warrant/blobs/", options=("-z", "--name-only")).split(b"\0")
     blobs = {Path(n.decode()).name for n in named if n}
     here = {p.name for p in (dot / "blobs").iterdir()} if (dot / "blobs").is_dir() else set()
-    return {"records": sorted(x.decode() for x in then - now), "blobs": sorted(blobs - here)}
+    unavailable = []
+    for src in sources.declared(sources.config_doc(root)):
+        commit, lines, held, _ = sources.read(root, src)
+        if commit is None:
+            unavailable.append(src["name"])
+        now |= {x.rstrip(b"\n") for x in lines}
+        here |= set(held)
+    out = {"records": sorted(x.decode() for x in then - now), "blobs": sorted(blobs - here)}
+    if unavailable:
+        out["sources"] = sorted(unavailable)
+    return out
 
 
 def compare(n, head, declared=None):
@@ -180,6 +195,9 @@ def admit(python, root, version, out):
     if gone["records"] or gone["blobs"]:
         why.append(f"the store at {tag} holds {len(gone['records'])} record line(s) and "
                    f"{len(gone['blobs'])} blob(s) this one does not: n's history is challenged, never rewritten")
+    if gone.get("sources"):
+        why.append(f"the declared source(s) {', '.join(gone['sources'])} are not in this clone: n's history is read "
+                   f"with them or not at all")
     return dict(out, verdict="REFUSED", why="; ".join(why)) if why else out
 
 

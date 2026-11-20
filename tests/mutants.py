@@ -814,6 +814,8 @@ MUTANTS = [
     ('T62', 'warrant/differential.py', '    if named == differs:', '    if set(differs) <= set(named):', TOOLS, ['D02']),
     ('T63', 'warrant/differential.py', 'IDENTITY = ("assessment", "code")', 'IDENTITY = ("assessment", "code", "lineages")', TOOLS, ['D02']),
     ('T64', 'warrant/differential.py', 'r = run([str(python), "-I", "-c", script,', 'r = run([str(python), "-c", script,', TOOLS, ['D04']),
+    ('T356', 'warrant/differential.py', '        now |= {x.rstrip(b"\\n") for x in lines}', '        pass', TOOLS, ['D09b']),
+    ('T357', 'warrant/differential.py', '            unavailable.append(src["name"])', '            pass', TOOLS, ['D09b']),
     ('T65', 'warrant/differential.py', 'capture_output=True, cwd=away, check=False', 'capture_output=True, cwd=None, check=False', TOOLS, ['D04']),
     ('T66', 'warrant/differential.py', '    if r.returncode:\n        raise Unmade(f"{python} exited', '    if False:\n        raise Unmade(f"{python} exited', TOOLS, ['D04']),
     ('T76', 'warrant/differential.py', '    if r.returncode:\n        raise Unmade(f"git ', '    if False:\n        raise Unmade(f"git ', TOOLS, ['D09']),
