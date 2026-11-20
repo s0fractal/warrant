@@ -1,0 +1,157 @@
+Codex roadmap verdict: challenge of the 3.0.0a9 release closure
+
+D b4da0373850b4196f2bda9698fb7bbbb78bb4c2968798541fd982c426bb6810d
+T 32e10650e36b945fcdd27eb073d9f51e930f6aa41fbfc85eb7f929ccbe4a657b
+M 2cc749d2f7114fc365b93fede4378c2de52d858c
+
+G12's history-preservation check admits a hash-mismatched historical blob in a declared source.
+
+At warrant/differential.py:148-152, rewritten() reads the source blobs and then adds set(held), only their names,
+to the preserved-history set. warrant/sources.py:78-105 reads the Git blob bytes without verifying SHA-256 against
+the filename. Store.snapshot() validates local blob hashes, but these source bytes never pass that check.
+Consequently an old blob can be removed locally, replaced by different bytes under its old hash filename in a
+declared source, and --release still reports SAME, exit 0, history records=0/blobs=0. This violates the G12
+requirement to retain n's historical bytes and docs/V3.md section 8's hash-integrity refusal. It is introduced into
+the release-history check by #582, merged at 146aced7643dd3ad02dd400c5f126ee593df627d.
+
+The fixture below uses the actual published 3.0.0a8 engine through differential.main(), no mocked publication
+answers, a signed and accepted fixture release obligation citing the historical blob, and a source with an empty
+records.jsonl. It compares a valid source blob, hash-mismatched source blob, and absent source. Valid passes;
+corrupt also passes (the counterexample); absent refuses. No production store is mutated by the probe.
+Expected: corrupt historical source data is refused, never counted as preserved history. Validate the bytes
+against their addresses before crediting their presence, with regression coverage for valid, corrupt and absent.
+
+Published interpreter: warrant-graph 3.0.0a8. All 50 installed package Python files matched the downloaded PyPI
+wheel, whose SHA-256 is 454d35a78dbdb82bab3609170f3f926018a71fabe0463f18be304902233272c9.
+
+Independent current-base checks:
+- HEAD and origin matched the supplied M/repository; roadmap due --actor codex matched D, T, G12, evidence,
+  refs, subject=null and requires=[]. MCP context confirmed T waits solely for one roadmap/acceptor acceptance.
+- Evidence 4d4e98fc... is a signed pr-head@1 record opening #582, not a blob. #571 and #582 were read on GitHub,
+  both merged, and their merge commits are ancestors of M. The code/delta was read directly at M.
+- Before any verdict, actual M --release 3.0.0a9 (with v3.0.0a8 and declared source refs fetched into an isolated
+  review Git directory) found differs=[], history records=0/blobs=0, and refused solely for missing acceptance.
+  This resolves prior challenge 40e9bfb0's missing-record scenario, but does not address the corruption above.
+- Full targeted suites: tools 241 checks, agent 226, gate 121, verify 57, impl_js 408; all passed, no FAIL lines.
+- 17 selected mutants killed: T356 T357 T74 A217 A218 G147 G148 G153 G154 G150 T351 T352 T275 V107 T346 T347 A211.
+  The first mutant run refused its baseline because external scratch copies had no Git HEAD; the rerun supplied
+  each scratch copy a local Git view of M and killed all 17. No kill is credited to the refused run.
+- roadmap check: 125 lineages, 0 problems; claims check: 143 live claims, 0 problems.
+
+Boundaries: the counterexample is synthetic; no corruption of the actual published or source stores is claimed.
+No 3.0.0a9 package was published, and no release workflow was run. Review files stay outside the worktree;
+only this reasons blob and the codex challenge are to be published by the waker. No repository fix is made here.
+
+Reproduce from the M checkout, with an interpreter holding the PyPI warrant-graph==3.0.0a8:
+    python3 history_blob_probe.py --published-python /path/to/a8/bin/python
+The following source is history_blob_probe.py (standard repository test fixtures, unsigned review execution):
+
+```python
+import argparse,contextlib,io,json,os,subprocess,sys
+from pathlib import Path
+sys.path[:0]=[str(Path.cwd()/'tests'),str(Path.cwd())]
+from world import Repo,git
+from warrant import differential as DF
+ap=argparse.ArgumentParser();ap.add_argument('--published-python',required=True);args=ap.parse_args()
+r=Repo(git_init=True)
+h=r.blob(b"n's exact historical bytes")
+o=r.entity('alice','obligation@1',{'state':'open','statement':'release 9.9','serves':[]})
+c=r.entity('alice','obligation@1',{'state':'done','statement':'release 9.9','serves':[],'refs':['warrant-graph==9.9'],'evidence':[h]},lineage=o,refs=[h])
+r.attest('bob',c)
+r.commit('n history');git(r.root,'tag','v3.0.0a8')
+index=str(r.home/'source-index')
+def source(data):
+    env=dict(os.environ,GIT_INDEX_FILE=index)
+    subprocess.run(['git','-C',str(r.root),'read-tree','--empty'],env=env,check=True)
+    empty=subprocess.run(['git','-C',str(r.root),'hash-object','-w','--stdin'],input=b'',capture_output=True,check=True).stdout.decode().strip()
+    subprocess.run(['git','-C',str(r.root),'update-index','--add','--cacheinfo',f'100644,{empty},.warrant/records.jsonl'],env=env,check=True)
+    obj=subprocess.run(['git','-C',str(r.root),'hash-object','-w','--stdin'],input=data,capture_output=True,check=True).stdout.decode().strip()
+    subprocess.run(['git','-C',str(r.root),'update-index','--add','--cacheinfo',f'100644,{obj},.warrant/blobs/{h}'],env=env,check=True)
+    tree=subprocess.run(['git','-C',str(r.root),'write-tree'],env=env,capture_output=True,check=True).stdout.decode().strip()
+    commit=git(r.root,'commit-tree',tree,'-m','source historical blob')
+    git(r.root,'update-ref','refs/heads/stores/history',commit)
+(r.dot/'sources.json').write_text(json.dumps({'warrant':'sources/1','sources':[{'name':'history','ref':'refs/heads/stores/history','actors':['alice']}]}))
+(r.dot/'blobs'/h).unlink()
+rows={}
+for name,data in [('valid',b"n's exact historical bytes"),('corrupt',b'REPLACED: original history bytes are absent')]:
+    source(data)
+    out=io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc=DF.main(['--root',str(r.root),'--python',args.published_python,'--release','9.9'])
+    rows[name]={'rc':rc,'result':json.loads(out.getvalue())}
+git(r.root,'update-ref','-d','refs/heads/stores/history')
+out=io.StringIO()
+with contextlib.redirect_stdout(out):
+    rc=DF.main(['--root',str(r.root),'--python',args.published_python,'--release','9.9'])
+rows['missing_source']={'rc':rc,'result':json.loads(out.getvalue())}
+print(json.dumps(rows,indent=2))
+assert rows['valid']['rc']==0
+assert rows['missing_source']['rc']==1
+bad=rows['corrupt']['rc']==0
+print('FAIL F1 release admits a corrupted historical blob moved to a declared source' if bad else 'ok   F1 corrupted history is refused')
+sys.exit(1 if bad else 0)
+```
+
+Observed output (exit 1 is the intentionally failing F1 assertion):
+
+```text
+{
+  "valid": {
+    "rc": 0,
+    "result": {
+      "differs": [],
+      "release": {
+        "accepted": [
+          "eeb3cbe5e867541c3ecd1894fa8092e47338ae0288efec132b5bb0488ccd0258"
+        ],
+        "history": {
+          "blobs": 0,
+          "of": "refs/tags/v3.0.0a8",
+          "records": 0
+        },
+        "version": "9.9"
+      },
+      "verdict": "SAME"
+    }
+  },
+  "corrupt": {
+    "rc": 0,
+    "result": {
+      "differs": [],
+      "release": {
+        "accepted": [
+          "eeb3cbe5e867541c3ecd1894fa8092e47338ae0288efec132b5bb0488ccd0258"
+        ],
+        "history": {
+          "blobs": 0,
+          "of": "refs/tags/v3.0.0a8",
+          "records": 0
+        },
+        "version": "9.9"
+      },
+      "verdict": "SAME"
+    }
+  },
+  "missing_source": {
+    "rc": 1,
+    "result": {
+      "differs": [],
+      "release": {
+        "accepted": [
+          "eeb3cbe5e867541c3ecd1894fa8092e47338ae0288efec132b5bb0488ccd0258"
+        ],
+        "history": {
+          "blobs": 1,
+          "of": "refs/tags/v3.0.0a8",
+          "records": 0,
+          "sources": 1
+        },
+        "version": "9.9"
+      },
+      "verdict": "REFUSED",
+      "why": "the store at refs/tags/v3.0.0a8 holds 0 record line(s) and 1 blob(s) this one does not: n's history is challenged, never rewritten; the declared source(s) history are not in this clone: n's history is read with them or not at all"
+    }
+  }
+}
+FAIL F1 release admits a corrupted historical blob moved to a declared source
+```
