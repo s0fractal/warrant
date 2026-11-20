@@ -417,6 +417,129 @@ def witness_cases():
           and v_rat == (False, "INCONSISTENT_SOVEREIGN_RATIO"),
           (v_dup, v_ovl, v_rat))
 
+    # WT17: vars1-identity-lineage@1 verifies fork isolation, ancestor provenance, and refuses spoofing
+    id_ok_dig, id_ok_raw = _cert_blob({
+        "schema": "vars1-identity-lineage@1", "node_id": "b0", "entity_root": "b0",
+        "birth_kind": "fork", "atp": 40, "invariants": [["str", "safety"]], "relations": [],
+        "provenance_chain": ["a0", "b0"], "entity_lineage": ["b0"],
+    })
+    id_leak_dig, id_leak_raw = _cert_blob({
+        "schema": "vars1-identity-lineage@1", "node_id": "b0", "entity_root": "b0",
+        "birth_kind": "fork", "atp": 40, "invariants": [["str", "safety"]], "relations": [["str", "stolen"]],
+        "provenance_chain": ["a0", "b0"], "entity_lineage": ["b0"],
+    })
+    id_same_dig, id_same_raw = _cert_blob({
+        "schema": "vars1-identity-lineage@1", "node_id": "a1", "entity_root": "a0",
+        "birth_kind": "step", "atp": 40, "invariants": [["str", "safety"]], "relations": [],
+        "provenance_chain": ["a0", "a1"], "entity_lineage": ["a0", "a1"],
+    })
+    snap_id = _snap([], {id_ok_dig: id_ok_raw, id_leak_dig: id_leak_raw, id_same_dig: id_same_raw})
+    spec_id = {
+        "verifier": "vars1-identity-lineage@1",
+        "params": {
+            "require_birth_kind": "fork", "require_ancestor": "a0", "require_distinct_from": "a0",
+            "require_empty_relations": True, "min_atp": 30, "required_invariants": [["str", "safety"]],
+        },
+    }
+    i_ok = W.verify_witness(spec_id, id_ok_dig, snap_id, {}, 20)
+    i_leak = W.verify_witness(spec_id, id_leak_dig, snap_id, {}, 20)
+    i_same = W.verify_witness(
+        {"verifier": "vars1-identity-lineage@1", "params": {"require_distinct_from": "a0"}},
+        id_same_dig, snap_id, {}, 20,
+    )
+    check("WT17 vars1-identity-lineage@1 verifies isolated fork child and rejects cloned relations or same-entity",
+          i_ok == (True, "OK") and i_leak == (False, "INVALID_FORK_SHAPE") and i_same == (False, "SAME_ENTITY_FORBIDDEN"),
+          (i_ok, i_leak, i_same))
+
+    # WT18: vars1-trajectory-mass@1 enforces safety, exact mass accounting, horizon, and anti-Sybil dedup
+    tm_ok_dig, tm_ok_raw = _cert_blob({
+        "schema": "vars1-trajectory-mass@1", "label": "run1", "trajectory_safe": True,
+        "step_count": 2, "horizon": 5, "verified_mass": 17, "total_weight": 67,
+        "verified_acts": [{"act_id": "a1", "step_idx": 0, "weight": 10}, {"act_id": "a2", "step_idx": 1, "weight": 7}],
+        "refuted_ids": [], "non_counting_acts": [{"act_id": "f1", "origin": "forked", "refuted": False, "step_idx": 1, "weight": 50}],
+    })
+    tm_dup_dig, tm_dup_raw = _cert_blob({
+        "schema": "vars1-trajectory-mass@1", "label": "dup", "trajectory_safe": True,
+        "step_count": 2, "horizon": 5, "verified_mass": 20, "total_weight": 20,
+        "verified_acts": [{"act_id": "a1", "step_idx": 0, "weight": 10}, {"act_id": "a1", "step_idx": 1, "weight": 10}],
+        "refuted_ids": [], "non_counting_acts": [],
+    })
+    tm_ref_dig, tm_ref_raw = _cert_blob({
+        "schema": "vars1-trajectory-mass@1", "label": "ref", "trajectory_safe": True,
+        "step_count": 2, "horizon": 5, "verified_mass": 10, "total_weight": 10,
+        "verified_acts": [{"act_id": "a1", "step_idx": 0, "weight": 10}],
+        "refuted_ids": ["a1"], "non_counting_acts": [],
+    })
+    tm_fake_dig, tm_fake_raw = _cert_blob({
+        "schema": "vars1-trajectory-mass@1", "label": "fake", "trajectory_safe": True,
+        "step_count": 2, "horizon": 5, "verified_mass": 99, "total_weight": 99,
+        "verified_acts": [{"act_id": "a1", "step_idx": 0, "weight": 10}],
+        "refuted_ids": [], "non_counting_acts": [],
+    })
+    snap_tm = _snap([], {tm_ok_dig: tm_ok_raw, tm_dup_dig: tm_dup_raw, tm_ref_dig: tm_ref_raw, tm_fake_dig: tm_fake_raw})
+    spec_tm = {"verifier": "vars1-trajectory-mass@1", "params": {"min_mass": 15, "min_steps": 2, "max_horizon": 5, "max_refuted": 0}}
+    t_ok = W.verify_witness(spec_tm, tm_ok_dig, snap_tm, {}, 20)
+    t_dup = W.verify_witness(spec_tm, tm_dup_dig, snap_tm, {}, 20)
+    t_ref = W.verify_witness(spec_tm, tm_ref_dig, snap_tm, {}, 20)
+    t_fake = W.verify_witness(spec_tm, tm_fake_dig, snap_tm, {}, 20)
+    check("WT18 vars1-trajectory-mass@1 verifies exact mass and refuses duplicate acts, counted refutations, or inflated totals",
+          t_ok == (True, "OK") and t_dup == (False, "DUPLICATE_ACT_ID")
+          and t_ref == (False, "REFUTED_ACT_COUNTED") and t_fake == (False, "MASS_ACCOUNTING_MISMATCH"),
+          (t_ok, t_dup, t_ref, t_fake))
+
+    # WT19: Full 4-certificate autonomous A2A loop (Identity + Spore + Coalition + Trajectory) unlocks escrow & survives handoff export
+    src_a2a = Repo()
+    src_a2a.put("alice", "schema", P.SCHEMA)
+    t_a2a = src_a2a.t + 10
+    for raw_b in (id_ok_raw, sb_ok, vb_ok, tm_ok_raw):
+        src_a2a.blob(raw_b)
+    role_a2a = sorted(r for r, actors in src_a2a.profile["roles"].items() if "alice" in actors)[0]
+    g_a2a = P._sign_env(D.grant_record(
+        "alice", "carol", src_a2a.trust["keys"]["carol"][0],
+        roles=[role_a2a], kinds=["attest"], not_before=0, not_after=t_a2a + 500, at=t_a2a - 2,
+    ), sa)
+    gid_a2a = R.rid(g_a2a["record"])
+    prop_4w = P.make_proposal(
+        "alice", sa, parties=["alice", "bob"],
+        commitments={
+            "alice": {"gives": ["forked_child"], "witnesses": {"forked_child": spec_id}},
+            "bob": {
+                "requires": ["forked_child"],
+                "required_witnesses": {"forked_child": spec_id},
+                "gives": ["spore_ok", "viable_ok", "mass_ok"],
+                "witnesses": {
+                    "spore_ok": {"verifier": "vars1-spore-receipt@1", "params": {"max_atp_spent": 50}},
+                    "viable_ok": {"verifier": "vars1-coalition-viability@1", "params": {"min_sovereign_bps": 7500}},
+                    "mass_ok": spec_tm,
+                },
+            },
+        },
+        expires_at=t_a2a + 100, purpose="full-4-witness-a2a-loop",
+        escrow_grants=[gid_a2a], escrow_mode="settled", at=t_a2a,
+    )
+    pid_4w = R.rid(prop_4w["record"])
+    src_a2a.store.add_lines([C.canon(e) + b"\n" for e in [
+        g_a2a, prop_4w,
+        P.make_accept("alice", sa, pid_4w, at=t_a2a + 1),
+        P.make_accept("bob", sb, pid_4w, at=t_a2a + 2),
+        P.make_fulfill("alice", sa, pid_4w, evidence_digest=id_ok_dig, delivered=["forked_child"], at=t_a2a + 3),
+        P.make_fulfill("bob", sb, pid_4w, evidence_digest=sd_ok,
+                       witness_digests={"spore_ok": sd_ok, "viable_ok": vd_ok, "mass_ok": tm_ok_dig},
+                       delivered=["spore_ok", "viable_ok", "mass_ok"], at=t_a2a + 4),
+    ]])
+    cfg_a2a = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {
+        "repo": str(src_a2a.root), "signer": {"actor": "bob", "key": str(src_a2a.seed("bob"))},
+    }}})
+    pkg_4w = agent_api.call(cfg_a2a, "handoff", {"workspace": "w", "op": "export", "targets": [pid_4w]})["ok"]["package"]
+    recv_4w = Snapshot([x.encode() + b"\n" for x in pkg_4w["lines"]],
+                       {h: base64.b64decode(b) for h, b in pkg_4w["blobs"].items()})
+    res_4w = P.resolve_pacts(recv_4w, src_a2a.trust, t_a2a + 10)[pid_4w]
+    esc_4w = P.resolve_escrow(recv_4w, src_a2a.trust, src_a2a.profile, t_a2a + 10)["escrow"][gid_a2a]
+    check("WT19 full 4-witness A2A pact settles, unlocks escrow, and exports all 4 proof blobs via handoff",
+          res_4w["status"] == "SETTLED" and esc_4w["escrow_allowed"] is True
+          and all(d in pkg_4w["blobs"] for d in (id_ok_dig, sd_ok, vd_ok, tm_ok_dig)),
+          (res_4w["status"], esc_4w, sorted(pkg_4w["blobs"])))
+
 
 if __name__ == "__main__":
     sys.exit(run_sections([witness_cases]))
