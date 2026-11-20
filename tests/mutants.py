@@ -1181,6 +1181,22 @@ MUTANTS = [
      "            if g in step.gives:\n                # Re-giving g without a witness clears any prior witness spec (anti-laundering)\n                if g in step_give_specs:\n                    next_specs[g] = step_give_specs[g]",
      "            if g in step.gives:\n                if g in step_give_specs:\n                    next_specs[g] = step_give_specs[g]\n                elif g in avail_specs:\n                    next_specs[g] = avail_specs[g]",
      "tests/witness_test.py", ["WT10"]),
+    ("WT11", "warrant/pact.py",
+     '                    for rlbl, rwspec in sorted(other_c["required_witnesses"].items()):',
+     "                    for rlbl, rwspec in []:",
+     "tests/witness_test.py", ["WT11"]),
+    ("WT12", "warrant/pact.py",
+     '            if sup_spec is None or W.witness_spec_key(sup_spec) != W.witness_spec_key(rwspec):\n                raise ValueError(f"INTERNAL_WITNESS_UNSATISFIED:{lbl}")',
+     "            if False:\n                pass",
+     "tests/witness_test.py", ["WT11"]),
+    ("WT13", "warrant/pact.py",
+     '            if lbl in merged_rw and W.witness_spec_key(merged_rw[lbl]) != W.witness_spec_key(wspec):\n                raise ValueError(f"CONFLICTING_REQUIRED_WITNESS:{lbl}")',
+     "            if False:\n                pass",
+     "tests/witness_test.py", ["WT12"]),
+    ("WT14", "warrant/witness.py",
+     "    if isinstance(v, int):\n        return True",
+     "    if False:\n        return True",
+     "tests/witness_test.py", ["WT13"]),
 ]
 
 

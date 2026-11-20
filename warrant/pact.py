@@ -588,7 +588,19 @@ def resolve_pacts(snap: Snapshot, trust: dict, as_of: int, *, verifiers=None):
 
                 # Single consistent evidence/witness digest set; verify timing, completeness & proof-carrying witnesses
                 req_gives = set(spec["commitments"][party]["gives"])
-                req_witnesses = spec["commitments"][party]["witnesses"]
+                # Collect both the supplier's own declared witnesses AND every internal consumer's required_witnesses
+                # for labels this party supplies (Codex F1: internal requirements cannot be skipped at settlement)
+                req_witness_checks = [(lbl, wspec) for lbl, wspec in sorted(spec["commitments"][party]["witnesses"].items())]
+                seen_checks = {(lbl, W.witness_spec_key(wspec)) for lbl, wspec in req_witness_checks}
+                for other_p, other_c in sorted(spec["commitments"].items()):
+                    if other_p == party:
+                        continue
+                    for rlbl, rwspec in sorted(other_c["required_witnesses"].items()):
+                        if rlbl in req_gives:
+                            ck = (rlbl, W.witness_spec_key(rwspec))
+                            if ck not in seen_checks:
+                                seen_checks.add(ck)
+                                req_witness_checks.append((rlbl, rwspec))
                 admitted = None
                 for f_at, f_rid, edig, deliv, wdigs in f_list:
                     if f_at < activation_at:
@@ -600,7 +612,7 @@ def resolve_pacts(snap: Snapshot, trust: dict, as_of: int, *, verifiers=None):
                         continue
                     failed_witnesses = {}
                     verified_witnesses = {}
-                    for wlabel, wspec in sorted(req_witnesses.items()):
+                    for wlabel, wspec in req_witness_checks:
                         w_dig = wdigs.get(wlabel, edig)
                         w_ok, w_reason = W.verify_witness(wspec, w_dig, snap, valid, as_of, verifiers=verifiers)
                         if not w_ok:
@@ -828,9 +840,17 @@ def pact_to_recipe(pact_entry):
             else:
                 merged_w[lbl] = wspec
         for lbl, wspec in (c.get("required_witnesses") or {}).items():
+            if lbl in merged_rw and W.witness_spec_key(merged_rw[lbl]) != W.witness_spec_key(wspec):
+                raise ValueError(f"CONFLICTING_REQUIRED_WITNESS:{lbl}")
             merged_rw[lbl] = wspec
     for lbl in conflicted_w:
         merged_w.pop(lbl, None)
+    # Verify every internal handoff satisfies consumer required_witnesses before erasing from external_reqs (Codex F1)
+    for lbl, rwspec in sorted(merged_rw.items()):
+        if lbl in all_gives:
+            sup_spec = merged_w.get(lbl)
+            if sup_spec is None or W.witness_spec_key(sup_spec) != W.witness_spec_key(rwspec):
+                raise ValueError(f"INTERNAL_WITNESS_UNSATISFIED:{lbl}")
     # Internal handoffs fulfilled by another party inside the same pact are not external prerequisites
     external_reqs = all_reqs - all_gives
     external_rw = {k: v for k, v in merged_rw.items() if k in external_reqs}

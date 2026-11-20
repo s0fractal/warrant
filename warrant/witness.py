@@ -11,7 +11,7 @@ This module closes that seam (`F4 / D23`) with a pure, fail-closed offline witne
   2. Built-in deterministic offline verifiers over `Snapshot.blobs` and verified `Snapshot` records:
        - `sha256-blob@1`                — blob exists in `snap.blobs` and SHA-256 matches `digest`
        - `vars1-coalition-viability@1`  — verifies canonical SHA-256, `live_env`, `policy_verified`,
-                                          and optional `min_sovereign_ratio`, `max_blocked_states`,
+                                          and optional `min_sovereign_bps`, `max_blocked_states`,
                                           and `required_states` against `minds/coalition.py` certs
        - `vars1-spore-receipt@1`        — verifies canonical SHA-256, `status == "SETTLED"`,
                                           strict ATP conservation (`atp_spent + atp_remaining == atp_budget`),
@@ -37,7 +37,11 @@ MAX_PARAMS_BYTES = 4096
 
 
 def _is_num(v):
-    return (isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v))
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, int):
+        return True
+    return isinstance(v, float) and math.isfinite(v)
 
 
 def canonical_json_bytes(obj):
@@ -106,13 +110,16 @@ def _load_canonical_cert(digest, snap, expected_schema):
         return None, "BLOB_MISSING"
     try:
         body = json.loads(blob.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, OverflowError, RecursionError):
         return None, "BAD_JSON_BLOB"
     if not isinstance(body, dict):
         return None, "BAD_CERT_OBJECT"
     # Verify content-address integrity over both raw blob and canonical JSON encoding
     raw_ok = hashlib.sha256(blob).hexdigest() == digest
-    canon_ok = canonical_json_digest(body) == digest
+    try:
+        canon_ok = canonical_json_digest(body) == digest
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        return None, "BAD_JSON_BLOB"
     if not (raw_ok and canon_ok):
         return None, "DIGEST_MISMATCH"
     if body.get("schema") != expected_schema:
@@ -134,7 +141,7 @@ def _verify_coalition_viability(digest, params, snap, valid_recs, as_of):
     ratio = body.get("sovereign_ratio")
     if not (isinstance(ctrl, list) and isinstance(blocked, list) and _is_num(ratio)):
         return False, "MALFORMED_VIABILITY_FIELDS"
-    if not (0.0 <= ratio <= 1.0):
+    if not (0 <= ratio <= 1):
         return False, "BAD_SOVEREIGN_RATIO"
 
     min_bps = params.get("min_sovereign_bps")

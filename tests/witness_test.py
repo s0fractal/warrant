@@ -259,6 +259,74 @@ def witness_cases():
           and any(e.get("code") == "VERIFIER_SPEC_MISMATCH" and e.get("step") == 2 for e in c_strip.get("errors", [])),
           c_strip)
 
+    # WT11: Internal consumer required_witnesses enforced at settlement, escrow, and recipe extraction (Codex F1)
+    strict_blob = {"verifier": "sha256-blob@1", "params": {"min_bytes": 100}}
+    weak_blob = {"verifier": "sha256-blob@1", "params": {"min_bytes": 1}}
+    prop_int = P.make_proposal(
+        "alice", sa, parties=["alice", "bob"],
+        commitments={
+            "alice": {"gives": ["verified"]},
+            "bob": {"requires": ["verified"], "required_witnesses": {"verified": strict_blob}, "gives": ["deployed"]},
+        },
+        purpose="internal consumer witness enforcement", expires_at=100,
+        escrow_grants=[gid], escrow_mode="settled", at=10,
+    )
+    pid_int = R.rid(prop_int["record"])
+    snap_int = _snap([
+        g_env, prop_int, P.make_accept("alice", sa, pid_int, at=11), P.make_accept("bob", sb, pid_int, at=12),
+        P.make_fulfill("alice", sa, pid_int, evidence_digest="a" * 64, delivered=["verified"], at=15),
+        P.make_fulfill("bob", sb, pid_int, evidence_digest="b" * 64, delivered=["deployed"], at=16),
+    ])
+    res_int = P.resolve_pacts(snap_int, trust, 20)[pid_int]
+    esc_int = P.resolve_escrow(snap_int, trust, profile, 20)
+    int_err = None
+    try:
+        P.pact_to_recipe(res_int)
+    except ValueError as exc:
+        int_err = str(exc)
+    check("WT11 unwitnessed internal handoff cannot settle pact, unlock escrow, or compose as well-typed",
+          res_int["status"] == "ACTIVE"
+          and any(e["code"] == "UNGROUNDED_GUARANTEE" for e in res_int.get("refused_events", []))
+          and esc_int["escrow"][gid]["escrow_allowed"] is False
+          and int_err == "INTERNAL_WITNESS_UNSATISFIED:verified",
+          (res_int["status"], res_int.get("refused_events"), esc_int["escrow"].get(gid), int_err))
+
+    # WT12: Conflicting external required_witnesses across parties rejected regardless of order (Codex F2)
+    def _conflicting_rw_err(spec_a, spec_b):
+        pr = P.make_proposal("alice", sa, parties=["alice", "bob"], commitments={
+            "alice": {"requires": ["in"], "required_witnesses": {"in": spec_a}, "gives": ["s1"]},
+            "bob": {"requires": ["in"], "required_witnesses": {"in": spec_b}, "gives": ["s2"]},
+        }, purpose="conflict", expires_at=100, at=10)
+        pid_c = R.rid(pr["record"])
+        sn = _snap([pr, P.make_accept("alice", sa, pid_c, at=11), P.make_accept("bob", sb, pid_c, at=12)])
+        try:
+            P.pact_to_recipe(P.resolve_pacts(sn, trust, 20)[pid_c])
+            return None
+        except ValueError as exc:
+            return str(exc)
+
+    err_sw, err_ws = _conflicting_rw_err(strict_blob, weak_blob), _conflicting_rw_err(weak_blob, strict_blob)
+    check("WT12 conflicting external required_witnesses across parties are rejected in either party order",
+          err_sw == "CONFLICTING_REQUIRED_WITNESS:in" and err_ws == "CONFLICTING_REQUIRED_WITNESS:in",
+          (err_sw, err_ws))
+
+    # WT13: Oversized integer in viability certificate is refused cleanly without aborting resolve_pacts (Codex F3)
+    huge_dig, huge_bytes = _viab_cert(ratio=10 ** 400)
+    ful_b_huge = P.make_fulfill(
+        "bob", sb, pid, evidence_digest=sd_ok,
+        witness_digests={"spore_settled": sd_ok, "viable_floor": huge_dig},
+        delivered=["spore_settled", "viable_floor"], at=18,
+    )
+    snap_huge = _snap([g_env, prop_a2a, acc_a, acc_b, ful_a, ful_b_huge],
+                      {blob_dig: blob_bytes, sd_ok: sb_ok, huge_dig: huge_bytes})
+    res_huge = P.resolve_pacts(snap_huge, trust, 20)[pid]
+    check("WT13 oversized integer sovereign_ratio fails closed as UNGROUNDED_GUARANTEE without OverflowError",
+          res_huge["status"] == "ACTIVE"
+          and any(e.get("code") == "UNGROUNDED_GUARANTEE"
+                  and e.get("failed_witnesses", {}).get("viable_floor", {}).get("reason") == "BAD_SOVEREIGN_RATIO"
+                  for e in res_huge.get("refused_events", [])),
+          (res_huge["status"], res_huge.get("refused_events")))
+
 
 if __name__ == "__main__":
     sys.exit(run_sections([witness_cases]))
