@@ -1898,6 +1898,41 @@ def differential_cases():
                   "bob": (1, "REFUSED", {"of": "refs/tags/v0.2", "records": 1, "blobs": 0}),
                   "absent": (1, "REFUSED", {"of": "refs/tags/v0.2", "records": 1, "blobs": 0, "sources": 1})}
           and "mv" in moving["absent"][1]["why"], got)
+    # A blob of n's tag is kept only by a copy with its bytes: one of its name with other bytes, here or in a source,
+    # is lost history (Codex a38145f2 on the 3.0.0a9 closure).
+    def source_with_blob(data):
+        env2 = dict(os.environ, GIT_INDEX_FILE=str(r.home / "blob-index"))
+        if (r.home / "blob-index").exists():
+            (r.home / "blob-index").unlink()
+        oid = subprocess.run(["git", "-C", str(r.root), "hash-object", "-w", "--stdin"], input=data,
+                             capture_output=True, check=True).stdout.decode().strip()
+        subprocess.run(["git", "-C", str(r.root), "update-index", "--add", "--cacheinfo",
+                        f"100644,{oid},.warrant/blobs/{spare}"], env=env2, check=True)
+        tr = subprocess.run(["git", "-C", str(r.root), "write-tree"], env=env2, capture_output=True,
+                            check=True).stdout.decode().strip()
+        c = subprocess.run(["git", "-C", str(r.root), "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", tr,
+                            "-m", "blob"], capture_output=True, check=True).stdout.decode().strip()
+        git(r.root, "update-ref", "refs/heads/stores/bl", c)
+    real = (r.dot / "blobs" / spare).read_bytes()
+    (r.dot / "sources.json").write_text(json.dumps({"warrant": "sources/1", "sources": [
+        {"name": "bl", "ref": "refs/heads/stores/bl", "actors": ["alice"]}]}))
+    swapped = {}
+    (r.dot / "blobs" / spare).unlink()
+    source_with_blob(real)
+    swapped["source, same bytes"] = release("0.2", [closed])
+    source_with_blob(b"other bytes")
+    swapped["source, other bytes"] = release("0.2", [closed])
+    (r.dot / "blobs" / spare).write_bytes(b"other bytes")
+    swapped["here, other bytes"] = release("0.2", [closed])
+    (r.dot / "blobs" / spare).write_bytes(real)
+    git(r.root, "update-ref", "-d", "refs/heads/stores/bl")
+    (r.dot / "sources.json").unlink()
+    got = {k: (c, v["verdict"], (v.get("release") or {}).get("history", {}).get("blobs")) for k, (c, v) in swapped.items()}
+    check("D09c a blob of n's tag is kept only by a copy with the tag's bytes: a source's copy with them keeps it; "
+          "one of its name with other bytes in a source is lost; here the store itself refuses it, so no verdict is made "
+          "(UNMADE) (Codex a38145f2 on the 3.0.0a9 closure)",
+          got == {"source, same bytes": (0, "SAME", 0), "source, other bytes": (1, "REFUSED", 1),
+                  "here, other bytes": (2, "UNMADE", None)}, got)
     stages["no tag"] = release("0.3", [closed])
     stages["not a version"] = release("0.2^{}", [closed])         # git would read v0.2^{} as v0.2's commit
     git(r.root, "branch", "v0.4")                                   # a branch, not a tag (Codex finding 9b3268821dd4)

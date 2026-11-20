@@ -130,27 +130,47 @@ def git_bytes(root, cmd, *args, options=()):
     return r.stdout
 
 
+def tag_blobs(root, ref):
+    """{name: bytes} of the blobs the store at `ref` holds (.warrant/blobs/), read from Git's objects."""
+    rows = git_bytes(root, "ls-tree", ref, "--", ".warrant/blobs/", options=("-z",)).split(b"\0")
+    out = {}
+    for row in rows:
+        meta, tab, path = row.partition(b"\t")
+        if not tab:
+            continue
+        kind, oid = meta.split()[1:3]
+        if kind == b"blob":
+            out[Path(path.decode()).name] = git_bytes(root, "cat-file", "blob", oid.decode())
+    return out
+
+
 def rewritten(root, ref):
     """{records: [line], blobs: [name], sources?: [unavailable name]}: what the store at `ref` (n's tag) holds that
     this checkout's store does not. The store is the repository's as it is read: its own records with those its
     declared sources hold by their actors (warrant/sources.py), so a record moved to a source (the claims checker's
     acceptances, 2026-11-18) is kept, not gone (Codex on the 3.0.0a9 closure, 40e9bfb0). A source whose ref this
-    clone lacks is named unavailable, never read as empty. Blobs by name: the store refuses one not named by its
-    hash."""
+    clone lacks is named unavailable, never read as empty. A blob is kept only by a copy, here or in a source, whose
+    bytes are the tag's: a file of its name with other bytes is lost history too (Codex a38145f2 on the 3.0.0a9
+    closure)."""
     dot = dot_of(root)
     then = {x for x in git_bytes(root, "show", f"{ref}:.warrant/records.jsonl").split(b"\n") if x.strip()}
     now = {x for x in (dot / "records.jsonl").read_bytes().split(b"\n") if x.strip()}
-    named = git_bytes(root, "ls-tree", ref, "--", ".warrant/blobs/", options=("-z", "--name-only")).split(b"\0")
-    blobs = {Path(n.decode()).name for n in named if n}
-    here = {p.name for p in (dot / "blobs").iterdir()} if (dot / "blobs").is_dir() else set()
+    blobs = tag_blobs(root, ref)
+    copies = {}                                 # name -> every byte string a copy of that name holds here
+    if (dot / "blobs").is_dir():
+        for p in (dot / "blobs").iterdir():
+            if p.name in blobs and p.is_file() and not p.is_symlink():
+                copies.setdefault(p.name, []).append(p.read_bytes())
     unavailable = []
     for src in sources.declared(sources.config_doc(root)):
         commit, lines, held, _ = sources.read(root, src)
         if commit is None:
             unavailable.append(src["name"])
         now |= {x.rstrip(b"\n") for x in lines}
-        here |= set(held)
-    out = {"records": sorted(x.decode() for x in then - now), "blobs": sorted(blobs - here)}
+        for name, data in held.items():
+            copies.setdefault(name, []).append(data)
+    lost = sorted(n for n, data in blobs.items() if data not in copies.get(n, []))
+    out = {"records": sorted(x.decode() for x in then - now), "blobs": lost}
     if unavailable:
         out["sources"] = sorted(unavailable)
     return out
