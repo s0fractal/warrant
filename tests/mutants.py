@@ -1233,6 +1233,10 @@ MUTANTS = [
      '    if sum_verified != vmass:',
      "    if False:",
      "tests/witness_test.py", ["WT18"]),
+    ("WT24", "warrant/witness.py",
+     '    if nc_refuted_ids != refuted_set:',
+     "    if False:",
+     "tests/witness_test.py", ["WT18"]),
 ]
 
 

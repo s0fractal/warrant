@@ -377,17 +377,27 @@ def _verify_trajectory_mass(digest, params, snap, valid_recs, as_of):
         sum_verified += w
 
     sum_non_counting = 0
+    nc_refuted_ids = set()
     for act in ncacts:
         if not isinstance(act, dict):
             return False, "MALFORMED_ACT"
-        aid, w = act.get("act_id"), act.get("weight")
-        if not (_trimmed_str(aid) and R.is_int(w) and w >= 0):
+        aid, origin = act.get("act_id"), act.get("origin")
+        is_ref, sidx, w = act.get("refuted"), act.get("step_idx"), act.get("weight")
+        if not (_trimmed_str(aid) and origin in ("verified", "retold", "forked")
+                and isinstance(is_ref, bool) and R.is_int(sidx) and sidx >= 0
+                and R.is_int(w) and w >= 0):
             return False, "MALFORMED_ACT"
         if aid in seen_ids:
             return False, "DUPLICATE_ACT_ID"
+        if origin == "verified" and not is_ref and sidx <= horizon:
+            return False, "MISCLASSIFIED_NON_COUNTING_ACT"
+        if is_ref:
+            nc_refuted_ids.add(aid)
         seen_ids.add(aid)
         sum_non_counting += w
 
+    if nc_refuted_ids != refuted_set:
+        return False, "REFUTED_IDS_MISMATCH"
     if sum_verified != vmass:
         return False, "MASS_ACCOUNTING_MISMATCH"
     if sum_verified + sum_non_counting != tweight:

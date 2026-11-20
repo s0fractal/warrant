@@ -476,16 +476,28 @@ def witness_cases():
         "verified_acts": [{"act_id": "a1", "step_idx": 0, "weight": 10}],
         "refuted_ids": [], "non_counting_acts": [],
     })
-    snap_tm = _snap([], {tm_ok_dig: tm_ok_raw, tm_dup_dig: tm_dup_raw, tm_ref_dig: tm_ref_raw, tm_fake_dig: tm_fake_raw})
+    tm_hid_dig, tm_hid_raw = _cert_blob({
+        "schema": "vars1-trajectory-mass@1", "label": "hidden-ref", "trajectory_safe": True,
+        "step_count": 2, "horizon": 5, "verified_mass": 17, "total_weight": 27,
+        "verified_acts": [{"act_id": "a1", "step_idx": 0, "weight": 10}, {"act_id": "a2", "step_idx": 1, "weight": 7}],
+        "refuted_ids": [],
+        "non_counting_acts": [{"act_id": "bad", "origin": "verified", "refuted": True, "step_idx": 0, "weight": 10}],
+    })
+    snap_tm = _snap([], {
+        tm_ok_dig: tm_ok_raw, tm_dup_dig: tm_dup_raw, tm_ref_dig: tm_ref_raw,
+        tm_fake_dig: tm_fake_raw, tm_hid_dig: tm_hid_raw,
+    })
     spec_tm = {"verifier": "vars1-trajectory-mass@1", "params": {"min_mass": 15, "min_steps": 2, "max_horizon": 5, "max_refuted": 0}}
     t_ok = W.verify_witness(spec_tm, tm_ok_dig, snap_tm, {}, 20)
     t_dup = W.verify_witness(spec_tm, tm_dup_dig, snap_tm, {}, 20)
     t_ref = W.verify_witness(spec_tm, tm_ref_dig, snap_tm, {}, 20)
     t_fake = W.verify_witness(spec_tm, tm_fake_dig, snap_tm, {}, 20)
-    check("WT18 vars1-trajectory-mass@1 verifies exact mass and refuses duplicate acts, counted refutations, or inflated totals",
+    t_hid = W.verify_witness(spec_tm, tm_hid_dig, snap_tm, {}, 20)
+    check("WT18 vars1-trajectory-mass@1 verifies exact mass and refuses duplicate acts, counted/hidden refutations, or inflated totals",
           t_ok == (True, "OK") and t_dup == (False, "DUPLICATE_ACT_ID")
-          and t_ref == (False, "REFUTED_ACT_COUNTED") and t_fake == (False, "MASS_ACCOUNTING_MISMATCH"),
-          (t_ok, t_dup, t_ref, t_fake))
+          and t_ref == (False, "REFUTED_ACT_COUNTED") and t_fake == (False, "MASS_ACCOUNTING_MISMATCH")
+          and t_hid == (False, "REFUTED_IDS_MISMATCH"),
+          (t_ok, t_dup, t_ref, t_fake, t_hid))
 
     # WT19: Full 4-certificate autonomous A2A loop (Identity + Spore + Coalition + Trajectory) unlocks escrow & survives handoff export
     src_a2a = Repo()
