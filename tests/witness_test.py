@@ -327,6 +327,31 @@ def witness_cases():
                   for e in res_huge.get("refused_events", [])),
           (res_huge["status"], res_huge.get("refused_events")))
 
+    # WT14: Same-party required_witnesses on a label that party also gives still gates settlement & escrow (Codex P1 #2)
+    prop_self = P.make_proposal(
+        "alice", sa, parties=["alice", "bob"],
+        commitments={
+            "alice": {"requires": ["verified"], "gives": ["verified"], "required_witnesses": {"verified": strict_blob}},
+            "bob": {"gives": ["done"]},
+        },
+        purpose="same-party required witness enforcement", expires_at=100,
+        escrow_grants=[gid], escrow_mode="settled", at=10,
+    )
+    pid_self = R.rid(prop_self["record"])
+    snap_self = _snap([
+        g_env, prop_self, P.make_accept("alice", sa, pid_self, at=11), P.make_accept("bob", sb, pid_self, at=12),
+        P.make_fulfill("alice", sa, pid_self, evidence_digest="a" * 64, delivered=["verified"], at=15),
+        P.make_fulfill("bob", sb, pid_self, evidence_digest="b" * 64, delivered=["done"], at=16),
+    ])
+    res_self = P.resolve_pacts(snap_self, trust, 20)[pid_self]
+    esc_self = P.resolve_escrow(snap_self, trust, profile, 20)["escrow"][gid]
+    dg_self = D.assess_delegated(snap_self, trust, profile, 20)["grants"][gid]
+    check("WT14 same-party required_witnesses on a self-given label blocks settlement and keeps escrow frozen",
+          res_self["status"] == "ACTIVE" and "alice" not in res_self["fulfilled"]
+          and any(e.get("code") == "UNGROUNDED_GUARANTEE" for e in res_self.get("refused_events", []))
+          and esc_self["escrow_allowed"] is False and dg_self["status"] == "ESCROW_FROZEN",
+          (res_self["status"], res_self["fulfilled"], esc_self["escrow_allowed"], dg_self["status"]))
+
 
 if __name__ == "__main__":
     sys.exit(run_sections([witness_cases]))

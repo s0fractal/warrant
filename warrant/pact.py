@@ -588,13 +588,11 @@ def resolve_pacts(snap: Snapshot, trust: dict, as_of: int, *, verifiers=None):
 
                 # Single consistent evidence/witness digest set; verify timing, completeness & proof-carrying witnesses
                 req_gives = set(spec["commitments"][party]["gives"])
-                # Collect both the supplier's own declared witnesses AND every internal consumer's required_witnesses
-                # for labels this party supplies (Codex F1: internal requirements cannot be skipped at settlement)
+                # Collect both the supplier's own declared witnesses AND every required_witnesses (other or same party)
+                # for labels this party supplies (Codex F1: internal & self-required witnesses cannot be skipped at settlement)
                 req_witness_checks = [(lbl, wspec) for lbl, wspec in sorted(spec["commitments"][party]["witnesses"].items())]
                 seen_checks = {(lbl, W.witness_spec_key(wspec)) for lbl, wspec in req_witness_checks}
-                for other_p, other_c in sorted(spec["commitments"].items()):
-                    if other_p == party:
-                        continue
+                for _, other_c in sorted(spec["commitments"].items()):
                     for rlbl, rwspec in sorted(other_c["required_witnesses"].items()):
                         if rlbl in req_gives:
                             ck = (rlbl, W.witness_spec_key(rwspec))
