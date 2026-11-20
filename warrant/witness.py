@@ -460,6 +460,8 @@ def _verify_compatibility(digest, params, snap, valid_recs, as_of):
             return False, "INCONSISTENT_COMPATIBILITY_CERT"
         if reason == "LOCALLY_REFUTED" and ref_dig is None:
             return False, "INCONSISTENT_COMPATIBILITY_CERT"
+        if reason in ("CAPTURED_PARTY", "LOCALLY_REFUTED") and not (sa and sb):
+            return False, "INCONSISTENT_COMPATIBILITY_CERT"
         if reason == "NO_STANDING" and (sa and sb):
             return False, "INCONSISTENT_COMPATIBILITY_CERT"
 

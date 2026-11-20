@@ -568,7 +568,12 @@ def witness_cases():
         "claim_id": "claim-0", "context_id": "ctx-a", "compatible": True,
         "reason": "COMPATIBLE", "standing_a": True, "standing_b": True, "refusal_witness_digest": "a" * 64,
     })
-    snap_cm = _snap([], {cm_ok_dig: cm_ok_raw, cm_cap_dig: cm_cap_raw, cm_bad_dig: cm_bad_raw})
+    cm_contra_dig, cm_contra_raw = _cert_blob({
+        "schema": "vars1-compatibility@1", "entity_a": "human", "entity_b": "agent",
+        "claim_id": "claim-0", "context_id": "ctx-a", "compatible": False,
+        "reason": "LOCALLY_REFUTED", "standing_a": False, "standing_b": True, "refusal_witness_digest": "a" * 64,
+    })
+    snap_cm = _snap([], {cm_ok_dig: cm_ok_raw, cm_cap_dig: cm_cap_raw, cm_bad_dig: cm_bad_raw, cm_contra_dig: cm_contra_raw})
     spec_cm = {
         "verifier": "vars1-compatibility@1",
         "params": {"require_entities": ["agent", "human"], "require_claim": "claim-0", "require_context": "ctx-a"},
@@ -576,14 +581,20 @@ def witness_cases():
     c_ok = W.verify_witness(spec_cm, cm_ok_dig, snap_cm, {}, 20)
     c_cap = W.verify_witness(spec_cm, cm_cap_dig, snap_cm, {}, 20)
     c_bad = W.verify_witness(spec_cm, cm_bad_dig, snap_cm, {}, 20)
+    c_contra = W.verify_witness(
+        {"verifier": "vars1-compatibility@1", "params": {"allow_refusal": True}},
+        cm_contra_dig, snap_cm, {}, 20,
+    )
     c_ctx = W.verify_witness(
         {"verifier": "vars1-compatibility@1", "params": {"require_context": "ctx-b"}},
         cm_ok_dig, snap_cm, {}, 20,
     )
     check("WT20 vars1-compatibility@1 admits consistent compatibility and refuses capture, contradiction, or context mismatch",
           c_ok == (True, "OK") and c_cap == (False, "NOT_COMPATIBLE")
-          and c_bad == (False, "INCONSISTENT_COMPATIBILITY_CERT") and c_ctx == (False, "CONTEXT_MISMATCH"),
-          (c_ok, c_cap, c_bad, c_ctx))
+          and c_bad == (False, "INCONSISTENT_COMPATIBILITY_CERT")
+          and c_contra == (False, "INCONSISTENT_COMPATIBILITY_CERT")
+          and c_ctx == (False, "CONTEXT_MISMATCH"),
+          (c_ok, c_cap, c_bad, c_contra, c_ctx))
 
 
 if __name__ == "__main__":

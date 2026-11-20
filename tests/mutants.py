@@ -1251,6 +1251,10 @@ MUTANTS = [
      "        if ctx_id != req_ctx:",
      "        if False:",
      "tests/witness_test.py", ["WT20"]),
+    ("WT28", "warrant/witness.py",
+     '        if reason in ("CAPTURED_PARTY", "LOCALLY_REFUTED") and not (sa and sb):',
+     "        if False:",
+     "tests/witness_test.py", ["WT20"]),
     # deterministic lossless recipe synthesizer (warrant/dream.py)
     ("DR1", "warrant/dream.py",
      '            if not comp["lossless"]:',
