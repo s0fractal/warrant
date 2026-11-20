@@ -281,13 +281,24 @@ def build(cfg):
         "Bilateral/multilateral cryptographic pacts and computed-loss composition (`pact@1`, docs/PACT.md). Read only. "
         "op=status: resolve every pact@1 contract (activation, fulfillment, equivocation, breach, expiry). "
         "op=escrow: resolve pact-bound grant@1 escrow permissions. "
-        "op=compose: compose ordered pact_ids under the default-deny computed-loss frame law."))
+        "op=compose: compose ordered pact_ids under the default-deny computed-loss frame law. "
+        "op=dream: synthesize lossless, witness-typed pact chains satisfying goal_gives with diagnostic prescriptions."))
     def warrant_pact(workspace: Workspace,
-                     op: Literal["status", "escrow", "compose"],
+                     op: Literal["status", "escrow", "compose", "dream"],
                      as_of: Annotated[int | None, Field(description="Unix timestamp to evaluate pacts at.")] = None,
                      pact_ids: Annotated[list[str] | None, Field(description="Ordered 64-hex pact ids for op=compose.")] = None,
+                     goal_gives: Annotated[list[str] | None, Field(description="Target guarantee labels for op=dream.")] = None,
+                     initial_gives: Annotated[list[str] | None, Field(description="Initial available labels for op=dream.")] = None,
+                     required_witnesses: Annotated[dict[str, Any] | None, Field(description="Required witness specs by label for op=dream.")] = None,
+                     boundary: Annotated[list[str] | None, Field(description="Target boundary labels for op=dream.")] = None,
+                     max_steps: Annotated[int | None, Field(description="Maximum chain length for op=dream.")] = None,
+                     max_expansions: Annotated[int | None, Field(description="Maximum BFS expansions for op=dream.")] = None,
                      ) -> dict[str, Any]:
-        return run("pact", _req(workspace=workspace, op=op, as_of=as_of, pact_ids=pact_ids))
+        return run("pact", _req(
+            workspace=workspace, op=op, as_of=as_of, pact_ids=pact_ids,
+            goal_gives=goal_gives, initial_gives=initial_gives, required_witnesses=required_witnesses,
+            boundary=boundary, max_steps=max_steps, max_expansions=max_expansions,
+        ))
 
     return server
 

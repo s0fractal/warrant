@@ -188,7 +188,14 @@ def dream_recipes(
             if not comp["well_typed"]:
                 for err in comp["errors"]:
                     if err.get("code") == "VERIFIER_SPEC_MISMATCH":
-                        _add_presc("VERIFIER_SPEC_MISMATCH", step=cand.id, mismatches=err.get("mismatches"))
+                        _add_presc(
+                            "VERIFIER_SPEC_MISMATCH",
+                            step=cand.id,
+                            chain=[r.id for r in next_user],
+                            guarantee=err.get("guarantee"),
+                            expected=err.get("expected"),
+                            actual=err.get("actual"),
+                        )
                 continue
 
             if not comp["lossless"]:

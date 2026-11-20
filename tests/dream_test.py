@@ -152,6 +152,36 @@ def dream_cases():
           and api_res["ok"]["dream"]["solutions"][0]["steps"] == [pid1, pid2],
           (dp, api_res))
 
+    # DR09: VERIFIER_SPEC_MISMATCH prescriptions preserve every guarantee label and expected/actual fingerprints (Codex F2)
+    import json as _json
+    from warrant import witness as W
+
+    labels_m = ["auth", "session"]
+    r_prod_m = P.make_recipe("producer", gives=labels_m, witnesses={k: weak_w for k in labels_m})
+    r_cons_m = P.make_recipe("consumer", requires=labels_m, gives=["goal"], preserves=labels_m,
+                             required_witnesses={k: strict_w for k in labels_m})
+    res_m = DR.dream_recipes([r_prod_m, r_cons_m], goal_gives=["goal"])
+    diags_m = [p for p in res_m["prescriptions"] if p["code"] == "VERIFIER_SPEC_MISMATCH"]
+    ev_m = _json.dumps(diags_m, sort_keys=True)
+    want_m = [*labels_m, *W.witness_spec_key(weak_w), *W.witness_spec_key(strict_w)]
+    check("DR09 VERIFIER_SPEC_MISMATCH prescriptions preserve every guarantee label and expected/actual witness specs",
+          len(diags_m) == 2 and all(x in ev_m for x in want_m),
+          diags_m)
+
+    # DR10: MCP warrant_pact advertises op=dream and exposes goal_gives/planner arguments (Codex F1)
+    import ast as _ast
+    from pathlib import Path
+    import warrant_agent.mcp_server as _mcp
+
+    tree = _ast.parse(Path(_mcp.__file__).read_text())
+    handler = next(n for n in _ast.walk(tree) if isinstance(n, _ast.FunctionDef) and n.name == "warrant_pact")
+    arg_names = {a.arg for a in handler.args.args + handler.args.kwonlyargs}
+    op_arg = next(a for a in handler.args.args if a.arg == "op")
+    ops_lit = {n.value for n in _ast.walk(op_arg.annotation) if isinstance(n, _ast.Constant)}
+    check("DR10 MCP warrant_pact advertises op=dream and exposes goal_gives and planner parameters",
+          "dream" in ops_lit and {"goal_gives", "initial_gives", "required_witnesses", "boundary", "max_steps", "max_expansions"} <= arg_names,
+          (sorted(ops_lit), sorted(arg_names)))
+
 
 if __name__ == "__main__":
     sys.exit(run_sections([dream_cases]))

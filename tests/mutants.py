@@ -1268,6 +1268,14 @@ MUTANTS = [
      "            comp = P.compose_recipes([seed_recipe] + list(next_user))",
      "            comp = P.compose_recipes(list(next_user))",
      "tests/dream_test.py", ["DR01"]),
+    ("DR8", "warrant/dream.py",
+     '                            guarantee=err.get("guarantee"),\n                            expected=err.get("expected"),\n                            actual=err.get("actual"),',
+     '                            guarantee=None,\n                            expected=None,\n                            actual=None,',
+     "tests/dream_test.py", ["DR09"]),
+    ("DR9", "warrant_agent/mcp_server.py",
+     'op: Literal["status", "escrow", "compose", "dream"],',
+     'op: Literal["status", "escrow", "compose"],',
+     "tests/dream_test.py", ["DR10"]),
 ]
 
 
