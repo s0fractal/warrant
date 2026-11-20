@@ -552,6 +552,39 @@ def witness_cases():
           and all(d in pkg_4w["blobs"] for d in (id_ok_dig, sd_ok, vd_ok, tm_ok_dig)),
           (res_4w["status"], esc_4w, sorted(pkg_4w["blobs"])))
 
+    # WT20: vars1-compatibility@1 verifies non-manipulative compatibility and refuses captured/refuted/contradictory certs
+    cm_ok_dig, cm_ok_raw = _cert_blob({
+        "schema": "vars1-compatibility@1", "entity_a": "human", "entity_b": "agent",
+        "claim_id": "claim-0", "context_id": "ctx-a", "compatible": True,
+        "reason": "COMPATIBLE", "standing_a": True, "standing_b": True, "refusal_witness_digest": None,
+    })
+    cm_cap_dig, cm_cap_raw = _cert_blob({
+        "schema": "vars1-compatibility@1", "entity_a": "human", "entity_b": "agent",
+        "claim_id": "claim-0", "context_id": "ctx-a", "compatible": False,
+        "reason": "CAPTURED_PARTY", "standing_a": True, "standing_b": True, "refusal_witness_digest": None,
+    })
+    cm_bad_dig, cm_bad_raw = _cert_blob({
+        "schema": "vars1-compatibility@1", "entity_a": "human", "entity_b": "agent",
+        "claim_id": "claim-0", "context_id": "ctx-a", "compatible": True,
+        "reason": "COMPATIBLE", "standing_a": True, "standing_b": True, "refusal_witness_digest": "a" * 64,
+    })
+    snap_cm = _snap([], {cm_ok_dig: cm_ok_raw, cm_cap_dig: cm_cap_raw, cm_bad_dig: cm_bad_raw})
+    spec_cm = {
+        "verifier": "vars1-compatibility@1",
+        "params": {"require_entities": ["agent", "human"], "require_claim": "claim-0", "require_context": "ctx-a"},
+    }
+    c_ok = W.verify_witness(spec_cm, cm_ok_dig, snap_cm, {}, 20)
+    c_cap = W.verify_witness(spec_cm, cm_cap_dig, snap_cm, {}, 20)
+    c_bad = W.verify_witness(spec_cm, cm_bad_dig, snap_cm, {}, 20)
+    c_ctx = W.verify_witness(
+        {"verifier": "vars1-compatibility@1", "params": {"require_context": "ctx-b"}},
+        cm_ok_dig, snap_cm, {}, 20,
+    )
+    check("WT20 vars1-compatibility@1 admits consistent compatibility and refuses capture, contradiction, or context mismatch",
+          c_ok == (True, "OK") and c_cap == (False, "NOT_COMPATIBLE")
+          and c_bad == (False, "INCONSISTENT_COMPATIBILITY_CERT") and c_ctx == (False, "CONTEXT_MISMATCH"),
+          (c_ok, c_cap, c_bad, c_ctx))
+
 
 if __name__ == "__main__":
     sys.exit(run_sections([witness_cases]))

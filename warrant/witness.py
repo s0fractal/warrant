@@ -434,12 +434,72 @@ def _verify_trajectory_mass(digest, params, snap, valid_recs, as_of):
     return True, "OK"
 
 
+def _verify_compatibility(digest, params, snap, valid_recs, as_of):
+    """Verify a `minds/compatibility.py` `vars1-compatibility@1` non-manipulative compatibility certificate."""
+    body, err = _load_canonical_cert(digest, snap, "vars1-compatibility@1")
+    if err:
+        return False, err
+    ea, eb = body.get("entity_a"), body.get("entity_b")
+    claim_id, ctx_id = body.get("claim_id"), body.get("context_id")
+    compat = body.get("compatible")
+    sa, sb = body.get("standing_a"), body.get("standing_b")
+    reason = body.get("reason")
+    ref_dig = body.get("refusal_witness_digest")
+    if not (_trimmed_str(ea) and _trimmed_str(eb) and _trimmed_str(claim_id) and _trimmed_str(ctx_id)
+            and isinstance(compat, bool) and isinstance(sa, bool) and isinstance(sb, bool)
+            and reason in ("COMPATIBLE", "NO_STANDING", "CAPTURED_PARTY", "LOCALLY_REFUTED")
+            and (ref_dig is None or S.hex64(ref_dig))):
+        return False, "MALFORMED_COMPATIBILITY_FIELDS"
+
+    # Cross-field consistency: refuse self-contradictory certificates
+    if compat:
+        if reason != "COMPATIBLE" or not (sa and sb) or ref_dig is not None:
+            return False, "INCONSISTENT_COMPATIBILITY_CERT"
+    else:
+        if reason == "COMPATIBLE":
+            return False, "INCONSISTENT_COMPATIBILITY_CERT"
+        if reason == "LOCALLY_REFUTED" and ref_dig is None:
+            return False, "INCONSISTENT_COMPATIBILITY_CERT"
+        if reason == "NO_STANDING" and (sa and sb):
+            return False, "INCONSISTENT_COMPATIBILITY_CERT"
+
+    allow_ref = params.get("allow_refusal", False)
+    if not isinstance(allow_ref, bool):
+        return False, "BAD_PARAM_ALLOW_REFUSAL"
+    if not allow_ref and not compat:
+        return False, "NOT_COMPATIBLE"
+
+    req_ents = params.get("require_entities")
+    if req_ents is not None:
+        if not (isinstance(req_ents, list) and len(req_ents) == 2 and all(_trimmed_str(x) for x in req_ents)):
+            return False, "BAD_PARAM_REQUIRE_ENTITIES"
+        if sorted([ea, eb]) != sorted(req_ents):
+            return False, "ENTITY_MISMATCH"
+
+    req_claim = params.get("require_claim")
+    if req_claim is not None:
+        if not _trimmed_str(req_claim):
+            return False, "BAD_PARAM_REQUIRE_CLAIM"
+        if claim_id != req_claim:
+            return False, "CLAIM_MISMATCH"
+
+    req_ctx = params.get("require_context")
+    if req_ctx is not None:
+        if not _trimmed_str(req_ctx):
+            return False, "BAD_PARAM_REQUIRE_CONTEXT"
+        if ctx_id != req_ctx:
+            return False, "CONTEXT_MISMATCH"
+
+    return True, "OK"
+
+
 BUILTIN_VERIFIERS = {
     "sha256-blob@1": _verify_sha256_blob,
     "vars1-coalition-viability@1": _verify_coalition_viability,
     "vars1-spore-receipt@1": _verify_spore_receipt,
     "vars1-identity-lineage@1": _verify_identity_lineage,
     "vars1-trajectory-mass@1": _verify_trajectory_mass,
+    "vars1-compatibility@1": _verify_compatibility,
     "warrant-record@1": _verify_warrant_record,
 }
 
