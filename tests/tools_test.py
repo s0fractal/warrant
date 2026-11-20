@@ -1866,6 +1866,38 @@ def differential_cases():
     (r.dot / "blobs" / spare).unlink()
     stages["blob"] = release("0.2", [closed])
     (r.dot / "blobs" / spare).write_bytes(held)
+    # A line moved from the store to a source it declares is kept, by the source's actors (Codex 40e9bfb0 on the
+    # 3.0.0a9 closure); a declared source this clone lacks is named, never read as empty.
+    env = dict(os.environ, GIT_INDEX_FILE=str(r.home / "src-index"))
+    blob = subprocess.run(["git", "-C", str(r.root), "hash-object", "-w", "--stdin"], input=line + b"\n",
+                          capture_output=True, check=True).stdout.decode().strip()
+    subprocess.run(["git", "-C", str(r.root), "update-index", "--add", "--cacheinfo",
+                    f"100644,{blob},.warrant/records.jsonl"], env=env, check=True)
+    tree = subprocess.run(["git", "-C", str(r.root), "write-tree"], env=env, capture_output=True,
+                          check=True).stdout.decode().strip()
+    src = subprocess.run(["git", "-C", str(r.root), "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", tree,
+                          "-m", "src"], capture_output=True, check=True).stdout.decode().strip()
+    git(r.root, "update-ref", "refs/heads/stores/mv", src)
+    moving = {}
+    for who in (["alice"], ["bob"]):
+        (r.dot / "sources.json").write_text(json.dumps({"warrant": "sources/1", "sources": [
+            {"name": "mv", "ref": "refs/heads/stores/mv", "actors": who}]}))
+        records.write_bytes(b"".join(x + b"\n" for x in kept.splitlines() if x != line))
+        moving[who[0]] = release("0.2", [closed])
+    (r.dot / "sources.json").write_text(json.dumps({"warrant": "sources/1", "sources": [
+        {"name": "mv", "ref": "refs/heads/stores/mv", "actors": ["alice"]}]}))
+    git(r.root, "update-ref", "-d", "refs/heads/stores/mv")
+    moving["absent"] = release("0.2", [closed])
+    records.write_bytes(kept)
+    (r.dot / "sources.json").unlink()
+    got = {k: (c, v["verdict"], (v.get("release") or {}).get("history")) for k, (c, v) in moving.items()}
+    check("D09b n's store is read as n's engine reads it, with the sources it declares: a line moved to a source, "
+          "filed there by one of the source's actors, is kept; one by another actor is left out, so still lost; a "
+          "declared source this clone lacks is named and refuses (Codex 40e9bfb0 on the 3.0.0a9 closure)",
+          got == {"alice": (0, "SAME", {"of": "refs/tags/v0.2", "records": 0, "blobs": 0}),
+                  "bob": (1, "REFUSED", {"of": "refs/tags/v0.2", "records": 1, "blobs": 0}),
+                  "absent": (1, "REFUSED", {"of": "refs/tags/v0.2", "records": 1, "blobs": 0, "sources": 1})}
+          and "mv" in moving["absent"][1]["why"], got)
     stages["no tag"] = release("0.3", [closed])
     stages["not a version"] = release("0.2^{}", [closed])         # git would read v0.2^{} as v0.2's commit
     git(r.root, "branch", "v0.4")                                   # a branch, not a tag (Codex finding 9b3268821dd4)
