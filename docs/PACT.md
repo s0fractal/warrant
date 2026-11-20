@@ -86,6 +86,12 @@ that seam offline and fail-closed:
     `policy_verified`, integer `min_sovereign_bps` 0..10000, `max_blocked_states`, `required_states`).
   - `vars1-spore-receipt@1` — verifies `minds/spore.py` receipts (`SETTLED`, strict ATP conservation
     `atp_spent + atp_remaining == atp_budget`, `partiality_inflated is False`, `max_atp_spent`).
+  - `vars1-identity-lineage@1` — verifies `minds/identity.py` certificates (`genesis`/`step`/`fork`
+    shape, acyclic provenance/lineage suffix consistency, isolated fork relations, `min_atp`,
+    `require_ancestor`, `require_distinct_from`, `required_invariants`).
+  - `vars1-trajectory-mass@1` — verifies `minds/trajectory.py` certificates (`trajectory_safe is True`,
+    unique `act_id`s, zero counted refutations, exact integer mass & total-weight accounting,
+    `min_mass`, `min_steps`, `max_horizon`, `max_refuted`).
   - `warrant-record@1` — verifies a signature-verified Warrant 3 record dated `<= as_of`.
 - Unknown verifiers fail closed (`UNKNOWN_VERIFIER`). A `pact/fulfill` failing any witness check is
   refused (`UNGROUNDED_GUARANTEE`), preventing settlement and keeping `escrow_mode="settled"` grants

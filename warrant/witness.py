@@ -251,10 +251,195 @@ def _verify_warrant_record(digest, params, snap, valid_recs, as_of):
     return True, "OK"
 
 
+def _trimmed_str(v):
+    return isinstance(v, str) and bool(v) and v == v.strip()
+
+
+def _unique_str_list(items):
+    if not isinstance(items, list) or not all(_trimmed_str(x) for x in items):
+        return None
+    if len(set(items)) != len(items):
+        return None
+    return items
+
+
+def _verify_identity_lineage(digest, params, snap, valid_recs, as_of):
+    """Verify a `minds/identity.py` `vars1-identity-lineage@1` relational identity & fork certificate."""
+    body, err = _load_canonical_cert(digest, snap, "vars1-identity-lineage@1")
+    if err:
+        return False, err
+    node_id = body.get("node_id")
+    entity_root = body.get("entity_root")
+    birth_kind = body.get("birth_kind")
+    atp = body.get("atp")
+    invs = body.get("invariants")
+    rels = body.get("relations")
+    prov = _unique_str_list(body.get("provenance_chain"))
+    lin = _unique_str_list(body.get("entity_lineage"))
+    if not (_trimmed_str(node_id) and _trimmed_str(entity_root)
+            and birth_kind in ("genesis", "step", "fork")
+            and R.is_int(atp) and atp >= 0
+            and isinstance(invs, list) and isinstance(rels, list)
+            and prov and lin):
+        return False, "MALFORMED_IDENTITY_FIELDS"
+    inv_keys = _unique_state_set(invs)
+    rel_keys = _unique_state_set(rels)
+    if inv_keys is None or rel_keys is None:
+        return False, "DUPLICATE_IDENTITY_ENTRIES"
+    if lin[0] != entity_root or lin[-1] != node_id or prov[-1] != node_id:
+        return False, "INCONSISTENT_LINEAGE_ENDPOINTS"
+    if len(lin) > len(prov) or prov[-len(lin):] != lin:
+        return False, "LINEAGE_NOT_PROVENANCE_SUFFIX"
+    if birth_kind == "genesis" and (len(prov) != 1 or len(lin) != 1 or entity_root != node_id):
+        return False, "INVALID_GENESIS_SHAPE"
+    if birth_kind == "fork" and (entity_root != node_id or len(lin) != 1 or len(prov) < 2 or len(rels) != 0):
+        return False, "INVALID_FORK_SHAPE"
+    if birth_kind == "step" and len(lin) < 2:
+        return False, "INVALID_STEP_SHAPE"
+
+    min_atp = params.get("min_atp")
+    if min_atp is not None:
+        if not (R.is_int(min_atp) and min_atp >= 0):
+            return False, "BAD_PARAM_MIN_ATP"
+        if atp < min_atp:
+            return False, "IDENTITY_ATP_BELOW_MIN"
+
+    req_kind = params.get("require_birth_kind")
+    if req_kind is not None:
+        if req_kind not in ("genesis", "step", "fork"):
+            return False, "BAD_PARAM_BIRTH_KIND"
+        if birth_kind != req_kind:
+            return False, "BIRTH_KIND_MISMATCH"
+
+    req_anc = params.get("require_ancestor")
+    if req_anc is not None:
+        if not _trimmed_str(req_anc):
+            return False, "BAD_PARAM_ANCESTOR"
+        if req_anc not in prov:
+            return False, "ANCESTOR_MISSING"
+
+    req_dist = params.get("require_distinct_from")
+    if req_dist is not None:
+        if not _trimmed_str(req_dist):
+            return False, "BAD_PARAM_DISTINCT"
+        if req_dist == entity_root or req_dist in lin:
+            return False, "SAME_ENTITY_FORBIDDEN"
+
+    if params.get("require_empty_relations") is True and len(rels) != 0:
+        return False, "RELATIONS_NOT_ISOLATED"
+
+    req_invs = params.get("required_invariants")
+    if req_invs is not None:
+        if not isinstance(req_invs, list):
+            return False, "BAD_PARAM_REQUIRED_INVARIANTS"
+        for item in req_invs:
+            if json.dumps(item, sort_keys=True, separators=(",", ":")) not in inv_keys:
+                return False, "REQUIRED_INVARIANT_MISSING"
+
+    return True, "OK"
+
+
+def _verify_trajectory_mass(digest, params, snap, valid_recs, as_of):
+    """Verify a `minds/trajectory.py` `vars1-trajectory-mass@1` safety & semantic mass certificate."""
+    body, err = _load_canonical_cert(digest, snap, "vars1-trajectory-mass@1")
+    if err:
+        return False, err
+    if body.get("trajectory_safe") is not True:
+        return False, "TRAJECTORY_UNSAFE"
+    steps = body.get("step_count")
+    horizon = body.get("horizon")
+    vmass = body.get("verified_mass")
+    tweight = body.get("total_weight")
+    vacts = body.get("verified_acts")
+    ncacts = body.get("non_counting_acts")
+    refuted = _unique_str_list(body.get("refuted_ids"))
+    if not (R.is_int(steps) and steps >= 0 and R.is_int(horizon) and horizon >= 0
+            and R.is_int(vmass) and vmass >= 0 and R.is_int(tweight) and tweight >= 0
+            and isinstance(vacts, list) and isinstance(ncacts, list) and refuted is not None):
+        return False, "MALFORMED_TRAJECTORY_FIELDS"
+
+    refuted_set = set(refuted)
+    seen_ids = set()
+    sum_verified = 0
+    for act in vacts:
+        if not isinstance(act, dict):
+            return False, "MALFORMED_ACT"
+        aid, sidx, w = act.get("act_id"), act.get("step_idx"), act.get("weight")
+        if not (_trimmed_str(aid) and R.is_int(sidx) and sidx >= 0 and R.is_int(w) and w >= 0):
+            return False, "MALFORMED_ACT"
+        if aid in seen_ids:
+            return False, "DUPLICATE_ACT_ID"
+        if aid in refuted_set:
+            return False, "REFUTED_ACT_COUNTED"
+        if sidx > horizon:
+            return False, "ACT_EXCEEDS_HORIZON"
+        seen_ids.add(aid)
+        sum_verified += w
+
+    sum_non_counting = 0
+    nc_refuted_ids = set()
+    for act in ncacts:
+        if not isinstance(act, dict):
+            return False, "MALFORMED_ACT"
+        aid, origin = act.get("act_id"), act.get("origin")
+        is_ref, sidx, w = act.get("refuted"), act.get("step_idx"), act.get("weight")
+        if not (_trimmed_str(aid) and origin in ("verified", "retold", "forked")
+                and isinstance(is_ref, bool) and R.is_int(sidx) and sidx >= 0
+                and R.is_int(w) and w >= 0):
+            return False, "MALFORMED_ACT"
+        if aid in seen_ids:
+            return False, "DUPLICATE_ACT_ID"
+        if origin == "verified" and not is_ref and sidx <= horizon:
+            return False, "MISCLASSIFIED_NON_COUNTING_ACT"
+        if is_ref:
+            nc_refuted_ids.add(aid)
+        seen_ids.add(aid)
+        sum_non_counting += w
+
+    if nc_refuted_ids != refuted_set:
+        return False, "REFUTED_IDS_MISMATCH"
+    if sum_verified != vmass:
+        return False, "MASS_ACCOUNTING_MISMATCH"
+    if sum_verified + sum_non_counting != tweight:
+        return False, "TOTAL_WEIGHT_MISMATCH"
+
+    min_mass = params.get("min_mass")
+    if min_mass is not None:
+        if not (R.is_int(min_mass) and min_mass >= 0):
+            return False, "BAD_PARAM_MIN_MASS"
+        if vmass < min_mass:
+            return False, "MASS_BELOW_THRESHOLD"
+
+    min_steps = params.get("min_steps")
+    if min_steps is not None:
+        if not (R.is_int(min_steps) and min_steps >= 0):
+            return False, "BAD_PARAM_MIN_STEPS"
+        if steps < min_steps:
+            return False, "STEPS_BELOW_MIN"
+
+    max_horizon = params.get("max_horizon")
+    if max_horizon is not None:
+        if not (R.is_int(max_horizon) and max_horizon >= 0):
+            return False, "BAD_PARAM_MAX_HORIZON"
+        if horizon > max_horizon:
+            return False, "HORIZON_EXCEEDED"
+
+    max_refuted = params.get("max_refuted")
+    if max_refuted is not None:
+        if not (R.is_int(max_refuted) and max_refuted >= 0):
+            return False, "BAD_PARAM_MAX_REFUTED"
+        if len(refuted_set) > max_refuted:
+            return False, "REFUTED_COUNT_EXCEEDED"
+
+    return True, "OK"
+
+
 BUILTIN_VERIFIERS = {
     "sha256-blob@1": _verify_sha256_blob,
     "vars1-coalition-viability@1": _verify_coalition_viability,
     "vars1-spore-receipt@1": _verify_spore_receipt,
+    "vars1-identity-lineage@1": _verify_identity_lineage,
+    "vars1-trajectory-mass@1": _verify_trajectory_mass,
     "warrant-record@1": _verify_warrant_record,
 }
 
