@@ -1167,6 +1167,20 @@ MUTANTS = [
      "        if False:\n            errors.append({", "tests/pact_test.py", ["PC14"]),
     ("PC12", "warrant/pact.py", "        if not next_boundary:",
      "        if False:", "tests/pact_test.py", ["PC14"]),
+    # proof-carrying guarantee witnesses (warrant/witness.py, warrant/pact.py, docs/PACT.md §4)
+    ("WT1", "warrant/witness.py", "    if hashlib.sha256(blob).hexdigest() != digest:", "    if False:", "tests/witness_test.py", ["WT01"]),
+    ("WT2", "warrant/witness.py", '    if body.get("live_env") is not True:', "    if False:", "tests/witness_test.py", ["WT02"]),
+    ("WT3", "warrant/witness.py", '    if body.get("policy_verified") is not True:', "    if False:", "tests/witness_test.py", ["WT02"]),
+    ("WT4", "warrant/witness.py", "            if len(ctrl) * 10000 < min_bps * len(ang):", "            if False:", "tests/witness_test.py", ["WT02"]),
+    ("WT5", "warrant/witness.py", "    if spent > budget or spent + rem != budget:", "    if False:", "tests/witness_test.py", ["WT03"]),
+    ("WT6", "warrant/witness.py", '    if body.get("partiality_inflated") is not False:', "    if False:", "tests/witness_test.py", ["WT03"]),
+    ("WT7", "warrant/witness.py", "    if not (R.is_int(at) and at <= as_of):", "    if False:", "tests/witness_test.py", ["WT04"]),
+    ("WT8", "warrant/pact.py", "                    if failed_witnesses:", "                    if False:", "tests/witness_test.py", ["WT06"]),
+    ("WT9", "warrant/pact.py", "                if got != (exp_ver, exp_pdig):", "                if False:", "tests/witness_test.py", ["WT09"]),
+    ("WT10", "warrant/pact.py",
+     "            if g in step.gives:\n                # Re-giving g without a witness clears any prior witness spec (anti-laundering)\n                if g in step_give_specs:\n                    next_specs[g] = step_give_specs[g]",
+     "            if g in step.gives:\n                if g in step_give_specs:\n                    next_specs[g] = step_give_specs[g]\n                elif g in avail_specs:\n                    next_specs[g] = avail_specs[g]",
+     "tests/witness_test.py", ["WT10"]),
 ]
 
 

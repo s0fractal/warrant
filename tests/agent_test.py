@@ -2306,6 +2306,11 @@ def pact_section_cases():
     pact_cases()
 
 
+def witness_section_cases():
+    from witness_test import witness_cases
+    witness_cases()
+
+
 if __name__ == "__main__":
     sys.exit(run_sections([
         operations,
@@ -2320,6 +2325,7 @@ if __name__ == "__main__":
         agent_whatif_cases,
         delegate_section_cases,
         pact_section_cases,
+        witness_section_cases,
         mcp_cases,
         home_cases,
         across_cases,
