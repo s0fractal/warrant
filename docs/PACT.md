@@ -72,7 +72,29 @@ gives `{"signed", "published"}`, and declares $L_2 = \emptyset$ without listing 
 and `lossless = False`. Re-establishing `"auth"` at a later step restores it to `gives` without erasing
 the historical drop event from `loss_events` (anti-laundering).
 
-## 4. CLI and Agent Interface
+## 4. Proof-Carrying Guarantee Witnesses (`warrant.witness`, F4 / D23)
+
+Opaque guarantee labels (`"viable"`, `"verified"`) allow two peers to declare the same word while
+attaching different verification semantics or submitting arbitrary digests. `warrant.witness` closes
+that seam offline and fail-closed:
+
+- Commitments may carry `witnesses: {label: {"verifier": id, "params": {...}}}` (keys must lie in
+  `gives`) and `required_witnesses` (keys must lie in `requires`).
+- Built-in verifiers over `Snapshot.blobs` and verified records:
+  - `sha256-blob@1` — blob exists in `snap.blobs` and SHA-256 matches digest.
+  - `vars1-coalition-viability@1` — verifies `minds/coalition.py` certificates (`live_env`,
+    `policy_verified`, integer `min_sovereign_bps` 0..10000, `max_blocked_states`, `required_states`).
+  - `vars1-spore-receipt@1` — verifies `minds/spore.py` receipts (`SETTLED`, strict ATP conservation
+    `atp_spent + atp_remaining == atp_budget`, `partiality_inflated is False`, `max_atp_spent`).
+  - `warrant-record@1` — verifies a signature-verified Warrant 3 record dated `<= as_of`.
+- Unknown verifiers fail closed (`UNKNOWN_VERIFIER`). A `pact/fulfill` failing any witness check is
+  refused (`UNGROUNDED_GUARANTEE`), preventing settlement and keeping `escrow_mode="settled"` grants
+  (and their sub-delegated descendants) `ESCROW_FROZEN`.
+- `compose_recipes` checks `(verifier, canon_params_digest)` equality for `required_witnesses` and
+  refuses semantic equivocation (`VERIFIER_SPEC_MISMATCH`); re-giving a label without a witness strips
+  its prior witness spec (anti-laundering).
+
+## 5. CLI and Agent Interface
 
 ```bash
 python3 -m warrant pact status [--as-of T]

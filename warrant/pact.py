@@ -33,6 +33,7 @@ from . import jcs as C
 from . import keys as K
 from . import records as R
 from . import shapes as S
+from . import witness as W
 from .store import Snapshot
 
 SCHEMA_NAME = "pact@1"
@@ -118,7 +119,7 @@ def _parse_commitment(raw, party):
     """Parse one party's commitment dict, returning (parsed, error)."""
     if not isinstance(raw, dict):
         return None, f"commitment for {party!r} must be an object"
-    allowed = {"requires", "gives", "preserves", "declared_losses", "deliverable"}
+    allowed = {"requires", "gives", "preserves", "declared_losses", "deliverable", "witnesses", "required_witnesses"}
     extra = sorted(set(raw) - allowed)
     if extra:
         return None, f"commitment for {party!r} has unknown fields {extra}"
@@ -137,12 +138,38 @@ def _parse_commitment(raw, party):
     deliv = raw.get("deliverable")
     if deliv is not None and (not isinstance(deliv, str) or len(deliv) > 500):
         return None, f"{party}.deliverable must be a string <= 500 chars"
+    w_raw = raw.get("witnesses", {})
+    if not isinstance(w_raw, dict):
+        return None, f"{party}.witnesses must be an object"
+    witnesses = {}
+    gives_set = set(gives)
+    for label, wspec in sorted(w_raw.items()):
+        if label not in gives_set:
+            return None, f"WITNESS_KEY_NOT_IN_GIVES:{label}"
+        parsed_w, werr = W.parse_witness_spec(wspec, f"{party}.{label}")
+        if werr:
+            return None, werr
+        witnesses[label] = parsed_w
+    rw_raw = raw.get("required_witnesses", {})
+    if not isinstance(rw_raw, dict):
+        return None, f"{party}.required_witnesses must be an object"
+    req_witnesses = {}
+    req_set = set(req)
+    for label, wspec in sorted(rw_raw.items()):
+        if label not in req_set:
+            return None, f"REQ_WITNESS_KEY_NOT_IN_REQUIRES:{label}"
+        parsed_w, werr = W.parse_witness_spec(wspec, f"{party}.req.{label}")
+        if werr:
+            return None, werr
+        req_witnesses[label] = parsed_w
     return {
         "requires": req,
         "gives": gives,
         "preserves": pres,
         "declared_losses": dloss,
         "deliverable": deliv,
+        "witnesses": witnesses,
+        "required_witnesses": req_witnesses,
     }, None
 
 
@@ -250,12 +277,14 @@ def make_proposal(actor, seed_hex, *, parties, commitments, expires_at, purpose,
     }
     if arbiter is not None:
         body["arbiter"] = arbiter
+    refs = []
     if escrow_grants:
         body["escrow_grants"] = sorted(escrow_grants)
         body["escrow_mode"] = escrow_mode
+        refs.extend(g for g in body["escrow_grants"] if S.hex64(g))
     if boundary is not None:
         body["boundary"] = sorted(boundary)
-    rec = R.record("entity", actor, at, body, schema=SCHEMA_NAME)
+    rec = R.record("entity", actor, at, body, schema=SCHEMA_NAME, refs=refs)
     return _sign_env(rec, seed_hex)
 
 
@@ -281,15 +310,23 @@ def make_withdraw(actor, seed_hex, pact_id, *, at=0, reason="withdrawn"):
     return _sign_env(rec, seed_hex)
 
 
-def make_fulfill(actor, seed_hex, pact_id, *, evidence_digest, delivered, at=0):
-    """Build and sign a `pact/fulfill` attest envelope with verifiable evidence digest."""
+def make_fulfill(actor, seed_hex, pact_id, *, evidence_digest, delivered, witness_digests=None, at=0):
+    """Build and sign a `pact/fulfill` attest envelope with verifiable evidence/witness digests."""
     body = {
         "target": pact_id,
         "verdict": "pact/fulfill",
         "evidence_digest": evidence_digest,
         "delivered": sorted(delivered),
     }
-    rec = R.record("attest", actor, at, body, refs=[pact_id])
+    refs = [pact_id]
+    if S.hex64(evidence_digest):
+        refs.append(evidence_digest)
+    if witness_digests is not None:
+        body["witness_digests"] = dict(sorted(witness_digests.items()))
+        for wdig in body["witness_digests"].values():
+            if S.hex64(wdig):
+                refs.append(wdig)
+    rec = R.record("attest", actor, at, body, refs=refs)
     return _sign_env(rec, seed_hex)
 
 
@@ -313,7 +350,8 @@ def make_breach(actor, seed_hex, pact_id, *, defaulter, evidence_digest, reason,
         "evidence_digest": evidence_digest,
         "reason": reason,
     }
-    rec = R.record("challenge", actor, at, body, refs=[pact_id])
+    refs = [pact_id] + ([evidence_digest] if S.hex64(evidence_digest) else [])
+    rec = R.record("challenge", actor, at, body, refs=refs)
     return _sign_env(rec, seed_hex)
 
 
@@ -334,7 +372,7 @@ def _extract_verified_records(snap, trust):
     return valid, all_recs
 
 
-def resolve_pacts(snap: Snapshot, trust: dict, as_of: int):
+def resolve_pacts(snap: Snapshot, trust: dict, as_of: int, *, verifiers=None):
     """Resolve every `pact@1` proposal in `snap` deterministically at timestamp `as_of`.
 
     Returns a dict keyed by proposal record id, each entry carrying:
@@ -473,7 +511,16 @@ def resolve_pacts(snap: Snapshot, trust: dict, as_of: int):
                 if at > expires_at:
                     refused.append({"id": rid, "actor": actor, "code": "FULFILL_AFTER_EXPIRY"})
                     continue
-                fulfills.setdefault(actor, []).append((at, rid, edig, deliv))
+                wdigs_raw = body.get("witness_digests")
+                wdigs = {}
+                if wdigs_raw is not None:
+                    if not isinstance(wdigs_raw, dict) or not all(
+                        isinstance(k, str) and S.hex64(v) for k, v in wdigs_raw.items()
+                    ):
+                        refused.append({"id": rid, "actor": actor, "code": "BAD_WITNESS_DIGESTS"})
+                        continue
+                    wdigs = dict(sorted(wdigs_raw.items()))
+                fulfills.setdefault(actor, []).append((at, rid, edig, deliv, wdigs))
 
             elif kind == "attest" and verdict == "pact/settle":
                 if arbiter is None or actor != arbiter:
@@ -538,19 +585,31 @@ def resolve_pacts(snap: Snapshot, trust: dict, as_of: int):
                 f_list = fulfills.get(party, [])
                 if not f_list:
                     continue
-                # Check equivocation across ALL signed fulfillments by this party (distinct evidence_digests)
+                # Check equivocation across ALL signed fulfillments by this party (distinct evidence/witness digests)
                 seen_digests = {}
-                for f_at, f_rid, edig, deliv in f_list:
-                    if edig not in seen_digests:
-                        seen_digests[edig] = f_rid
+                for f_at, f_rid, edig, deliv, wdigs in f_list:
+                    fp = (edig, tuple(sorted(wdigs.items())))
+                    if fp not in seen_digests:
+                        seen_digests[fp] = f_rid
                 if len(seen_digests) > 1:
                     equivocations[party] = sorted(seen_digests.values())
                     continue
 
-                # Single consistent evidence_digest; verify timing & completeness of gives
+                # Single consistent evidence/witness digest set; verify timing, completeness & proof-carrying witnesses
                 req_gives = set(spec["commitments"][party]["gives"])
+                # Collect both the supplier's own declared witnesses AND every required_witnesses (other or same party)
+                # for labels this party supplies (Codex F1: internal & self-required witnesses cannot be skipped at settlement)
+                req_witness_checks = [(lbl, wspec) for lbl, wspec in sorted(spec["commitments"][party]["witnesses"].items())]
+                seen_checks = {(lbl, W.witness_spec_key(wspec)) for lbl, wspec in req_witness_checks}
+                for _, other_c in sorted(spec["commitments"].items()):
+                    for rlbl, rwspec in sorted(other_c["required_witnesses"].items()):
+                        if rlbl in req_gives:
+                            ck = (rlbl, W.witness_spec_key(rwspec))
+                            if ck not in seen_checks:
+                                seen_checks.add(ck)
+                                req_witness_checks.append((rlbl, rwspec))
                 admitted = None
-                for f_at, f_rid, edig, deliv in f_list:
+                for f_at, f_rid, edig, deliv, wdigs in f_list:
                     if f_at < activation_at:
                         refused.append({"id": f_rid, "actor": party, "code": "FULFILL_BEFORE_ACTIVATION"})
                         continue
@@ -558,7 +617,30 @@ def resolve_pacts(snap: Snapshot, trust: dict, as_of: int):
                     if missing:
                         refused.append({"id": f_rid, "actor": party, "code": "INCOMPLETE_FULFILLMENT", "missing": missing})
                         continue
-                    admitted = {"id": f_rid, "at": f_at, "evidence_digest": edig, "delivered": list(deliv)}
+                    failed_witnesses = {}
+                    verified_witnesses = {}
+                    for wlabel, wspec in req_witness_checks:
+                        w_dig = wdigs.get(wlabel, edig)
+                        w_ok, w_reason = W.verify_witness(wspec, w_dig, snap, valid, as_of, verifiers=verifiers)
+                        if not w_ok:
+                            failed_witnesses[wlabel] = {"digest": w_dig, "verifier": wspec["verifier"], "reason": w_reason}
+                        else:
+                            verified_witnesses[wlabel] = {"digest": w_dig, "verifier": wspec["verifier"]}
+                    if failed_witnesses:
+                        refused.append({
+                            "id": f_rid,
+                            "actor": party,
+                            "code": "UNGROUNDED_GUARANTEE",
+                            "failed_witnesses": failed_witnesses,
+                        })
+                        continue
+                    admitted = {
+                        "id": f_rid,
+                        "at": f_at,
+                        "evidence_digest": edig,
+                        "delivered": list(deliv),
+                        "verified_witnesses": verified_witnesses,
+                    }
                     break
                 if admitted is not None:
                     fulfilled_map[party] = admitted
@@ -616,6 +698,8 @@ def resolve_pacts(snap: Snapshot, trust: dict, as_of: int):
                     "preserves": list(c["preserves"]),
                     "declared_losses": list(c["declared_losses"]),
                     "deliverable": c["deliverable"],
+                    "witnesses": c["witnesses"],
+                    "required_witnesses": c["required_witnesses"],
                 }
                 for p, c in spec["commitments"].items()
             },
@@ -697,17 +781,33 @@ def resolve_escrow(snap: Snapshot, trust: dict, profile: dict, as_of: int):
 
 @dataclass(frozen=True)
 class Recipe:
-    """Guarantee contract R = (id, requires, gives, preserves, declared_losses, boundary)."""
+    """Guarantee contract R = (id, requires, gives, preserves, declared_losses, boundary, witness_specs, required_witness_specs)."""
     id: str
     requires: frozenset
     gives: frozenset
     preserves: frozenset = frozenset()
     declared_losses: frozenset = frozenset()
     boundary: frozenset = frozenset({"default"})
+    witness_specs: tuple = ()
+    required_witness_specs: tuple = ()
 
 
-def make_recipe(rid, *, requires=(), gives=(), preserves=(), declared_losses=(), boundary=("default",)):
-    """Construct a validated `Recipe` from iterables of guarantee/boundary labels."""
+def _canon_witness_specs(raw):
+    if not raw:
+        return ()
+    out = []
+    for label, spec in sorted(raw.items()):
+        parsed, err = W.parse_witness_spec(spec, label)
+        if err:
+            raise ValueError(err)
+        ver, pdig = W.witness_spec_key(parsed)
+        out.append((label, ver, pdig))
+    return tuple(out)
+
+
+def make_recipe(rid, *, requires=(), gives=(), preserves=(), declared_losses=(), boundary=("default",),
+                witnesses=None, required_witnesses=None):
+    """Construct a validated `Recipe` from iterables of guarantee/boundary labels and optional witness specs."""
     if not isinstance(rid, str) or not rid.strip():
         raise ValueError("recipe id must be a non-empty string")
     req = frozenset(requires)
@@ -717,7 +817,10 @@ def make_recipe(rid, *, requires=(), gives=(), preserves=(), declared_losses=(),
     bnd = frozenset(boundary)
     if not bnd:
         raise ValueError("recipe boundary must be non-empty")
-    return Recipe(id=rid, requires=req, gives=gv, preserves=pr, declared_losses=dl, boundary=bnd)
+    ws = _canon_witness_specs(witnesses)
+    rws = _canon_witness_specs(required_witnesses)
+    return Recipe(id=rid, requires=req, gives=gv, preserves=pr, declared_losses=dl, boundary=bnd,
+                  witness_specs=ws, required_witness_specs=rws)
 
 
 def pact_to_recipe(pact_entry):
@@ -730,13 +833,34 @@ def pact_to_recipe(pact_entry):
     all_reqs = set()
     all_pres = set()
     all_dloss = set()
+    merged_w = {}
+    conflicted_w = set()
+    merged_rw = {}
     for c in comms.values():
         all_gives.update(c.get("gives", []))
         all_reqs.update(c.get("requires", []))
         all_pres.update(c.get("preserves", []))
         all_dloss.update(c.get("declared_losses", []))
+        for lbl, wspec in (c.get("witnesses") or {}).items():
+            if lbl in merged_w and W.witness_spec_key(merged_w[lbl]) != W.witness_spec_key(wspec):
+                conflicted_w.add(lbl)
+            else:
+                merged_w[lbl] = wspec
+        for lbl, wspec in (c.get("required_witnesses") or {}).items():
+            if lbl in merged_rw and W.witness_spec_key(merged_rw[lbl]) != W.witness_spec_key(wspec):
+                raise ValueError(f"CONFLICTING_REQUIRED_WITNESS:{lbl}")
+            merged_rw[lbl] = wspec
+    for lbl in conflicted_w:
+        merged_w.pop(lbl, None)
+    # Verify every internal handoff satisfies consumer required_witnesses before erasing from external_reqs (Codex F1)
+    for lbl, rwspec in sorted(merged_rw.items()):
+        if lbl in all_gives:
+            sup_spec = merged_w.get(lbl)
+            if sup_spec is None or W.witness_spec_key(sup_spec) != W.witness_spec_key(rwspec):
+                raise ValueError(f"INTERNAL_WITNESS_UNSATISFIED:{lbl}")
     # Internal handoffs fulfilled by another party inside the same pact are not external prerequisites
     external_reqs = all_reqs - all_gives
+    external_rw = {k: v for k, v in merged_rw.items() if k in external_reqs}
     bnd = pact_entry.get("boundary") or ["default"]
     return make_recipe(
         pact_entry["pact_id"],
@@ -745,6 +869,8 @@ def pact_to_recipe(pact_entry):
         preserves=all_pres - all_dloss,
         declared_losses=all_dloss,
         boundary=bnd,
+        witnesses=merged_w,
+        required_witnesses=external_rw,
     )
 
 
@@ -752,7 +878,9 @@ def compose_recipes(recipes):
     """Compose a non-empty sequence of `Recipe`s under the default-deny computed-loss frame law.
 
     For every step R_i:
-      - Compatibility (i >= 2): R_i.requires <= avail_{i-1} and (boundary_{i-1} & R_i.boundary) != empty.
+      - Compatibility (i >= 2): R_i.requires <= avail_{i-1}, (boundary_{i-1} & R_i.boundary) != empty,
+        and every witness-typed prerequisite in R_i.required_witness_specs must match the exact
+        `(verifier, params_digest)` proved by upstream (`VERIFIER_SPEC_MISMATCH` otherwise).
       - Default-deny frame: carried_i = R_i.gives | (R_i.preserves & avail_{i-1}).
         Every label in avail_{i-1} \\ carried_i is mechanically added to `silent_drops` and
         `computed_losses`, even when R_i.declared_losses is empty (silence = loss, never preservation).
@@ -781,6 +909,15 @@ def compose_recipes(recipes):
         silent_drops.add(g)
         loss_events.append({"guarantee": g, "step": 0, "recipe_id": first.id, "kind": "silent_drop"})
     avail = carried_0
+    first_req_specs = {lbl: (ver, pdig) for lbl, ver, pdig in first.required_witness_specs}
+    first_give_specs = {lbl: (ver, pdig) for lbl, ver, pdig in first.witness_specs}
+    avail_specs = {}
+    for g in avail:
+        if g in first.gives:
+            if g in first_give_specs:
+                avail_specs[g] = first_give_specs[g]
+        elif g in first_req_specs:
+            avail_specs[g] = first_req_specs[g]
 
     for idx, step in enumerate(steps[1:], start=1):
         missing = sorted(step.requires - avail)
@@ -801,6 +938,20 @@ def compose_recipes(recipes):
                 "step_boundary": sorted(step.boundary),
             })
 
+        # Verify witness-spec compatibility for typed prerequisites (closes F4 / D23 string equivocation)
+        for req_lbl, exp_ver, exp_pdig in step.required_witness_specs:
+            if req_lbl in avail:
+                got = avail_specs.get(req_lbl)
+                if got != (exp_ver, exp_pdig):
+                    errors.append({
+                        "code": "VERIFIER_SPEC_MISMATCH",
+                        "step": idx,
+                        "recipe_id": step.id,
+                        "guarantee": req_lbl,
+                        "expected": [exp_ver, exp_pdig],
+                        "actual": list(got) if got is not None else None,
+                    })
+
         carried = set(step.gives) | (set(step.preserves) & avail)
         dropped = avail - carried
         for g in sorted(dropped):
@@ -813,8 +964,19 @@ def compose_recipes(recipes):
                 re_established.add(g)
                 loss_events.append({"guarantee": g, "step": idx, "recipe_id": step.id, "kind": "re_established"})
 
+        step_give_specs = {lbl: (ver, pdig) for lbl, ver, pdig in step.witness_specs}
+        next_specs = {}
+        for g in carried:
+            if g in step.gives:
+                # Re-giving g without a witness clears any prior witness spec (anti-laundering)
+                if g in step_give_specs:
+                    next_specs[g] = step_give_specs[g]
+            elif g in avail_specs:
+                next_specs[g] = avail_specs[g]
+
         declared_losses.update(step.declared_losses)
         avail = carried
+        avail_specs = next_specs
         boundary = next_boundary
 
     computed_losses = declared_losses | silent_drops
@@ -829,6 +991,7 @@ def compose_recipes(recipes):
         "requires": sorted(initial_requires),
         "gives": sorted(avail),
         "boundary": sorted(boundary),
+        "witness_specs": {k: list(v) for k, v in sorted(avail_specs.items())},
         "declared_losses": sorted(declared_losses),
         "silent_drops": sorted(silent_drops),
         "re_established": sorted(re_established),
