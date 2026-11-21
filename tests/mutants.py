@@ -1293,6 +1293,27 @@ MUTANTS = [
      'op: Literal["status", "escrow", "compose", "dream"],',
      'op: Literal["status", "escrow", "compose"],',
      "tests/dream_test.py", ["DR10"]),
+    # cross-repository organism pulse (warrant/pulse.py)
+    ("PL1", "warrant/pulse.py",
+     '            elif state == "done" and lin.get("effective") != leaf_id:',
+     "            elif False:",
+     "tests/pulse_test.py", ["PL01"]),
+    ("PL2", "warrant/pulse.py",
+     "        if R.is_int(at) and at <= as_of:",
+     "        if True:",
+     "tests/pulse_test.py", ["PL02"]),
+    ("PL3", "warrant/pulse.py",
+     '    if not (R.is_int(as_of) and as_of >= 0):\n        raise ValueError("as_of must be a non-negative integer")',
+     "    if False:\n        pass",
+     "tests/pulse_test.py", ["PL05"]),
+    ("PL4", "warrant/pulse.py",
+     '    if not isinstance(repos, dict) or not repos:\n        raise ValueError("repos must be a non-empty mapping of name -> (snap, trust, profile)")',
+     "    if False:\n        pass",
+     "tests/pulse_test.py", ["PL05"]),
+    ("PL5", "warrant/pulse.py",
+     "    for name in sorted(repos):",
+     "    for name in repos:",
+     "tests/pulse_test.py", ["PL04"]),
 ]
 
 
