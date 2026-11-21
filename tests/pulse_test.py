@@ -7,7 +7,7 @@ import contextlib
 import io
 import sys
 
-from world import Repo, check, run_sections
+from world import KEYS, Repo, check, run_sections
 
 from warrant import engine as E
 from warrant import jcs as C
@@ -192,6 +192,30 @@ def pulse_cases():
     check("PL11 open goal stays in open_goals while met proposal is pending and clears on accept",
           groot in rp_pending["open_goals"] and groot not in rp_accepted["open_goals"],
           {"pending": rp_pending["open_goals"], "accepted": rp_accepted["open_goals"]})
+
+    # PL12: Future-dated BAD_SIGNATURE record must not advance default pulse pact clock
+    r6 = Repo()
+    r6.put("alice", "schema", P.SCHEMA)
+    at6 = r6.t + 10
+    p6 = P.make_proposal("alice", KEYS["alice"].seed_hex(), parties=["alice", "bob"],
+                         commitments={"alice": {"gives": ["a"]}, "bob": {"gives": ["b"]}},
+                         expires_at=at6 + 100, purpose="pulse-clock", at=at6)
+    pid6 = R.rid(p6["record"])
+    evs6 = [p6, P.make_accept("alice", KEYS["alice"].seed_hex(), pid6, at=at6 + 1),
+            P.make_accept("bob", KEYS["bob"].seed_hex(), pid6, at=at6 + 2)]
+    clean6 = Snapshot(r6.store.snapshot().raw + [C.canon(e) + b"\n" for e in evs6], {}, sort=True)
+    forged6 = R.record("attest", "bob", at6 + 200, {"target": pid6, "verdict": "unrelated"}, refs=[pid6])
+    _, wrong_sig6 = R.line(forged6, KEYS["eve"])
+    polluted6 = Snapshot(clean6.raw + [wrong_sig6], {}, sort=True)
+    before6 = PL.pulse_ecosystem({"r": (clean6, r6.trust, r6.profile)})["pulse"]
+    after6 = PL.pulse_ecosystem({"r": (polluted6, r6.trust, r6.profile)})["pulse"]
+    check("PL12 forged future-dated signature does not advance default pulse pact clock",
+          before6["totals"]["active_pacts"] == 1 and before6["totals"]["breached_pacts"] == 0
+          and after6["totals"]["rejected"] == 1
+          and after6["totals"]["active_pacts"] == 1 and after6["totals"]["breached_pacts"] == 0
+          and after6["repositories"]["r"]["as_of"] == before6["repositories"]["r"]["as_of"],
+          {"before": before6["totals"], "after": after6["totals"],
+           "as_of": (before6["repositories"]["r"]["as_of"], after6["repositories"]["r"]["as_of"])})
 
 
 if __name__ == "__main__":

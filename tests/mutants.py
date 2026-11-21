@@ -1338,6 +1338,10 @@ MUTANTS = [
      '        elif schema == "goal@1" and eff_state == "open":',
      '        elif schema == "goal@1" and state == "open":',
      "tests/pulse_test.py", ["PL11"]),
+    ("PL12", "warrant/pulse.py",
+     "    eff_as_of = as_of if as_of is not None else verified_as_of",
+     "    eff_as_of = as_of if as_of is not None else view.as_of",
+     "tests/pulse_test.py", ["PL12"]),
 ]
 
 

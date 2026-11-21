@@ -54,7 +54,8 @@ def pulse_repository(name: str, snap: Snapshot, trust: dict, profile: dict, *, a
     eff_snap = _snapshot_at(snap, as_of)
     view = E.View(eff_snap, trust, profile)
     rep = view.report()
-    eff_as_of = as_of if as_of is not None else view.as_of
+    verified_as_of = max((r["at"] for r in view.recs.values()), default=0)
+    eff_as_of = as_of if as_of is not None else verified_as_of
 
     # Frontier extraction from verified lineages
     open_obligations = []
