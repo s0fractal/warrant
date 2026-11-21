@@ -1295,8 +1295,8 @@ MUTANTS = [
      "tests/dream_test.py", ["DR10"]),
     # cross-repository organism pulse (warrant/pulse.py)
     ("PL1", "warrant/pulse.py",
-     '            elif state == "done" and lin.get("effective") != leaf_id:',
-     "            elif False:",
+     '            if state == "done" and lin.get("effective") != leaf_id:',
+     "            if False:",
      "tests/pulse_test.py", ["PL01"]),
     ("PL2", "warrant/pulse.py",
      "        if not R.is_int(at) or at <= as_of:",
@@ -1319,8 +1319,8 @@ MUTANTS = [
      '        "rejected_count": len(eff_snap.rejected),',
      "tests/pulse_test.py", ["PL06"]),
     ("PL7", "warrant/pulse.py",
-     "        if not R.is_int(at) or at <= as_of:",
-     "        if R.is_int(at) and at <= as_of:",
+     "        if hashlib.sha256(raw).hexdigest() in snap.rejected:",
+     "        if False:",
      "tests/pulse_test.py", ["PL07"]),
     ("PL8", "warrant/pulse.py",
      "        if schema in RM.OBLIGATIONS:",
@@ -1334,6 +1334,10 @@ MUTANTS = [
      "    confined(st.file, st.root)",
      "    pass",
      "tests/pulse_test.py", ["PL10"]),
+    ("PL11", "warrant/pulse.py",
+     '        elif schema == "goal@1" and eff_state == "open":',
+     '        elif schema == "goal@1" and state == "open":',
+     "tests/pulse_test.py", ["PL11"]),
 ]
 
 

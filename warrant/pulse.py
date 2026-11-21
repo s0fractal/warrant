@@ -32,6 +32,9 @@ def _snapshot_at(snap: Snapshot, as_of: int | None) -> Snapshot:
         raise ValueError("as_of must be a non-negative integer")
     kept = []
     for raw in snap.raw:
+        if hashlib.sha256(raw).hexdigest() in snap.rejected:
+            kept.append(raw)  # structurally rejected lines are never admissible future records
+            continue
         try:
             env = C.loads(raw.rstrip(b"\n"))
             rec = env.get("record") if isinstance(env, dict) else None
@@ -63,14 +66,15 @@ def pulse_repository(name: str, snap: Snapshot, trust: dict, profile: dict, *, a
         leaf_id = lin.get("leaf")
         leaf = view.recs.get(leaf_id) if leaf_id else None
         state = (leaf.get("body") or {}).get("state") if leaf else None
+        eff_state = lin.get("state")
         if lin.get("reliance") == "CHALLENGED":
             challenged_lineages.append(lid)
         if schema in RM.OBLIGATIONS:
-            if state == "open":
-                open_obligations.append(lid)
-            elif state == "done" and lin.get("effective") != leaf_id:
+            if state == "done" and lin.get("effective") != leaf_id:
                 pending_done_obligations.append(lid)
-        elif schema == "goal@1" and state == "open":
+            elif eff_state == "open":
+                open_obligations.append(lid)
+        elif schema == "goal@1" and eff_state == "open":
             open_goals.append(lid)
 
     # Actor activity counts strictly from signature-verified records in view.recs

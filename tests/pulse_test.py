@@ -114,8 +114,11 @@ def pulse_cases():
           and eco_sig["totals"]["rejected"] == 1 and "alice" not in rp_sig["actors"],
           {"engine": eng_rej, "pulse": rp_sig})
 
-    # PL07: Malformed JSON lines without valid integer record.at are preserved under as_of
-    malformed = [b"{}\n", b"[]\n", b'{"record":{}}\n', b'{"record":{"at":"bad"}}\n']
+    # PL07: Malformed JSON lines (including future-dated rejected envelopes) are preserved under as_of
+    malformed = [
+        b"{}\n", b"[]\n", b'{"record":{}}\n', b'{"record":{"at":"bad"}}\n',
+        C.canon({"record": {"at": r3.t + 100}}) + b"\n",
+    ]
     observed = []
     for raw in malformed:
         msnap = Snapshot([raw], {})
@@ -123,7 +126,7 @@ def pulse_cases():
         after = PL.pulse_repository("r", msnap, r3.trust, r3.profile, as_of=r3.t)
         observed.append((before["canonical"], before["rejected_count"],
                          after["canonical"], after["rejected_count"]))
-    check("PL07 malformed JSON lines without valid integer timestamp stay rejected under as_of",
+    check("PL07 malformed and future-dated rejected envelopes stay rejected under as_of",
           observed == [(False, 1, False, 1)] * len(malformed), observed)
 
     # PL08: obligation@2 open and pending-done versions appear in pulse frontier and totals
@@ -177,6 +180,18 @@ def pulse_cases():
     check("PL10 CLI pulse refuses records.jsonl and blob symlinks escaping their repository",
           rc_rec != 0 and rc_blob != 0,
           {"rc_rec": rc_rec, "rc_blob": rc_blob, "err": err_buf.getvalue()})
+
+    # PL11: Pending goal@1 closure keeps the goal visible in open_goals until accepted
+    r5 = Repo()
+    gbody = {"state": "open", "key": "still-open", "text": "work still owed"}
+    groot = r5.entity("alice", "goal@1", gbody)
+    gclosed = r5.entity("alice", "goal@1", dict(gbody, state="met"), lineage=groot)
+    rp_pending = PL.pulse_repository("r", r5.store.snapshot(), r5.trust, r5.profile)
+    r5.attest("bob", gclosed)
+    rp_accepted = PL.pulse_repository("r", r5.store.snapshot(), r5.trust, r5.profile)
+    check("PL11 open goal stays in open_goals while met proposal is pending and clears on accept",
+          groot in rp_pending["open_goals"] and groot not in rp_accepted["open_goals"],
+          {"pending": rp_pending["open_goals"], "accepted": rp_accepted["open_goals"]})
 
 
 if __name__ == "__main__":
