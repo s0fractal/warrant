@@ -550,6 +550,9 @@ def main(argv=None):
     if argv[:1] == ["pact"]:
         from . import pact
         return pact.main(argv[1:])
+    if argv[:1] == ["pulse"]:
+        from . import pulse
+        return pulse.main(argv[1:])
     if argv[:1] == ["resolve"]:
         from . import resolve
         return resolve.run(argv[1:])
