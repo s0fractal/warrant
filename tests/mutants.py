@@ -1299,7 +1299,7 @@ MUTANTS = [
      "            elif False:",
      "tests/pulse_test.py", ["PL01"]),
     ("PL2", "warrant/pulse.py",
-     "        if R.is_int(at) and at <= as_of:",
+     "        if not R.is_int(at) or at <= as_of:",
      "        if True:",
      "tests/pulse_test.py", ["PL02"]),
     ("PL3", "warrant/pulse.py",
@@ -1314,6 +1314,14 @@ MUTANTS = [
      "    for name in sorted(repos):",
      "    for name in repos:",
      "tests/pulse_test.py", ["PL04"]),
+    ("PL6", "warrant/pulse.py",
+     '        "rejected_count": len(rep["rejected"]),',
+     '        "rejected_count": len(eff_snap.rejected),',
+     "tests/pulse_test.py", ["PL06"]),
+    ("PL7", "warrant/pulse.py",
+     "        if not R.is_int(at) or at <= as_of:",
+     "        if R.is_int(at) and at <= as_of:",
+     "tests/pulse_test.py", ["PL07"]),
 ]
 
 

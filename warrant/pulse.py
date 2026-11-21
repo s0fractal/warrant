@@ -32,11 +32,12 @@ def _snapshot_at(snap: Snapshot, as_of: int | None) -> Snapshot:
     for raw in snap.raw:
         try:
             env = C.loads(raw.rstrip(b"\n"))
-            at = (env.get("record") or {}).get("at") if isinstance(env, dict) else None
+            rec = env.get("record") if isinstance(env, dict) else None
+            at = rec.get("at") if isinstance(rec, dict) else None
         except Exception:
             kept.append(raw)  # keep malformed lines so integrity reporting never hides them
             continue
-        if R.is_int(at) and at <= as_of:
+        if not R.is_int(at) or at <= as_of:
             kept.append(raw)
     return Snapshot(kept, snap.blobs, sort=False)
 
@@ -101,7 +102,7 @@ def pulse_repository(name: str, snap: Snapshot, trust: dict, profile: dict, *, a
         "as_of": eff_as_of,
         "canonical": bool(eff_snap.canonical),
         "record_count": len(view.recs),
-        "rejected_count": len(eff_snap.rejected),
+        "rejected_count": len(rep["rejected"]),
         "problem_count": len(view.problems),
         "lineage_count": len(rep["lineages"]),
         "open_goals": sorted(open_goals),

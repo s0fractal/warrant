@@ -7,6 +7,7 @@ import sys
 
 from world import Repo, check, run_sections
 
+from warrant import engine as E
 from warrant import jcs as C
 from warrant import pact as P
 from warrant import pulse as PL
@@ -90,6 +91,33 @@ def pulse_cases():
             errs.append(str(exc))
     check("PL05 empty repos, bool/negative as_of, and malformed repo tuples fail closed",
           all(e is not None for e in errs), errs)
+
+    # PL06: Shape-valid forged signature (engine BAD_SIGNATURE) is counted in rejected_count and totals.rejected
+    r3 = Repo()
+    target = r3.schemas["obligation@1"]
+    rid = r3.put("alice", "attest", {"target": target, "verdict": "accept"}, refs=[target])
+    env = r3.store.snapshot().lines[rid][0]
+    env["sig"]["ed25519"] = "0" * 128
+    snap_sig = Snapshot([C.canon(env) + b"\n"], {}, sort=True)
+    eng_rej = E.View(snap_sig, r3.trust, r3.profile).report()["rejected"]
+    eco_sig = PL.pulse_ecosystem({"r": (snap_sig, r3.trust, r3.profile)})["pulse"]
+    rp_sig = eco_sig["repositories"]["r"]
+    check("PL06 shape-valid BAD_SIGNATURE is counted in rejected_count and totals.rejected",
+          len(eng_rej) == 1 and rp_sig["rejected_count"] == 1
+          and eco_sig["totals"]["rejected"] == 1 and "alice" not in rp_sig["actors"],
+          {"engine": eng_rej, "pulse": rp_sig})
+
+    # PL07: Malformed JSON lines without valid integer record.at are preserved under as_of
+    malformed = [b"{}\n", b"[]\n", b'{"record":{}}\n', b'{"record":{"at":"bad"}}\n']
+    observed = []
+    for raw in malformed:
+        msnap = Snapshot([raw], {})
+        before = PL.pulse_repository("r", msnap, r3.trust, r3.profile)
+        after = PL.pulse_repository("r", msnap, r3.trust, r3.profile, as_of=r3.t)
+        observed.append((before["canonical"], before["rejected_count"],
+                         after["canonical"], after["rejected_count"]))
+    check("PL07 malformed JSON lines without valid integer timestamp stay rejected under as_of",
+          observed == [(False, 1, False, 1)] * len(malformed), observed)
 
 
 if __name__ == "__main__":
