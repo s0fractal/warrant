@@ -15,11 +15,13 @@ Read-only, offline, signature-verified sensorium across any set of Warrant 3 rep
 import hashlib
 import json
 
+from . import across as A
 from . import engine as E
 from . import jcs as C
 from . import pact as P
 from . import records as R
-from .store import Snapshot
+from . import roadmap as RM
+from .store import Refused, Snapshot, confined
 
 
 def _snapshot_at(snap: Snapshot, as_of: int | None) -> Snapshot:
@@ -63,7 +65,7 @@ def pulse_repository(name: str, snap: Snapshot, trust: dict, profile: dict, *, a
         state = (leaf.get("body") or {}).get("state") if leaf else None
         if lin.get("reliance") == "CHALLENGED":
             challenged_lineages.append(lid)
-        if schema == "obligation@1":
+        if schema in RM.OBLIGATIONS:
             if state == "open":
                 open_obligations.append(lid)
             elif state == "done" and lin.get("effective") != leaf_id:
@@ -72,10 +74,12 @@ def pulse_repository(name: str, snap: Snapshot, trust: dict, profile: dict, *, a
             open_goals.append(lid)
 
     # Actor activity counts strictly from signature-verified records in view.recs
+    trust_keys = trust.get("keys") or {}
     actor_counts = {}
     for rid, rec in sorted(view.recs.items()):
         actor = rec["actor"]
         row = actor_counts.setdefault(actor, {
+            "keys": sorted(set(trust_keys.get(actor, []))),
             "total": 0, "entity": 0, "attest": 0, "challenge": 0, "schema": 0,
             "accepts": 0, "findings": 0,
         })
@@ -155,7 +159,10 @@ def pulse_ecosystem(repos: dict, *, as_of: int | None = None) -> dict:
         totals["breached_pacts"] += rp["pacts"]["breached"]
 
         for actor, counts in rp["actors"].items():
-            agg = decision_profile.setdefault(actor, {
+            bound_keys = counts["keys"]
+            principal = f"{actor}@{C.doc_id(bound_keys)[:16]}" if bound_keys else f"{actor}@repo:{name}"
+            agg = decision_profile.setdefault(principal, {
+                "actor": actor, "keys": list(bound_keys),
                 "repositories": [], "total": 0, "entity": 0, "attest": 0,
                 "challenge": 0, "schema": 0, "accepts": 0, "findings": 0,
             })
@@ -172,6 +179,26 @@ def pulse_ecosystem(repos: dict, *, as_of: int | None = None) -> dict:
     }
     raw = json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {"digest": hashlib.sha256(raw).hexdigest(), "pulse": body}
+
+
+def _confined_snapshot(st, limit=A.STORE_BYTES):
+    """Read a Store snapshot confined to `st.root`, refusing escaping symlinks, non-regular files, and oversize stores."""
+    confined(st.file, st.root)
+    confined(st.blobs, st.root)
+    if (st.file.exists() or st.file.is_symlink()) and not st.file.is_file():
+        raise Refused(f"{st.file} is not a regular file")
+    size = st.file.stat().st_size if st.file.is_file() else 0
+    if st.blobs.exists() or st.blobs.is_symlink():
+        if not st.blobs.is_dir():
+            raise Refused(f"{st.blobs} is not a directory")
+        for p in st.blobs.iterdir():
+            confined(p, st.root)
+            if not p.is_file():
+                raise Refused(f"{p} is not a regular file")
+            size += p.stat().st_size
+    if size > limit:
+        raise A.Refusal("RESOURCE_LIMIT", f"the store holds {size} bytes; {limit} are admitted")
+    return st.snapshot()
 
 
 def main(argv=None):
@@ -194,9 +221,14 @@ def main(argv=None):
         if name in repo_map:
             print(json.dumps({"error": f"duplicate repository name {name!r}"}), file=sys.stderr)
             return 2
-        rp = RP.Repo(path)
-        trust, profile, _ = rp.config()
-        repo_map[name] = (rp.store.snapshot(), trust, profile)
+        try:
+            rp = RP.Repo(path)
+            trust, profile, _ = rp.config()
+            snap = _confined_snapshot(rp.store)
+        except (ValueError, OSError) as exc:
+            print(json.dumps({"error": str(exc)}), file=sys.stderr)
+            return 2
+        repo_map[name] = (snap, trust, profile)
 
     try:
         out = pulse_ecosystem(repo_map, as_of=args.as_of)

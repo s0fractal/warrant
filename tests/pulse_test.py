@@ -3,15 +3,19 @@
 
     python3 tests/pulse_test.py
 """
+import contextlib
+import io
 import sys
 
 from world import Repo, check, run_sections
 
 from warrant import engine as E
 from warrant import jcs as C
+from warrant import keys as K
 from warrant import pact as P
 from warrant import pulse as PL
 from warrant import records as R
+from warrant import roadmap as RM
 from warrant.store import Snapshot
 
 def pulse_cases():
@@ -69,11 +73,14 @@ def pulse_cases():
         "repo2": (r2.store.snapshot(), r2.trust, r2.profile),
         "repo1": (r1.store.snapshot(), r1.trust, r1.profile),
     })
+    alice_entries = [v for v in p_ab["pulse"]["decision_profile"].values() if v.get("actor") == "alice"]
     check("PL04 pulse_ecosystem aggregates multi-repo totals, active pacts, and order-independent SHA-256 digest",
           p_ab["digest"] == p_ba["digest"] and len(p_ab["digest"]) == 64
           and p_ab["pulse"]["totals"]["repositories"] == 2
           and p_ab["pulse"]["totals"]["active_pacts"] == 1
-          and p_ab["pulse"]["decision_profile"]["alice"]["repositories"] == ["repo1", "repo2"],
+          and len(alice_entries) == 1
+          and alice_entries[0]["repositories"] == ["repo1", "repo2"]
+          and alice_entries[0]["keys"] == sorted(set(r1.trust["keys"]["alice"])),
           (p_ab["digest"], p_ab["pulse"]["totals"], p_ab["pulse"]["decision_profile"]))
 
     # PL05: Strict input validation refuses empty repo map, negative/bool as_of, and bad tuples
@@ -118,6 +125,58 @@ def pulse_cases():
                          after["canonical"], after["rejected_count"]))
     check("PL07 malformed JSON lines without valid integer timestamp stay rejected under as_of",
           observed == [(False, 1, False, 1)] * len(malformed), observed)
+
+    # PL08: obligation@2 open and pending-done versions appear in pulse frontier and totals
+    r4 = Repo()
+    r4.put("alice", "schema", RM.OBLIGATION2_SCHEMA)
+    v2_open = r4.put("alice", "entity", {"state": "open", "statement": "v2 open", "serves": []}, schema="obligation@2")
+    v2_close = r4.put("alice", "entity", {"state": "open", "statement": "v2 closing", "serves": []}, schema="obligation@2")
+    r4.put("alice", "entity", {"state": "done", "statement": "v2 closing", "serves": []}, schema="obligation@2",
+           lineage=v2_close,
+           guard={"roles": ["roadmap/acceptor"], "quorum": 1, "match": {"verdict": "accept"}, "requires": []})
+    eco_v2 = PL.pulse_ecosystem({"r": (r4.store.snapshot(), r4.trust, r4.profile)})["pulse"]
+    rp_v2 = eco_v2["repositories"]["r"]
+    check("PL08 obligation@2 open and pending-done lineages are included in pulse frontier",
+          v2_open in rp_v2["open_obligations"]
+          and v2_close in rp_v2["pending_done_obligations"]
+          and eco_v2["totals"]["open_obligations"] == 1
+          and eco_v2["totals"]["pending_done_obligations"] == 1,
+          rp_v2)
+
+    # PL09: Disjoint Ed25519 key bindings for same actor name across repos stay separate in decision_profile
+    disjoint = {}
+    for at_ts, (rname, seed_hex) in enumerate((("one", "11" * 32), ("two", "22" * 32)), 123):
+        key = K.Key.from_seed_hex(seed_hex)
+        tgt = "a" * 64
+        rec = R.record("attest", "alice", at_ts, {"target": tgt, "verdict": "accept"}, refs=[tgt])
+        _, raw_line = R.line(rec, key)
+        disjoint[rname] = (Snapshot([raw_line], {}),
+                           {"warrant": "trust/3", "keys": {"alice": [key.public]}},
+                           {"warrant": "profile/3", "roles": {}})
+    dp = PL.pulse_ecosystem(disjoint)["pulse"]["decision_profile"]
+    alice_rows = [v for v in dp.values() if v.get("actor") == "alice"]
+    check("PL09 disjoint receiver key bindings for the same actor name stay distinct principals",
+          "alice" not in dp and len(alice_rows) == 2
+          and all(row["accepts"] == 1 and len(row["repositories"]) == 1 for row in alice_rows)
+          and alice_rows[0]["keys"] != alice_rows[1]["keys"],
+          dp)
+
+    # PL10: CLI pulse refuses records.jsonl or blob symlinks escaping the named repository
+    native, foreign = Repo(), Repo()
+    foreign.put("alice", "entity", {"state": "open", "statement": "foreign task", "serves": []}, schema="obligation@1")
+    native.store.file.unlink()
+    native.store.file.symlink_to(foreign.store.file)
+    out_buf, err_buf = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+        rc_rec = PL.main(["--repo", f"native={native.root}"])
+    native2 = Repo()
+    native2.store.blobs.mkdir(parents=True, exist_ok=True)
+    (native2.store.blobs / ("b" * 64)).symlink_to(foreign.store.file)
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        rc_blob = PL.main(["--repo", f"native2={native2.root}"])
+    check("PL10 CLI pulse refuses records.jsonl and blob symlinks escaping their repository",
+          rc_rec != 0 and rc_blob != 0,
+          {"rc_rec": rc_rec, "rc_blob": rc_blob, "err": err_buf.getvalue()})
 
 
 if __name__ == "__main__":

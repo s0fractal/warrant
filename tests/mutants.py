@@ -1322,6 +1322,18 @@ MUTANTS = [
      "        if not R.is_int(at) or at <= as_of:",
      "        if R.is_int(at) and at <= as_of:",
      "tests/pulse_test.py", ["PL07"]),
+    ("PL8", "warrant/pulse.py",
+     "        if schema in RM.OBLIGATIONS:",
+     '        if schema == "obligation@1":',
+     "tests/pulse_test.py", ["PL08"]),
+    ("PL9", "warrant/pulse.py",
+     '            principal = f"{actor}@{C.doc_id(bound_keys)[:16]}" if bound_keys else f"{actor}@repo:{name}"',
+     "            principal = actor",
+     "tests/pulse_test.py", ["PL09"]),
+    ("PL10", "warrant/pulse.py",
+     "    confined(st.file, st.root)",
+     "    pass",
+     "tests/pulse_test.py", ["PL10"]),
 ]
 
 
