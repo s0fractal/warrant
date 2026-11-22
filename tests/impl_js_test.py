@@ -494,7 +494,7 @@ def cli_pair(dot, config, as_of=None):
         py = {"refused": str(e)}
     tp = time.perf_counter() - t
     t = time.perf_counter()
-    cmd = [NODE, str(JS), "assess", "--store", str(dot), "--config", str(config)] + (["--as-of", str(as_of)] if as_of is not None else [])
+    cmd = [NODE, str(JS), "assess", "--store", str(dot), "--config", str(config), "--engine"] + (["--as-of", str(as_of)] if as_of is not None else [])
     p = subprocess.run(cmd, capture_output=True, check=False, timeout=600)
     tj = time.perf_counter() - t
     js = json.loads(p.stdout) if p.stdout.strip() else {"crash": p.stderr.decode(errors="replace")[-400:]}
@@ -1026,6 +1026,7 @@ def main():
     browser_rules_cases()
     browser_receipts_cases()
     browser_pins_vector_cases()
+    js_pins_vector_cases()
     browser_identity_cases()
     frame_parity_cases()
     if a.limits:
@@ -1101,10 +1102,15 @@ def second_client_cases():
     finally:
         srv.shutdown()
     doc = json.loads((ROOT / ".warrant" / "v3.json").read_text())
-    py = E.assess(ST.Store(ROOT / ".warrant").snapshot(), doc["trust"], doc["profile"], None)
+    from warrant import drift as DR
+    view = E.View(ST.Store(ROOT / ".warrant").snapshot(), doc["trust"], doc["profile"], None)
+    py = view.report()
+    py["_recs"], py["_basis"] = view.recs, view.basis
+    DR.not_checked(py)                   # read with no checkout beside it, as both JS readers read it (docs/V3.md §10)
     summary = json.loads(s.stdout) if s.stdout.strip() else {}
     check("J9 the repository read over HTTP by the second client: its report is byte-identical to the store read from "
-          "disk, and its root and every lineage's state and reliance are the Python engine's",
+          "disk, and its root and every lineage's state and reliance are the Python reader's (the engine's, with "
+          "PINS_NOT_CHECKED where no checkout was compared)",
           p.returncode == 0 and p.stdout == q.stdout and summary.get("root") == py["snapshot"]
           and summary.get("lineages") == {L: [x["state"], x["reliance"]] for L, x in py["lineages"].items()},
           (p.returncode, p.stderr[-300:], len(p.stdout), len(q.stdout)))
@@ -1953,6 +1959,46 @@ def browser_pins_vector_cases():
     check("J23 the browser's reader passes tests/vectors/pins-not-checked.json: read with no pins compared, each lineage "
           "the freshness gate covers is PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance",
           shown == vec["expect"], {L[:12]: (shown.get(L), w) for L, w in vec["expect"].items()} or js)
+
+
+def js_pins_vector_cases():
+    """tests/vectors/pins-not-checked.json through the second implementation's reader boundaries, none of which compares
+    a checkout: `warrant.mjs assess` on the store, impl-js/read.mjs over HTTP (its report and --summary) and
+    `warrant.mjs verify` on a package of the store with every lineage's root named. Each lineage the freshness gate
+    covers reads PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance, as A45 and J23 read it; `assess
+    --engine` keeps the engine's own report, ELIGIBLE included (Codex 77961f39 on G14)."""
+    vec = json.loads((ROOT / "tests" / "vectors" / "pins-not-checked.json").read_text())
+    want = vec["expect"]
+    run = lambda *args: subprocess.run([NODE, *map(str, args)], capture_output=True, check=False, timeout=600)  # noqa: E731
+    load = lambda p: json.loads(p.stdout) if p.stdout.strip() else {"crash": p.stderr.decode(errors="replace")[-300:]}  # noqa: E731
+    with tempfile.TemporaryDirectory() as d:
+        dot = Path(d) / ".warrant"
+        dot.mkdir()
+        (dot / "records.jsonl").write_text("\n".join(vec["lines"]) + "\n")
+        (dot / "v3.json").write_text(json.dumps(vec["v3"]))
+        assess = load(run(JS, "assess", "--store", dot, "--config", dot / "v3.json"))
+        engine = load(run(JS, "assess", "--store", dot, "--config", dot / "v3.json", "--engine"))
+        (Path(d) / "pkg.json").write_text(json.dumps({"warrant": "package/3", "roots": sorted(want), "lines": vec["lines"], "blobs": {}}))
+        verify = load(run(JS, "verify", Path(d) / "pkg.json", "--config", dot / "v3.json"))
+        srv, base = _serve(Path(d))
+        try:
+            full = load(run(READ, "--base", base))
+            summ = load(run(READ, "--base", base, "--summary"))
+        finally:
+            srv.shutdown()
+    got = {"assess": {L: x.get("reliance") for L, x in (assess.get("lineages") or {}).items()},
+           "read": {L: x.get("reliance") for L, x in (full.get("lineages") or {}).items()},
+           "read --summary": {L: (x or [None, None])[1] for L, x in (summ.get("lineages") or {}).items()},
+           "verify": {L: ((verify.get("roots") or {}).get(L, {}).get("lineage") or {}).get("reliance") for L in want}}
+    bad = {k: {L[:12]: (v.get(L), w) for L, w in want.items() if v.get(L) != w} for k, v in got.items()}
+    raw = {L: x.get("reliance") for L, x in (engine.get("lineages") or {}).items()}
+    check("J26 the second implementation's readers pass tests/vectors/pins-not-checked.json: `warrant.mjs assess`, "
+          "impl-js/read.mjs (report and --summary) and `warrant.mjs verify` read no checkout, so each lineage the "
+          "freshness gate covers is PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance; `assess --engine` "
+          "keeps the engine's report (Codex 77961f39 on G14)",
+          not any(bad.values()) and "PINS_NOT_CHECKED" in want.values()
+          and all(raw.get(L) == "ELIGIBLE" for L, w in want.items() if w == "PINS_NOT_CHECKED")
+          and engine.get("assessment") == assess.get("assessment"), bad or (assess, verify))
 
 
 # ---------------------------------------------------------------- J24: a store's identity (obligation ec6d1ebe)

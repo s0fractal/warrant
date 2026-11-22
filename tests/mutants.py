@@ -820,6 +820,8 @@ MUTANTS = [
     ('T356', 'warrant/differential.py', '        now |= {x.rstrip(b"\\n") for x in lines}', '        pass', TOOLS, ['D09b']),
     ('T357', 'warrant/differential.py', '            unavailable.append(src["name"])', '            pass', TOOLS, ['D09b']),
     ('T358', 'warrant/differential.py', '    lost = sorted(n for n, data in blobs.items() if data not in copies.get(n, []))', '    lost = sorted(n for n in blobs if n not in copies)', TOOLS, ['D09c']),
+    ('T359', 'warrant/drift.py', '            elif x.view.recs[i]["kind"] in ("attest", "challenge"):', '            elif False:', TOOLS, ['DR36']),
+    ('T360', 'warrant/drift.py', '    if res is not None:\n        ck = res.get("checkout") or {}', '    if False:\n        ck = res.get("checkout") or {}', TOOLS, ['DR36']),
     ('T65', 'warrant/differential.py', 'capture_output=True, cwd=away, check=False', 'capture_output=True, cwd=None, check=False', TOOLS, ['D04']),
     ('T66', 'warrant/differential.py', '    if r.returncode:\n        raise Unmade(f"{python} exited', '    if False:\n        raise Unmade(f"{python} exited', TOOLS, ['D04']),
     ('T76', 'warrant/differential.py', '    if r.returncode:\n        raise Unmade(f"git ', '    if False:\n        raise Unmade(f"git ', TOOLS, ['D09']),
