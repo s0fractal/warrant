@@ -1175,6 +1175,47 @@ def drift_impact_cases():
           and c["root"] != b["root"], (a.get("root"), b.get("root"), want, c.get("data", {}).get("unavailable")))
 
 
+def view_binding_cases():
+    """A view's lens binds every byte that decides it besides the records, trust and profile: the working tree outside
+    the store (two different uncommitted edits are two lenses, not one `dirty` flag), .warrant/claims.json (which shapes
+    CLAIMS.md and lies outside that tree) and the tools/graph.py that runs (Codex 21eb439d on G11)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("graph_tool", ROOT / "tools" / "graph.py")
+    TG = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TG)
+    r, _ = drift_repo()
+    r.commit("the claim, accepted")
+    rep = RP.Repo(r.root).report()
+    from warrant import graph as GR
+    lens = lambda: GR.answer(rep, {"op": "view", "name": "CLAIMS.md"}, None, json.dumps(TG.code_id(r.root), sort_keys=True))["lens"]  # noqa: E731
+    seen = {"clean": lens(), "clean again": lens()}
+    (r.root / "lib" / "code.py").write_text("X = 7\n")
+    seen["edit one"] = lens()
+    (r.root / "lib" / "code.py").write_text("X = 8\n")
+    seen["edit two"] = lens()
+    (r.root / "lib" / "code.py").write_text("X = 1\n")
+    seen["edit undone"] = lens()
+    (r.root / "notes.txt").write_text("an untracked file\n")
+    seen["untracked"] = lens()
+    (r.root / "notes.txt").unlink()
+    claims = r.dot / "claims.json"
+    held = claims.read_bytes() if claims.exists() else None
+    claims.write_text(json.dumps(dict(json.loads(held or b"{}"), note="another configuration")))
+    seen["claims config"] = lens()
+    if held is None:
+        claims.unlink()
+    else:
+        claims.write_bytes(held)
+    seen["restored"] = lens()
+    status = subprocess.run(["git", "-C", str(r.root), "diff", "--cached", "--name-only"], capture_output=True, text=True).stdout
+    check("VB1 a view's lens binds the working tree outside the store, .warrant/claims.json and the running tools/graph.py: "
+          "the same state gives the same lens; each of two different edits, an untracked file and another claims "
+          "configuration gives its own; undoing restores it; reading stages nothing (Codex 21eb439d on G11)",
+          seen["clean"] == seen["clean again"] == seen["edit undone"] == seen["restored"]
+          and len({seen[k] for k in ("clean", "edit one", "edit two", "untracked", "claims config")}) == 5
+          and "tool" in TG.code_id(r.root) and status == "", (seen, status))
+
+
 def review_join_cases():
     r = review_repo()
     rp = RP.Repo(r.root)
@@ -3435,7 +3476,7 @@ if __name__ == "__main__":
         entry_cases,
         freshness_cases,
         drift_merge_cases,
-        drift_impact_cases,
+        drift_impact_cases, view_binding_cases,
         review_cases,
         review_join_cases,
         roadmap_cases,
