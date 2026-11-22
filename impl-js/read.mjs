@@ -10,9 +10,10 @@
 // blob it does not have, another record's id) is counted under `unresolved` and is absent from the snapshot, never guessed.
 //
 // The assessment is warrant.mjs's (held byte for byte to the Python engine), with warrant.mjs's code identity: given
-// the same bytes, the report equals `node impl-js/warrant.mjs assess --store DIR --config V3JSON`. `--summary` prints
+// the same bytes, the report equals `node impl-js/warrant.mjs assess --store DIR --config V3JSON`: the engine's, but a
+// lineage the freshness gate covers reads PINS_NOT_CHECKED, since no checkout is compared here (docs/V3.md §10). `--summary` prints
 // {root, lineages: {id: [state, reliance]}, rejected, unresolved}: what a reader needs to compare two clients.
-import { assess, canonStr, codeIdentity, hex64, loadsLenient, nodeBackend, Refused, utf16 } from "./warrant.mjs";
+import { assessRead, canonStr, codeIdentity, hex64, loadsLenient, nodeBackend, Refused, utf16 } from "./warrant.mjs";
 
 const SPLIT = (raw) => {
   const lines = [];
@@ -86,7 +87,8 @@ async function main(argv) {
   const code = await codeIdentity(new Uint8Array(fs.readFileSync(new URL("./warrant.mjs", import.meta.url))), backend);
   try {
     const { lines, blobs, doc, missing } = await read(base, backend);
-    const rep = await assess({ lines, blobs, trust: doc.trust, profile: doc.profile, as_of: null, code }, backend);
+    // a reader with no checkout beside the records: a pinned lineage reads PINS_NOT_CHECKED, never ELIGIBLE (§10)
+    const rep = await assessRead({ lines, blobs, trust: doc.trust, profile: doc.profile, as_of: null, code }, backend);
     if (argv.includes("--summary")) {
       const lineages = {};
       for (const [L, lin] of Object.entries(rep.lineages)) lineages[L] = [lin.state, lin.reliance];
