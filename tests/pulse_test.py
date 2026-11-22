@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""Tests for `warrant.pulse` deterministic cross-repository organism pulse (`PL01..PL07`).
+
+    python3 tests/pulse_test.py
+"""
+import contextlib
+import io
+import sys
+
+from world import KEYS, Repo, check, run_sections
+
+from warrant import engine as E
+from warrant import jcs as C
+from warrant import keys as K
+from warrant import pact as P
+from warrant import pulse as PL
+from warrant import records as R
+from warrant import roadmap as RM
+from warrant.store import Snapshot
+
+def pulse_cases():
+    # PL01: Per-repository pulse reports open obligations, pending done obligations, and verified actor counts
+    r1 = Repo()
+    r1.put("alice", "schema", P.SCHEMA)
+    t = r1.t + 10
+    o_open = r1.put("alice", "entity", {"state": "open", "statement": "open task", "serves": []}, schema="obligation@1", at=t)
+    o_done_root = r1.put("alice", "entity", {"state": "open", "statement": "done task", "serves": []}, schema="obligation@1", at=t + 1)
+    r1.put("alice", "entity", {"state": "done", "statement": "done task", "serves": []},
+           schema="obligation@1", lineage=o_done_root,
+           guard={"roles": ["roadmap/acceptor"], "quorum": 1, "match": {"verdict": "accept"}, "requires": []}, at=t + 2)
+    rp1 = PL.pulse_repository("repo1", r1.store.snapshot(), r1.trust, r1.profile)
+    check("PL01 pulse_repository separates open obligations from pending done obligations and counts verified actors",
+          o_open in rp1["open_obligations"]
+          and o_done_root in rp1["pending_done_obligations"]
+          and o_done_root not in rp1["open_obligations"]
+          and rp1["actors"]["alice"]["entity"] >= 3
+          and rp1["rejected_count"] == 0,
+          rp1)
+
+    # PL02: as_of horizon strictly excludes future records without hiding malformed lines
+    rp_early = PL.pulse_repository("repo1", r1.store.snapshot(), r1.trust, r1.profile, as_of=t)
+    check("PL02 as_of horizon excludes records dated after as_of",
+          o_open in rp_early["open_obligations"]
+          and o_done_root not in rp_early["open_obligations"]
+          and o_done_root not in rp_early["pending_done_obligations"],
+          rp_early)
+
+    # PL03: Unverified / forged signature lines are counted in rejected_count and never enter actor decision_profile
+    bad_line = b'{"record":{"actor":"mallory","at":1,"body":{"x":1},"guard":null,"kind":"entity","lineage":null,"prev":null,"refs":[],"schema":null,"warrant":"3"},"sig":{"ed25519":"' + (b"0" * 128) + b'","key":"' + (b"0" * 64) + b'"}}\n'
+    snap_bad = Snapshot(r1.store.snapshot().raw + [bad_line], {})
+    rp_bad = PL.pulse_repository("repo1", snap_bad, r1.trust, r1.profile)
+    check("PL03 forged signature line is counted in rejected_count and excluded from verified actors",
+          rp_bad["rejected_count"] >= 1 and "mallory" not in rp_bad["actors"],
+          rp_bad)
+
+    # PL04: Ecosystem pulse aggregates across multiple repos with independent trust and order-independent digest
+    r2 = Repo()
+    r2.put("alice", "schema", P.SCHEMA)
+    sa, sb = (r2.seed(a).read_text().strip() for a in ("alice", "bob"))
+    t2 = r2.t + 10
+    prop = P.make_proposal("alice", sa, parties=["alice", "bob"], commitments={
+        "alice": {"gives": ["a"]}, "bob": {"gives": ["b"]},
+    }, expires_at=t2 + 100, purpose="pulse-pact", at=t2)
+    pid = R.rid(prop["record"])
+    r2.store.add_lines([C.canon(e) + b"\n" for e in [
+        prop, P.make_accept("alice", sa, pid, at=t2 + 1), P.make_accept("bob", sb, pid, at=t2 + 2),
+    ]])
+    p_ab = PL.pulse_ecosystem({
+        "repo1": (r1.store.snapshot(), r1.trust, r1.profile),
+        "repo2": (r2.store.snapshot(), r2.trust, r2.profile),
+    })
+    p_ba = PL.pulse_ecosystem({
+        "repo2": (r2.store.snapshot(), r2.trust, r2.profile),
+        "repo1": (r1.store.snapshot(), r1.trust, r1.profile),
+    })
+    alice_entries = [v for v in p_ab["pulse"]["decision_profile"].values() if v.get("actor") == "alice"]
+    check("PL04 pulse_ecosystem aggregates multi-repo totals, active pacts, and order-independent SHA-256 digest",
+          p_ab["digest"] == p_ba["digest"] and len(p_ab["digest"]) == 64
+          and p_ab["pulse"]["totals"]["repositories"] == 2
+          and p_ab["pulse"]["totals"]["active_pacts"] == 1
+          and len(alice_entries) == 1
+          and alice_entries[0]["repositories"] == ["repo1", "repo2"]
+          and alice_entries[0]["keys"] == sorted(set(r1.trust["keys"]["alice"])),
+          (p_ab["digest"], p_ab["pulse"]["totals"], p_ab["pulse"]["decision_profile"]))
+
+    # PL05: Strict input validation refuses empty repo map, negative/bool as_of, and bad tuples
+    errs = []
+    for fn in (
+        lambda: PL.pulse_ecosystem({}),
+        lambda: PL.pulse_ecosystem({"r": (r1.store.snapshot(), r1.trust, r1.profile)}, as_of=True),
+        lambda: PL._snapshot_at(r1.store.snapshot(), -1),
+        lambda: PL.pulse_ecosystem({"r": ("not-a-tuple",)}),
+    ):
+        try:
+            fn()
+            errs.append(None)
+        except ValueError as exc:
+            errs.append(str(exc))
+    check("PL05 empty repos, bool/negative as_of, and malformed repo tuples fail closed",
+          all(e is not None for e in errs), errs)
+
+    # PL06: Shape-valid forged signature (engine BAD_SIGNATURE) is counted in rejected_count and totals.rejected
+    r3 = Repo()
+    target = r3.schemas["obligation@1"]
+    rid = r3.put("alice", "attest", {"target": target, "verdict": "accept"}, refs=[target])
+    env = r3.store.snapshot().lines[rid][0]
+    env["sig"]["ed25519"] = "0" * 128
+    snap_sig = Snapshot([C.canon(env) + b"\n"], {}, sort=True)
+    eng_rej = E.View(snap_sig, r3.trust, r3.profile).report()["rejected"]
+    eco_sig = PL.pulse_ecosystem({"r": (snap_sig, r3.trust, r3.profile)})["pulse"]
+    rp_sig = eco_sig["repositories"]["r"]
+    check("PL06 shape-valid BAD_SIGNATURE is counted in rejected_count and totals.rejected",
+          len(eng_rej) == 1 and rp_sig["rejected_count"] == 1
+          and eco_sig["totals"]["rejected"] == 1 and "alice" not in rp_sig["actors"],
+          {"engine": eng_rej, "pulse": rp_sig})
+
+    # PL07: Malformed JSON lines (including future-dated rejected envelopes) are preserved under as_of
+    malformed = [
+        b"{}\n", b"[]\n", b'{"record":{}}\n', b'{"record":{"at":"bad"}}\n',
+        C.canon({"record": {"at": r3.t + 100}}) + b"\n",
+    ]
+    observed = []
+    for raw in malformed:
+        msnap = Snapshot([raw], {})
+        before = PL.pulse_repository("r", msnap, r3.trust, r3.profile)
+        after = PL.pulse_repository("r", msnap, r3.trust, r3.profile, as_of=r3.t)
+        observed.append((before["canonical"], before["rejected_count"],
+                         after["canonical"], after["rejected_count"]))
+    check("PL07 malformed and future-dated rejected envelopes stay rejected under as_of",
+          observed == [(False, 1, False, 1)] * len(malformed), observed)
+
+    # PL08: obligation@2 open and pending-done versions appear in pulse frontier and totals
+    r4 = Repo()
+    r4.put("alice", "schema", RM.OBLIGATION2_SCHEMA)
+    v2_open = r4.put("alice", "entity", {"state": "open", "statement": "v2 open", "serves": []}, schema="obligation@2")
+    v2_close = r4.put("alice", "entity", {"state": "open", "statement": "v2 closing", "serves": []}, schema="obligation@2")
+    r4.put("alice", "entity", {"state": "done", "statement": "v2 closing", "serves": []}, schema="obligation@2",
+           lineage=v2_close,
+           guard={"roles": ["roadmap/acceptor"], "quorum": 1, "match": {"verdict": "accept"}, "requires": []})
+    eco_v2 = PL.pulse_ecosystem({"r": (r4.store.snapshot(), r4.trust, r4.profile)})["pulse"]
+    rp_v2 = eco_v2["repositories"]["r"]
+    check("PL08 obligation@2 open and pending-done lineages are included in pulse frontier",
+          v2_open in rp_v2["open_obligations"]
+          and v2_close in rp_v2["pending_done_obligations"]
+          and eco_v2["totals"]["open_obligations"] == 1
+          and eco_v2["totals"]["pending_done_obligations"] == 1,
+          rp_v2)
+
+    # PL09: Disjoint Ed25519 key bindings for same actor name across repos stay separate in decision_profile
+    disjoint = {}
+    for at_ts, (rname, seed_hex) in enumerate((("one", "11" * 32), ("two", "22" * 32)), 123):
+        key = K.Key.from_seed_hex(seed_hex)
+        tgt = "a" * 64
+        rec = R.record("attest", "alice", at_ts, {"target": tgt, "verdict": "accept"}, refs=[tgt])
+        _, raw_line = R.line(rec, key)
+        disjoint[rname] = (Snapshot([raw_line], {}),
+                           {"warrant": "trust/3", "keys": {"alice": [key.public]}},
+                           {"warrant": "profile/3", "roles": {}})
+    dp = PL.pulse_ecosystem(disjoint)["pulse"]["decision_profile"]
+    alice_rows = [v for v in dp.values() if v.get("actor") == "alice"]
+    check("PL09 disjoint receiver key bindings for the same actor name stay distinct principals",
+          "alice" not in dp and len(alice_rows) == 2
+          and all(row["accepts"] == 1 and len(row["repositories"]) == 1 for row in alice_rows)
+          and alice_rows[0]["keys"] != alice_rows[1]["keys"],
+          dp)
+
+    # PL10: CLI pulse refuses records.jsonl or blob symlinks escaping the named repository
+    native, foreign = Repo(), Repo()
+    foreign.put("alice", "entity", {"state": "open", "statement": "foreign task", "serves": []}, schema="obligation@1")
+    native.store.file.unlink()
+    native.store.file.symlink_to(foreign.store.file)
+    out_buf, err_buf = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+        rc_rec = PL.main(["--repo", f"native={native.root}"])
+    native2 = Repo()
+    native2.store.blobs.mkdir(parents=True, exist_ok=True)
+    (native2.store.blobs / ("b" * 64)).symlink_to(foreign.store.file)
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        rc_blob = PL.main(["--repo", f"native2={native2.root}"])
+    check("PL10 CLI pulse refuses records.jsonl and blob symlinks escaping their repository",
+          rc_rec != 0 and rc_blob != 0,
+          {"rc_rec": rc_rec, "rc_blob": rc_blob, "err": err_buf.getvalue()})
+
+    # PL11: Pending goal@1 closure keeps the goal visible in open_goals until accepted
+    r5 = Repo()
+    gbody = {"state": "open", "key": "still-open", "text": "work still owed"}
+    groot = r5.entity("alice", "goal@1", gbody)
+    gclosed = r5.entity("alice", "goal@1", dict(gbody, state="met"), lineage=groot)
+    rp_pending = PL.pulse_repository("r", r5.store.snapshot(), r5.trust, r5.profile)
+    r5.attest("bob", gclosed)
+    rp_accepted = PL.pulse_repository("r", r5.store.snapshot(), r5.trust, r5.profile)
+    check("PL11 open goal stays in open_goals while met proposal is pending and clears on accept",
+          groot in rp_pending["open_goals"] and groot not in rp_accepted["open_goals"],
+          {"pending": rp_pending["open_goals"], "accepted": rp_accepted["open_goals"]})
+
+    # PL12: Future-dated BAD_SIGNATURE record must not advance default pulse pact clock
+    r6 = Repo()
+    r6.put("alice", "schema", P.SCHEMA)
+    at6 = r6.t + 10
+    p6 = P.make_proposal("alice", KEYS["alice"].seed_hex(), parties=["alice", "bob"],
+                         commitments={"alice": {"gives": ["a"]}, "bob": {"gives": ["b"]}},
+                         expires_at=at6 + 100, purpose="pulse-clock", at=at6)
+    pid6 = R.rid(p6["record"])
+    evs6 = [p6, P.make_accept("alice", KEYS["alice"].seed_hex(), pid6, at=at6 + 1),
+            P.make_accept("bob", KEYS["bob"].seed_hex(), pid6, at=at6 + 2)]
+    clean6 = Snapshot(r6.store.snapshot().raw + [C.canon(e) + b"\n" for e in evs6], {}, sort=True)
+    forged6 = R.record("attest", "bob", at6 + 200, {"target": pid6, "verdict": "unrelated"}, refs=[pid6])
+    _, wrong_sig6 = R.line(forged6, KEYS["eve"])
+    polluted6 = Snapshot(clean6.raw + [wrong_sig6], {}, sort=True)
+    before6 = PL.pulse_ecosystem({"r": (clean6, r6.trust, r6.profile)})["pulse"]
+    after6 = PL.pulse_ecosystem({"r": (polluted6, r6.trust, r6.profile)})["pulse"]
+    check("PL12 forged future-dated signature does not advance default pulse pact clock",
+          before6["totals"]["active_pacts"] == 1 and before6["totals"]["breached_pacts"] == 0
+          and after6["totals"]["rejected"] == 1
+          and after6["totals"]["active_pacts"] == 1 and after6["totals"]["breached_pacts"] == 0
+          and after6["repositories"]["r"]["as_of"] == before6["repositories"]["r"]["as_of"],
+          {"before": before6["totals"], "after": after6["totals"],
+           "as_of": (before6["repositories"]["r"]["as_of"], after6["repositories"]["r"]["as_of"])})
+
+
+if __name__ == "__main__":
+    sys.exit(run_sections([pulse_cases]))
