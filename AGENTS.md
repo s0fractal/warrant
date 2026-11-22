@@ -65,6 +65,15 @@ repository's records, tools, review loop and merge gate).
    or credential, then ask for exactly that. Record what remains open as an obligation or a named
    residual rather than asking for blanket permission.
 
+7. **A new subsystem lands with its consumer.** A new module, schema or verifier enters `warrant/` or
+   `warrant_agent/` only with a scenario that uses it end to end through the agent interface or the CLI (a test that
+   goes in through `warrant_agent` or `python -m warrant`, not only the module's own functions), and with the open
+   goal or obligation it answers named in the pull request. A thesis with no such consumer yet lands outside the
+   core packages (its own directory, or another repository) and enters them when a consumer does. Why: between
+   2026-11-19 and 2026-11-22 five subsystems (pact, delegate, witness, dream, pulse, 3,200 lines) entered the core
+   with only their own tests; Codex's reviews found defects in pact, delegate and witness (one P1: an escrow released
+   without its required witness), and none of the five was on a path an agent takes, so no use would have found them.
+
 ## What stays the owner's
 
 The owner is an observer with a brake (2026-11-13): nothing waits for his signature, and he can stop anything.
