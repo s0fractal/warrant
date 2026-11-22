@@ -1083,6 +1083,49 @@ class View {
 export function assessPrepared(prep) { return new View(prep).report(); }
 export async function assess(input, backend) { return assessPrepared(await prepare(input, backend)); }
 
+// ---------------------------------------------------------------- read with no checkout (warrant/drift.py not_checked)
+
+// docs/V3.md §10: a reader that compared no checkout shows a lineage the freshness gate covers, ELIGIBLE by the engine,
+// as PINS_NOT_CHECKED, never ELIGIBLE: whether its acceptances still name the bytes they accepted needs a tree nobody
+// compared. The predicate is warrant/drift.py's (pinned, counted, covered), the one site/reader.mjs ports too; the
+// engine's report is otherwise unchanged and `assessment` stays the engine's digest. `lines` is the snapshot's
+// {id: [envelope]}. Returns the lineages it lowered (Codex 77961f39: read.mjs and this command's assess and verify
+// printed ELIGIBLE on the unchanged pins-not-checked vector).
+export const PINS_NOT_CHECKED = "PINS_NOT_CHECKED";
+const CHECKER = "claims-checker", CLAIM = "claim@1";
+
+export function notChecked(rep, lines) {
+  const rec = (i) => (lines.has(i) ? lines.get(i)[0].record : undefined);
+  const basis = new Map(rep.graph.nodes.map((n) => [n[0], n[5]]));
+  const counted = (r) => {                               // drift.counted: the version's guard counts this attest
+    const t = r.body.target, v = has(rep.versions, t) ? rep.versions[t] : undefined, x = rec(t), g = x?.guard;
+    if (!v || !isObj(g) || r.actor === x.actor || !(v.accepted_by || []).includes(r.actor)) return false;
+    return Object.entries(g.match || {}).every(([k, m]) => has(r.body, k) && canonStr(r.body[k]) === canonStr(m));
+  };
+  const done = new Set();                                // drift.pinned: the versions a pinned acceptance targets
+  for (const [i] of [...lines].sort((a, b) => utf16(a[0], b[0]))) {
+    const r = rec(i);
+    if (r.kind !== "attest" || basis.get(i) !== "SIGNED" || !isObj(r.body) || r.body.verdict !== "accept") continue;
+    if (r.actor === CHECKER || (isObj(r.body.files) && counted(r))) done.add(r.body.target);
+  }
+  const out = [];
+  for (const [L, lin] of Object.entries(rep.lineages)) {  // drift.covered, then not_checked
+    if (lin.schema === CLAIM && (lin.leaf ? rec(lin.leaf)?.body?.state : null) === "retired") continue;
+    if (lin.effective && done.has(lin.effective) && lin.reliance === "ELIGIBLE") out.push(L);
+  }
+  out.sort(utf16);
+  for (const L of out) rep.lineages[L].reliance = PINS_NOT_CHECKED;
+  return out;
+}
+
+// assess, then read as a reader with no checkout beside it: what `warrant.mjs assess` and impl-js/read.mjs print.
+export async function assessRead(input, backend) {
+  const prep = await prepare(input, backend);
+  const rep = assessPrepared(prep);
+  notChecked(rep, prep.snap.lines);
+  return rep;
+}
+
 // The engine's identity: the digest of this file and of the platform that answers SHA-256 and Ed25519.
 export async function codeIdentity(source, backend) {
   const files = dict();
@@ -1177,6 +1220,7 @@ export async function inspectAlone(pkg, trust, profile, backend, code) {
     if (e instanceof Invalid) throw new AgentError(e.message.includes("limit") ? "RESOURCE_LIMIT" : "BAD_REQUEST", e.message);
     throw e;
   }
+  notChecked(rep, prep.snap.lines);                // api.py: a package is read with no tree beside it (§10)
   const nodes = new Map(rep.graph.nodes.map((x) => [x[0], { id: x[0], kind: x[1], schema: x[2], actor: x[3], at: x[4], basis: x[5] }]));
   const roots = dict();
   for (const r of pkg.roots) roots[r] = describe(rep, nodes, r);
@@ -1254,7 +1298,8 @@ async function main(argv) {
       const doc = receiverOf(fs.readFileSync(opt("--config"), "utf8"));
       const asOf = opt("--as-of") === undefined ? null : Number(opt("--as-of"));
       const st = await readStore(opt("--store"), backend);
-      out(await assess({ ...st, trust: doc.trust, profile: doc.profile, as_of: asOf, code }, backend));
+      const input = { ...st, trust: doc.trust, profile: doc.profile, as_of: asOf, code };
+      out(argv.includes("--engine") ? await assess(input, backend) : await assessRead(input, backend));
     } else if (cmd === "verify") {
       const doc = receiverOf(fs.readFileSync(opt("--config"), "utf8"));
       const pkg = loadsLenient(fs.readFileSync(argv[1], "utf8"));
@@ -1273,7 +1318,7 @@ async function main(argv) {
     } else if (cmd === "code") {
       out({ code, runtime: backend.name });
     } else {
-      process.stderr.write("usage: warrant.mjs assess --store DIR --config V3JSON [--as-of N] | verify PACKAGE.json --config V3JSON | batch CASES.jsonl\n");
+      process.stderr.write("usage: warrant.mjs assess --store DIR --config V3JSON [--as-of N] [--engine] | verify PACKAGE.json --config V3JSON | batch CASES.jsonl\n");
       return 2;
     }
   } catch (e) {

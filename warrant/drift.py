@@ -269,15 +269,24 @@ def impact(rep, root, head="HEAD", base=None, readings=None):
 
 def _elsewhere(others, reached, L):
     """[{store, lineage, schema, state, reliance}] of the records of Home's other stores among `reached` (what rests on
-    a version of claim lineage L, through every store), each read under that store's own report."""
+    a version of claim lineage L, through every store), each read under that store's own report; an attest or a
+    challenge there, which is in no lineage, as {store, record, kind, actor, lineage: null}: a foreign verdict on what
+    the change makes stale rests on it too (Codex 9319a330 on G14)."""
     out = []
     for i in reached:
         for x in others:
-            if i in x.view.recs and i in x.view.root_of and x.view.root_of[i] in x.rep["lineages"] and x.view.root_of[i] != L:
-                lin = x.rep["lineages"][x.view.root_of[i]]
-                out.append({"store": x.name, "lineage": x.view.root_of[i], "schema": lin["schema"], "state": lin["state"],
-                            "reliance": lin["reliance"]})
-    return sorted({tuple(sorted(d.items())): d for d in out}.values(), key=lambda d: (d["store"], d["lineage"]))
+            if i not in x.view.recs:
+                continue
+            if i in x.view.root_of and x.view.root_of[i] in x.rep["lineages"]:
+                if x.view.root_of[i] != L:
+                    lin = x.rep["lineages"][x.view.root_of[i]]
+                    out.append({"store": x.name, "lineage": x.view.root_of[i], "schema": lin["schema"], "state": lin["state"],
+                                "reliance": lin["reliance"]})
+            elif x.view.recs[i]["kind"] in ("attest", "challenge"):
+                r = x.view.recs[i]
+                out.append({"store": x.name, "lineage": None, "record": i, "kind": r["kind"], "actor": r["actor"]})
+    return sorted({tuple(sorted(d.items())): d for d in out}.values(),
+                  key=lambda d: (d["store"], d["lineage"] or "", d.get("record") or ""))
 
 
 def identity(rep, root, readings, query):
@@ -306,8 +315,10 @@ def _unavailable(readings, root):
     return [{"store": x.name, "why": A._short(x.why)} for x in sorted(readings, key=lambda x: x.name) if x.why and x.name not in mine]
 
 
-def impact_lines(m):
-    """The impact answer as text, the count first: `impact: 0 affected`, or claims -> lineages [-> stores]."""
+def impact_lines(m, res=None):
+    """The impact answer as text, the count first: `impact: 0 affected`, or claims -> lineages [-> stores]; with `res`
+    (the whole answer) its last line names what binds it, as --json does: root, lens and the checkout read (Codex
+    9319a330 on G14: the text once dropped them)."""
     n = len(m["stale"])
     if not n:
         head = "impact: 0 affected"
@@ -320,7 +331,8 @@ def impact_lines(m):
         out.append(f"STALE {s['id']} ({s['lineage'][:12]}), accepted at {str(s['commit'])[:12]}")
         out += ["  " + " ".join(w for w in (f["verdict"], f["path"], f["detail"]) if w) for f in s["files"]]
         out += [f"  rests: {r['schema']} {r['lineage'][:12]} {r['state']} {r['reliance']}" for r in s["rests_on_it"]]
-        out += [f"  rests in {e['store']}: {e['schema']} {e['lineage'][:12]} {e['state']} {e['reliance']}" for e in s.get("elsewhere", [])]
+        out += [f"  rests in {e['store']}: {e['schema']} {e['lineage'][:12]} {e['state']} {e['reliance']}" if e["lineage"]
+                else f"  rests in {e['store']}: {e['kind']} {e['record'][:12]} by {e['actor']}" for e in s.get("elsewhere", [])]
     out += [f"not read: {u['store']} ({u['why']}), what rests there is not seen" for u in m.get("unavailable", [])]
     if m["base"]:
         if m["already_stale"]:
@@ -329,6 +341,10 @@ def impact_lines(m):
                    + (": " + ", ".join(m["in_no_acceptance"]) if m["in_no_acceptance"] else ""))
     else:
         out.append("a file no witness reads and no mutant mutates is in no acceptance: give BASE..HEAD to list the changed ones")
+    if res is not None:
+        ck = res.get("checkout") or {}
+        out.append(f"root {str(res.get('root'))[:12]} · lens {str(res.get('lens'))[:12]} · checkout tree "
+                   f"{str(ck.get('tree'))[:12]}" + (" with claims" if ck.get("claims") else " without claims"))
     return "\n".join(out) + "\n"
 
 
@@ -358,7 +374,7 @@ def run(argv=None):
         if a.json:
             dump(res)
         else:
-            sys.stdout.write(impact_lines(m))
+            sys.stdout.write(impact_lines(m, res))
         return 1 if m["stale"] else 0
     d = drift(Repo(root).report(), root)
     if a.json:

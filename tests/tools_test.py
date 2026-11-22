@@ -1175,6 +1175,32 @@ def drift_impact_cases():
           and c["root"] != b["root"], (a.get("root"), b.get("root"), want, c.get("data", {}).get("unavailable")))
 
 
+def impact_foreign_verdict_cases():
+    """--impact --across names a foreign attest or challenge on a version of the stale claim, which no lineage holds, as
+    a record resting on it; the text answer ends with what binds it, as --json does (Codex 9319a330 on G14)."""
+    r, L = drift_repo()
+    base = r.commit("the claim, accepted")
+    (r.root / "lib" / "code.py").write_text("X = 4\n")
+    head = r.commit("the mutated file changes")
+    other = Repo()
+    said = other.attest("bob", L, verdict="accept")
+    objected = other.put("bob", "challenge", {"statement": "there, an objection to the claim", "target": L}, refs=[L])
+    home = {"repositories": {"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}}
+    m = D.impact(RP.Repo(r.root).report(), r.root, head, base, A.home_readings(home))
+    seen = sorted((e["store"], e.get("record"), e.get("kind")) for e in (m["stale"] or [{}])[0].get("elsewhere", []))
+    res = {"root": "a" * 64, "lens": "b" * 64, "checkout": {"tree": "c" * 40, "claims": True}}
+    try:
+        last = D.impact_lines(m, res).splitlines()[-1]
+    except TypeError:                     # a text answer that takes no binding: a failure on the line below, not a crash
+        last = None
+    check("DR30 with Home's stores a foreign attest and a foreign challenge on the stale claim, in no lineage, are named "
+          "as resting on it with store, kind and actor; the text answer's last line names root, lens and the checkout "
+          "read (Codex 9319a330 on G14)",
+          seen == sorted([("there", said, "attest"), ("there", objected, "challenge")]) and m["stores"] == ["there"]
+          and last == f"root {'a' * 12} · lens {'b' * 12} · checkout tree {'c' * 12} with claims"
+          and D.impact_lines(m).splitlines()[-1] != last, (seen, last))
+
+
 def review_join_cases():
     r = review_repo()
     rp = RP.Repo(r.root)
@@ -3435,7 +3461,7 @@ if __name__ == "__main__":
         entry_cases,
         freshness_cases,
         drift_merge_cases,
-        drift_impact_cases,
+        drift_impact_cases, impact_foreign_verdict_cases,
         review_cases,
         review_join_cases,
         roadmap_cases,
