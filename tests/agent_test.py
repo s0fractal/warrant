@@ -256,6 +256,16 @@ def operations():
     check("A15 a graph result carries root and lens: the same query gives the same lens; another profile another",
           g1.get("lens") == g2.get("lens") and g1.get("lens") != g3.get("lens") and g1.get("root") == g3.get("root")
           and obl in [n["id"] for n in g1.get("data", {}).get("nodes", [])], (g1.get("lens"), g3.get("lens")))
+    chain = Repo()                         # A <- B <- C: C rests on B, B on A (Codex 0cb94027 on G11)
+    ga = chain.entity("alice", "obligation@1", {"state": "open", "statement": "A", "serves": []})
+    gb = chain.entity("alice", "obligation@1", {"state": "open", "statement": "B, on A", "serves": [], "evidence": [ga]})
+    gc = chain.entity("alice", "obligation@1", {"state": "open", "statement": "C, on B", "serves": [], "evidence": [gb]})
+    lib = [n["id"] for n in G.path(chain.report(), gc)["nodes"]]
+    via = [n["id"] for n in ok(api.call(cfg_of(chain), "graph", {"workspace": "w", "op": "path", "target": gc})).get("data", {}).get("nodes", [])]
+    back = [n["id"] for n in G.why(chain.report(), ga)["nodes"]]
+    check("A52 graph op=path is transitive: from C, which rests on B, which rests on A, the walk reaches B and then A, "
+          "in the library and through the agent; op=why walks the same edges back from A to B and C (Codex 0cb94027 on G11)",
+          lib == [gb, ga] and via == lib and back == [gb, gc], (lib, via, back))
     led = ok(api.call(cfg_of(src), "graph", {"workspace": "w", "op": "ledger"}))
     gro = ok(api.call(cfg_of(src), "graph", {"workspace": "w", "op": "grounded", "target": d[:12]}))
     check("A30 graph op=ledger is the witness ledger of the workspace's store, op=grounded minds' Grounded of a target: a "

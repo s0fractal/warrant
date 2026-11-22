@@ -37,11 +37,20 @@ VIEWS = ("CLAIMS.md", "ROADMAP.md", "REVIEWS.md", "WITNESSES.md")
 
 
 def code_id(root):
-    """The tree this tool runs from, outside the store: the git tree ids of every top-level entry but .warrant/."""
-    rows = subprocess.run(["git", "-C", str(root), "ls-tree", "HEAD"], capture_output=True, text=True, check=True).stdout
-    dirty = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--", ":!.warrant"], capture_output=True,
-                           text=True, check=True).stdout
-    return {"tree": "\n".join(r for r in rows.splitlines() if r.split("\t")[1] != ".warrant"), "dirty": bool(dirty)}
+    """What decides a view besides the records, trust and profile: the working tree outside the store as one git tree id
+    (a temporary index over every file Git would add, so two different uncommitted edits are two ids, not one `dirty`
+    flag), the bytes of .warrant/claims.json (which shapes CLAIMS.md; the store's directory is not in that tree) and
+    the bytes of the tools/graph.py that runs, which may come from another checkout (Codex 21eb439d on G11)."""
+    import hashlib
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        env = dict(os.environ, GIT_INDEX_FILE=str(Path(d) / "index"))
+        subprocess.run(["git", "-C", str(root), "add", "-A", "--", ".", ":!.warrant"], env=env, capture_output=True, check=True)
+        tree = subprocess.run(["git", "-C", str(root), "write-tree"], env=env, capture_output=True, text=True,
+                              check=True).stdout.strip()
+    claims = Path(root) / ".warrant" / "claims.json"
+    digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None  # noqa: E731
+    return {"tree": tree, "claims": digest(claims), "tool": digest(Path(__file__).resolve())}
 
 
 def render(repo):
