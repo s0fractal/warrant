@@ -49,16 +49,33 @@ of it (Python API, CLI, stdio MCP).
 ## Install
 
 ```bash
-pip install --pre warrant-graph           # Warrant 3 (3.0.0a8); Python ≥ 3.11; depends on `cryptography`
+pip install --pre warrant-graph           # Warrant 3 (3.0.0a9); Python ≥ 3.11; depends on `cryptography`
 pip install --pre "warrant-graph[mcp]"    # adds `warrant-agent-mcp` on the official MCP SDK (2.x, from 2.3)
 ```
 
 This installs the commands `warrant`, `warrant-agent` and `warrant-agent-mcp`
 and the packages `warrant` and `warrant_agent` (`pip install .` does the same
-from a checkout). 3.0.0a8 is an alpha: pip installs it only with `--pre`, and the
+from a checkout). 3.0.0a9 is an alpha: pip installs it only with `--pre`, and the
 record formats and interfaces may still change. `warrant-graph` 2.0.0a1 is
 Warrant 2 and does not read Warrant 3 stores; `warrant-verify` (≤ 0.12.0) is the
-retired 0.x generation.
+retired 0.x generation, and so are the GitHub Releases of this repository (the newest there,
+v0.12.0, is 0.x): Warrant 3's releases are the tags `v3.*` and the PyPI package. The PyPI
+name `warrant` is another project.
+
+### Is a release admitted? Check it yourself
+
+Each release `n+1` is published only when the published release `n` admits it (G12):
+`n`'s engine, installed from PyPI, gives the same reports over this repository's store
+and finds a release duty of `n+1` closed and accepted. To check it, in a clone:
+
+```bash
+python3 -m venv /tmp/n && /tmp/n/bin/pip install --pre "warrant-graph==3.0.0a8"
+PYTHONPATH=. python3 -P -m warrant.differential --python /tmp/n/bin/python --root . --release 3.0.0a9
+```
+
+The verdict is `SAME` with `accepted: [ID]`, the closure of the release duty. Then
+`python3 -m warrant show ID` says whose acceptance it is and whether anything stands
+against it; `release.yml`'s run on the tag printed the same verdict before it published.
 
 In a repository that keeps its records in `.warrant/`, `warrant status` says
 where it stands: the snapshot, the schemas, the lineages by schema and state,
