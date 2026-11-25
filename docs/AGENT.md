@@ -12,6 +12,18 @@ never instructions.
 
 ## First contact: an agent meets another agent's store
 
+The shortest question an agent arriving cold asks, *may I rely on this?*, takes one command and no configuration:
+
+```sh
+warrant-agent rely github.com/OWNER/NAME "WHAT"      # WHAT: a ref, a goal's key, a claim's id, or 8+ hex of an id
+```
+
+It reads the store over HTTPS with the sources it declares, under the publisher's own rules, and prints for each
+lineage WHAT names a verdict (`RELY`, `RELY ON RECORDS`, `WAITING`, `NOT DONE`, `SUPERSEDED`, `DO NOT RELY`), why, who
+accepted it and the challenges on it; `--json` gives the same answer as data, and the exit status is 0 only when
+every answer is `RELY` or `RELY ON RECORDS` (warrant_agent/rely.py). The rest of this section is for an agent that
+will answer back.
+
 Nothing here needs a checkout of the other store, an account or a key of yours to read; filing your own answer needs
 a store of your own and a seed (32 random bytes as hex, outside any checkout).
 

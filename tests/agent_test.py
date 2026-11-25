@@ -719,6 +719,57 @@ def work_cases():
           [u["workspace"] for u in ok(box).get("unavailable", [])] == ["gone"] if "ok" in box else box.get("error") is not None, box)
 
 
+def rely_cases():
+    """`warrant-agent rely ADDRESS WHAT`: one command, an address and a question, answered from the store read over
+    HTTP(S) under the publisher's rules. A duty done and accepted reads RELY; an open one NOT DONE (its record stands;
+    what it states is not yet so); a goal by its key, open, NOT DONE; a closure a counted challenge stands against,
+    named by id, DO NOT RELY with the challenge named; a version waiting for its
+    acceptor WAITING; nothing named, no answer and exit 2 (a stranger took 27 turns for this, 2026-11-22)."""
+    import functools
+    import http.server
+    from warrant_agent import rely as RL
+    r = Repo()
+    duty = r.entity("alice", "obligation@1", {"state": "open", "statement": "release pkg 1.0", "serves": []})
+    done = r.entity("alice", "obligation@1", {"state": "done", "statement": "release pkg 1.0", "serves": [],
+                                              "refs": ["pkg==1.0"]}, lineage=duty)
+    r.attest("bob", done)
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "write the guide", "serves": []})
+    r.entity("alice", "goal@1", {"state": "open", "key": "G9", "text": "agents read each other"})
+    dis = r.entity("alice", "obligation@1", {"state": "open", "statement": "a disputed duty", "serves": []})
+    bad = r.entity("alice", "obligation@1", {"state": "done", "statement": "a disputed duty", "serves": [], "refs": ["pkg==2.0"]},
+                   lineage=dis)
+    r.put("bob", "challenge", {"statement": "it is not done", "target": bad}, refs=[bad])
+    r.attest("bob", bad)
+    wait = r.entity("alice", "obligation@1", {"state": "open", "statement": "a waiting duty", "serves": []})
+    r.entity("alice", "obligation@1", {"state": "done", "statement": "a waiting duty", "serves": [], "refs": ["pkg==3.0"]},
+             lineage=wait)
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(r.root)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}/"
+    try:
+        word = lambda what: [x["verdict"] for x in RL.answer(url, what)["answered"]]  # noqa: E731
+        got = {"pkg==1.0": word("pkg==1.0"), "guide": word("write the guide"), "G9": word("G9"),
+               "challenged by id": RL.answer(url, bad[:12])["answered"], "pkg==3.0": word("pkg==3.0"),
+               "nothing": word("no such thing"), "address": RL.address("github.com/o/n"),
+               "branch": RL.address("https://github.com/o/n/tree/dev"), "done": RL.answer(url, "pkg==1.0")["answered"][0]}
+    finally:
+        srv.shutdown()
+    ch = got["challenged by id"][0] if got["challenged by id"] else {}
+    check("A53 `warrant-agent rely` answers from an address: a duty done and accepted RELY (who accepted it named), an "
+          "open one NOT DONE, a goal by its key NOT DONE, a challenged closure named by id DO NOT RELY with its challenge, a "
+          "closure waiting for its acceptor WAITING, nothing named no answer; a GitHub address is its raw root",
+          got["pkg==1.0"] == ["RELY"] and got["done"]["accepted_by"] == ["bob"] and got["guide"] == ["NOT DONE"]
+          and got["G9"] == ["NOT DONE"] and ch.get("verdict") == "DO NOT RELY" and ch.get("challenges")
+          and all(c[:12] in ch.get("why", "") for c in ch.get("challenges", []))
+          and got["pkg==3.0"] == ["WAITING"] and got["nothing"] == []
+          and got["address"] == "https://raw.githubusercontent.com/o/n/HEAD/"
+          and got["branch"] == "https://raw.githubusercontent.com/o/n/dev/", got)
+
+
 def remote_cases():
     """Another agent's store read by its address (warrant_agent.remote): assessed as its own clone would be under the
     publisher's rules, or under this agent's own, never executed; the sources it declares are named as not read; only
@@ -2331,7 +2382,7 @@ if __name__ == "__main__":
         memory_cases,
         roadmap_parity_cases,
         work_cases,
-        remote_cases,
+        remote_cases, rely_cases,
         agent_whatif_cases,
         delegate_section_cases,
         pact_section_cases,
