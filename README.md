@@ -49,13 +49,13 @@ of it (Python API, CLI, stdio MCP).
 ## Install
 
 ```bash
-pip install --pre warrant-graph           # Warrant 3 (3.0.0a9); Python ≥ 3.11; depends on `cryptography`
+pip install --pre warrant-graph           # Warrant 3 (3.0.0a10); Python ≥ 3.11; depends on `cryptography`
 pip install --pre "warrant-graph[mcp]"    # adds `warrant-agent-mcp` on the official MCP SDK (2.x, from 2.3)
 ```
 
 This installs the commands `warrant`, `warrant-agent` and `warrant-agent-mcp`
 and the packages `warrant` and `warrant_agent` (`pip install .` does the same
-from a checkout). 3.0.0a9 is an alpha: pip installs it only with `--pre`, and the
+from a checkout). 3.0.0a10 is an alpha: pip installs it only with `--pre`, and the
 record formats and interfaces may still change. `warrant-graph` 2.0.0a1 is
 Warrant 2 and does not read Warrant 3 stores; `warrant-verify` (≤ 0.12.0) is the
 retired 0.x generation, and so are the GitHub Releases of this repository (the newest there,
@@ -65,7 +65,7 @@ name `warrant` is another project.
 ### May I rely on it? One command, from the address
 
 ```bash
-pip install "warrant-graph @ git+https://github.com/s0fractal/warrant"   # rely is newer than 3.0.0a9 on PyPI
+pip install --pre "warrant-graph>=3.0.0a10"                       # rely: 3.0.0a10 and later
 warrant-agent rely github.com/s0fractal/warrant "warrant-graph==3.0.0a9"
 ```
 
@@ -76,16 +76,16 @@ stands against it. Any repository that keeps `.warrant/` works the same way.
 
 ### Is a release admitted? Check it yourself
 
-The short answer is the command above: `warrant-agent rely github.com/s0fractal/warrant "warrant-graph==3.0.0a9"`.
+The short answer is the command above: `warrant-agent rely github.com/s0fractal/warrant "warrant-graph==3.0.0a10"`.
 To re-run the admission itself: each release `n+1` is published only when the published release `n` admits it (G12):
 `n`'s engine, installed from PyPI, gives the same reports over this repository's store
 and finds a release duty of `n+1` closed and accepted. In a clone (the checkout's engine needs `cryptography`, so it
 runs from a venv of its own):
 
 ```bash
-python3 -m venv /tmp/n && /tmp/n/bin/pip install --pre "warrant-graph==3.0.0a8"      # n: the published release
+python3 -m venv /tmp/n && /tmp/n/bin/pip install --pre "warrant-graph==3.0.0a9"      # n: the published release
 python3 -m venv /tmp/h && /tmp/h/bin/pip install cryptography                       # the checkout's interpreter
-PYTHONPATH=. /tmp/h/bin/python -P -m warrant.differential --python /tmp/n/bin/python --root . --release 3.0.0a9
+PYTHONPATH=. /tmp/h/bin/python -P -m warrant.differential --python /tmp/n/bin/python --root . --release 3.0.0a10
 ```
 
 The verdict is `SAME` with `accepted: [ID]`, the closure of the release duty. Then
@@ -132,7 +132,7 @@ it authorizes nothing: roles are the reader's profile.
 
 ## Status
 
-**3.0.0a9 (alpha).** Warrant 3 replaced Warrant 2 in this repository on
+**3.0.0a10 (alpha).** Warrant 3 replaced Warrant 2 in this repository on
 2026-10-27 (3.0.0a1); 3.0.0a2 added the review loop to the package; 3.0.0a3
 was the first release the published one admitted (roadmap G12), and added the
 operator's Home and a review loop that names no agent; 3.0.0a4 lets a
@@ -148,7 +148,8 @@ store, `snapshot@1` witnesses, `warrant verify --witness` and its `absence`), sh
 was asked of an actor in its frontier, records the publisher's rules as `rules@1`, and
 lets `warrant init` leave the next agent the entry the adoption experiment measured. 3.0.0a9 lets agents meet each
 other's stores (`warrant_remote`, find, inbox, act, whatif), reads per-model stores as sources, and has every
-reader say PINS_NOT_CHECKED for pins it did not compare. Since then, on master: `warrant-agent rely`.
+reader say PINS_NOT_CHECKED for pins it did not compare; 3.0.0a10 adds `warrant-agent rely`, one command from a
+repository's address to a verdict an agent can act on.
 
 - **What is backed.** Normative sentences of docs/V3.md are `claim@1`
   records (not yet every MUST in its prose, docs/V3.md §15), each with the test cases that witness it and the mutants of

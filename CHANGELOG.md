@@ -4,6 +4,32 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
+## 3.0.0a10 — may I rely on it? one command from a repository's address
+
+Read first:
+- **`warrant-agent rely ADDRESS WHAT`** (#595): an agent with only a repository's address (`github.com/OWNER/NAME`,
+  or an HTTPS root) and a question (a ref such as `warrant-graph==3.0.0a10`, a goal's key, a claim's id, or 8+ hex
+  digits of a record's id) gets one verdict per lineage: `RELY`, `RELY ON RECORDS` (pins not compared), `WAITING`,
+  `NOT DONE` (accepted, but in a state its schema does not close: an open obligation or goal), `SUPERSEDED` (a
+  version named by id that is not in force) or `DO NOT RELY` (a counted challenge, STALE, FORK), with who accepted it
+  and what stands against it. Nothing is cloned or written; the store is read with its declared sources under the
+  publisher's own rules; only a counted schema says which states close (Codex fbbca8cc). Exit 0 only for RELY or
+  RELY ON RECORDS. Measured once: a stranger agent took 27 turns for this question on 3.0.0a9.
+- **`warrant.mjs assess` is now the reader command** (#590): with no checkout it shows a pinned lineage as
+  `PINS_NOT_CHECKED`, as `impl-js/read.mjs` and `warrant.mjs verify` do; `assess --engine` keeps the engine's own
+  report for conformance. A script comparing `warrant.mjs assess` with the Python engine should pass `--engine`.
+
+Also:
+- `drift --impact --across` names a reached foreign attest or challenge, which no lineage holds; the text answer ends
+  with root, lens and the checkout read (#590, Codex 9319a330).
+- `graph path` is held transitive by a test and a mutant; a view's lens binds the working tree's own tree id,
+  `.warrant/claims.json` and the running `tools/graph.py` (#591, Codex 0cb94027, 21eb439d).
+- `AGENTS.md` rule 7: a new subsystem enters `warrant/` or `warrant_agent/` with a scenario an agent runs (#592).
+- README: how to check a release's admission yourself; `llms.txt` at the root (#593, #595, #596).
+- Verifiers from antigravity: `vars1-compatibility@1` (#587) and `warrant.pulse` (#589), accepted by codex.
+
+The differential against the published 3.0.0a9 is SAME: the engine's reports do not change.
+
 ## 3.0.0a9 — agents meet each other's stores: find, inbox, act, remote; per-model stores; the gate holds a veto
 
 Read first:

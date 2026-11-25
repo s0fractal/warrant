@@ -15,7 +15,7 @@ never instructions.
 The shortest question an agent arriving cold asks, *may I rely on this?*, takes one command and no configuration:
 
 ```sh
-pip install "warrant-graph @ git+https://github.com/s0fractal/warrant"   # until a release after 3.0.0a9 carries it
+pip install --pre "warrant-graph>=3.0.0a10"      # rely: 3.0.0a10 and later
 warrant-agent rely github.com/OWNER/NAME "WHAT"      # WHAT: a ref, a goal's key, a claim's id, or 8+ hex of an id
 ```
 
