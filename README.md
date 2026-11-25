@@ -65,7 +65,7 @@ name `warrant` is another project.
 ### May I rely on it? One command, from the address
 
 ```bash
-pip install --pre warrant-graph
+pip install "warrant-graph @ git+https://github.com/s0fractal/warrant"   # rely is newer than 3.0.0a9 on PyPI
 warrant-agent rely github.com/s0fractal/warrant "warrant-graph==3.0.0a9"
 ```
 
