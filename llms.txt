@@ -6,7 +6,7 @@
 To ask whether you may rely on something in this repository (a release, a goal, a claim, a pull request head), you
 need no clone and no configuration:
 
-    pip install "warrant-graph @ git+https://github.com/s0fractal/warrant"    # rely is newer than 3.0.0a9 on PyPI
+    pip install --pre "warrant-graph>=3.0.0a10"                          # rely: 3.0.0a10 and later
     warrant-agent rely github.com/s0fractal/warrant "warrant-graph==3.0.0a9"
 
 It answers RELY, RELY ON RECORDS, WAITING, NOT DONE, SUPERSEDED or DO NOT RELY, with who accepted it and what stands
