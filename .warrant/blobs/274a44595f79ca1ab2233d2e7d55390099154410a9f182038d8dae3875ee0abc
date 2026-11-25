@@ -1,0 +1,148 @@
+# Codex roadmap verdict: G14 cross-store impact is incomplete
+
+Reviewed master M: 90ea72274b25d54b5d31adff382a888593222965
+Duty D: d3c195c6fcc6016a55a8a772cd7af5ece514a24ddf44966831f05f0ad6351c4e
+Version T: 692bdd73d0ea40db9e4f77d37819409515660cce581d6e9ac81922ad41b0b439
+Verdict: challenge (P2).
+
+## What remains owed
+
+D promises that --across adds the records of Home's other stores that rest on a stale claim. At M, warrant/drift.py:280-287 serializes entity lineages and foreign attest/challenge records only. A schema record is also a permitted record kind. A valid, signed, counted foreign schema with refs=[claim_version] is reached by across.reach, but _elsewhere drops it. With this as the only dependent record abroad, the CLI returns elsewhere=[], stores=[], complete=true; its first line omits the other store entirely. This is a serialization omission, not a walk limit, an unreadable store, an untrusted signer, or an invalid schema.
+
+## Reproduction and control
+
+The script below uses the existing tests/tools_test.py fixtures, with fixture keys only. It creates an accepted claim fresh at BASE, a counted schema foreign@1 in another registered store citing that claim, and a HEAD changing the accepted file. It checks the schema's SIGNED basis, its exact counted id, no foreign store problems/rejections, and reachability before querying the real CLI entry point. F1 requires the foreign schema record in the --across answer.
+
+Run from the checkout at M, with the script saved outside the checkout and TMPDIR set to the review working directory:
+
+    PYTHONDONTWRITEBYTECODE=1 python3 -B foreign_schema_test.py
+    PYTHONDONTWRITEBYTECODE=1 python3 -B foreign_schema_test.py --control
+
+The first run exits 1 with FAIL F1. The second exits 0 with ok F1. --control changes only _elsewhere's non-lineage kind filter to else, in memory; no repository code was edited. This isolates the missing schema row and store count. It is evidence for a repair, not a delivered fix.
+
+```python
+#!/usr/bin/env python3
+"""G14 counterexample at 90ea72274b25: a reached foreign schema is omitted.
+
+Run from the reviewed checkout with TMPDIR set to the review's working directory.
+--control applies the one-branch serializer correction in memory only.
+"""
+import contextlib
+import inspect
+import io
+import json
+import os
+from pathlib import Path
+import sys
+
+repo = Path.cwd()
+sys.path.insert(0, str(repo / "tests"))
+sys.path.insert(0, str(repo))
+import tools_test as t
+from warrant import across as A, bootstrap as B, cli as CLI, drift as D, home as H, repo as RP
+
+control = "--control" in sys.argv
+if control:
+    source = inspect.getsource(D._elsewhere)
+    old = 'elif x.view.recs[i]["kind"] in ("attest", "challenge"):'
+    assert source.count(old) == 1
+    exec(compile(source.replace(old, "else:"), "<serializer-control>", "exec"), D.__dict__)
+
+r, claim = t.drift_repo()
+base = r.commit("the claim is accepted and fresh")
+foreign = t.Repo()
+schema_body = dict(next(s for s in B.SCHEMAS if s["name"] == "obligation@1"), name="foreign@1")
+schema = foreign.put("alice", "schema", schema_body, refs=[claim])
+(r.root / "lib" / "code.py").write_text("X = 9\n")
+head = r.commit("the accepted bytes change")
+home = dict(H.empty(), repositories={"here": {"path": str(r.root)}, "there": {"path": str(foreign.root)}})
+os.environ["WARRANT_HOME"] = str(r.home / "config" / "home.json")
+H.save(home)
+readings = A.home_readings(home)
+far = next(x for x in readings if x.name == "there")
+assert far.why is None and not far.rep["problems"] and not far.rep["rejected"]
+assert far.rep["schemas"]["foreign@1"] == schema
+assert far.view.basis[schema] == "SIGNED"
+before = D.drift(RP.Repo(r.root).report(), r.root, base)
+assert before[claim]["verdict"] == "UNCHANGED"
+reach, complete = A.reach([RP.Repo(r.root).report(), *(x.rep for x in readings)], [claim])
+assert complete and schema in reach
+
+with contextlib.redirect_stdout(io.StringIO()) as output:
+    status = CLI.main(["drift", "--root", str(r.root), f"--impact={base}..{head}", "--across", "--json"])
+answer = json.loads(output.getvalue())
+assert status == 1
+m = answer["data"]
+assert m["complete"] and len(m["stale"]) == 1 and m["stale"][0]["lineage"] == claim
+assert all(answer[k] for k in ("root", "lens", "checkout"))
+rows = m["stale"][0]["elsewhere"]
+ok = any(e.get("store") == "there" and e.get("record") == schema and e.get("kind") == "schema" for e in rows)
+print(json.dumps({"base": base, "head": head, "claim": claim, "foreign_schema": schema,
+                  "schema_signed_counted_and_reached": True, "complete": m["complete"],
+                  "stores": m["stores"], "elsewhere": rows,
+                  "first_line": D.impact_lines(m).splitlines()[0], "control": control}, indent=2))
+print(("ok   " if ok else "FAIL ") + "F1 --impact --across must list the counted foreign schema citing the stale claim")
+raise SystemExit(0 if ok else 1)
+```
+
+Observed at M:
+
+```text
+ACCEPT V3-3-1 6d1f302603cf
+claims checker: 1 of 1 backed claims run, 0 fresh at this commit
+{
+  "base": "7c4b6b32468290def52ef60c0024b3d54bc8106f",
+  "head": "10117242deef2b6b05fd04db37dfb2d19540419d",
+  "claim": "6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3",
+  "foreign_schema": "c1eadbaf1804eab5d16e9df9f77bc8ff6ebd505f0688b3466a9301669fabf72f",
+  "schema_signed_counted_and_reached": true,
+  "complete": true,
+  "stores": [],
+  "elsewhere": [],
+  "first_line": "impact: 1 stale claim(s) -> 0 lineage(s) resting on them",
+  "control": false
+}
+FAIL F1 --impact --across must list the counted foreign schema citing the stale claim
+```
+
+In-memory control:
+
+```text
+ACCEPT V3-3-1 6d1f302603cf
+claims checker: 1 of 1 backed claims run, 0 fresh at this commit
+{
+  "base": "bd6799f89bf310188d39b9df82693be912b4a49d",
+  "head": "a45d664f4c68fdd2d23ca313218e0bf7f54b3e0e",
+  "claim": "6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3",
+  "foreign_schema": "c1eadbaf1804eab5d16e9df9f77bc8ff6ebd505f0688b3466a9301669fabf72f",
+  "schema_signed_counted_and_reached": true,
+  "complete": true,
+  "stores": [
+    "there"
+  ],
+  "elsewhere": [
+    {
+      "actor": "alice",
+      "kind": "schema",
+      "lineage": null,
+      "record": "c1eadbaf1804eab5d16e9df9f77bc8ff6ebd505f0688b3466a9301669fabf72f",
+      "store": "there"
+    }
+  ],
+  "first_line": "impact: 1 stale claim(s) -> 0 lineage(s) resting on them -> 1 other store(s)",
+  "control": true
+}
+ok   F1 --impact --across must list the counted foreign schema citing the stale claim
+```
+
+## Other verification and boundaries
+
+- Verified clean detached HEAD=M and origin=https://github.com/s0fractal/warrant.git.
+- Independently ran warrant.roadmap due --actor codex --json: D/T/G14, statement, evidence, references, no subject and no requirements matched the task. MCP workspace confirmed signer codex with roadmap/acceptor, and context showed T PENDING only for one matching roadmap/acceptor attest, no existing attest/challenge on T.
+- Read D, T and all three evidence records (they are pr-head@1 records, not blobs), the merged code at M, Git diffs for #299/#528/#590 and the relevant graph/CLI changes of #591, and GitHub's descriptions and merge ids for #299/#528/#590/#591. The earlier foreign-verdict and output-binding fixes are present and their checks pass.
+- Ran tests/tools_test.py sections drift_cases, pinned_cases, drift_merge_cases, drift_impact_cases, impact_foreign_verdict_cases: all passed, 69 successful check lines / 37 unique cases. These include multiple acceptances, moved/deleted files, malformed pins, option-shaped revisions, historical HEAD, earlier claim versions, cross-store transit, unavailable stores, root/lens changes, explicit partial walks and foreign attest/challenge rows.
+- Targeted mutants T127-T136, T141-T145, T348, T349, T359, T360: 19/19 KILLED, each by its named case. Harness copies and temporary files were kept outside the checkout in the review directory. Initial unrestricted baseline discovery refused because the relocated copies had no Git HEAD for the unrelated narrow_cases section; no kill was credited from that attempt. The successful rerun restricted baseline section discovery to drift_impact_cases and impact_foreign_verdict_cases, retained baseline and mutant case checks, and used the repository's unmodified mutation definitions.
+- warrant.roadmap check: 127 lineages, 0 problems; warrant.claims check: 143 live claims, 0 problems (before filing).
+- Full suites and full mutant corpus were not run; no CI status is claimed as a review result. No implementation change, commit, push or PR was made by this review.
+
+The previous cross-store completeness residual in T is outdated as to walk limits: M propagates complete. This challenge concerns a different omission while complete is true. D is not done until reached foreign schema records are reported too, with an end-to-end regression and a mutant that fails its own case.
