@@ -83,18 +83,36 @@ def matches(recs, what):
                   and low in str(body(r).get("statement", "")).lower())
 
 
+def _standing(cap):
+    return sorted(c for c, x in (cap.get("challenges") or {}).items() if x.get("counted") and x.get("stands", True))
+
+
+def _waits(cap):
+    return ", ".join(map(str, (cap.get("guard") or {}).get("waiting") or ["attests"]))
+
+
+def _not_in_force(cap, lin, standing):
+    """(word, why) when the version is not its lineage's version in force: a newer one waiting, or superseded."""
+    t, eff = cap.get("id"), lin.get("effective")
+    if t == lin.get("leaf") and (cap.get("guard") or {}).get("guard") == "PENDING" and not standing:
+        return "WAITING", (f"this newest version waits for its guard: {_waits(cap)}"
+                           + (f"; the version in force is {eff[:12]}" if eff else ""))
+    return "SUPERSEDED", (f"this version is not in force; the version in force is {eff[:12]}"
+                          + (f"; challenged: {', '.join(c[:12] for c in standing)}" if standing else ""))
+
+
+WHY = {"RELY": "accepted as its guard requires; nothing counted stands against it",
+       "RELY ON RECORDS": "accepted as its guard requires, but the file bytes its acceptances pin were not compared "
+                          "here (PINS_NOT_CHECKED): clone it and run `warrant status`"}
+
+
 def verdict(cap, closed=()):
     """(word, why) of one version as context describes it; `closed` are the states its schema closes."""
     lin = cap.get("lineage") or {}
-    rel, state, t = lin.get("reliance"), lin.get("state"), cap.get("id")
-    standing = sorted(c for c, x in (cap.get("challenges") or {}).items() if x.get("counted") and x.get("stands", True))
-    g = cap.get("guard") or {}
-    if t == lin.get("leaf") and t != lin.get("effective") and g.get("guard") == "PENDING" and not standing:
-        return "WAITING", ("this newest version waits for its guard: " + ", ".join(map(str, g.get("waiting") or ["attests"]))
-                           + (f"; the version in force is {lin['effective'][:12]}" if lin.get("effective") else ""))
-    if lin.get("effective") not in (None, t):
-        return "SUPERSEDED", (f"this version is not in force; the version in force is {lin['effective'][:12]}"
-                              + (f"; challenged: {', '.join(c[:12] for c in standing)}" if standing else ""))
+    rel, state = lin.get("reliance"), lin.get("state")
+    standing = _standing(cap)
+    if lin.get("effective") not in (None, cap.get("id")):
+        return _not_in_force(cap, lin, standing)
     if rel == "CHALLENGED" or standing:
         return "DO NOT RELY", "challenged: " + ", ".join(c[:12] for c in standing or ["a counted challenge"])
     if rel not in WORDS:
@@ -103,27 +121,21 @@ def verdict(cap, closed=()):
     if word != "WAITING" and closed and state not in closed:
         return "NOT DONE", (f"the record stands (accepted as its guard requires), but its state is {state!r}, which "
                             f"its schema does not close ({', '.join(closed)}): what it states is not yet so")
-    why = {"RELY": "accepted as its guard requires; nothing counted stands against it",
-           "RELY ON RECORDS": "accepted as its guard requires, but the file bytes its acceptances pin were not "
-                              "compared here (PINS_NOT_CHECKED): clone it and run `warrant status`",
-           "WAITING": "its guard waits for " + ", ".join(map(str, (cap.get("guard") or {}).get("waiting") or ["attests"]))}
-    return word, why[word]
+    return word, WHY.get(word) or f"its guard waits for {_waits(cap)}"
 
 
-def answer(url, what, limits=None):
-    """{address, store, what, matched, answered: [...]}: the verdict on each lineage `what` names in the store at `url`."""
-    ws = RM.Remote(url, dict(limits or DEFAULT_LIMITS))
-    snap, view, _, _ = api._assess(ws)
-    rep = api._report(ws, view)
-    ids = matches(view.recs, what)
-    closed = {r["body"].get("name"): r["body"].get("closed") or [] for r in view.recs.values()
-              if r.get("kind") == "schema" and isinstance(r.get("body"), dict)}
-    by_id = is_id(what.strip().lower())
+def _roots(rep, ids):
+    """The lineages the matched ids are versions of, in order (None for a record in no lineage)."""
     roots = []
-    for i in ids:                                  # one answer per lineage, on its version in force (else its leaf)
+    for i in ids:
         r = next((L for L, lin in rep["lineages"].items() if i in lin["versions"]), None)
         if r not in roots:
             roots.append(r)
+    return roots
+
+
+def _targets(rep, ids, roots, by_id):
+    """One version per lineage: the one asked about by id, else the version in force (or a newer one waiting)."""
     targets = []
     for r in roots[:MAX]:
         if r is None:                              # a record in no lineage (an attest, a challenge)
@@ -135,41 +147,63 @@ def answer(url, what, limits=None):
             leaf = lin["leaf"]
             pending = leaf and leaf != lin["effective"] and (rep["versions"].get(leaf) or {}).get("guard") == "PENDING"
             targets.append(leaf if pending else (lin["effective"] or leaf or r))
+    return targets
+
+
+def _row(t, cap, closed):
+    lin = cap.get("lineage") or {}
+    word, why = (verdict(cap, closed.get(cap.get("schema"), ())) if lin
+                 else ("NOT A VERSION", f"a {cap.get('kind', 'record')}, in no lineage"))
+    b = (cap.get("record") or {}).get("body") or {}
+    return {"verdict": word, "why": why, "version": t, "lineage": lin.get("root"), "schema": cap.get("schema"),
+            "state": lin.get("state"), "accepted_by": (cap.get("guard") or {}).get("accepted_by", []),
+            "statement": str(b.get("statement") or b.get("text") or b.get("title") or "")[:240],
+            "challenges": sorted(cap.get("challenges") or {}), "grounded": (cap.get("grounded") or {}).get("grounded")}
+
+
+def answer(url, what, limits=None):
+    """{address, store, what, matched, answered: [...]}: the verdict on each lineage `what` names in the store at `url`."""
+    ws = RM.Remote(url, dict(limits or DEFAULT_LIMITS))
+    snap, view, _, _ = api._assess(ws)
+    rep = api._report(ws, view)
+    ids = matches(view.recs, what)
+    closed = {r["body"].get("name"): r["body"].get("closed") or [] for r in view.recs.values()
+              if r.get("kind") == "schema" and isinstance(r.get("body"), dict)}
+    roots = _roots(rep, ids)
+    targets = _targets(rep, ids, roots, is_id(what.strip().lower()))
     caps = api.context(RM._Cfg(ws), {"workspace": "remote", "targets": sorted(set(targets))[:64]})["targets"] if targets else {}
-    out = []
-    for t in targets:
-        cap = caps.get(t) or {}
-        word, why = verdict(cap, closed.get(cap.get("schema"), ())) if cap.get("lineage") else ("NOT A VERSION", f"a {cap.get('kind', 'record')}, in no lineage")
-        b = (cap.get("record") or {}).get("body") or {}
-        out.append({"verdict": word, "why": why, "version": t, "lineage": (cap.get("lineage") or {}).get("root"),
-                    "schema": cap.get("schema"), "state": (cap.get("lineage") or {}).get("state"),
-                    "accepted_by": (cap.get("guard") or {}).get("accepted_by", []),
-                    "statement": str(b.get("statement") or b.get("text") or b.get("title") or "")[:240],
-                    "challenges": sorted(cap.get("challenges") or {}), "grounded": (cap.get("grounded") or {}).get("grounded")})
-    return {"address": url, "what": what, "matched": len(ids), "lineages": len(roots), "answered": out,
+    return {"address": url, "what": what, "matched": len(ids), "lineages": len(roots),
+            "answered": [_row(t, caps.get(t) or {}, closed) for t in targets],
             "store": {"snapshot": rep["snapshot"], "records": len(snap.lines), "repository": ws.doc.get("repository"),
                       "sources": [{"name": s["name"], "commit": s["commit"], "records": s["records"]} for s in ws.sources],
                       "sources_not_read": ws.sources_not_read, "rules": "the publisher's own (.warrant/v3.json)"}}
 
 
-def text(a):
+def _header(a):
     st = a["store"]
-    out = [f"{a['address']}  {st['repository'] or ''}  snapshot {st['snapshot'][:12]}, {st['records']} records"
-           + (f", sources {', '.join(s['name'] for s in st['sources'])}" if st["sources"] else "")
-           + (f"; NOT READ: {', '.join(st['sources_not_read'])}" if st["sources_not_read"] else ""),
-           "under the publisher's own rules: a name means what its .warrant/v3.json binds it to"]
+    return [f"{a['address']}  {st['repository'] or ''}  snapshot {st['snapshot'][:12]}, {st['records']} records"
+            + (f", sources {', '.join(s['name'] for s in st['sources'])}" if st["sources"] else "")
+            + (f"; NOT READ: {', '.join(st['sources_not_read'])}" if st["sources_not_read"] else ""),
+            "under the publisher's own rules: a name means what its .warrant/v3.json binds it to"]
+
+
+def _lines(x):
+    out = ["", f"{x['verdict']}: {x['statement'] or x['version'][:12]}", f"  {x['why']}"]
+    if x["lineage"]:
+        out.append(f"  {x['schema']} {x['state']}; version {x['version'][:12]} of lineage {x['lineage'][:12]}"
+                   + (f"; accepted by {', '.join(x['accepted_by'])}" if x["accepted_by"] else "")
+                   + ("" if x["grounded"] in (None, True) else "; NOT grounded: something it rests on does not stand"))
+    if x["challenges"]:
+        out.append(f"  challenges on this version: {', '.join(c[:12] for c in x['challenges'])}")
+    return out
+
+
+def text(a):
+    out = _header(a)
     if not a["answered"]:
         out.append(f"nothing in this store names {a['what']!r}")
     for x in a["answered"]:
-        out.append("")
-        out.append(f"{x['verdict']}: {x['statement'] or x['version'][:12]}")
-        out.append(f"  {x['why']}")
-        if x["lineage"]:
-            out.append(f"  {x['schema']} {x['state']}; version {x['version'][:12]} of lineage {x['lineage'][:12]}"
-                       + (f"; accepted by {', '.join(x['accepted_by'])}" if x["accepted_by"] else "")
-                       + ("" if x["grounded"] in (None, True) else "; NOT grounded: something it rests on does not stand"))
-        if x["challenges"]:
-            out.append(f"  challenges on this version: {', '.join(c[:12] for c in x['challenges'])}")
+        out.extend(_lines(x))
     if a["lineages"] > len(a["answered"]):
         out.append(f"\n{a['lineages'] - len(a['answered'])} more lineage(s) match: name one by its id")
     if a["answered"]:
