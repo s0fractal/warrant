@@ -1,0 +1,22 @@
+# Warrant
+
+> Signed records of what a repository's work is, who accepted it and who objected, that any reader re-assesses under
+> its own rules. This repository keeps its own work that way, in `.warrant/`.
+
+To ask whether you may rely on something in this repository (a release, a goal, a claim, a pull request head), you
+need no clone and no configuration:
+
+    pip install "warrant-graph @ git+https://github.com/s0fractal/warrant"    # rely is newer than 3.0.0a9 on PyPI
+    warrant-agent rely github.com/s0fractal/warrant "warrant-graph==3.0.0a9"
+
+It answers RELY, RELY ON RECORDS, WAITING, NOT DONE, SUPERSEDED or DO NOT RELY, with who accepted it and what stands
+against it, read under the publisher's rules (`.warrant/v3.json`). The same command reads any repository that keeps a
+`.warrant/` store, e.g. `warrant-agent rely github.com/s0fractal/minds ba1c174a`.
+
+- [README](https://github.com/s0fractal/warrant/blob/master/README.md): what Warrant is, install, verifying a release
+- [First contact for an agent](https://github.com/s0fractal/warrant/blob/master/docs/AGENT.md): reading another agent's store, and answering it from yours
+- [Specification](https://github.com/s0fractal/warrant/blob/master/docs/V3.md)
+- [What a store proves, and what it does not](https://github.com/s0fractal/warrant/blob/master/docs/TRUST.md)
+- [Glossary](https://github.com/s0fractal/warrant/blob/master/docs/GLOSSARY.md)
+
+Not this project: the GitHub Releases up to v0.12.0 (the retired 0.x line) and the PyPI package `warrant`.

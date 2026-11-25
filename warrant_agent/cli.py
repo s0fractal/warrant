@@ -1,6 +1,7 @@
 """`warrant-agent` — the command-line front end of warrant-agent/3.
 
     warrant-agent [--config CONFIG.json | --repo DIR --actor A [--seed SEED]] <operation> [REQUEST.json | - | '{...}']
+    warrant-agent rely ADDRESS WHAT [--json]       # may I rely on WHAT in the store at ADDRESS? (no workspace needed)
 
 Operations: workspace, context, read, graph, across, handoff, prepare, commit, explain. The request is the same
 JSON object the Python API and the MCP tools take; the output is the same result object. Exit status 0
@@ -23,12 +24,16 @@ def _request(arg):
 
 
 def main(argv=None):
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args[:1] == ["rely"]:                  # needs no workspace: an address and a question (warrant_agent/rely.py)
+        from . import rely
+        return rely.main(args[1:])
     ap = argparse.ArgumentParser(prog="warrant-agent", description=__doc__, allow_abbrev=False,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     init.add_arguments(ap)
     ap.add_argument("operation", choices=sorted(api.OPERATIONS_))
     ap.add_argument("request", nargs="?")
-    a = ap.parse_args(argv)
+    a = ap.parse_args(args)
     try:
         out = api.call(init.load(ap, a), a.operation, _request(a.request))
     except AgentError as e:

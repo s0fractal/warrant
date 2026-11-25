@@ -62,6 +62,18 @@ retired 0.x generation, and so are the GitHub Releases of this repository (the n
 v0.12.0, is 0.x): Warrant 3's releases are the tags `v3.*` and the PyPI package. The PyPI
 name `warrant` is another project.
 
+### May I rely on it? One command, from the address
+
+```bash
+pip install "warrant-graph @ git+https://github.com/s0fractal/warrant"   # rely is newer than 3.0.0a9 on PyPI
+warrant-agent rely github.com/s0fractal/warrant "warrant-graph==3.0.0a9"
+```
+
+It reads the store over HTTPS (no clone, nothing written), under the publisher's own rules, and answers each record
+the question names (a ref such as `warrant-graph==3.0.0a9`, a goal's key, a claim's id, or 8+ hex digits of a record's
+id) with `RELY`, `RELY ON RECORDS`, `WAITING`, `NOT DONE`, `SUPERSEDED` or `DO NOT RELY`, who accepted it and what
+stands against it. Any repository that keeps `.warrant/` works the same way.
+
 ### Is a release admitted? Check it yourself
 
 Each release `n+1` is published only when the published release `n` admits it (G12):
