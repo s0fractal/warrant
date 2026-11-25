@@ -167,8 +167,10 @@ def answer(url, what, limits=None):
     snap, view, _, _ = api._assess(ws)
     rep = api._report(ws, view)
     ids = matches(view.recs, what)
-    closed = {r["body"].get("name"): r["body"].get("closed") or [] for r in view.recs.values()
-              if r.get("kind") == "schema" and isinstance(r.get("body"), dict)}
+    # the states each COUNTED schema closes: a schema short of its quorum (a proposal) decides nothing here, as in the
+    # engine (Codex fbbca8cc on #595: eve's pending obligation@1 closing `open` made an open duty read RELY)
+    closed = {name: (view.recs[sid].get("body") or {}).get("closed") or [] for name, sid in rep["schemas"].items()
+              if sid in view.recs}
     roots = _roots(rep, ids)
     targets = _targets(rep, ids, roots, is_id(what.strip().lower()))
     caps = api.context(RM._Cfg(ws), {"workspace": "remote", "targets": sorted(set(targets))[:64]})["targets"] if targets else {}

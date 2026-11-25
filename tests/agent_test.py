@@ -724,7 +724,9 @@ def rely_cases():
     HTTP(S) under the publisher's rules. A duty done and accepted reads RELY; an open one NOT DONE (its record stands;
     what it states is not yet so); a goal by its key, open, NOT DONE; a closure a counted challenge stands against,
     named by id, DO NOT RELY with the challenge named; a version waiting for its
-    acceptor WAITING; nothing named, no answer and exit 2 (a stranger took 27 turns for this, 2026-11-22)."""
+    acceptor WAITING; nothing named, no answer and exit 2 (a stranger took 27 turns for this, 2026-11-22). Only a
+    counted schema says which states close: a pending proposal closing `open` leaves the open duty NOT DONE (Codex
+    fbbca8cc on #595)."""
     import functools
     import http.server
     from warrant_agent import rely as RL
@@ -744,6 +746,13 @@ def rely_cases():
     r.entity("alice", "obligation@1", {"state": "done", "statement": "a waiting duty", "serves": [], "refs": ["pkg==3.0"]},
              lineage=wait)
 
+    pending = dict(next(x for x in B.SCHEMAS if x["name"] == "obligation@1"), closed=["open"])
+    proposal = r.put("eve", "schema", pending)             # a proposal short of its quorum: it decides nothing
+    alone = Repo()                                         # Codex's reproducer (fbbca8cc): one open duty, eve's proposal
+    alone.entity("alice", "obligation@1", {"state": "open", "statement": "ship thing", "serves": []})
+    alone.put("eve", "schema", pending)
+    import shutil
+    shutil.copytree(alone.dot, r.root / "alone" / ".warrant")
     class Quiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -751,8 +760,10 @@ def rely_cases():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_address[1]}/"
     try:
-        word = lambda what: [x["verdict"] for x in RL.answer(url, what)["answered"]]  # noqa: E731
+        word_at = lambda u, what: [x["verdict"] for x in RL.answer(u, what)["answered"]]  # noqa: E731
+        word = lambda what: word_at(url, what)  # noqa: E731
         got = {"pkg==1.0": word("pkg==1.0"), "guide": word("write the guide"), "G9": word("G9"),
+               "proposal pending": proposal in r.report()["schemas_pending"], "alone": word_at(url + "alone/", "ship thing"),
                "challenged by id": RL.answer(url, bad[:12])["answered"], "pkg==3.0": word("pkg==3.0"),
                "nothing": word("no such thing"), "address": RL.address("github.com/o/n"),
                "branch": RL.address("https://github.com/o/n/tree/dev"), "done": RL.answer(url, "pkg==1.0")["answered"][0]}
@@ -763,6 +774,7 @@ def rely_cases():
           "open one NOT DONE, a goal by its key NOT DONE, a challenged closure named by id DO NOT RELY with its challenge, a "
           "closure waiting for its acceptor WAITING, nothing named no answer; a GitHub address is its raw root",
           got["pkg==1.0"] == ["RELY"] and got["done"]["accepted_by"] == ["bob"] and got["guide"] == ["NOT DONE"]
+          and got["proposal pending"] and got["alone"] == ["NOT DONE"]
           and got["G9"] == ["NOT DONE"] and ch.get("verdict") == "DO NOT RELY" and ch.get("challenges")
           and all(c[:12] in ch.get("why", "") for c in ch.get("challenges", []))
           and got["pkg==3.0"] == ["WAITING"] and got["nothing"] == []
