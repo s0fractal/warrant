@@ -1,0 +1,127 @@
+# Codex roadmap verdict evidence: G11 mutant coverage remains incomplete
+
+Repository: s0fractal/warrant
+Base M: dba456066d2961859eece2d58f2d58fa5bdc0f2c
+Obligation lineage D: 8c856b3b26355a6eaf27b32cc1404ada26b7528b6e567dc78f84bd0da0a7dc0e
+Closure T: 76fb5d27879145a29d1d966feda3bdf3cfb209eb77f25e2a14746138058de64c
+
+Decision: challenge T, without a finding@1 schema. The obligation explicitly requires each claimed property to be burned by a mutant. Two single-expression mutations of the shared graph break claimed output properties while every existing agent and tools check passes. This is evidence of incomplete regression/mutation coverage. The current, unmutated implementation passes the independent delta probe; this report does not claim it currently loses changed lineages or labels.
+
+## Facts and scope checked
+
+Verified clean detached HEAD=M, origin=https://github.com/s0fractal/warrant.git, and `python3 -m warrant.roadmap due --actor codex --json` at M: exact D/T, goal G11, four evidence ids, seven references, no subject and no requirements. MCP context of T confirmed a pending guard waiting for one roadmap/acceptor acceptance, no acceptance or challenge on T. Used an explicitly configured codex signer whose seed path was taken from the existing operator config; no seed bytes were read into this report.
+
+Read the evidence records ab69b93e4f9a49ed0ff69c8db8331f977662c73c866c96bb4252e9b38e7b1372, c01165392b2ed76a0cc1e8f13edf8a7c2d20d4f5776fdd732cbac8bad03549ec, dfd280c0839697f533aa3902cdeb02d6f5ff2a31877096563fc93fb71a014a3b, e5316c4321809fa221cc9e5b17210f2aa35173aea6127e6b6ba4c57176d1a0bf (they are PR lineage records, not blobs), T's claims and residuals, GitHub metadata/descriptions for #481/#491/#502/#533/#542/#591, their merged code, and commit 1d9a32a699af823d4f402d4865dfd7e9207f0310. That commit moved the shared module from warrant_agent/graph.py to warrant/graph.py. Both adapters use the shared module; the move itself is not a defect.
+
+## C1: delta's changed-lineage result has no independent existing assertion
+
+Location: warrant/graph.py:211-218, specifically line 216; tests/agent_test.py:121; tests/tools_test.py:1066.
+Exact mutation in warrant/graph.py (one occurrence):
+  old: "changed": changed,
+  new: "changed": [],
+
+The existing A51 and DR25b equality checks use G.delta itself as their expected answer. Returning an empty changed list in G.delta therefore changes the subject and oracle together. Routing mutant T322 does not cover the shared computation.
+
+Independent signed fixture: an obligation is open at BASE, its done successor and bob's acceptance are at HEAD. Independently assert the two report states are open/done, then require the original lineage id in delta.changed. The baseline returns that id through the library, agent API, actual tools/graph.py CLI subprocess, and actual stdio warrant_graph MCP call. The mutant returns [] through all four. The complete existing agent suite still passes 229 checks; the complete tools suite still passes 244 checks.
+
+Captured independent probe output:
+
+baseline:
+```text
+{"api": ["508b2132a6a4c97403d4b97ad352141f8fc5ace9a2ab76a7c279f781be61b64e"], "expected_changed": ["508b2132a6a4c97403d4b97ad352141f8fc5ace9a2ab76a7c279f781be61b64e"], "library": ["508b2132a6a4c97403d4b97ad352141f8fc5ace9a2ab76a7c279f781be61b64e"], "lineage": "508b2132a6a4c97403d4b97ad352141f8fc5ace9a2ab76a7c279f781be61b64e", "source": "/Users/s0fractal/Projects/.worktrees/codex-review/accept-76fb5d278791-0-dba456066d29", "states": ["open", "done"], "stdio_mcp": ["508b2132a6a4c97403d4b97ad352141f8fc5ace9a2ab76a7c279f781be61b64e"], "tools_cli": ["508b2132a6a4c97403d4b97ad352141f8fc5ace9a2ab76a7c279f781be61b64e"]}
+ok   DELTA_CHANGED accepted open-to-done lineage is listed as changed through library, agent API, tools CLI and stdio MCP
+```
+
+mutant:
+```text
+{"api": [], "expected_changed": ["508b2132a6a4c97403d4b97ad352141f8fc5ace9a2ab76a7c279f781be61b64e"], "library": [], "lineage": "508b2132a6a4c97403d4b97ad352141f8fc5ace9a2ab76a7c279f781be61b64e", "source": "/Users/s0fractal/.warrant/work/codex/76fb5d278791/delta-changed-mutant", "states": ["open", "done"], "stdio_mcp": [], "tools_cli": []}
+FAIL DELTA_CHANGED accepted open-to-done lineage is listed as changed through library, agent API, tools CLI and stdio MCP
+```
+
+## C2: DOT kind/schema node labels can be erased undetected
+
+Location: warrant/graph.py:227, tests/tools_test.py:1064-1071, tests/agent_test.py:123.
+Exact single-expression mutation in warrant/graph.py:
+  old: q(' '.join(str(x) for x in n[1:3] if x))
+  new: q('')
+
+The shared export's documented kind/schema labels (#481 and warrant.graph.dot's docstring) become empty on every node. Existing DR25b checks only the node-id/label= prefix, and A51 checks only the DOT header. The complete agent suite (229 checks) and complete tools suite (244 checks) both pass under this mutation too. T itself still admits the dot-label gap in its residual; it cannot discharge D's explicit coverage requirement by naming the gap.
+
+Minimal library probe uses nodes=[['a'*64,'entity','obligation@1','alice',0,'SIGNED']], edges=[]. Baseline versus mutant:
+
+baseline:
+```text
+digraph warrant {
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" [label="entity obligation@1"];
+}
+
+```
+
+mutant:
+```text
+digraph warrant {
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" [label=""];
+}
+
+```
+
+## Validation and limits
+
+All executions were on M or isolated source copies of M in ~/.warrant/work/codex/76fb5d278791. Comparing every tracked regular file showed only warrant/graph.py differed in each custom mutant copy. Test fixtures and deterministic fixture keys are confined to that work directory. The supplied checkout's code was never edited.
+
+Baseline: tests/agent_test.py 229/229, tests/tools_test.py 244/244, with MCP SDK present and M01/M02 executed; no skipped cases printed. Custom delta mutant: same 473/473 existing checks pass; independent DELTA_CHANGED probe fails as expected. Custom DOT-label mutant: same 473/473 existing checks pass; output directly shows labels erased.
+
+Named mutants replayed with the repository harness, clean section baselines, each killed by its own expected case: X43, T321, T322, T323, T325, T326, T327, T354, T355, T124, T136 (11/11). This confirms the previously answered transitivity, JSON default, truncation, source resolution and ordering counterexamples; it does not establish complete mutation coverage. The first isolated copy runs lacked Git metadata and aborted in tools narrow_cases; no kill or survivor was credited from those runs. The completed runs used independent local Git metadata with M's objects available read-only.
+
+roadmap check: 127 lineages, 0 problems. claims check: 143 live claims of docs/V3.md, 0 problems. No full core/gate/verify suite or all-repository mutant run was performed; this is a bounded graph obligation verdict.
+
+Required closure work: add independent expected changed-lineage assertions and exact DOT kind/schema label assertions, register mutants that break those properties, and show each mutant fails its corresponding assertion with green unmutated suites. No production correction is implied by these two coverage counterexamples.
+
+## Reproduce C1
+
+With M's optional MCP dependencies installed, save the Python below as a probe outside the checkout and run `python -B delta_probe.py SOURCE_ROOT` with TMPDIR pointing into the review's work directory. Run it at M (exit 0), then in an isolated copy with C1's exact substitution (exit 1). On that copy, `python -B tests/agent_test.py` and `python -B tests/tools_test.py` remain green. C2 uses the separate exact substitution above and the same two suites. Both substitutions are independent, not combined.
+
+```python
+import asyncio, json, os, subprocess, sys
+from pathlib import Path
+root=Path(sys.argv[1]).resolve()
+sys.path[:0]=[str(root/'tests'),str(root)]
+from world import Repo
+from warrant import graph as G
+from warrant import repo as RP
+from warrant import gate as GT
+from warrant_agent import api
+from warrant_agent.config import Config
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters,stdio_client
+r=Repo(git_init=True)
+o=r.entity('alice','obligation@1',{'state':'open','statement':'delta sentinel','serves':[]})
+base=r.commit('open')
+d=r.entity('alice','obligation@1',{'state':'done','statement':'delta sentinel','serves':[]},lineage=o)
+r.attest('bob',d)
+head=r.commit('accepted closure')
+rng=f'{base}..{head}'
+config={'agent_api':'warrant-agent/3','workspaces':{'w':{'repo':str(r.root),'signer':{'actor':'bob','key':str(r.seed('bob'))}}}}
+cfg=Config(config)
+reports=[RP.Repo(r.root).report(GT.store_at(r.root,c)[0]) for c in (base,head)]
+assert [reports[0]['lineages'][o]['state'],reports[1]['lineages'][o]['state']]==['open','done']
+lib=G.delta(*reports)['changed']
+via=api.call(cfg,'graph',{'workspace':'w','op':'delta','range':rng})['ok']['data']['changed']
+env=dict(os.environ,PYTHONPATH=str(root),PYTHONDONTWRITEBYTECODE='1')
+cli=subprocess.run([sys.executable,'-B',str(root/'tools/graph.py'),'delta',rng],cwd=r.root,capture_output=True,text=True,env=env,check=True)
+tool=json.loads(cli.stdout)['data']['changed']
+path=r.home/'config.json';path.write_text(json.dumps(config))
+async def mcp():
+ params=StdioServerParameters(command=sys.executable,args=['-B','-m','warrant_agent.mcp_server','--config',str(path)],env=env,cwd=str(root))
+ async with stdio_client(params) as (reader,writer):
+  async with ClientSession(reader,writer) as session:
+   await session.initialize()
+   result=await session.call_tool('warrant_graph',{'workspace':'w','op':'delta','range':rng})
+   assert not result.is_error,result
+   return result.structured_content['data']['changed']
+wire=asyncio.run(mcp())
+print(json.dumps({'source':str(root),'lineage':o,'states':['open','done'],'expected_changed':[o],'library':lib,'api':via,'tools_cli':tool,'stdio_mcp':wire},sort_keys=True))
+ok=all(x==[o] for x in (lib,via,tool,wire))
+print(('ok   ' if ok else 'FAIL ')+'DELTA_CHANGED accepted open-to-done lineage is listed as changed through library, agent API, tools CLI and stdio MCP')
+sys.exit(0 if ok else 1)
+```
