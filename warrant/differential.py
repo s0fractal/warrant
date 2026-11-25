@@ -12,7 +12,7 @@ only when FILE declares it: {"warrant": "differential/1", "differs": [MEMBER, ..
 the members that differ (an undeclared difference is refused, and so is a declared one that did not occur).
 
 With --release VERSION, release n must also admit n+1 (roadmap G12, release.yml): n's own engine assesses the store and
-finds an obligation@1 lineage whose effective version is closed (`done`, its guard met: an acceptor accepted it), relied
+finds an obligation@1 or obligation@2 lineage whose effective version is closed (`done`, its guard met: an acceptor accepted it), relied
 on (ELIGIBLE), and lists `warrant-graph==VERSION` among its refs (`roadmap close --ref`). None: REFUSED. And n's
 history must still be here: every record line and every blob of the store at n's tag (`v` + the version N_PYTHON's
 warrant-graph names) is in this checkout's store. Release n+1 may challenge a record of n's history (a challenge, a new
@@ -211,7 +211,7 @@ def admit(python, root, version, out):
     why = [out["why"]] if out["verdict"] == "REFUSED" else []
     if not out["release"]["accepted"]:
         why.append(f"no release duty of {version} is closed and accepted, as n assesses the store (an "
-                   f"obligation@1 closure with the ref {RELEASE_REF.format(version)})")
+                   f"obligation@1 or @2 closure with the ref {RELEASE_REF.format(version)})")
     if gone["records"] or gone["blobs"]:
         why.append(f"the store at {tag} holds {len(gone['records'])} record line(s) and "
                    f"{len(gone['blobs'])} blob(s) this one does not: n's history is challenged, never rewritten")
