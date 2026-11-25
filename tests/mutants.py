@@ -430,6 +430,8 @@ MUTANTS = [
     ("T308", "warrant/drift.py", '        if rule == C.CLOSURE and since:\n', '        if rule == C.CLOSURE:\n', TOOLS, ["DR33"]),
     ("T309", "warrant/pins.py", '    if not since:\n        return ("CHANGED", p, "") if now else ("GONE", p, "")\n', '', TOOLS, ["DR33"]),
     ("T304", "warrant/resolve.py", 'out.setdefault(f"rules@1:{p.identity}" if p.identity else p.name, [])', 'out.setdefault(p.name, [])', TOOLS, ["RV4"]),
+    ("T370", "warrant/resolve.py", '                if place == "cas/cells":', "                if True:", TOOLS, ["RV6"]),
+    ("T371", "warrant/resolve.py", '    return f"minds:{name}" if name else None', "    return None", TOOLS, ["RV6"]),
     ("T305", "warrant/across.py", '    readings = united(readings)\n', '', TOOLS, ["RV4"]),
     ("T306", "warrant/across.py", 'identity({x.key: x.rep for x in read}', 'identity({x.name: x.rep for x in read}', TOOLS, ["RV4"]),
     ("T294", "warrant/review.py", '    return DENIED if JAIL_DENIED.search(out) else "no_result"\n', '    return "no_result"\n', TOOLS, ["R03b"]),

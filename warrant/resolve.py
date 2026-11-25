@@ -34,6 +34,31 @@ from .store import Store
 FORMAT = "resolve/1"
 STATES = ("PRESENT", "RESOLVED", "LOCATED", "MISSING")
 GIT_PLACES = ("cas/cells", "cas/atoms")           # a minds chain's content-addressed objects, by the sha256 of their bytes
+# Standard VARS-1 cell schema hashes (minds verify/minds_verify.py H_SCHEMA).
+MINDS_SCHEMAS = {
+    "aaf70509e078bf1f833492eb82a116e4122232d424cf1668c05a9dd25855dcda": "axiom",
+    "391bbd2090d93f580fe033df9109cff948d46a07db24b9db05d55dc84e84277b": "contract",
+    "1c97bc0b74ffc978ade540c55592b294b0d9f2502b94b969f89ef00d99dd10bb": "computation",
+    "77655a8f5ca5b1c6347634e9a5848fdacee6efefd58569242d39f43410747639": "checkpoint",
+    "065f1b5b54fa199d65fb7f3e185e6f024d7523e829af1ad98269de018a8fb548": "cycle_witness",
+    "5a48e9c69afc5c3cebb3ca2980052151f2aaa539052702e0e23f7ba5504eb6fb": "decision",
+    "1293a1513baa6e0e1edfdcf8c8f4b992efa1391ddbc0889efe9698d59c9b0cdf": "question",
+    "c661936c020c0d817b8516b93454af5a30fe4282d854c1b0f628731c80f95d66": "acceptance",
+    "9aab50548f8fc7c5e2090fa89a73440af7de5e92d800b928261f13f20a4bd2a9": "scope",
+    "ad702699d5fc7b3d94138c38643c9889f1520a6e1c20760aa6b11a8e273dfdae": "verdict",
+    "8029ae880cb62a8034f47ec44e8f5c5982ebc14a14be2c6893a3ab8f968aa818": "projection",
+}
+
+
+def minds_cell_schema(data):
+    """Schema label (`minds:<name>`) of a VARS-1 cell's raw bytes, or None if not a known VARS-1 cell."""
+    if len(data) < 296 or data[:7] != b"VAR1\x00\x00\x00":
+        return None
+    k = data[7]
+    if k > 64 or len(data) != 296 + 32 * k:
+        return None
+    name = MINDS_SCHEMAS.get(data[8:40].hex())
+    return f"minds:{name}" if name else None
 
 
 class Mismatch(Exception):
@@ -70,6 +95,7 @@ class Place:
         except (subprocess.CalledProcessError, OSError):
             rows = []
         self.tips = dict(reversed(r.split(" ", 1)) for r in rows if " " in r)
+        self.cell_schemas = {}
 
     def holds(self, i):
         return i in self.snap.lines or i in self.snap.blobs
@@ -104,7 +130,12 @@ class Place:
                     return "LOCATED", f"git:{self.name}:{ref}:{path}"
                 if _sha(data) != i:
                     raise Mismatch(f"git:{self.name}:{ref}:{path} does not hash to its name")
-                return "RESOLVED", f"git:{self.name}:{ref}:{path}"
+                where = f"git:{self.name}:{ref}:{path}"
+                if place == "cas/cells":
+                    label = minds_cell_schema(data)
+                    if label is not None:
+                        self.cell_schemas[where] = label
+                return "RESOLVED", where
         return None
 
 
@@ -148,11 +179,18 @@ def answer(doc, ids=None):
     hold, with the counts of every state over all cited ids."""
     ps, unavailable = places(doc)
     rows, counts = [], dict.fromkeys(STATES, 0)
+    def _row(i, s, where, cited_by):
+        row = {"id": i, "state": s, "where": where, "cited_by": cited_by}
+        if s == "RESOLVED" and where:
+            schema = next((p.cell_schemas[where] for p in ps if where in p.cell_schemas), None)
+            if schema is not None:
+                row["schema"] = schema
+        return row
+
     if ids:
         for i in sorted(set(ids)):
             s, where = state(i, [], ps)
-            rows.append({"id": i, "state": s, "where": where, "cited_by": sorted(p.name for p in ps
-                                                                                  if any(i in cited(r) for r in p.records.values()))})
+            rows.append(_row(i, s, where, sorted(p.name for p in ps if any(i in cited(r) for r in p.records.values()))))
             counts[s] += 1
     else:
         for _, home in sorted(stores(ps).items()):
@@ -161,7 +199,7 @@ def answer(doc, ids=None):
                 s, where = state(i, home, [q for q in ps if q not in home])
                 counts[s] += 1
                 if s != "PRESENT":
-                    rows.append({"id": i, "state": s, "where": where, "cited_by": [p.name for p in home]})
+                    rows.append(_row(i, s, where, [p.name for p in home]))
     root = C.doc_id({"stores": {p.name: p.snap.digest for p in ps}, "git": {p.name: p.tips for p in ps if p.tips},
                      "unavailable": unavailable})
     lens = C.doc_id({"code": E.code_identity(), "query": {"ids": sorted(set(ids or []))}})
@@ -194,7 +232,8 @@ def run(argv=None):
             print(f"store {name}: " + (f"identity {ident[:12]}" if ident else "no identity (named by where it is read)"))
         print("cited ids: " + " · ".join(f"{s} {n}" for s, n in out["counts"].items()))
         for r in out["rows"]:
-            print(f"{r['state']:<9} {r['id'][:12]} cited by {', '.join(r['cited_by']) or '-'}" + (f" · {r['where']}" if r["where"] else ""))
+            extra = (f" · {r['schema']}" if r.get("schema") else "") + (f" · {r['where']}" if r["where"] else "")
+            print(f"{r['state']:<9} {r['id'][:12]} cited by {', '.join(r['cited_by']) or '-'}{extra}")
     return 0
 
 

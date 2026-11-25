@@ -2314,6 +2314,37 @@ def resolve_cases():
           "record added to one changes them",
           len(after["stores"]) == 2 and before["total"] + 1 == after["total"] and any(n["id"] == added for n in after["nodes"])
           and (before["root"], before["lens"]) != (after["root"], after["lens"]), (before["root"] == after["root"], after["stores"]))
+    # RV6: minds cells resolved from cas/cells carry their VARS-1 schema label; atoms and non-VAR1 bytes do not
+    dec_bytes = b"VAR1\x00\x00\x00\x04" + bytes.fromhex("5a48e9c69afc5c3cebb3ca2980052151f2aaa539052702e0e23f7ba5504eb6fb") + b"\x00" * (12 * 32)
+    dec_id = hashlib.sha256(dec_bytes).hexdigest()
+    atom_bytes = b"VAR1\x00\x00\x00\x00" + bytes.fromhex("5a48e9c69afc5c3cebb3ca2980052151f2aaa539052702e0e23f7ba5504eb6fb") + b"\x00" * (8 * 32)
+    atom_id = hashlib.sha256(atom_bytes).hexdigest()
+    (chain.root / "cas" / "cells" / dec_id[:2]).mkdir(parents=True, exist_ok=True)
+    (chain.root / "cas" / "cells" / dec_id[:2] / dec_id[2:]).write_bytes(dec_bytes)
+    (chain.root / "cas" / "atoms" / atom_id[:2]).mkdir(parents=True, exist_ok=True)
+    (chain.root / "cas" / "atoms" / atom_id[:2] / atom_id[2:]).write_bytes(atom_bytes)
+    chain.commit("add minds decision cell and var1-prefixed atom")
+    git(chain.root, "update-ref", "refs/vars/heads/minds", "HEAD")
+    res_s = RS.answer(doc, [dec_id, atom_id, cid])
+    by_s = {r["id"]: r for r in res_s["rows"]}
+    home_file = a.home / "home.json"
+    home_file.write_text(json.dumps(doc))
+    prev_home = os.environ.get("WARRANT_HOME")
+    os.environ["WARRANT_HOME"] = str(home_file)
+    try:
+        rc_cli, out_cli = cli(a.root, "resolve", dec_id)
+    finally:
+        if prev_home is None:
+            os.environ.pop("WARRANT_HOME", None)
+        else:
+            os.environ["WARRANT_HOME"] = prev_home
+    check("RV6 minds cells in cas/cells carry their VARS-1 schema label in warrant resolve (JSON and CLI), while cas/atoms "
+          "and non-VAR1 bytes omit it",
+          by_s.get(dec_id, {}).get("schema") == "minds:decision"
+          and "schema" not in by_s.get(atom_id, {})
+          and "schema" not in by_s.get(cid, {})
+          and rc_cli == 0 and "minds:decision" in out_cli,
+          (by_s, rc_cli, out_cli))
 
 def voices_cases():
     """W4's stranger path in the core command: `warrant init --voices` and `warrant say`, with nothing but the package."""
