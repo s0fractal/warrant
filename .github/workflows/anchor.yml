@@ -1,5 +1,5 @@
 # The anchor witness (docs/V3.md §16, anchors; G3 obligation 044f79ca): once a day, on a runner, under the key
-# anchor-key.yml made, `warrant anchor witness --of github.com/s0fractal/warrant --commit <master's tip>` files the next
+# anchor-key.yml made, `warrant-agent anchor witness --of github.com/s0fractal/warrant --commit <master's tip>` files the next
 # version of its anchor of this repository's store in a store of its own, the branch stores/anchors: its first run
 # makes that store (`warrant anchor init`: a v3.json binding the key, its rules@1 genesis, anchor@1). The ids master's
 # store held are then kept where master's writers do not write, and `warrant-agent rely github.com/s0fractal/warrant WHAT
@@ -70,7 +70,9 @@ jobs:
           if [ ! -e "build/$src/.warrant/v3.json" ]; then
             run init --actor anchor-witness --key - --repository "$GITHUB_REPOSITORY anchors" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
-          run witness --of "github.com/$GITHUB_REPOSITORY" --commit "$tip" --actor anchor-witness --key - | tee -a "$GITHUB_STEP_SUMMARY"
+          # by address (warrant_agent.anchor: the core reads no network), at master's tip
+          printf '%s\n' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant_agent.anchor --root "build/$src" \
+            witness --of "github.com/$GITHUB_REPOSITORY" --commit "$tip" --actor anchor-witness --key - | tee -a "$GITHUB_STEP_SUMMARY"
           git diff --quiet -- .warrant      # nothing of this run lands in master's store
           echo "changed=1" >> "$GITHUB_OUTPUT"
       - name: Push the anchor to the witness's store
