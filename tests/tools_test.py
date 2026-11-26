@@ -1068,6 +1068,22 @@ def drift_impact_cases():
           and js0 == js1 == RP.Repo(r.root).report()["graph"] and jq0 == jq1 == {"op": "export", "format": "json"}
           and all(f'"{n[0]}" [label=' in dots for n in graph_h["nodes"]) and all(f'"{a}" -> "{b}" [label="{rel}"]' in dots for a, rel, b in graph_h["edges"]),
           (dq, dots[:200]))
+    g0 = Repo(git_init=True)
+    o = g0.entity("alice", "obligation@1", {"state": "open", "statement": "delta", "serves": []})
+    b0 = g0.commit("open")
+    d1 = g0.entity("alice", "obligation@1", {"state": "done", "statement": "delta", "serves": []}, lineage=o)
+    g0.attest("bob", d1)
+    h0 = g0.commit("done, accepted")
+    _, _, _, dd0 = TG.ask(RP.Repo(g0.root), "delta", [f"{b0}..{h0}"])
+    states = [RP.Repo(g0.root).report(GT.store_at(g0.root, c)[0])["lineages"][o]["state"] for c in (b0, h0)]
+    one = G.dot({"nodes": [["a" * 64, "entity", "obligation@1", "alice", 0, "SIGNED"], ["b" * 64, "schema", None, "alice", 0, "SIGNED"]],
+                 "edges": [["a" * 64, "schema", "b" * 64]]})
+    check("DR38 delta's `changed` names a lineage whose state moved between the commits, read against the two reports' "
+          "own states, not against delta itself; DOT labels each node with its kind and schema exactly (Codex 76fb5d27: "
+          "both could be emptied with every other check green)",
+          states == ["open", "done"] and o in dd0.get("changed", []) and one == 'digraph warrant {\n'
+          f'  "{"a" * 64}" [label="entity obligation@1"];\n  "{"b" * 64}" [label="schema"];\n'
+          f'  "{"a" * 64}" -> "{"b" * 64}" [label="schema"];\n}}\n', (states, dd0.get("changed"), one))
     views = TG.render(RP.Repo(r.root))
     snap = RP.Repo(r.root).report()["snapshot"]
     lines = {n: t.split("\n")[2] for n, t in views.items()}
@@ -1214,6 +1230,17 @@ def view_binding_cases():
           seen["clean"] == seen["clean again"] == seen["edit undone"] == seen["restored"]
           and len({seen[k] for k in ("clean", "edit one", "edit two", "untracked", "claims config")}) == 5
           and "tool" in TG.code_id(r.root) and status == "", (seen, status))
+    r2, _ = drift_repo()
+    r2.commit("records after the acceptance: HEAD is not the accepted commit")
+    shallow = r2.home / "shallow"
+    git(r2.home, "clone", "-q", "--depth", "1", f"file://{r2.root}", str(shallow))
+    full, thin = TG.render(RP.Repo(r2.root))["CLAIMS.md"], TG.render(RP.Repo(shallow))["CLAIMS.md"]
+    lens_of = lambda t: t.split("\n")[2]  # noqa: E731
+    check("VB2 a view's lens binds which acceptance commits the clone can read: a depth-1 clone of the same HEAD, which "
+          "renders the accepted claim 'not this tree', gives another lens than the full clone, which renders it 'at this "
+          "tree' (Codex 7f4a36c5 on G11: same root and lens, other bytes)",
+          "checked at this tree" in full and "not this tree" in thin and lens_of(full) != lens_of(thin),
+          (lens_of(full), lens_of(thin)))
 
 
 def impact_foreign_verdict_cases():
@@ -1240,6 +1267,15 @@ def impact_foreign_verdict_cases():
           seen == sorted([("there", said, "attest"), ("there", objected, "challenge")]) and m["stores"] == ["there"]
           and last == f"root {'a' * 12} · lens {'b' * 12} · checkout tree {'c' * 12} with claims"
           and D.impact_lines(m).splitlines()[-1] != last, (seen, last))
+    from warrant import bootstrap as BS
+    far = Repo()
+    sch = far.put("alice", "schema", dict(next(x for x in BS.SCHEMAS if x["name"] == "obligation@1"), name="foreign@1"), refs=[L])
+    home2 = {"repositories": {"here": {"path": str(r.root)}, "far": {"path": str(far.root)}}}
+    m2 = D.impact(RP.Repo(r.root).report(), r.root, head, base, A.home_readings(home2))
+    got = sorted((e["store"], e.get("record"), e.get("kind")) for e in (m2["stale"] or [{}])[0].get("elsewhere", []))
+    check("DR37 a counted schema in another store that cites the stale claim rests on it too: --across names it, with its "
+          "store, as it names a foreign attest (Codex 692bdd73: it was reached and dropped, the answer complete)",
+          got == [("far", sch, "schema")] and m2["stores"] == ["far"], (got, m2["stores"]))
 
 
 def review_join_cases():

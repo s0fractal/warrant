@@ -56,11 +56,13 @@ def code_id(root):
 def render(repo):
     """The generated views, each under a line naming what decided it: `root` (the store's snapshot, full) and `lens`
     (warrant.graph.answer's content address of the code this tool runs from, the trust, the profile, the view's name
-    and the checkout), as a query's result carries them (Codex b26d7983 on G11's closure)."""
+    and the checkout), as a query's result carries them (Codex b26d7983 on G11's closure); the checkout includes the
+    code tree of each commit CLAIMS.md compares with HEAD, as this clone reads it, or that it cannot (Codex 7f4a36c5:
+    a shallow clone rendered other bytes under the same lens)."""
     rep = repo.report()
     views = {"CLAIMS.md": CL.view(rep, repo.root), "ROADMAP.md": RM.view(rep), "REVIEWS.md": RV.view(rep),
              "WITNESSES.md": witnesses(rep)}
-    code = json.dumps(code_id(repo.root), sort_keys=True)
+    code = json.dumps(dict(code_id(repo.root), trees=CL.trees_read(rep, repo.root)), sort_keys=True)
     out = {}
     for n, text in views.items():
         a = G.answer(rep, {"op": "view", "name": n}, None, code)

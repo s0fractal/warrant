@@ -1056,6 +1056,31 @@ def pins_reader_cases():
           and all("PINS_NOT_CHECKED" in ans["roots"][L]["why_not"] for L in pinned), (got, inspect, ans.get("rely")))
 
 
+def pins_earlier_version_cases():
+    """Codex eb81cfd8: an obligation's open root and its done successor, accepted with a file pin, both asked with no
+    checkout: the lineage reads PINS_NOT_CHECKED in either answer, through the API and the standalone verifier."""
+    r = Repo(base=TMP, git_init=True)
+    old = r.entity("alice", "obligation@1", {"state": "open", "statement": "pinned lineage", "serves": []})
+    cur = r.entity("alice", "obligation@1", {"state": "done", "statement": "pinned lineage", "serves": []}, lineage=old)
+    (r.root / "x.py").write_text("x = 1\n")
+    commit = r.commit("pin fixture")
+    r.attest("bob", cur, commit=commit, files={"x.py": git(r.root, "rev-parse", f"{commit}:x.py")})
+    pkg = {"warrant": V.PACKAGE, "roots": [old, cur], "lines": [b.decode().strip() for b in r.store.snapshot().raw], "blobs": {}}
+    path = Path(TMP) / "pins-earlier.json"
+    path.write_text(json.dumps(pkg))
+    api_ans = V.verify(json.dumps(pkg).encode(), r.trust, r.profile)
+    out = subprocess.run([sys.executable, "-I", "-S", str(ROOT / "warrant_verify.py"), str(path), "--config", str(r.dot / "v3.json")],
+                         capture_output=True, text=True)
+    alone = json.loads(out.stdout) if out.stdout.strip().startswith("{") else {}
+    lin = lambda a, i: ((a.get("roots") or {}).get(i) or {}).get("lineage", {}).get("reliance")
+    check("VP2 a lineage whose effective version has a pinned acceptance reads PINS_NOT_CHECKED with no checkout whichever "
+          "of its versions is asked (the open root too), through the API and the standalone verifier; the root stays "
+          "NOT_EFFECTIVE and nothing is relied on (Codex eb81cfd8)",
+          [lin(api_ans, old), lin(api_ans, cur), lin(alone, old), lin(alone, cur)] == ["PINS_NOT_CHECKED"] * 4
+          and "NOT_EFFECTIVE" in api_ans["roots"][old]["why_not"] and api_ans["rely"] is False and out.returncode == 1,
+          (lin(api_ans, old), lin(alone, old), out.returncode, out.stderr[-300:]))
+
+
 def refused_code(fn):
     try:
         fn()
@@ -1077,6 +1102,7 @@ def main():
         witness_cases()
         anchor_cases()
         pins_reader_cases()
+        pins_earlier_version_cases()
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
     return finish("verify_test")
