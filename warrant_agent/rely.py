@@ -24,7 +24,16 @@ are answered, the rest counted. A version named by id is answered as itself; tex
 version in force. Why it exists: an agent with no context, asked whether a release of this repository
 was admitted (2026-11-22), answered right in 27 turns by grepping records.jsonl with a script of its own; the store
 already held the answer in one record. Exit 0 when every answered lineage reads RELY or RELY ON RECORDS, 1 otherwise,
-2 when nothing could be answered."""
+2 when nothing could be answered.
+
+Anchors (docs/V3.md §16): a store whose history was rewritten by hand answers its own questions as if nothing happened;
+another store that anchors it does not. With `--anchor ADDRESS` (repeated: stores the receiver chose) and every address
+the publisher lists under `anchors` in its v3.json, each such store is read the same way, under its own rules, and its
+`anchor@1` lineages of this store's identity are checked against the records this store serves now
+(warrant.anchor.against): when any names a record that is gone, or its blobs do not make the roots it signed, every
+lineage answered reads DO NOT RELY. A store that holds no anchor of this one, or cannot be read, is named, never read
+as holding; it changes no verdict. An anchor whose witness holds a key of this store's own trust is one account's word,
+and is named so."""
 import argparse
 import json
 import re
@@ -33,6 +42,8 @@ import sys
 from . import api
 from . import remote as RM
 from .config import DEFAULT_LIMITS
+from warrant import anchor as AN
+from warrant import graph as G
 from warrant import shapes as S
 
 from .errors import AgentError
@@ -161,8 +172,54 @@ def _row(t, cap, closed):
             "challenges": sorted(cap.get("challenges") or {}), "grounded": (cap.get("grounded") or {}).get("grounded")}
 
 
-def answer(url, what, limits=None):
-    """{address, store, what, matched, answered: [...]}: the verdict on each lineage `what` names in the store at `url`."""
+def declared_anchors(doc):
+    """The addresses a publisher's v3.json lists under `anchors` (strings only; anything else is not one)."""
+    xs = doc.get("anchors")
+    return [x for x in xs if isinstance(x, str)] if isinstance(xs, list) else []
+
+
+def anchored(ws, rep, snap, addresses, limits=None, allow=frozenset()):
+    """[{address, by, repository, holds, anchors, one_account} or {address, by, not_read}]: the store `ws` checked in each
+    anchoring store named (by the receiver, or declared by the publisher)."""
+    ident = G.identity(rep, snap)["identity"]
+    out = []
+    for addr, by in addresses:
+        row = {"address": addr, "by": by}
+        if not ident:
+            out.append(dict(row, not_read="this store names itself by nothing an anchor can keep"))
+            continue
+        try:
+            b = RM.Remote(RM._checked(address(addr), allow), dict(limits or DEFAULT_LIMITS))
+            _, vb, _, _ = api._assess(b)
+            rb = vb.report()
+            rb["_recs"] = vb.recs
+            res = AN.against(rb, b.blob, b.doc["trust"], ident, ws.own, ws.doc["trust"])
+        except AgentError as e:
+            out.append(dict(row, not_read=f"{e.code}: {e}"))
+            continue
+        out.append(dict(row, repository=b.doc.get("repository"), **res))
+    return out
+
+
+def _broken(rows):
+    """Why the anchors say this store was rewritten, or None."""
+    bad = [r for r in rows for a in r.get("anchors", []) if a["missing"] or a["problem"]]
+    if not bad:
+        return None
+    parts = []
+    for r in rows:
+        for a in r.get("anchors", []):
+            if a["missing"]:
+                parts.append(f"{len(a['missing'])} record(s) {a['actor']} anchored in {r['address']} are gone from this "
+                             f"store: " + ", ".join(m[:12] for m in a["missing"][:4]))
+            elif a["problem"]:
+                parts.append(f"the anchor of {a['actor']} in {r['address']} is broken: {a['problem']}")
+    return "its history was rewritten: " + "; ".join(parts)
+
+
+def answer(url, what, limits=None, anchors=(), allow=frozenset()):
+    """{address, store, what, matched, answered: [...], anchored: [...]}: the verdict on each lineage `what` names in the
+    store at `url`, and that store checked in each store anchoring it (`anchors`: the receiver's addresses)."""
     ws = RM.Remote(url, dict(limits or DEFAULT_LIMITS))
     snap, view, _, _ = api._assess(ws)
     rep = api._report(ws, view)
@@ -174,8 +231,14 @@ def answer(url, what, limits=None):
     roots = _roots(rep, ids)
     targets = _targets(rep, ids, roots, is_id(what.strip().lower()))
     caps = api.context(RM._Cfg(ws), {"workspace": "remote", "targets": sorted(set(targets))[:64]})["targets"] if targets else {}
-    return {"address": url, "what": what, "matched": len(ids), "lineages": len(roots),
-            "answered": [_row(t, caps.get(t) or {}, closed) for t in targets],
+    named = [(a, "receiver") for a in anchors] + [(a, "publisher") for a in declared_anchors(ws.doc) if a not in anchors]
+    rows = anchored(ws, rep, snap, named, limits, allow)
+    answered = [_row(t, caps.get(t) or {}, closed) for t in targets]
+    why = _broken(rows)
+    if why:
+        answered = [dict(x, verdict="DO NOT RELY", why=why) for x in answered]
+    return {"address": url, "what": what, "matched": len(ids), "lineages": len(roots), "answered": answered,
+            "anchored": rows,
             "store": {"snapshot": rep["snapshot"], "records": len(snap.lines), "repository": ws.doc.get("repository"),
                       "sources": [{"name": s["name"], "commit": s["commit"], "records": s["records"]} for s in ws.sources],
                       "sources_not_read": ws.sources_not_read, "rules": "the publisher's own (.warrant/v3.json)"}}
@@ -200,8 +263,24 @@ def _lines(x):
     return out
 
 
+def _anchor_lines(rows):
+    out = []
+    for r in rows:
+        if "not_read" in r:
+            out.append(f"anchors in {r['address']} ({r['by']}): NOT READ, {r['not_read']}")
+            continue
+        if not r["anchors"]:
+            out.append(f"anchors in {r['address']} ({r['by']}): none of this store")
+        for a in r["anchors"]:
+            state = (a["problem"] or (f"{len(a['missing'])} record(s) gone" if a["missing"] else
+                     f"all {a['held']} anchored records held, last at {(a['at'] or '?')[:12]}"))
+            out.append(f"anchor in {r['address']} ({r['by']}) by {a['actor']}: {state}"
+                       + ("; one account: the witness holds a key of this store's trust" if a["actor"] in r["one_account"] else ""))
+    return out
+
+
 def text(a):
-    out = _header(a)
+    out = _header(a) + _anchor_lines(a.get("anchored", []))
     if not a["answered"]:
         out.append(f"nothing in this store names {a['what']!r}")
     for x in a["answered"]:
@@ -220,10 +299,12 @@ def main(argv=None):
     ap.add_argument("address")
     ap.add_argument("what")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--anchor", action="append", default=[], metavar="ADDRESS",
+                    help="a store you chose that anchors this one (repeat); the publisher's v3.json `anchors` are read too")
     a = ap.parse_args(argv)
     try:
         url = RM._checked(address(a.address), set())
-        res = answer(url, a.what)
+        res = answer(url, a.what, anchors=a.anchor)
     except AgentError as e:
         sys.stdout.write(json.dumps(e.to_json(), sort_keys=True) + "\n")
         return 2

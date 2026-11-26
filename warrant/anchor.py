@@ -74,19 +74,20 @@ def ids_of(blob):
     return ids if ids == sorted(set(ids)) else None
 
 
-def held(repo, rep, lin):
+def held(blob, rep, lin):
     """(ids, problem) along one anchor lineage up to its leaf: the union of its versions' `added`, each version's root
-    made again from the union so far (a witness whose blobs do not make the roots it signed is caught here)."""
+    made again from the union so far (a witness whose blobs do not make the roots it signed is caught here). `blob`
+    gives a blob's bytes by its id, or None: the anchoring store's, read from disk or over HTTPS."""
     if not lin["leaf"]:
         return None, f"FORKED ({len(lin['forks'])}): the witness showed two histories"
     chain, v = [], lin["leaf"]
     while v is not None:
         chain.append(v)
         v = rep["_recs"][v].get("lineage")
-    have, blobs = set(), repo.store.snapshot()
+    have = set()
     for v in reversed(chain):
         b = rep["_recs"][v]["body"]
-        got = ids_of(blobs.blob(b.get("added")) if S.hex64(b.get("added")) else None)
+        got = ids_of(blob(b["added"]) if S.hex64(b.get("added")) else None)
         if got is None:
             return None, f"{v[:12]}: its `added` is no blob of sorted ids in this store"
         if have & set(got):
@@ -110,7 +111,7 @@ def witness(repo, of, actor, key, commit=None):
         raise Failed("ANCHOR_LINEAGES", f"{actor} keeps {len(mine)} anchor lineages of {store[:12]}")
     if mine:
         (L, lin), = mine.items()
-        have, why = held(repo, rep, lin)
+        have, why = held(repo.store.snapshot().blob, rep, lin)
         if why:
             raise Failed("ANCHOR_BROKEN", why)
         prev = lin["leaf"]
@@ -131,21 +132,28 @@ def check(repo, of, commit=None):
     holds, anchors: [{lineage, actor, leaf, at, held, missing, problem}], one_account}. `holds`: at least one anchor and
     none whose ids are gone or whose blobs are broken."""
     commit, snap, store, _ = read(of, commit)
-    rep = repo.report()
-    trust = repo.config()[0]
-    now, rows = set(snap.lines), []
+    theirs = json.loads(git(of, "show", f"{commit}:.warrant/v3.json"))["trust"]
+    out = against(repo.report(), repo.store.snapshot().blob, repo.config()[0], store, set(snap.lines), theirs)
+    return {"store": store, "commit": commit, **out}
+
+
+def against(rep, blob, trust, store, now, theirs):
+    """Every anchor lineage of `store` (an identity) in the anchoring store's report `rep`, against the ids the store
+    holds `now`: {holds, anchors: [{lineage, actor, leaf, at, held, missing, problem}], one_account}. `blob` reads the
+    anchoring store's blobs, `trust` is its trust, `theirs` the witnessed store's. `holds`: at least one anchor and none
+    whose ids are gone or whose blobs are broken. One reader for a clone (check) and an address (warrant-agent rely)."""
+    rows = []
     for L, lin in sorted(lineages(rep, store).items()):
-        have, why = held(repo, rep, lin)
+        have, why = held(blob, rep, lin)
         leaf = lin["leaf"]
         rows.append({"lineage": L, "actor": rep["_recs"][L]["actor"], "leaf": leaf,
                      "at": rep["_recs"][leaf]["body"]["commit"] if leaf else None, "held": len(have or ()),
                      "missing": sorted((have or set()) - now), "problem": why})
     # the witness's keys among the witnessed store's own writers: then the anchor is one account's word
-    theirs = {k for ks in json.loads(git(of, "show", f"{commit}:.warrant/v3.json"))["trust"]["keys"].values()
-              for k in ks}
-    one = sorted({r["actor"] for r in rows if set(trust["keys"].get(r["actor"], [])) & theirs})
+    keys = {k for ks in (theirs.get("keys") or {}).values() for k in ks}
+    one = sorted({r["actor"] for r in rows if set(trust.get("keys", {}).get(r["actor"], [])) & keys})
     ok = bool(rows) and not any(r["missing"] or r["problem"] for r in rows)
-    return {"store": store, "commit": commit, "holds": ok, "anchors": rows, "one_account": one}
+    return {"holds": ok, "anchors": rows, "one_account": one}
 
 
 def run(argv=None):

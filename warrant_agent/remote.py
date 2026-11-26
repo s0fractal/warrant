@@ -18,6 +18,7 @@ fetched: a cited blob reads unavailable, never absent.
 The address is the request's; where it may lead is the operator's: HTTPS only, no redirect to another host, and no
 host that resolves to a loopback, private, link-local or reserved address unless the operator's configuration names it
 (`remote.allow_hosts`), so an agent cannot point this server at the network it runs in. Nothing is written."""
+import hashlib
 import ipaddress
 import json
 import re
@@ -143,6 +144,7 @@ class Remote:
         except ValueError as e:                  # store.Refused included
             raise AgentError("RESOURCE_LIMIT" if "limit" in str(e) else "REFUSED", str(e)) from None
         self._receiver = under.receiver() if under is not None else (self.doc["trust"], self.doc["profile"])
+        self.own = set(self.snap.lines)          # the ids of its own records.jsonl, before any source's (an anchor's ground)
         self.sources, self.sources_not_read = [], []
         extra = set()
         for x in self._declared():               # each at the commit its ref names, by its actors only (sources.py)
@@ -192,6 +194,18 @@ class Remote:
 
     def receiver(self):
         return self._receiver
+
+    def blob(self, h):
+        """The bytes of blob `h` of this store, fetched within its budget; None when it is not served or not those bytes."""
+        if h in self.snap.blobs:
+            return self.snap.blobs[h]
+        try:
+            data = self._spend(_get(f"{self.url}.warrant/blobs/{h}", self.budget), "its blobs")
+        except AgentError as e:
+            if e.code == "RESOURCE_LIMIT":
+                raise
+            return None
+        return data if hashlib.sha256(data).hexdigest() == h else None
 
     def permit(self, _op):                   # every read is permitted: the operator allowed the address
         return None

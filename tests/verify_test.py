@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from collections import namedtuple
 from pathlib import Path
 
@@ -908,6 +909,69 @@ def anchor_cases():
           and not none["holds"] and none["anchors"] == [], (broken, self_, own, none))
 
 
+def anchor_rely_cases():
+    """`warrant-agent rely` reads anchors: the store asked about is checked in each store anchoring it, named by the
+    receiver (--anchor) or by the publisher (v3.json `anchors`), each read over HTTP(S) under its own rules."""
+    import functools
+    import http.server
+    from warrant_agent import rely as RL
+    a, b = anchored_store("s0fractal/ra", carol=False), anchored_store("s0fractal/rb")
+    c = anchored_store("s0fractal/rc")
+    b.put("alice", "schema", AN.SCHEMA)
+    x = a.entity("alice", "obligation@1", {"state": "open", "statement": "the anchored duty", "serves": []})
+    y = a.entity("alice", "obligation@1", {"state": "open", "statement": "a later duty", "serves": []})
+    a.commit("x, y")
+    AN.witness(RP.Repo(b.root), a.root, "carol", KEYS["carol"])
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+    srvs, urls = [], {}
+    for k, r in (("a", a), ("b", b), ("c", c)):
+        s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(r.root)))
+        threading.Thread(target=s.serve_forever, daemon=True).start()
+        srvs.append(s)
+        urls[k] = f"http://127.0.0.1:{s.server_address[1]}/"
+    from warrant_agent.errors import AgentError
+
+    def ask(*anchors):
+        try:
+            return RL.answer(urls["a"], x[:12], anchors=list(anchors), allow={"127.0.0.1"})
+        except AgentError as e:                    # an anchor that cannot be read must not stop the answer
+            return {"answered": [{"verdict": f"refused {e.code}", "why": ""}], "anchored": [{}, {}]}
+    try:
+        held = ask(urls["b"])
+        elsewhere = ask(urls["c"], "http://127.0.0.1:1/")
+        lines = (a.dot / "records.jsonl").read_bytes().splitlines(True)
+        (a.dot / "records.jsonl").write_bytes(b"".join(ln for ln in lines if R.rid(json.loads(ln)["record"]) != y))
+        rewritten = ask(urls["b"])
+        unasked = ask()
+        doc = json.loads((a.dot / "v3.json").read_text())
+        (a.dot / "v3.json").write_text(json.dumps(dict(doc, anchors=[urls["b"]])))
+        declared = ask()
+        text = RL.text(rewritten)
+    finally:
+        for s in srvs:
+            s.shutdown()
+    hv, rv = held["answered"][0], rewritten["answered"][0]
+    check("AN3 `warrant-agent rely --anchor B` checks the store asked about in B: every record B's anchor names still "
+          "served, the verdict stands and the anchor is named held; a record gone from it (history rewritten) turns every "
+          "answered lineage DO NOT RELY with the missing id named; the publisher's v3.json `anchors` are read the same "
+          "way (by: publisher); without an anchor the rewritten store answers as if nothing happened",
+          hv["verdict"] != "DO NOT RELY" and held["anchored"][0]["holds"] and held["anchored"][0]["by"] == "receiver"
+          and held["anchored"][0]["anchors"][0]["held"] == held["anchored"][0]["anchors"][0]["held"] > 0
+          and rv["verdict"] == "DO NOT RELY" and "rewritten" in rv["why"] and y[:12] in rv["why"]
+          and rewritten["anchored"][0]["anchors"][0]["missing"] == [y]
+          and unasked["answered"][0]["verdict"] == hv["verdict"] and unasked["anchored"] == []
+          and (declared["anchored"] or [{}])[0].get("by") == "publisher" and declared["answered"][0]["verdict"] == "DO NOT RELY"
+          and "1 record(s) gone" in text, (held, rewritten, unasked, declared))
+    c_row, gone = elsewhere["anchored"]
+    check("AN4 a store that anchors nothing of the one asked about is named (no anchors), one that cannot be read is "
+          "named NOT READ, and neither changes the verdict: absence of an anchor is not evidence of a rewrite",
+          c_row.get("anchors") == [] and not c_row.get("holds") and "not_read" in gone
+          and elsewhere["answered"][0]["verdict"] == hv["verdict"], elsewhere)
+
+
 def package_of(r, roots, drop=()):
     lines = [x for x in (r.dot / "records.jsonl").read_text().splitlines() if R.rid(json.loads(x)["record"]) not in drop]
     return json.dumps({"warrant": "package/3", "roots": roots, "lines": lines, "blobs": {}}).encode()
@@ -1101,6 +1165,7 @@ def main():
         merkle_cases()
         witness_cases()
         anchor_cases()
+        anchor_rely_cases()
         pins_reader_cases()
         pins_earlier_version_cases()
     finally:
