@@ -20,8 +20,11 @@ that A holds nothing else, nor that B was not rewritten as well: B's defence is 
 witness and A's writers are one account, the anchor is that account's word, and says so in `check`.
 
     python -m warrant.anchor schema  --actor W --key K                 # file anchor@1 in this store
-    python -m warrant.anchor witness --of CLONE [--commit C] --actor W --key K
-    python -m warrant.anchor check   --of CLONE [--commit C] [--json]  # exit 0 held, 1 rewritten or not anchored"""
+    python -m warrant.anchor witness --of CLONE|ADDRESS [--commit C] --actor W --key K
+    python -m warrant.anchor check   --of CLONE|ADDRESS [--commit C] [--json]  # exit 0 held, 1 rewritten or not anchored
+
+ADDRESS is github.com/OWNER/NAME[/tree/BRANCH] (read at one commit) or an HTTPS root serving .warrant/: a witness need
+not clone the store it anchors."""
 import argparse
 import json
 import sys
@@ -34,6 +37,7 @@ from . import shapes as S
 from .pins import git
 from .repo import Failed, Repo, dump, env_root, load_key, main
 from .snapshot import at_commit
+from .store import Snapshot, _line_id
 
 SCHEMA = {"name": "anchor@1",
           "fields": {"state": "str", "store": "str", "repository": "str", "commit": "str", "records": "str",
@@ -42,19 +46,58 @@ SCHEMA = {"name": "anchor@1",
 NAME = SCHEMA["name"]
 
 
-def read(of, commit=None):
-    """(commit, snapshot, identity, repository) of the store of the clone at `of`, at `commit` (HEAD by default), under
-    the receiver its v3.json gives at that commit."""
+ADDRESS = ("https://", "http://", "github.com/", "www.github.com/")
+
+
+def is_address(of):
+    """`of` names a store by its address (read over HTTPS, nothing cloned), not a clone on disk."""
+    return isinstance(of, str) and of.startswith(ADDRESS)
+
+
+def read(of, commit=None, allow=frozenset()):
+    """(commit, snapshot, identity, repository, trust) of the store at `of`: a clone on disk, read at `commit` (HEAD by
+    default), or an address. A GitHub address is read at one commit, `commit` or the one its branch names now (GitHub's
+    commits API), so an anchor by address names the bytes an anchor by clone would; another HTTPS root has no commit
+    (`""`) and takes none. Either is assessed under the receiver its own v3.json gives; only its own records.jsonl is
+    anchored, never a source it declares."""
+    if is_address(of):
+        return _read_address(of, commit, allow)
     commit = commit or git(of, "rev-parse", "HEAD").strip()
     snap = at_commit(of, commit)
     try:
         doc = json.loads(git(of, "show", f"{commit}:.warrant/v3.json"))
     except Exception:
         raise Failed("ANCHOR_CONFIG", f".warrant/v3.json cannot be read at {commit[:12]}") from None
+    return (commit, snap, *_identity(snap, doc), doc["trust"])
+
+
+def _identity(snap, doc):
     ident = G.identity(E.View(snap, doc["trust"], doc["profile"]).report(), snap)
     if not ident["identity"]:
         raise Failed("ANCHOR_IDENTITY", f"the store names itself by nothing an anchor can keep: {ident['why']}")
-    return commit, snap, ident["identity"], doc.get("repository", "")
+    return ident["identity"], doc.get("repository", "")
+
+
+def _read_address(of, commit, allow):
+    from warrant_agent import remote as RM          # the HTTPS reader, its host rules and budget (docs/AGENT.md)
+    from warrant_agent.config import DEFAULT_LIMITS
+    from warrant_agent.errors import AgentError
+    from warrant_agent.rely import address
+    try:
+        url = RM._checked(address(of), set(allow))
+        if RM.RAW.match(url):
+            ref = url[len(RM.RAW.match(url)[0]):].rstrip("/")
+            commit = commit or RM.source_commit(url, ref)
+            if not commit:
+                raise Failed("ANCHOR_COMMIT", f"GitHub names no commit for {ref!r} of {url}")
+            url = RM.source_base(url, commit)
+        elif commit:
+            raise Failed("BAD_REQUEST", "--commit names a commit of a GitHub address; this root serves no commits")
+        ws = RM.Remote(url, dict(DEFAULT_LIMITS))
+    except AgentError as e:
+        raise Failed("ANCHOR_READ", f"{of}: {e.code}: {e}") from None
+    snap = Snapshot([ln for ln in ws.snap.raw if _line_id(ln)[0] in ws.own], {})
+    return (commit or "", snap, *_identity(snap, ws.doc), ws.doc["trust"])
 
 
 def lineages(rep, store):
@@ -98,9 +141,9 @@ def held(blob, rep, lin):
     return have, None
 
 
-def witness(repo, of, actor, key, commit=None):
-    """File the next version of `actor`'s anchor lineage for the store of the clone at `of`; its id."""
-    commit, snap, store, name = read(of, commit)
+def witness(repo, of, actor, key, commit=None, allow=frozenset()):
+    """File the next version of `actor`'s anchor lineage for the store at `of` (a clone or an address); its id."""
+    commit, snap, store, name, _ = read(of, commit, allow)
     rep = repo.report()
     own = G.identity(rep, repo.store.snapshot())["identity"]
     if own == store:
@@ -127,12 +170,11 @@ def witness(repo, of, actor, key, commit=None):
     return repo.file(actor, key, [R.record("entity", actor, 0, body, NAME, lineage=prev, refs=[])])[0]
 
 
-def check(repo, of, commit=None):
+def check(repo, of, commit=None, allow=frozenset()):
     """Every anchor lineage this store keeps of the store at `of`, against that store at `commit`: {store, commit,
     holds, anchors: [{lineage, actor, leaf, at, held, missing, problem}], one_account}. `holds`: at least one anchor and
     none whose ids are gone or whose blobs are broken."""
-    commit, snap, store, _ = read(of, commit)
-    theirs = json.loads(git(of, "show", f"{commit}:.warrant/v3.json"))["trust"]
+    commit, snap, store, _, theirs = read(of, commit, allow)
     out = against(repo.report(), repo.store.snapshot().blob, repo.config()[0], store, set(snap.lines), theirs)
     return {"store": store, "commit": commit, **out}
 
@@ -165,8 +207,11 @@ def run(argv=None):
         p.add_argument("--actor", required=True)
         p.add_argument("--key", required=True)
     for n in ("witness", "check"):
-        sub.choices[n].add_argument("--of", required=True)
+        sub.choices[n].add_argument("--of", required=True, help="a clone on disk, or an address: github.com/OWNER/NAME"
+                                    "[/tree/BRANCH] or an HTTPS root serving .warrant/")
         sub.choices[n].add_argument("--commit")
+        sub.choices[n].add_argument("--allow-host", action="append", default=[], metavar="HOST",
+                                    help="a host of your own network to read from (otherwise refused, as remote's are)")
     sub.choices["check"].add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     repo = Repo(root)
@@ -176,13 +221,13 @@ def run(argv=None):
         dump({"schema": repo.file(a.actor, load_key(a.key, root), [R.record("schema", a.actor, 0, SCHEMA)])[0]})
         return 0
     if a.cmd == "witness":
-        dump({"anchor": witness(repo, a.of, a.actor, load_key(a.key, root), a.commit)})
+        dump({"anchor": witness(repo, a.of, a.actor, load_key(a.key, root), a.commit, a.allow_host)})
         return 0
-    out = check(repo, a.of, a.commit)
+    out = check(repo, a.of, a.commit, a.allow_host)
     if a.json:
         dump(out)
     else:
-        print(f"store       {out['store'][:12]} at {out['commit'][:12]}: " + ("HELD" if out["holds"] else
+        print(f"store       {out['store'][:12]} at {out['commit'][:12] or a.of}: " + ("HELD" if out["holds"] else
               "NOT HELD" if out["anchors"] else "NOT ANCHORED here"))
         for r in out["anchors"]:
             state = r["problem"] or (f"{len(r['missing'])} record(s) gone: " + ", ".join(m[:12] for m in r["missing"][:8])

@@ -346,6 +346,9 @@ MUTANTS = [
     ("WM31", "warrant_agent/rely.py", '    bad = [r for r in rows for a in r.get("anchors", []) if a["missing"] or a["problem"]]', '    bad = [r for r in rows for a in r.get("anchors", []) if a["problem"]]', VERIFY, ["AN3"]),
     ("WM32", "warrant_agent/rely.py", '            out.append(dict(row, not_read=f"{e.code}: {e}"))\n            continue', '            raise', VERIFY, ["AN4"]),
     ("WM33", "warrant_agent/rely.py", "res = AN.against(rb, b.blob, b.doc[\"trust\"], ident, ws.own, ws.doc[\"trust\"])", "res = AN.against(rb, b.blob, b.doc[\"trust\"], ident, set(rb[\"_recs\"]), ws.doc[\"trust\"])", VERIFY, ["AN3"]),
+    ("WM34", "warrant/anchor.py", "        elif commit:\n", "        elif False:\n", VERIFY, ["AN5"]),
+    ("WM35", "warrant/anchor.py", "        url = RM._checked(address(of), set(allow))", "        url = RM._checked(address(of), set(allow) | {\"127.0.0.1\"})", VERIFY, ["AN5"]),
+    ("WM36", "warrant/anchor.py", "    return (commit or \"\", snap, *_identity(snap, ws.doc), ws.doc[\"trust\"])", "    return (url, snap, *_identity(snap, ws.doc), ws.doc[\"trust\"])", VERIFY, ["AN5"]),
     # the harness itself (tests/mutants.py, tests/world.py): what every KILLED above rests on
     ("T199", "tests/mutants.py", '    if not cases or not all(homes):\n        return None', '    if not cases or not all(homes):\n        return ["main"]', TOOLS, ["HM2"]),
     ("T200", "tests/world.py", '            sys.stdout.flush()\n            os._exit(1)\n', '            pass\n', TOOLS, ["HM3"]),
