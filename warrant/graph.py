@@ -363,6 +363,46 @@ def _verifies(i, sig, public):
         return False
 
 
+def _cyclic_nodes(edges):
+    """Find the nodes in cycles by iterative Kosaraju, including singleton self-loops."""
+    reverse = {v: [] for v in edges}
+    for v, deps in edges.items():
+        for dep in deps:
+            reverse[dep].append(v)
+
+    seen, finished = set(), []
+    for root in edges:
+        if root in seen:
+            continue
+        seen.add(root)
+        stack = [(root, iter(edges[root]))]
+        while stack:
+            v, children = stack[-1]
+            dep = next(children, None)
+            if dep is None:
+                finished.append(v)
+                stack.pop()
+            elif dep not in seen:
+                seen.add(dep)
+                stack.append((dep, iter(edges[dep])))
+
+    seen.clear()
+    on_cycle = set()
+    for root in reversed(finished):
+        if root in seen:
+            continue
+        component = [root]
+        seen.add(root)
+        for v in component:
+            for source in reverse[v]:
+                if source not in seen:
+                    seen.add(source)
+                    component.append(source)
+        if len(component) > 1 or root in edges[root]:
+            on_cycle.update(component)
+    return on_cycle
+
+
 def grounded(rep, i, recs=None):
     """Whether entity version `i` is GROUNDED (minds' Grounded, proofs/Vars1/Grounded.lean, read over a Warrant report):
     it and every entity version it rests on, by `ref` and by `requires` (a required lineage through its effective
@@ -407,30 +447,16 @@ def grounded(rep, i, recs=None):
             return "NOT_EFFECTIVE"
         return None if lin["reliance"] == "ELIGIBLE" else f"RELIANCE {lin['reliance']}"
 
-    seen, order, outside, todo = {i}, [i], set(), [i]
-    while todo:                                    # the closure, breadth first
-        cur = todo.pop(0)
-        if cur not in nodes:
-            continue
-        gs, far = grounds(cur)
+    seen, order, outside, edges = {i}, [i], set(), {}
+    for cur in order:                              # the closure, breadth first
+        gs, far = grounds(cur) if cur in nodes else ([], [])
+        edges[cur] = gs
         outside |= set(far)
         for g in gs:
             if g not in seen:
                 seen.add(g)
                 order.append(g)
-                todo.append(g)
-    on_cycle = set()                               # a node is on a cycle iff it reaches itself
-    for v in order:
-        stack, mark = [g for g in grounds(v)[0]], set()
-        while stack:
-            g = stack.pop()
-            if g == v:
-                on_cycle.add(v)
-                break
-            if g in mark or g not in nodes:
-                continue
-            mark.add(g)
-            stack += grounds(g)[0]
+    on_cycle = _cyclic_nodes(edges)
     failing = []
     for v in order:
         why = local(v) or ("CYCLE" if v in on_cycle else None)
