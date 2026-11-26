@@ -1,0 +1,56 @@
+# The anchor witness's key on a runner (docs/V3.md §16, anchors; G3 obligation 044f79ca). Made once on a GitHub runner
+# and kept as the secret WARRANT_ANCHOR_SEED of the environment `anchor`, which only master may deploy to. The seed
+# never leaves GitHub; this run prints only its public key. No pull request binds it: the key signs in a store of its
+# own (anchor.yml, branch stores/anchors), whose rules@1 genesis binds it and is that store's identity. Making the
+# secret takes WARRANT_SECRETS_TOKEN (a token of the owner's, of this repository only, allowed to write environment
+# secrets), needed once and deleted after.
+name: anchor-key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  key:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: anchor
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Signature library (exact version and hashes)
+        run: python -m pip install --quiet --only-binary ':all:' --require-hashes -r .github/merge-gate-requirements.txt
+      - name: Make the key once; print its public key
+        env:
+          SEED: ${{ secrets.WARRANT_ANCHOR_SEED }}
+          GH_TOKEN: ${{ secrets.WARRANT_SECRETS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SEED" ]; then
+            if [ -z "$GH_TOKEN" ]; then
+              echo "the environment anchor holds neither WARRANT_ANCHOR_SEED nor WARRANT_SECRETS_TOKEN" >&2
+              exit 1
+            fi
+            # no key for an environment other branches could deploy to: their workflows would read it
+            custom=$(gh api "repos/$GITHUB_REPOSITORY/environments/anchor" --jq '.deployment_branch_policy.custom_branch_policies')
+            branches=$(gh api "repos/$GITHUB_REPOSITORY/environments/anchor/deployment-branch-policies" \
+              --jq '[.branch_policies[] | [.name, .type]]' | tr -d ' \n')
+            if [ "$custom" != "true" ] || [ "$branches" != '[["master","branch"]]' ]; then
+              echo "refused: the environment anchor must be deployable from master alone (custom $custom, $branches)" >&2
+              exit 1
+            fi
+            SEED=$(python -c "import os; print(os.urandom(32).hex())")
+            echo "::add-mask::$SEED"
+            printf %s "$SEED" | gh secret set WARRANT_ANCHOR_SEED --env anchor --repo "$GITHUB_REPOSITORY"
+            echo "made WARRANT_ANCHOR_SEED in the environment anchor; WARRANT_SECRETS_TOKEN may be deleted now"
+          fi
+          printf %s "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -c \
+            "import sys; from warrant.keys import Key; print('anchor-witness public key', Key.from_seed_hex(sys.stdin.read()).public)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
