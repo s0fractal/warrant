@@ -340,7 +340,12 @@ MUTANTS = [
     ("WM25", "warrant/anchor.py", "        if M.root([bytes.fromhex(i) for i in sorted(have)]) != b[\"records\"] or len(have) != b[\"size\"]:", "        if False:", VERIFY, ["AN2"]),
     ("WM26", "warrant/anchor.py", '    if own == store:', '    if False:', VERIFY, ["AN2"]),
     ("WM27", "warrant/anchor.py", '    added = repo.store.put_blob(b"".join(bytes.fromhex(i) for i in sorted(now - have)))', '    added = repo.store.put_blob(b"".join(bytes.fromhex(i) for i in sorted(now)))', VERIFY, ["AN1"]),
-    ("WM28", "warrant/anchor.py", '    one = sorted({r["actor"] for r in rows if set(trust["keys"].get(r["actor"], [])) & theirs})', '    one = []', VERIFY, ["AN2"]),
+    ("WM28", "warrant/anchor.py", '    one = sorted({r["actor"] for r in rows if set(trust.get("keys", {}).get(r["actor"], [])) & keys})', '    one = []', VERIFY, ["AN2"]),
+    ("WM29", "warrant_agent/rely.py", "    if why:\n        answered = [dict(x, verdict=\"DO NOT RELY\", why=why) for x in answered]", "    if False:\n        answered = []", VERIFY, ["AN3"]),
+    ("WM30", "warrant_agent/rely.py", ' + [(a, "publisher") for a in declared_anchors(ws.doc) if a not in anchors]', "", VERIFY, ["AN3"]),
+    ("WM31", "warrant_agent/rely.py", '    bad = [r for r in rows for a in r.get("anchors", []) if a["missing"] or a["problem"]]', '    bad = [r for r in rows for a in r.get("anchors", []) if a["problem"]]', VERIFY, ["AN3"]),
+    ("WM32", "warrant_agent/rely.py", '            out.append(dict(row, not_read=f"{e.code}: {e}"))\n            continue', '            raise', VERIFY, ["AN4"]),
+    ("WM33", "warrant_agent/rely.py", "res = AN.against(rb, b.blob, b.doc[\"trust\"], ident, ws.own, ws.doc[\"trust\"])", "res = AN.against(rb, b.blob, b.doc[\"trust\"], ident, set(rb[\"_recs\"]), ws.doc[\"trust\"])", VERIFY, ["AN3"]),
     # the harness itself (tests/mutants.py, tests/world.py): what every KILLED above rests on
     ("T199", "tests/mutants.py", '    if not cases or not all(homes):\n        return None', '    if not cases or not all(homes):\n        return ["main"]', TOOLS, ["HM2"]),
     ("T200", "tests/world.py", '            sys.stdout.flush()\n            os._exit(1)\n', '            pass\n', TOOLS, ["HM3"]),

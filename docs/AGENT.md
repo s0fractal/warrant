@@ -22,7 +22,10 @@ warrant-agent rely github.com/OWNER/NAME "WHAT"      # WHAT: a ref, a goal's key
 It reads the store over HTTPS with the sources it declares, under the publisher's own rules, and prints for each
 lineage WHAT names a verdict (`RELY`, `RELY ON RECORDS`, `WAITING`, `NOT DONE`, `SUPERSEDED`, `DO NOT RELY`), why, who
 accepted it and the challenges on it; `--json` gives the same answer as data, and the exit status is 0 only when
-every answer is `RELY` or `RELY ON RECORDS` (warrant_agent/rely.py). The rest of this section is for an agent that
+every answer is `RELY` or `RELY ON RECORDS` (warrant_agent/rely.py). A store rewritten by hand answers its own
+questions as if nothing happened: `--anchor ADDRESS` (repeat it; addresses the publisher lists under `anchors` in its
+v3.json are read too) checks the store in another one that anchors it (docs/V3.md §16), and a record an anchor there
+names that the store no longer serves turns every answer `DO NOT RELY`. The rest of this section is for an agent that
 will answer back.
 
 Nothing here needs a checkout of the other store, an account or a key of yours to read; filing your own answer needs
