@@ -972,6 +972,68 @@ def anchor_rely_cases():
           and elsewhere["answered"][0]["verdict"] == hv["verdict"], elsewhere)
 
 
+def anchor_address_cases():
+    """`warrant anchor witness|check --of ADDRESS`: a witness anchors a store it reads over HTTP(S), with no clone."""
+    import functools
+    import http.server
+    a, b = anchored_store("s0fractal/ha", carol=False), anchored_store("s0fractal/hb")
+    b.put("alice", "schema", AN.SCHEMA)
+    rb = RP.Repo(b.root)
+    x = a.entity("alice", "obligation@1", {"state": "open", "statement": "served", "serves": []})
+    a.commit("x")
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(a.root)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    from warrant_agent import anchor as AA
+    url, ok = f"http://127.0.0.1:{srv.server_address[1]}/", AA.reader({"127.0.0.1"})
+    try:
+        k = AN.witness(rb, url, "carol", KEYS["carol"], read=ok)
+        by_clone = AN.read(a.root)
+        held = AN.check(rb, url, read=ok)
+        lines = (a.dot / "records.jsonl").read_bytes().splitlines(True)
+        (a.dot / "records.jsonl").write_bytes(b"".join(ln for ln in lines if R.rid(json.loads(ln)["record"]) != x))
+        gone = AN.check(rb, url, read=ok)
+        closed = refused_code(lambda: AN.check(rb, url, read=AA.reader()))
+        pinned = refused_code(lambda: AN.check(rb, url, commit="0" * 40, read=ok))
+    finally:
+        srv.shutdown()
+    body = rb.report()["_recs"][k]["body"]
+    r = M.roots(by_clone[1])
+    check("AN5 `--of ADDRESS`: a witness anchors a store it reads over HTTP(S), no clone: the anchor names the same "
+          "identity, records root, size and digest as one read from a clone of it (a root that serves no commits names "
+          "none), `check` by address finds it held, and NOT HELD with the id named once a record is gone; a host of the "
+          "witness's own network is refused unless allowed, and --commit is refused where no commits are served",
+          body["store"] == by_clone[2] and body["records"] == r["records"] and body["size"] == r["size"]["records"]
+          and body["digest"] == by_clone[1].digest and body["commit"] == "" and held["holds"]
+          and not gone["holds"] and (gone["anchors"] or [{}])[0].get("missing") == [x]
+          and closed == "ANCHOR_READ" and pinned == "BAD_REQUEST", (body, held, gone, closed, pinned))
+
+
+def anchor_init_cases():
+    """`warrant anchor init`: a witness's store of its own, which counts anchor@1 under rules only the witness holds."""
+    from warrant import graph as G
+    a = anchored_store("s0fractal/ia", carol=False)
+    a.entity("alice", "obligation@1", {"state": "open", "statement": "i", "serves": []})
+    a.commit("i")
+    w = Path(tempfile.mkdtemp(dir=TMP)) / "witness"
+    ids = AN.init(w, "carol", KEYS["carol"], "s0fractal/witness")
+    rw = RP.Repo(w)
+    rep = rw.report()
+    ident = G.identity(rep, rw.store.snapshot())["identity"]
+    k = AN.witness(rw, a.root, "carol", KEYS["carol"])
+    held = AN.check(rw, a.root)
+    again = refused_code(lambda: AN.init(w, "carol", KEYS["carol"], "s0fractal/witness"))
+    check("AN7 `warrant anchor init` makes a witness's store of its own: its rules@1 genesis is its identity (self-signed, "
+          "not the witnessed store's), it counts anchor@1 with the witness its one schema author, an anchor filed there "
+          "is held, and a second init over it is refused (ANCHOR_INIT)",
+          len(ids) == 3 and ident == ids[2] and ident != AN.read(a.root)[2] and "anchor@1" in rep["schemas"]
+          and not rep["rejected"] and k in rw.report()["_recs"] and held["holds"] and again == "ANCHOR_INIT",
+          (ids, ident, rep["schemas"], rep["rejected"], held, again))
+
+
 def package_of(r, roots, drop=()):
     lines = [x for x in (r.dot / "records.jsonl").read_text().splitlines() if R.rid(json.loads(x)["record"]) not in drop]
     return json.dumps({"warrant": "package/3", "roots": roots, "lines": lines, "blobs": {}}).encode()
@@ -1166,6 +1228,8 @@ def main():
         witness_cases()
         anchor_cases()
         anchor_rely_cases()
+        anchor_address_cases()
+        anchor_init_cases()
         pins_reader_cases()
         pins_earlier_version_cases()
     finally:

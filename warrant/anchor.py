@@ -19,12 +19,17 @@ What an anchor establishes: that A, read at that commit, held those records, by 
 that A holds nothing else, nor that B was not rewritten as well: B's defence is its own anchors elsewhere. While the
 witness and A's writers are one account, the anchor is that account's word, and says so in `check`.
 
+    python -m warrant.anchor --root DIR init --actor W --key K --repository NAME   # a witness's store of its own
     python -m warrant.anchor schema  --actor W --key K                 # file anchor@1 in this store
     python -m warrant.anchor witness --of CLONE [--commit C] --actor W --key K
-    python -m warrant.anchor check   --of CLONE [--commit C] [--json]  # exit 0 held, 1 rewritten or not anchored"""
+    python -m warrant.anchor check   --of CLONE [--commit C] [--json]  # exit 0 held, 1 rewritten or not anchored
+
+A store read by its address, with no clone, is warrant_agent.anchor's (`warrant-agent anchor`): the core reads no
+network."""
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from . import engine as E
 from . import graph as G
@@ -43,18 +48,24 @@ NAME = SCHEMA["name"]
 
 
 def read(of, commit=None):
-    """(commit, snapshot, identity, repository) of the store of the clone at `of`, at `commit` (HEAD by default), under
-    the receiver its v3.json gives at that commit."""
+    """(commit, snapshot, identity, repository, trust) of the store of the clone at `of`, at `commit` (HEAD by default),
+    under the receiver its v3.json gives at that commit. A store read by its address instead is warrant_agent.anchor's
+    (the core reads no network): `witness` and `check` take its reader as `read`."""
     commit = commit or git(of, "rev-parse", "HEAD").strip()
     snap = at_commit(of, commit)
     try:
         doc = json.loads(git(of, "show", f"{commit}:.warrant/v3.json"))
     except Exception:
         raise Failed("ANCHOR_CONFIG", f".warrant/v3.json cannot be read at {commit[:12]}") from None
+    return (commit, snap, *identity_of(snap, doc), doc["trust"])
+
+
+def identity_of(snap, doc):
+    """(identity, repository) of a store read with its v3.json `doc`; refused when it names itself by nothing."""
     ident = G.identity(E.View(snap, doc["trust"], doc["profile"]).report(), snap)
     if not ident["identity"]:
         raise Failed("ANCHOR_IDENTITY", f"the store names itself by nothing an anchor can keep: {ident['why']}")
-    return commit, snap, ident["identity"], doc.get("repository", "")
+    return ident["identity"], doc.get("repository", "")
 
 
 def lineages(rep, store):
@@ -98,9 +109,28 @@ def held(blob, rep, lin):
     return have, None
 
 
-def witness(repo, of, actor, key, commit=None):
-    """File the next version of `actor`'s anchor lineage for the store of the clone at `of`; its id."""
-    commit, snap, store, name = read(of, commit)
+def init(root, actor, key, repository):
+    """Make at `root` a witness's store of its own: a v3.json binding `actor` to `key` and naming it the one schema
+    author, the rules@1 genesis (that v3.json, self-signed: the store's identity, §14) and anchor@1. A store that would
+    otherwise anchor nothing (its rules counting no anchor@1, as a store whose schema quorum waits) gets one this way,
+    under rules no other store's writers hold. [ids filed]; refused where a store is already."""
+    from .gate import RULES, RULES_SCHEMA
+    dot = Path(root) / ".warrant"      # NOSONAR S8707: the directory its own operator names with --root, made there
+    if dot.exists() or dot.is_symlink():
+        raise Failed("ANCHOR_INIT", f"{root} holds a store already")
+    (dot / "blobs").mkdir(parents=True, exist_ok=True)
+    doc = {"warrant": "repository/3", "repository": repository,
+           "trust": {"warrant": "trust/3", "keys": {actor: [key.public]}},
+           "profile": {"warrant": "profile/3", "quorum": {E.SCHEMA_AUTHOR: 1}, "roles": {E.SCHEMA_AUTHOR: [actor]}}}
+    (dot / "v3.json").write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+    repo = Repo(root)
+    ids = repo.file(actor, key, [R.record("schema", actor, 0, RULES_SCHEMA), R.record("schema", actor, 0, SCHEMA)])
+    return ids + repo.file(actor, key, [R.record("entity", actor, 0, dict(doc, state="in force"), RULES, refs=[])])
+
+
+def witness(repo, of, actor, key, commit=None, read=read):
+    """File the next version of `actor`'s anchor lineage for the store at `of` (a clone, or what `read` reads); its id."""
+    commit, snap, store, name, _ = read(of, commit)
     rep = repo.report()
     own = G.identity(rep, repo.store.snapshot())["identity"]
     if own == store:
@@ -127,12 +157,11 @@ def witness(repo, of, actor, key, commit=None):
     return repo.file(actor, key, [R.record("entity", actor, 0, body, NAME, lineage=prev, refs=[])])[0]
 
 
-def check(repo, of, commit=None):
+def check(repo, of, commit=None, read=read):
     """Every anchor lineage this store keeps of the store at `of`, against that store at `commit`: {store, commit,
     holds, anchors: [{lineage, actor, leaf, at, held, missing, problem}], one_account}. `holds`: at least one anchor and
     none whose ids are gone or whose blobs are broken."""
-    commit, snap, store, _ = read(of, commit)
-    theirs = json.loads(git(of, "show", f"{commit}:.warrant/v3.json"))["trust"]
+    commit, snap, store, _, theirs = read(of, commit)
     out = against(repo.report(), repo.store.snapshot().blob, repo.config()[0], store, set(snap.lines), theirs)
     return {"store": store, "commit": commit, **out}
 
@@ -160,15 +189,19 @@ def run(argv=None):
     root, argv = env_root(list(sys.argv[1:] if argv is None else argv))
     ap = argparse.ArgumentParser(prog="warrant anchor")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for n in ("schema", "witness"):
+    for n in ("schema", "witness", "init"):
         p = sub.add_parser(n)
         p.add_argument("--actor", required=True)
         p.add_argument("--key", required=True)
     for n in ("witness", "check"):
-        sub.choices[n].add_argument("--of", required=True)
+        sub.choices[n].add_argument("--of", required=True, help="a clone on disk (an address: warrant-agent anchor)")
         sub.choices[n].add_argument("--commit")
     sub.choices["check"].add_argument("--json", action="store_true")
+    sub.choices["init"].add_argument("--repository", required=True, help="the name the witness's store gives itself")
     a = ap.parse_args(argv)
+    if a.cmd == "init":
+        dump({"init": init(root, a.actor, load_key(a.key, root), a.repository)})
+        return 0
     repo = Repo(root)
     if getattr(a, "commit", None) is not None and not S.hex_of(a.commit, 40):
         raise Failed("BAD_REQUEST", "--commit is a full commit id")
@@ -179,10 +212,16 @@ def run(argv=None):
         dump({"anchor": witness(repo, a.of, a.actor, load_key(a.key, root), a.commit)})
         return 0
     out = check(repo, a.of, a.commit)
-    if a.json:
+    show(out, a.of, a.json)
+    return 0 if out["holds"] else 1
+
+
+def show(out, of, as_json):
+    """Print what `check` answered."""
+    if as_json:
         dump(out)
     else:
-        print(f"store       {out['store'][:12]} at {out['commit'][:12]}: " + ("HELD" if out["holds"] else
+        print(f"store       {out['store'][:12]} at {out['commit'][:12] or of}: " + ("HELD" if out["holds"] else
               "NOT HELD" if out["anchors"] else "NOT ANCHORED here"))
         for r in out["anchors"]:
             state = r["problem"] or (f"{len(r['missing'])} record(s) gone: " + ", ".join(m[:12] for m in r["missing"][:8])
@@ -190,7 +229,6 @@ def run(argv=None):
             print(f"anchor      {r['actor']} {r['lineage'][:12]} (last at {(r['at'] or '?')[:12]}): {state}")
         if out["one_account"]:
             print(f"one account {', '.join(out['one_account'])}: a key of the witnessed store's own trust; their anchor is its word")
-    return 0 if out["holds"] else 1
 
 
 if __name__ == "__main__":
