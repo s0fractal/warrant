@@ -15,6 +15,7 @@ import sys
 import threading
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from world import KEYS, ROLES, ROOT, Repo, check, run_sections
@@ -1870,6 +1871,58 @@ def page_contract_cases():
           "command (exit 1)", lost_broken == [("node", d)] and "карта не тримає контракт: 1" in lost and mcode == 1,
           (lost_broken, mcode))
 
+def reader_mark_race_cases():
+    from unittest.mock import patch
+    import fcntl
+    from warrant_agent import changes as CH
+    from warrant_agent import serve as SV
+
+    r = Repo()
+    record = r.entity("alice", "obligation@1", {"state": "open", "statement": "one", "serves": []})
+    space = SV.Space({"w": str(r.root)})
+    path = r.home / "seen.json"
+    alice, bob = [SV.App(space, reader=name, marks=CH.Marks(path)) for name in ("alice", "bob")]
+    first_loaded, second_at_write, resume = (threading.Event() for _ in range(3))
+    load, flock = CH.Marks.load, fcntl.flock
+
+    def controlled_load(marks):
+        old = load(marks)
+        if marks is alice.marks:
+            first_loaded.set()
+            if not resume.wait(5):
+                raise RuntimeError("first reader did not resume")
+        return old
+
+    def observed_flock(fd, flags):
+        if threading.current_thread().name == "second-reader":
+            second_at_write.set()
+        return flock(fd, flags)
+
+    def save(app):
+        if app is bob:
+            threading.current_thread().name = "second-reader"
+        try:
+            return app.seen({"token": app.token})[0]
+        finally:
+            if app is bob:
+                second_at_write.set()
+
+    with patch.object(CH.Marks, "load", controlled_load), patch.object(fcntl, "flock", observed_flock):
+        with ThreadPoolExecutor(2) as pool:
+            first = pool.submit(save, alice)
+            try:
+                assert first_loaded.wait(5)
+                second = pool.submit(save, bob)
+                assert second_at_write.wait(5)
+            finally:
+                resume.set()
+            codes = first.result(), second.result()
+    after = CH.Marks(path)
+    check("CM1 concurrent /seen updates from two readers preserve each mark",
+          codes == (303, 303) and all(record in (after.get(name, "w") or set()) for name in ("alice", "bob")),
+          (codes, after.load()))
+
+
 def changes_cases():
     """What changed for a reader (warrant_agent/changes.py): the past is the set of records the reader marked as
     seen, assessed by the same engine; a lineage is listed only when its floor or what the reader's lens draws of it
@@ -2407,6 +2460,7 @@ if __name__ == "__main__":
         serve_cases,
         lens_cases,
         changes_cases,
+        reader_mark_race_cases,
         scene_cases,
         fragile_cases,
         whatif_cases,
