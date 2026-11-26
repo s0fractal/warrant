@@ -32,7 +32,7 @@ from . import home as H
 from . import records as R
 from .store import Refused, Store, confined, read_inside
 
-LOOP = ("review", "gate", "claims", "roadmap", "drift", "snapshot", "delegate")       # the review loop's commands, each its own module's parser
+LOOP = ("review", "gate", "claims", "roadmap", "drift", "snapshot", "anchor", "delegate")       # the review loop's commands, each its own module's parser
 RECEIVER = "v3.json"                                 # a repository's trust and profile, in its store directory
 
 
@@ -167,6 +167,7 @@ LOOP_HELP = {
     "roadmap": "goals and obligations: what is open, what is due for whom, close and release",
     "drift": "which accepted claims name bytes the checkout no longer holds",
     "snapshot": "Merkle roots of the store and witnesses over them",
+    "anchor": "this store witnessing another: what it held, kept here, and whether it still holds it",
 }
 HELP = {
     "init": "make a store here (.warrant/, with AGENTS.md and the MCP server for agents), or --store DIR",
@@ -532,11 +533,11 @@ def say(argv):
 
 
 def loop(argv):
-    """`warrant review|gate|claims|roadmap|drift|snapshot|delegate ARGS`: that module's own command, unchanged."""
-    from . import claims, delegate, drift, gate, review, roadmap, snapshot
+    """`warrant review|gate|claims|roadmap|drift|snapshot|anchor|delegate ARGS`: that module's own command, unchanged."""
+    from . import anchor, claims, delegate, drift, gate, review, roadmap, snapshot
     from .repo import main as run_tool
     mod = {"review": review, "gate": gate, "claims": claims, "roadmap": roadmap, "drift": drift,
-           "snapshot": snapshot, "delegate": delegate}[argv[0]]
+           "snapshot": snapshot, "anchor": anchor, "delegate": delegate}[argv[0]]
     return mod.main(argv[1:]) if mod is gate else run_tool(mod.run, argv[1:])
 
 
