@@ -335,6 +335,12 @@ MUTANTS = [
     ("WM20", "warrant/merkle.py", '                or (size is not None and n != size)):\n', '                or False):\n', VERIFY, ["WT2"]),
     ("WM21", "warrant/merkle.py", '    if not (type(size) is int and type(i) is int and 0 <= i < size', '    if not (isinstance(size, int) and isinstance(i, int) and 0 <= i < size', VERIFY, ["WT1"]),
     ("WM22", "warrant/snapshot.py", '    bad = [(k, f"{k} {b.get(k)} where the store at {b[\'commit\'][:12]} gives {r[k]}") for k in ("records", "index") if b.get(k) != r[k]]\n', '    bad = []\n', VERIFY, ["WT9"]),
+    ("WM23", "warrant/anchor.py", '    gone = sorted(have - now)\n    if gone:', '    gone = sorted(have - now)\n    if False:', VERIFY, ["AN1"]),
+    ("WM24", "warrant/anchor.py", '                     "missing": sorted((have or set()) - now), "problem": why})', '                     "missing": [], "problem": why})', VERIFY, ["AN1"]),
+    ("WM25", "warrant/anchor.py", "        if M.root([bytes.fromhex(i) for i in sorted(have)]) != b[\"records\"] or len(have) != b[\"size\"]:", "        if False:", VERIFY, ["AN2"]),
+    ("WM26", "warrant/anchor.py", '    if own == store:', '    if False:', VERIFY, ["AN2"]),
+    ("WM27", "warrant/anchor.py", '    added = repo.store.put_blob(b"".join(bytes.fromhex(i) for i in sorted(now - have)))', '    added = repo.store.put_blob(b"".join(bytes.fromhex(i) for i in sorted(now)))', VERIFY, ["AN1"]),
+    ("WM28", "warrant/anchor.py", '    one = sorted({r["actor"] for r in rows if set(trust["keys"].get(r["actor"], [])) & theirs})', '    one = []', VERIFY, ["AN2"]),
     # the harness itself (tests/mutants.py, tests/world.py): what every KILLED above rests on
     ("T199", "tests/mutants.py", '    if not cases or not all(homes):\n        return None', '    if not cases or not all(homes):\n        return ["main"]', TOOLS, ["HM2"]),
     ("T200", "tests/world.py", '            sys.stdout.flush()\n            os._exit(1)\n', '            pass\n', TOOLS, ["HM3"]),

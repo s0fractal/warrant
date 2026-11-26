@@ -23,6 +23,7 @@ from pathlib import Path
 
 from world import KEYS, ROLES, ROOT, Repo, check, finish, git
 
+from warrant import anchor as AN
 from warrant import engine as E
 from warrant import jcs as C
 from warrant import keys as K
@@ -844,6 +845,69 @@ def witness_repo():
     return r, d, c, s1, cfg["trust"], cfg["profile"]
 
 
+def anchored_store(name, carol=True):
+    """A repository with a self-signed rules@1 genesis (an identity), in Git; without carol's key in its trust when
+    `carol` is False."""
+    from warrant import gate as GT
+    r = Repo(base=TMP, git_init=True, name=name)
+    if not carol:
+        r.trust = dict(r.trust, keys={a: k for a, k in r.trust["keys"].items() if a != "carol"})
+        r.write_config(name)
+    r.put("alice", "schema", GT.RULES_SCHEMA)
+    r.put("bob", "entity", dict(json.loads((r.dot / "v3.json").read_text()), state="in force"), GT.RULES)
+    r.commit("genesis")
+    return r
+
+
+def anchor_cases():
+    a, b = anchored_store("s0fractal/a", carol=False), anchored_store("s0fractal/b")
+    b.put("alice", "schema", AN.SCHEMA)
+    rb = RP.Repo(b.root)
+    x = a.entity("alice", "obligation@1", {"state": "open", "statement": "x", "serves": []})
+    a.commit("x")
+    k1 = AN.witness(rb, a.root, "carol", KEYS["carol"])
+    y = a.entity("alice", "obligation@1", {"state": "open", "statement": "y", "serves": []})
+    a.commit("y")
+    k2 = AN.witness(rb, a.root, "carol", KEYS["carol"])
+    rep = rb.report()
+    b1, b2 = rep["_recs"][k1]["body"], rep["_recs"][k2]["body"]
+    first = AN.ids_of(rb.store.snapshot().blob(b1["added"]))
+    second = AN.ids_of(rb.store.snapshot().blob(b2["added"]))
+    held = AN.check(rb, a.root)
+    lines = (a.dot / "records.jsonl").read_bytes().splitlines(True)
+    (a.dot / "records.jsonl").write_bytes(b"".join(l for l in lines if R.rid(json.loads(l)["record"]) != x))
+    a.commit("history rewritten: x dropped")
+    gone = AN.check(rb, a.root)
+    refused = refused_code(lambda: AN.witness(rb, a.root, "carol", KEYS["carol"]))
+    check("AN1 an anchor lies in another store: each version names the witnessed store's identity, commit and records "
+          "root, and its `added` blob holds only the ids gained since the version before, so the lineage's blobs make "
+          "that root; a later store that lacks an anchored record is NOT HELD with the id named, and the witness refuses "
+          "to sign it (ANCHOR_REWRITTEN)",
+          rep["_recs"][k2]["lineage"] == k1 and b1["store"] == b2["store"] and x in first and y in second
+          and y not in first and not set(first) & set(second) and b2["size"] == len(first) + len(second)
+          and held["holds"] and held["anchors"][0]["held"] == b2["size"] and not gone["holds"]
+          and gone["anchors"][0]["missing"] == [x] and refused == "ANCHOR_REWRITTEN" and held["one_account"] == [],
+          (held, gone, refused))
+    (a.dot / "records.jsonl").write_bytes(b"".join(lines))
+    a.commit("restored")
+    forged = b.put("carol", "entity", dict(b2, added=b.blob(b"\x00" * 32), commit=git(a.root, "rev-parse", "HEAD")),
+                   AN.NAME, lineage=k2)
+    broken = AN.check(rb, a.root)
+    self_ = refused_code(lambda: AN.witness(rb, b.root, "carol", KEYS["carol"]))
+    c = anchored_store("s0fractal/c")
+    rc = RP.Repo(c.root)
+    c.put("alice", "schema", AN.SCHEMA)
+    AN.witness(rc, b.root, "carol", KEYS["carol"])
+    own = AN.check(rc, b.root)
+    none = AN.check(rc, a.root)
+    check("AN2 an anchor whose blobs do not make the records root it signed is caught by `check`, not counted as held; "
+          "a store does not anchor itself (ANCHOR_SELF); a witness whose key the witnessed store's own trust binds is "
+          "named (`one_account`: its anchor is that account's word); a store this one does not anchor is not held",
+          not broken["holds"] and "do not make" in (broken["anchors"][0]["problem"] or "") and forged
+          and self_ == "ANCHOR_SELF" and own["holds"] and own["one_account"] == ["carol"]
+          and not none["holds"] and none["anchors"] == [], (broken, self_, own, none))
+
+
 def package_of(r, roots, drop=()):
     lines = [x for x in (r.dot / "records.jsonl").read_text().splitlines() if R.rid(json.loads(x)["record"]) not in drop]
     return json.dumps({"warrant": "package/3", "roots": roots, "lines": lines, "blobs": {}}).encode()
@@ -1011,6 +1075,7 @@ def main():
         signature_cases()
         merkle_cases()
         witness_cases()
+        anchor_cases()
         pins_reader_cases()
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
