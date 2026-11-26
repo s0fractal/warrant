@@ -271,7 +271,8 @@ def _elsewhere(others, reached, L):
     """[{store, lineage, schema, state, reliance}] of the records of Home's other stores among `reached` (what rests on
     a version of claim lineage L, through every store), each read under that store's own report; an attest or a
     challenge there, which is in no lineage, as {store, record, kind, actor, lineage: null}: a foreign verdict on what
-    the change makes stale rests on it too (Codex 9319a330 on G14)."""
+    the change makes stale rests on it too (Codex 9319a330 on G14), and so does a schema there that cites it (Codex
+    692bdd73): every record reached in no lineage is listed so."""
     out = []
     for i in reached:
         for x in others:
@@ -282,7 +283,7 @@ def _elsewhere(others, reached, L):
                     lin = x.rep["lineages"][x.view.root_of[i]]
                     out.append({"store": x.name, "lineage": x.view.root_of[i], "schema": lin["schema"], "state": lin["state"],
                                 "reliance": lin["reliance"]})
-            elif x.view.recs[i]["kind"] in ("attest", "challenge"):
+            else:                                   # in no lineage: an attest, a challenge, a schema (Codex 692bdd73)
                 r = x.view.recs[i]
                 out.append({"store": x.name, "lineage": None, "record": i, "kind": r["kind"], "actor": r["actor"]})
     return sorted({tuple(sorted(d.items())): d for d in out}.values(),

@@ -401,12 +401,20 @@ def _root(snap, view, rep, nodes, out, i, checkout):
             why.append(lin["reliance"])
         if pins["verdict"] == "STALE":
             why.append("STALE")
-            if not why[:-1]:
-                root["lineage"]["reliance"] = "STALE"          # the receiver's tree read beside the package (docs/V3.md §15)
         if pins["verdict"] == "NOT_CHECKED":       # no tree read beside it: never ELIGIBLE on pins nobody compared (§10)
             why.append("PINS_NOT_CHECKED")
-            if not why[:-1]:
-                root["lineage"]["reliance"] = "PINS_NOT_CHECKED"
+        # the lineage's reliance is its effective version's, whichever version was asked: an earlier version need not
+        # carry the effective one's pins (Codex eb81cfd8: an open root read ELIGIBLE beside a pinned done successor)
+        eff = lin["effective"]
+        if eff == i:
+            eff_pins = pins
+        elif eff in rep["versions"]:
+            eff_pins = _pins(view, eff, _accepted(view, eff, rep["versions"][eff]["accepted_by"]), checkout)
+        else:
+            eff_pins = {"verdict": "NONE"}
+        if lin["reliance"] == "ELIGIBLE" and eff_pins["verdict"] in ("STALE", "NOT_CHECKED"):
+            # the receiver's tree read beside the package (docs/V3.md §15), or none read (§10)
+            root["lineage"]["reliance"] = "STALE" if eff_pins["verdict"] == "STALE" else "PINS_NOT_CHECKED"
     root["why_not"] = why
     root["rely"] = not why
     return root

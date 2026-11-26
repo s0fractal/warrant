@@ -296,6 +296,21 @@ def _link_chain(root, path):
     return chain
 
 
+def trees_read(rep, root):
+    """{commit: digest of its code tree, or None when this clone cannot read it} of every commit a checker's signed
+    acceptance names: what `view` compares with HEAD, so a lens over it binds which of them the clone holds (Codex
+    7f4a36c5 on G11: a depth-1 clone rendered "not this tree" under the full clone's root and lens)."""
+    import hashlib
+    out = {}
+    for c in sorted({x for xs in checked(rep).values() for x in xs if isinstance(x, str)}):
+        try:
+            t = code_tree(root, c)
+        except (subprocess.CalledProcessError, TypeError):
+            t = None
+        out[c] = None if t is None else hashlib.sha256(json.dumps(t, sort_keys=True).encode()).hexdigest()
+    return out
+
+
 def at_tree(root, commits, here):
     """Whether one of `commits` has the code `here` (a tree outside .warrant/); a commit not in this clone has not."""
     for x in commits:
