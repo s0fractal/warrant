@@ -53,6 +53,8 @@ ZWSP = "\u200b"
 PR_REF = re.compile(r"([A-Za-z0-9][A-Za-z0-9-]*)/([A-Za-z0-9._-]+)#([0-9]+)\Z")
 # (field name, data type, the row member it shows); ID is the key a row is found by on the board
 ID, SYNCED = "Warrant ID", "Last sync"
+PENDING_ID = re.compile(r"\nLineage `([0-9a-f]{64})` · version shown `[0-9a-f]{64}`\n"
+                        r"\n<!-- warrant-board:pending \1 -->\n?\Z")
 # GitHub's own column: a new project fills it with "Todo" for every item added. On a row of ours that word is no
 # record's (an accepted obligation is not "Todo"), so a sync clears it; the status of a row is `Warrant status`.
 THEIRS = "Status"
@@ -261,16 +263,28 @@ def _same(dtype, on_board, wanted):
     return (on_board or "") == (wanted or "")
 
 
+def _item_key(item):
+    key = item["values"].get(ID)
+    if not key and item["draft"]:
+        pending = PENDING_ID.search(item["body"] or "")
+        key = pending.group(1) if pending else None
+    return key
+
+
+def _owned(board):
+    return {key: item for item in board["items"] if not item["archived"] and (key := _item_key(item))}
+
+
 def plan(man, board, today):
     """What a sync would do, and nothing done: the fields to add, the rows to create, the members of each present row
     that differ (a hand edit among them), the rows to archive (ours, no longer in the manifest) and the items that are
-    not ours (no Warrant ID: left alone)."""
+    not ours (neither a Warrant ID nor an unfinished row's marker: left alone)."""
     other = sorted(name for name, dtype in [(n, t) for n, t, _ in FIELDS] + [(SYNCED, "DATE")]
                    if name in board["fields"] and board["fields"][name].get("dataType") != dtype)
     if other:                                           # a field of ours' name and another type (GitHub's own `Repository` is one)
         raise Failed("FIELD", f"the board has fields named as ours and of another type: {', '.join(other)}")
     missing = [name for name, _, _ in FIELDS if name not in board["fields"]] + ([] if SYNCED in board["fields"] else [SYNCED])
-    ours = {i["values"].get(ID): i for i in board["items"] if i["values"].get(ID) and not i["archived"]}
+    ours = _owned(board)
     want = {r["id"]: r for r in man["rows"]}
     update = {}
     for rid, row in want.items():
@@ -284,7 +298,7 @@ def plan(man, board, today):
             update[rid] = diff
     return {"fields": missing, "create": sorted(set(want) - set(ours)), "update": update,
             "archive": sorted(set(ours) - set(want)),
-            "foreign": sum(1 for i in board["items"] if not i["values"].get(ID)), "today": today, "manifest": man["digest"],
+            "foreign": sum(1 for i in board["items"] if not _item_key(i)), "today": today, "manifest": man["digest"],
             "describe": man["digest"][:12] not in board.get("readme", "")}      # the description names another manifest, or none
 
 
@@ -307,16 +321,16 @@ def sync(man, board, call, today):
         f = call(ADD_FIELD, {"project": board["id"], "name": name, "type": kind, "options": options})["createProjectV2Field"]["projectV2Field"]
         board["fields"][f["name"]] = f
     want = {r["id"]: r for r in man["rows"]}
-    ours = {i["values"].get(ID): i for i in board["items"] if i["values"].get(ID) and not i["archived"]}
+    ours = _owned(board)
     for rid in todo["create"]:
         row = want[rid]
-        made = call(ADD_ITEM, {"project": board["id"], "title": row["title"], "body": row["body"]})["addProjectV2DraftIssue"]["projectItem"]
+        # The first mutation carries the lineage id even if its response is lost.
+        pending = row["body"] + f"\n<!-- warrant-board:pending {rid} -->\n"
+        made = call(ADD_ITEM, {"project": board["id"], "title": row["title"], "body": pending})["addProjectV2DraftIssue"]["projectItem"]
         ours[rid] = {"item": made["id"], "draft": made["content"]["id"], "title": row["title"], "body": row["body"], "values": {}}
-        todo["update"][rid] = [name for name, _, _ in FIELDS] + [THEIRS]
+        todo["update"][rid] = [name for name, _, _ in FIELDS] + [THEIRS, "body"]
     for rid, diff in sorted(todo["update"].items()):
         row, item = want[rid], ours[rid]
-        if "title" in diff or "body" in diff:
-            call(SET_TEXT, {"draft": item["draft"], "title": row["title"], "body": row["body"]})
         for name, dtype, member in FIELDS:
             if name not in diff or (rid in todo["create"] and _same(dtype, None, row[member])):
                 continue                                # a new row's empty cells are empty already
@@ -328,6 +342,9 @@ def sync(man, board, call, today):
         if THEIRS in diff and THEIRS in board["fields"]:
             call(CLEAR, {"project": board["id"], "item": item["item"], "field": board["fields"][THEIRS]["id"]})
         call(SET_FIELD, {"project": board["id"], "item": item["item"], "field": board["fields"][SYNCED]["id"], "value": {"date": today}})
+        if "title" in diff or "body" in diff:
+            # Drop the pending marker only after the draft has its identity field.
+            call(SET_TEXT, {"draft": item["draft"], "title": row["title"], "body": row["body"]})
     for rid in todo["archive"]:
         call(ARCHIVE, {"project": board["id"], "item": ours[rid]["item"]})
     if todo["describe"]:

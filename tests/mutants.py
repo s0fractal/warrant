@@ -1150,6 +1150,8 @@ MUTANTS = [
     ("BM7", "warrant/board.py", 'diff = [m for m in ("title", "body") if item[m] != row[m]]', "diff = []", TOOLS, ["BD5"]),
     ("BM8", "warrant/board.py", '    for rid in todo["archive"]:\n        call(ARCHIVE', '    for rid in []:\n        call(ARCHIVE', TOOLS, ["BD5"]),
     ("BM9", "warrant/board.py", "return dict(doc, digest=C.doc_id(doc))", 'return dict(doc, digest=C.doc_id(doc["stores"]))', TOOLS, ["BD2"]),
+    ("BDR1", "warrant/board.py", 'pending = row["body"] + f"\\n<!-- warrant-board:pending {rid} -->\\n"',
+     'pending = row["body"]', TOOLS, ["BDR1"]),
     ("BM11", "warrant/board.py", "        for k in ([kind] if kind else OWNERS):", "        for k in OWNERS[1:]:", TOOLS, ["BD6"]),
     ("BM14", "warrant/board.py", '        diff += [THEIRS] if item["values"].get(THEIRS) else []', "", TOOLS, ["BD5"]),
     ("BM15", "warrant/board.py", '        todo["update"][rid] = [name for name, _, _ in FIELDS] + [THEIRS]', '        todo["update"][rid] = [name for name, _, _ in FIELDS]', TOOLS, ["BD4"]),

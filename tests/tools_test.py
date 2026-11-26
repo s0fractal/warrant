@@ -3068,6 +3068,37 @@ def board_cases():
           (edited["update"], edited["archive"], edited["foreign"]))
 
 
+def board_retry_cases():
+    repo = Repo()
+    initial = {"state": "open", "statement": "first version", "serves": []}
+    rid = repo.entity("alice", "obligation@1", initial)
+    old = BD.manifest([repo.root])
+    board = FakeBoard()
+
+    def lost_reply(query, args):
+        result = board.call(query, args)
+        if query is BD.ADD_ITEM:
+            raise RP.Failed("GITHUB", "the draft was created but the response was lost")
+        return result
+
+    try:
+        BD.sync(old, BD.read_board(board.call, "o", 1), lost_reply, "2026-11-26")
+    except RP.Failed:
+        pass
+    created = board.items[0]["id"]
+    repo.entity("alice", "obligation@1", dict(initial, statement="second version"), lineage=rid)
+    current = BD.manifest([repo.root])
+    BD.sync(current, BD.read_board(board.call, "o", 1), board.call, "2026-11-26")
+    check("BDR1 retry after a lost create reply repairs the existing draft even when the manifest has since changed",
+          len(board.items) == 1 and board.items[0]["id"] == created
+          and board.items[0]["values"].get(BD.ID) == rid
+          and board.items[0]["body"] == current["rows"][0]["body"]
+          and board.items[0]["title"] == "second version", [(x["id"], x["title"], x["values"]) for x in board.items])
+    board.mutations.clear()
+    BD.sync(current, BD.read_board(board.call, "o", 1), board.call, "2026-11-26")
+    check("BDR2 a finished retry leaves the next sync idle", not board.mutations, board.mutations)
+
+
 # The block the adoption experiment measured (experiments/adoption/entry/AGENTS.block.md at 9bcf1f3386ec, branch
 # exp/adoption, s0fractal/warrant#385): its sha256. `warrant init` writes it byte for byte.
 ENTRY_BLOCK_SHA = "9114d7c650b0fb1a85d41cc39d43d798e37ec0a6fc3f66a18c14eb11138d4fea"
@@ -3594,6 +3625,7 @@ if __name__ == "__main__":
         bridge_step_cases,
         receipt_cases,
         board_cases,
+        board_retry_cases,
         narrow_cases,
         resolve_cases,
         harness_cases,
