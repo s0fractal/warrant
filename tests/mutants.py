@@ -1152,6 +1152,7 @@ MUTANTS = [
     ("BM9", "warrant/board.py", "return dict(doc, digest=C.doc_id(doc))", 'return dict(doc, digest=C.doc_id(doc["stores"]))', TOOLS, ["BD2"]),
     ("BDR1", "warrant/board.py", 'pending = row["body"] + f"\\n<!-- warrant-board:pending {rid} -->\\n"',
      'pending = row["body"]', TOOLS, ["BDR1"]),
+    ("BDR3", "warrant/board.py", "key = lin if lin == marked and S.hex64(lin)", "key = lin if S.hex64(lin)", TOOLS, ["BDR3"]),
     ("BM11", "warrant/board.py", "        for k in ([kind] if kind else OWNERS):", "        for k in OWNERS[1:]:", TOOLS, ["BD6"]),
     ("BM14", "warrant/board.py", '        diff += [THEIRS] if item["values"].get(THEIRS) else []', "", TOOLS, ["BD5"]),
     ("BM15", "warrant/board.py", '        todo["update"][rid] = [name for name, _, _ in FIELDS] + [THEIRS]', '        todo["update"][rid] = [name for name, _, _ in FIELDS]', TOOLS, ["BD4"]),

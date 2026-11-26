@@ -3097,6 +3097,14 @@ def board_retry_cases():
     board.mutations.clear()
     BD.sync(current, BD.read_board(board.call, "o", 1), board.call, "2026-11-26")
     check("BDR2 a finished retry leaves the next sync idle", not board.mutations, board.mutations)
+    body = current["rows"][0]["body"]
+    other = "f" * 64
+    forged = [dict(draft=True, values={}, body=body + f"\n<!-- warrant-board:pending {mark} -->\n")
+              for mark in (other, rid.upper(), rid + "0")]
+    check("BDR3 a draft whose pending marker names another lineage than its body, or no record id, is not ours",
+          [BD._item_key(x) for x in forged] == [None] * 3
+          and BD._item_key(dict(forged[0], body=body + f"\n<!-- warrant-board:pending {rid} -->\n")) == rid,
+          [BD._item_key(x) for x in forged])
 
 
 # The block the adoption experiment measured (experiments/adoption/entry/AGENTS.block.md at 9bcf1f3386ec, branch

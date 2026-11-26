@@ -38,6 +38,7 @@ import urllib.parse
 from pathlib import Path
 
 from . import jcs as C
+from . import shapes as S
 from .repo import Failed, Repo, dump, main
 
 GOAL, OBLIGATION, OBLIGATION2 = "goal@1", "obligation@1", "obligation@2"
@@ -53,8 +54,9 @@ ZWSP = "\u200b"
 PR_REF = re.compile(r"([A-Za-z0-9][A-Za-z0-9-]*)/([A-Za-z0-9._-]+)#([0-9]+)\Z")
 # (field name, data type, the row member it shows); ID is the key a row is found by on the board
 ID, SYNCED = "Warrant ID", "Last sync"
-PENDING_ID = re.compile(r"\nLineage `([0-9a-f]{64})` · version shown `[0-9a-f]{64}`\n"
-                        r"\n<!-- warrant-board:pending \1 -->\n?\Z")
+# An unfinished row's marker: the body's last line names the lineage and the version, the marker the same lineage;
+# each id is checked by warrant/shapes.py, which alone defines the hex shapes.
+PENDING_ID = re.compile(r"\nLineage `([^`\n]*)` · version shown `([^`\n]*)`\n\n<!-- warrant-board:pending ([^ \n]*) -->\n?\Z")
 # GitHub's own column: a new project fills it with "Todo" for every item added. On a row of ours that word is no
 # record's (an accepted obligation is not "Todo"), so a sync clears it; the status of a row is `Warrant status`.
 THEIRS = "Status"
@@ -267,7 +269,8 @@ def _item_key(item):
     key = item["values"].get(ID)
     if not key and item["draft"]:
         pending = PENDING_ID.search(item["body"] or "")
-        key = pending.group(1) if pending else None
+        lin, ver, marked = pending.groups() if pending else (None, None, None)
+        key = lin if lin == marked and S.hex64(lin) and S.hex64(ver) else None
     return key
 
 
