@@ -1,0 +1,318 @@
+Codex roadmap verdict evidence, G11 graph obligation
+
+D: 8c856b3b26355a6eaf27b32cc1404ada26b7528b6e567dc78f84bd0da0a7dc0e
+T: 3483319d53ba6cac0e2eab055194d9b54c5320028d0a787fe0edd87afaed74d5
+M: 8fdfab755ecb832398b4189ae4976efbc63bfca0
+Repository: s0fractal/warrant
+Actor: codex
+
+Verdict: challenge, bounded to D's express requirement that each claimed property be burned by a mutant.
+The implementation at M passes the new countervector. This is an observed mutation-coverage gap, not an assertion that production delta at M currently drops reliance changes.
+
+At warrant/graph.py:211-219, delta promises to list lineages whose state, reliance or leaf changed. Remove ONLY the reliance comparisons (exact patch below). Both full tests/agent_test.py (229 checks) and tests/tools_test.py (248 checks) remain green, including actual stdio MCP checks under the plugin Python with its SDK. No skips or FAIL lines in these completed full runs. The new DR38 at tests/tools_test.py:1072-1086 changes the entity version as well as the state; it cannot isolate a reliance-only regression. A51 and DR25b compare some delta output with the same G.delta definition, so are not independent oracles for this property. T364 kills an entirely empty changed list; the narrower mutation below survives.
+
+An independent canonical, signed fixture creates an accepted done obligation at BASE, then adds a counted standing challenge at HEAD, with no new entity version. Its state stays done and its leaf stays the same; reliance moves ELIGIBLE -> CHALLENGED. The unmodified implementation names its lineage in delta.changed through all four interfaces: library, tools/graph.py CLI, agent API, actual stdio MCP warrant_graph. Under this mutation all four successfully return changed=[], while the underlying reports still show the reliance change. The countervector prints ok F1 on M and FAIL F1 on the mutant. Add an assertion for this isolated change and register a mutant that fails its designated case before closing D.
+
+Verification and limits:
+- Verified detached HEAD M, origin s0fractal/warrant, clean initial worktree; warrant.roadmap due --actor codex --json matched D/T, all evidence ids, references, subject=null and requires=[]. MCP context under M's own server shows PENDING, short=1 for roadmap/acceptor, no open requirements or challenges on T.
+- Read D/T and all five evidence records (PR-open records, not evidence blobs), the cited merged changes #481, #491, #502, 1d9a32a6, #533, #542, #591 and #604, current graph implementations and tests/mutants. The graph module moved to warrant/graph.py in 1d9a32a6; that rename is not a blocker.
+- Ran focused graph/impact/source/view/frontier tests and then both complete agent/tools files unmodified; reran both full files against this isolated mutation. Exact outcomes and stdout hashes below.
+- Registered mutants X43 T124 T321 T322 T323 T325 T326 T327 T354 T355 T364 T365: all 12 KILLED by their designated named cases, not import failures. Full core/gate/verify suites and the entire mutant matrix were not run for this bounded verdict.
+- The system Python initially skipped M01 for absent SDK. The completed full runs use /Users/s0fractal/.warrant/codex-mcp/bin/python and have no skips. The plugin's installed default server predates range graph commands, so MCP probes and the verdict explicitly select a wrapper importing the reviewed source. This environment mismatch is not filed as a defect in M.
+- An initial mutant tools run without Git metadata stopped in narrow_cases; copying the baseline clone's Git metadata and rerunning the full file completed with all 248 checks passing. Only that completed run supports the survivor claim.
+- Before filing: roadmap check 128 lineages, 0 problems; claims check 145 live claims, 0 problems. No source/test edits in the verdict worktree. No commit, push, merge, or PR by this reviewer.
+
+Exact isolated mutation:
+--- /Users/s0fractal/.warrant/work/codex/3483319d53ba/repo/warrant/graph.py	2026-11-26 09:22:24
++++ /Users/s0fractal/.warrant/work/codex/3483319d53ba/delta-mutant/warrant/graph.py	2026-11-26 09:23:58
+@@ -211,8 +211,8 @@
+ def delta(rep0, rep1):
+     n0, n1 = {n[0] for n in rep0["graph"]["nodes"]}, {n[0] for n in rep1["graph"]["nodes"]}
+     changed = sorted(L for L, lin in rep1["lineages"].items() if L in rep0["lineages"]
+-                     and (rep0["lineages"][L]["state"], rep0["lineages"][L]["reliance"], rep0["lineages"][L]["leaf"])
+-                     != (lin["state"], lin["reliance"], lin["leaf"]))
++                     and (rep0["lineages"][L]["state"], rep0["lineages"][L]["leaf"])
++                     != (lin["state"], lin["leaf"]))
+     return {"added": sorted(n1 - n0), "removed": sorted(n0 - n1), "changed": changed,
+             "lineages_added": sorted(set(rep1["lineages"]) - set(rep0["lineages"])),
+             "lineages_removed": sorted(set(rep0["lineages"]) - set(rep1["lineages"]))}
+
+Completed runs:
+{"run": "agent-full-baseline", "checks": 229, "sha256_stdout_stderr": "51f74da03b992cf08ec5781e3896e42a5ae6397d5d2717158b9de9b313b35918", "last_line": "all passed"}
+{"run": "tools-full-baseline", "checks": 248, "sha256_stdout_stderr": "47f883a5f77b7c66c9e8aad75867a021ac5b61b6fd6fed98c8b13b6039e2509e", "last_line": "all passed"}
+{"run": "agent-full-mutant", "checks": 229, "sha256_stdout_stderr": "51f74da03b992cf08ec5781e3896e42a5ae6397d5d2717158b9de9b313b35918", "last_line": "all passed"}
+{"run": "tools-full-mutant", "checks": 248, "sha256_stdout_stderr": "47f883a5f77b7c66c9e8aad75867a021ac5b61b6fd6fed98c8b13b6039e2509e", "last_line": "all passed"}
+
+Registered mutant matrix:
+{
+ "definition": "a6217dac241a02cb26fe032c813a0baf759e866d1a815535c5c10d1ebd0922d2",
+ "rows": [
+  {
+   "id": "X43",
+   "outcome": "KILLED",
+   "failed": [
+    "A52"
+   ],
+   "rc": 1,
+   "sections": [
+    "operations"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T124",
+   "outcome": "KILLED",
+   "failed": [
+    "DR17"
+   ],
+   "rc": 1,
+   "sections": [
+    "impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T321",
+   "outcome": "KILLED",
+   "failed": [
+    "DR25b"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T322",
+   "outcome": "KILLED",
+   "failed": [
+    "A51"
+   ],
+   "rc": 1,
+   "sections": [
+    "horizon_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T323",
+   "outcome": "KILLED",
+   "failed": [
+    "A51"
+   ],
+   "rc": 1,
+   "sections": [
+    "horizon_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T325",
+   "outcome": "KILLED",
+   "failed": [
+    "DR17b"
+   ],
+   "rc": 1,
+   "sections": [
+    "impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T326",
+   "outcome": "KILLED",
+   "failed": [
+    "A51"
+   ],
+   "rc": 1,
+   "sections": [
+    "horizon_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T327",
+   "outcome": "KILLED",
+   "failed": [
+    "DR25b"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T354",
+   "outcome": "KILLED",
+   "failed": [
+    "SR8"
+   ],
+   "rc": 1,
+   "sections": [
+    "sources_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T355",
+   "outcome": "KILLED",
+   "failed": [
+    "DR17c"
+   ],
+   "rc": 1,
+   "sections": [
+    "impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T364",
+   "outcome": "KILLED",
+   "failed": [
+    "DR38"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T365",
+   "outcome": "KILLED",
+   "failed": [
+    "DR38"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  }
+ ]
+}
+
+Independent countervector output at M:
+{
+ "lineage": "3f36ae227bbc2ed52cedbedc159a8cc532c42bbdc21a2e920b09b2389cf8fdd1",
+ "base": "7ec9299f28c8fed12b137852bc6a464f16dada68",
+ "head": "6dac2c9f227479cfb38a3437146f5387c0a25305",
+ "before": {
+  "state": "done",
+  "leaf": "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f",
+  "reliance": "ELIGIBLE"
+ },
+ "after": {
+  "state": "done",
+  "leaf": "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f",
+  "reliance": "CHALLENGED"
+ },
+ "changed_by_interface": {
+  "library": [
+   "3f36ae227bbc2ed52cedbedc159a8cc532c42bbdc21a2e920b09b2389cf8fdd1"
+  ],
+  "CLI": [
+   "3f36ae227bbc2ed52cedbedc159a8cc532c42bbdc21a2e920b09b2389cf8fdd1"
+  ],
+  "API": [
+   "3f36ae227bbc2ed52cedbedc159a8cc532c42bbdc21a2e920b09b2389cf8fdd1"
+  ],
+  "MCP": [
+   "3f36ae227bbc2ed52cedbedc159a8cc532c42bbdc21a2e920b09b2389cf8fdd1"
+  ]
+ }
+}
+ok   F1 delta must report a reliance-only change of an existing lineage through library, CLI, API and MCP
+
+Independent countervector output on mutant:
+{
+ "lineage": "3f36ae227bbc2ed52cedbedc159a8cc532c42bbdc21a2e920b09b2389cf8fdd1",
+ "base": "7ec9299f28c8fed12b137852bc6a464f16dada68",
+ "head": "6dac2c9f227479cfb38a3437146f5387c0a25305",
+ "before": {
+  "state": "done",
+  "leaf": "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f",
+  "reliance": "ELIGIBLE"
+ },
+ "after": {
+  "state": "done",
+  "leaf": "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f",
+  "reliance": "CHALLENGED"
+ },
+ "changed_by_interface": {
+  "library": [],
+  "CLI": [],
+  "API": [],
+  "MCP": []
+ }
+}
+FAIL F1 delta must report a reliance-only change of an existing lineage through library, CLI, API and MCP
+
+Countervector script (as executed, accepts code checkout as argv[1]):
+import json, os, subprocess, sys
+from pathlib import Path
+code = Path(sys.argv[1]).resolve()
+sys.path[:0] = [str(code / 'tests'), str(code)]
+from world import Repo
+from warrant import graph as G
+from warrant_agent import api
+from warrant_agent.config import Config
+r = Repo(git_init=True)
+L = r.entity('alice', 'obligation@1', {'state': 'open', 'statement': 'deliver', 'serves': []})
+v = r.entity('alice', 'obligation@1', {'state': 'done', 'statement': 'deliver', 'serves': []}, lineage=L)
+r.attest('bob', v)
+base = r.commit('accepted')
+before = r.report()
+c = r.put('bob', 'challenge', {'target': v, 'statement': 'counterexample'}, refs=[v])
+head = r.commit('challenge with no new entity version')
+after = r.report()
+assert not before['problems'] and not after['problems']
+assert not before['rejected'] and not after['rejected']
+assert before['canonical'] and after['canonical']
+assert before['lineages'][L]['state'] == after['lineages'][L]['state'] == 'done'
+assert before['lineages'][L]['leaf'] == after['lineages'][L]['leaf'] == v
+assert before['lineages'][L]['reliance'] == 'ELIGIBLE'
+assert after['lineages'][L]['reliance'] == 'CHALLENGED'
+doc = {'agent_api':'warrant-agent/3', 'workspaces':{'fixture':{'repo':str(r.root), 'operations':['graph']}}}
+cfg_path = r.home / 'graph.json'
+cfg_path.write_text(json.dumps(doc))
+rng = f'{base}..{head}'
+lib = G.delta(before, after)
+api_out = api.call(Config(doc), 'graph', {'workspace':'fixture','op':'delta','range':rng})
+assert 'ok' in api_out, api_out
+cli = subprocess.run([sys.executable,str(code/'tools/graph.py'),'delta',rng],cwd=r.root,capture_output=True,text=True,check=True)
+cli_out = json.loads(cli.stdout)
+client = '/Users/s0fractal/.warrant/codex-marketplace/integrations/warrant-review/skills/warrant-review/scripts/warrant-mcp-call'
+py = '/Users/s0fractal/.warrant/codex-mcp/bin/python'
+mcp = subprocess.run([py,client,'--config',str(cfg_path),'graph',json.dumps({'workspace':'fixture','op':'delta','range':rng})],env=dict(os.environ,WARRANT_AGENT_MCP=str(code.parent / ('mcp-mutant' if code.name == 'delta-mutant' else 'mcp-baseline'))),cwd=r.root,capture_output=True,text=True)
+assert mcp.returncode == 0, (mcp.stdout, mcp.stderr)
+mcp_out=json.loads(mcp.stdout)
+outputs={'library':lib,'CLI':cli_out['data'],'API':api_out['ok']['data'],'MCP':mcp_out}
+print(json.dumps({'lineage':L,'base':base,'head':head,'before':{k:before['lineages'][L][k] for k in ['state','leaf','reliance']},'after':{k:after['lineages'][L][k] for k in ['state','leaf','reliance']},'changed_by_interface':{k:v['changed'] for k,v in outputs.items()}},indent=1))
+passed = all(L in d['changed'] for d in outputs.values())
+print(('ok   ' if passed else 'FAIL ')+'F1 delta must report a reliance-only change of an existing lineage through library, CLI, API and MCP')
+sys.exit(0 if passed else 1)
+
+MCP wrappers (absolute review-local paths; substitute your own code path when reproducing):
+mcp-baseline
+#!/Users/s0fractal/.warrant/codex-mcp/bin/python
+import sys
+sys.path.insert(0, '/Users/s0fractal/.warrant/work/codex/3483319d53ba/repo')
+from warrant_agent.mcp_server import main
+sys.exit(main())
+mcp-mutant
+#!/Users/s0fractal/.warrant/codex-mcp/bin/python
+import sys
+sys.path.insert(0, '/Users/s0fractal/.warrant/work/codex/3483319d53ba/delta-mutant')
+from warrant_agent.mcp_server import main
+sys.exit(main())
+
+Environment for full tests and probes:
+TMPDIR=/Users/s0fractal/.warrant/work/codex/3483319d53ba/tmp
+Python=/Users/s0fractal/.warrant/codex-mcp/bin/python
+Full tests: cd CODE; "$PY" tests/agent_test.py; "$PY" tests/tools_test.py
+Mutants: cd baseline; python3 tests/mutants.py X43 T124 T321 T322 T323 T325 T326 T327 T354 T355 T364 T365 --matrix MATRIX.json
+Probe: "$PY" delta_reliance_probe.py CODE
+Only fixture keys from tests/world.py sign test fixtures. Actual verdict records sign only as codex through MCP.
