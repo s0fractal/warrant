@@ -1399,6 +1399,32 @@ def across_cases():
           all(words.values()) and "not say" in words["UNAVAILABLE"]["does_not_establish"], words)
 
 
+def graph_walk_budget_cases():
+    from unittest.mock import patch
+    repo = Repo()
+    body = {"state": "open", "statement": "walk", "serves": []}
+    root = repo.entity("alice", "obligation@1", body)
+    children = [repo.entity("alice", "obligation@1", dict(body, statement=str(i)), refs=[root]) for i in range(5)]
+    cfg = _stores(("w", repo))
+
+    with patch.object(G, "MAX_NODES", 3):
+        wide = ok(api.call(cfg, "graph", {"workspace": "w", "op": "why", "target": root})).get("data", {})
+        across = _ans(cfg, {"query": "rests", "target": root})
+    check("GW1 why keeps its first three breadth-first rows and marks a wide fork incomplete",
+          [n["id"] for n in wide.get("nodes", [])] == sorted(children)[:3] and wide.get("complete") is False, wide)
+    check("GW2 across counts its target in the three-row budget even when a single node has more children",
+          set(_by_id(across)) == {root, *sorted(children)[:2]} and across.get("total") == 3
+          and across.get("complete") is False, across)
+
+    with patch.object(G, "MAX_NODES", 5):
+        exact = ok(api.call(cfg, "graph", {"workspace": "w", "op": "why", "target": root})).get("data", {})
+    with patch.object(G, "MAX_NODES", 6):
+        exact_across = _ans(cfg, {"query": "rests", "target": root})
+    check("GW3 an exact fit is complete both with and without a target row",
+          exact.get("complete") is True and [n["id"] for n in exact.get("nodes", [])] == sorted(children)
+          and exact_across.get("complete") is True and exact_across.get("total") == 6, (exact, exact_across))
+
+
 def bench_cases():
     """tests/assess_bound.py (R-AGENT-CLOCK) at a 1 MiB bound: Codex's challenge f97f77fa5fad, every store measured had
     crossed the bound and none went through the agent's admission."""
@@ -2402,6 +2428,7 @@ if __name__ == "__main__":
         mcp_cases,
         home_cases,
         across_cases,
+        graph_walk_budget_cases,
         receiver_cases,
         bench_cases,
         serve_cases,

@@ -64,18 +64,34 @@ def around(rep, i):
             "in": sorted([r, a] for r, a in into.get(i, []))}
 
 
+def bounded_depth(targets, neighbors, limit):
+    """Breadth-first distances in discovery order, and whether any reachable node was omitted."""
+    roots = sorted(set(targets))
+    depth = dict.fromkeys(roots[:limit], 0)
+    if len(roots) > limit:
+        return depth, False
+    pending = list(depth)
+    for cur in pending:
+        for nxt in neighbors(cur):
+            if nxt in depth:
+                continue
+            if len(depth) == limit:
+                return depth, False
+            depth[nxt] = depth[cur] + 1
+            pending.append(nxt)
+    return depth, True
+
+
 def _walk(rep, i, edges):
     nodes, out, into = index(rep)
     adj = out if edges == "out" else into
-    seen, order, todo = {i}, [], [i]
-    while todo and len(order) < MAX_NODES:
-        cur = todo.pop(0)
-        for rel, nxt in sorted(adj.get(cur, [])):
-            if rel in WALK and nxt not in seen:
-                seen.add(nxt)
-                order.append(nxt)
-                todo.append(nxt)
-    return {"from": i, "nodes": [describe(rep, nodes, x) for x in order], "complete": not todo}
+
+    def neighbors(cur):
+        return (nxt for rel, nxt in sorted(adj.get(cur, [])) if rel in WALK)
+
+    # The source has its own `from` slot and does not consume a result row.
+    depth, complete = bounded_depth([i], neighbors, MAX_NODES + 1)
+    return {"from": i, "nodes": [describe(rep, nodes, x) for x in depth if x != i], "complete": complete}
 
 
 def path(rep, i):
