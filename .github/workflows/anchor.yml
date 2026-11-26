@@ -1,0 +1,85 @@
+# The anchor witness (docs/V3.md §16, anchors; G3 obligation 044f79ca): once a day, on a runner, under the key
+# anchor-key.yml made, `warrant anchor witness --of github.com/s0fractal/warrant --commit <master's tip>` files the next
+# version of its anchor of this repository's store in a store of its own, the branch stores/anchors: its first run
+# makes that store (`warrant anchor init`: a v3.json binding the key, its rules@1 genesis, anchor@1). The ids master's
+# store held are then kept where master's writers do not write, and `warrant-agent rely github.com/s0fractal/warrant WHAT
+# --anchor github.com/s0fractal/warrant/tree/stores/anchors` answers DO NOT RELY once one of them is gone. A run that
+# finds one gone fails (ANCHOR_REWRITTEN) and files nothing: the alarm is the red run.
+#
+# While the branch and master live in one account, whoever can rewrite both can rewrite both: an anchor here guards
+# against a rewrite of master alone (a force-push, a hand-edited records.jsonl), and its word is the runner key's,
+# whose seed whoever changes master's code could read (the gate's guard, as for every key of a job running master's
+# code). Anchors kept in another account's store are the stronger word (docs/V3.md §16).
+name: anchor
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: anchor
+  cancel-in-progress: false
+
+jobs:
+  anchor:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: anchor
+    timeout-minutes: 20
+    permissions:
+      contents: write          # the witness's store branch (stores/anchors)
+    env:
+      GIT_AUTHOR_NAME: anchor-witness
+      GIT_AUTHOR_EMAIL: anchor-witness@invalid
+      GIT_COMMITTER_NAME: anchor-witness
+      GIT_COMMITTER_EMAIL: anchor-witness@invalid
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Signature library (exact version and hashes)
+        run: python -m pip install --quiet --only-binary ':all:' --require-hashes -r .github/merge-gate-requirements.txt
+      - name: Anchor master's store in the witness's own
+        id: anchor
+        env:
+          SEED: ${{ secrets.WARRANT_ANCHOR_SEED }}
+        run: |
+          set -euo pipefail
+          tip=$(git rev-parse HEAD)
+          echo "tip=$tip" >> "$GITHUB_OUTPUT"
+          if [ -z "$SEED" ]; then
+            echo "no WARRANT_ANCHOR_SEED in the environment anchor yet (anchor-key.yml has not run): nothing anchored" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "changed=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          src=stores/anchors
+          if git ls-remote --exit-code --heads origin "$src" >/dev/null; then
+            git fetch -q origin "+refs/heads/$src:refs/remotes/origin/$src"
+            git worktree add -q -B "$src" "build/$src" "refs/remotes/origin/$src"
+          else
+            git worktree add -q --orphan -b "$src" "build/$src"
+          fi
+          run() { printf '%s\n' "$SEED" | PYTHONPATH="$GITHUB_WORKSPACE" python -m warrant.anchor --root "build/$src" "$@"; }
+          if [ ! -e "build/$src/.warrant/v3.json" ]; then
+            run init --actor anchor-witness --key - --repository "$GITHUB_REPOSITORY anchors" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          run witness --of "github.com/$GITHUB_REPOSITORY" --commit "$tip" --actor anchor-witness --key - | tee -a "$GITHUB_STEP_SUMMARY"
+          git diff --quiet -- .warrant      # nothing of this run lands in master's store
+          echo "changed=1" >> "$GITHUB_OUTPUT"
+      - name: Push the anchor to the witness's store
+        if: steps.anchor.outputs.changed == '1'
+        env:
+          TIP: ${{ steps.anchor.outputs.tip }}
+        run: |
+          set -euo pipefail
+          cd build/stores/anchors
+          git add .warrant
+          git commit -q -m "anchor-witness: master's store at ${TIP:0:12}"
+          git push -q origin HEAD:refs/heads/stores/anchors      # a fast-forward, or refused
