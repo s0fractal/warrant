@@ -349,6 +349,8 @@ MUTANTS = [
     ("WM34", "warrant/anchor.py", "        elif commit:\n", "        elif False:\n", VERIFY, ["AN5"]),
     ("WM35", "warrant/anchor.py", "        url = RM._checked(address(of), set(allow))", "        url = RM._checked(address(of), set(allow) | {\"127.0.0.1\"})", VERIFY, ["AN5"]),
     ("WM36", "warrant/anchor.py", "    return (commit or \"\", snap, *_identity(snap, ws.doc), ws.doc[\"trust\"])", "    return (url, snap, *_identity(snap, ws.doc), ws.doc[\"trust\"])", VERIFY, ["AN5"]),
+    ("WM37", "warrant/anchor.py", '"quorum": {E.SCHEMA_AUTHOR: 1}', '"quorum": {E.SCHEMA_AUTHOR: 2}', VERIFY, ["AN7"]),
+    ("WM38", "warrant/anchor.py", '    if (root / ".warrant").exists() or (root / ".warrant").is_symlink():', '    if False:', VERIFY, ["AN7"]),
     # the harness itself (tests/mutants.py, tests/world.py): what every KILLED above rests on
     ("T199", "tests/mutants.py", '    if not cases or not all(homes):\n        return None', '    if not cases or not all(homes):\n        return ["main"]', TOOLS, ["HM2"]),
     ("T200", "tests/world.py", '            sys.stdout.flush()\n            os._exit(1)\n', '            pass\n', TOOLS, ["HM3"]),

@@ -1011,6 +1011,28 @@ def anchor_address_cases():
           and closed == "ANCHOR_READ" and pinned == "BAD_REQUEST", (body, held, gone, closed, pinned))
 
 
+def anchor_init_cases():
+    """`warrant anchor init`: a witness's store of its own, which counts anchor@1 under rules only the witness holds."""
+    from warrant import graph as G
+    a = anchored_store("s0fractal/ia", carol=False)
+    a.entity("alice", "obligation@1", {"state": "open", "statement": "i", "serves": []})
+    a.commit("i")
+    w = Path(tempfile.mkdtemp(dir=TMP)) / "witness"
+    ids = AN.init(w, "carol", KEYS["carol"], "s0fractal/witness")
+    rw = RP.Repo(w)
+    rep = rw.report()
+    ident = G.identity(rep, rw.store.snapshot())["identity"]
+    k = AN.witness(rw, a.root, "carol", KEYS["carol"])
+    held = AN.check(rw, a.root)
+    again = refused_code(lambda: AN.init(w, "carol", KEYS["carol"], "s0fractal/witness"))
+    check("AN7 `warrant anchor init` makes a witness's store of its own: its rules@1 genesis is its identity (self-signed, "
+          "not the witnessed store's), it counts anchor@1 with the witness its one schema author, an anchor filed there "
+          "is held, and a second init over it is refused (ANCHOR_INIT)",
+          len(ids) == 3 and ident == ids[2] and ident != AN.read(a.root)[2] and "anchor@1" in rep["schemas"]
+          and not rep["rejected"] and k in rw.report()["_recs"] and held["holds"] and again == "ANCHOR_INIT",
+          (ids, ident, rep["schemas"], rep["rejected"], held, again))
+
+
 def package_of(r, roots, drop=()):
     lines = [x for x in (r.dot / "records.jsonl").read_text().splitlines() if R.rid(json.loads(x)["record"]) not in drop]
     return json.dumps({"warrant": "package/3", "roots": roots, "lines": lines, "blobs": {}}).encode()
@@ -1206,6 +1228,7 @@ def main():
         anchor_cases()
         anchor_rely_cases()
         anchor_address_cases()
+        anchor_init_cases()
         pins_reader_cases()
         pins_earlier_version_cases()
     finally:
