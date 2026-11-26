@@ -36,7 +36,7 @@ DIGESTS = {
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "a2984deb5d8f0b4b925bbfe44b088e79f1f6959462730a759f6f2d53e92fe500",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
-    "warrant/graph.py": "25411d475f9dd8036fccd0ddfd6ad7fd6222a79d75c357882fcf308d74b2af5f",
+    "warrant/graph.py": "c64082aa9a07b5da2e1b92dca19dc5dc39b48e8ce8cc1e963dfec8043bf06078",
     "warrant/store.py": "f569d538c09f7b6049e2c8a0ea9fcc8add176d4e7adb166511aba42604f62588",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
     "warrant/verify.py": "a660f13568a6748548740a0e62f45bb26cbeb5dd0d20808b48b7cedd2bfcee6e",
@@ -1288,6 +1288,46 @@ def _verifies(i, sig, public):
         return False
 
 
+def _cyclic_nodes(edges):
+    """Find the nodes in cycles by iterative Kosaraju, including singleton self-loops."""
+    reverse = {v: [] for v in edges}
+    for v, deps in edges.items():
+        for dep in deps:
+            reverse[dep].append(v)
+
+    seen, finished = set(), []
+    for root in edges:
+        if root in seen:
+            continue
+        seen.add(root)
+        stack = [(root, iter(edges[root]))]
+        while stack:
+            v, children = stack[-1]
+            dep = next(children, None)
+            if dep is None:
+                finished.append(v)
+                stack.pop()
+            elif dep not in seen:
+                seen.add(dep)
+                stack.append((dep, iter(edges[dep])))
+
+    seen.clear()
+    on_cycle = set()
+    for root in reversed(finished):
+        if root in seen:
+            continue
+        component = [root]
+        seen.add(root)
+        for v in component:
+            for source in reverse[v]:
+                if source not in seen:
+                    seen.add(source)
+                    component.append(source)
+        if len(component) > 1 or root in edges[root]:
+            on_cycle.update(component)
+    return on_cycle
+
+
 def grounded(rep, i, recs=None):
     """Whether entity version `i` is GROUNDED (minds' Grounded, proofs/Vars1/Grounded.lean, read over a Warrant report):
     it and every entity version it rests on, by `ref` and by `requires` (a required lineage through its effective
@@ -1332,30 +1372,16 @@ def grounded(rep, i, recs=None):
             return "NOT_EFFECTIVE"
         return None if lin["reliance"] == "ELIGIBLE" else f"RELIANCE {lin['reliance']}"
 
-    seen, order, outside, todo = {i}, [i], set(), [i]
-    while todo:                                    # the closure, breadth first
-        cur = todo.pop(0)
-        if cur not in nodes:
-            continue
-        gs, far = grounds(cur)
+    seen, order, outside, edges = {i}, [i], set(), {}
+    for cur in order:                              # the closure, breadth first
+        gs, far = grounds(cur) if cur in nodes else ([], [])
+        edges[cur] = gs
         outside |= set(far)
         for g in gs:
             if g not in seen:
                 seen.add(g)
                 order.append(g)
-                todo.append(g)
-    on_cycle = set()                               # a node is on a cycle iff it reaches itself
-    for v in order:
-        stack, mark = [g for g in grounds(v)[0]], set()
-        while stack:
-            g = stack.pop()
-            if g == v:
-                on_cycle.add(v)
-                break
-            if g in mark or g not in nodes:
-                continue
-            mark.add(g)
-            stack += grounds(g)[0]
+    on_cycle = _cyclic_nodes(edges)
     failing = []
     for v in order:
         why = local(v) or ("CYCLE" if v in on_cycle else None)
