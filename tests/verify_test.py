@@ -987,16 +987,17 @@ def anchor_address_cases():
             pass
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(a.root)))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    url, ok = f"http://127.0.0.1:{srv.server_address[1]}/", {"127.0.0.1"}
+    from warrant_agent import anchor as AA
+    url, ok = f"http://127.0.0.1:{srv.server_address[1]}/", AA.reader({"127.0.0.1"})
     try:
-        k = AN.witness(rb, url, "carol", KEYS["carol"], allow=ok)
+        k = AN.witness(rb, url, "carol", KEYS["carol"], read=ok)
         by_clone = AN.read(a.root)
-        held = AN.check(rb, url, allow=ok)
+        held = AN.check(rb, url, read=ok)
         lines = (a.dot / "records.jsonl").read_bytes().splitlines(True)
         (a.dot / "records.jsonl").write_bytes(b"".join(ln for ln in lines if R.rid(json.loads(ln)["record"]) != x))
-        gone = AN.check(rb, url, allow=ok)
-        closed = refused_code(lambda: AN.check(rb, url))
-        pinned = refused_code(lambda: AN.check(rb, url, commit="0" * 40, allow=ok))
+        gone = AN.check(rb, url, read=ok)
+        closed = refused_code(lambda: AN.check(rb, url, read=AA.reader()))
+        pinned = refused_code(lambda: AN.check(rb, url, commit="0" * 40, read=ok))
     finally:
         srv.shutdown()
     body = rb.report()["_recs"][k]["body"]

@@ -2,6 +2,7 @@
 
     warrant-agent [--config CONFIG.json | --repo DIR --actor A [--seed SEED]] <operation> [REQUEST.json | - | '{...}']
     warrant-agent rely ADDRESS WHAT [--json]       # may I rely on WHAT in the store at ADDRESS? (no workspace needed)
+    warrant-agent anchor witness|check --of ADDRESS  # anchor a store read by its address in this one (warrant_agent/anchor.py)
 
 Operations: workspace, context, read, graph, across, handoff, prepare, commit, explain. The request is the same
 JSON object the Python API and the MCP tools take; the output is the same result object. Exit status 0
@@ -25,6 +26,10 @@ def _request(arg):
 
 def main(argv=None):
     args = sys.argv[1:] if argv is None else list(argv)
+    if args[:1] == ["anchor"]:                # a store by its address, anchored in the checkout's own (warrant.anchor)
+        from . import anchor
+        from warrant.repo import main as run_main
+        return run_main(anchor.run, args[1:])
     if args[:1] == ["rely"]:                  # needs no workspace: an address and a question (warrant_agent/rely.py)
         from . import rely
         return rely.main(args[1:])
