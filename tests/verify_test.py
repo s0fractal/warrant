@@ -1026,12 +1026,20 @@ def anchor_init_cases():
     k = AN.witness(rw, a.root, "carol", KEYS["carol"])
     held = AN.check(rw, a.root)
     again = refused_code(lambda: AN.init(w, "carol", KEYS["carol"], "s0fractal/witness"))
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        try:
+            cli = AN.run(["--root", str(w), "check", "--of", str(a.root)])
+        except Exception as e:                     # the command must run, not only its functions (#603 shipped a KeyError)
+            cli = repr(e)
+    cli_text = out.getvalue()
     check("AN7 `warrant anchor init` makes a witness's store of its own: its rules@1 genesis is its identity (self-signed, "
           "not the witnessed store's), it counts anchor@1 with the witness its one schema author, an anchor filed there "
           "is held, and a second init over it is refused (ANCHOR_INIT)",
           len(ids) == 3 and ident == ids[2] and ident != AN.read(a.root)[2] and "anchor@1" in rep["schemas"]
           and not rep["rejected"] and k in rw.report()["_recs"] and held["holds"] and again == "ANCHOR_INIT",
           (ids, ident, rep["schemas"], rep["rejected"], held, again))
+    check("AN8 the command `warrant anchor check --of CLONE` answers what check() does: HELD, exit 0, each anchor named",
+          cli == 0 and ": HELD" in cli_text and "anchored records held" in cli_text, (cli, cli_text))
 
 
 def package_of(r, roots, drop=()):

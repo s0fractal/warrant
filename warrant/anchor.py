@@ -193,6 +193,7 @@ def run(argv=None):
         p = sub.add_parser(n)
         p.add_argument("--actor", required=True)
         p.add_argument("--key", required=True)
+    sub.add_parser("check")
     for n in ("witness", "check"):
         sub.choices[n].add_argument("--of", required=True, help="a clone on disk (an address: warrant-agent anchor)")
         sub.choices[n].add_argument("--commit")
@@ -216,19 +217,26 @@ def run(argv=None):
     return 0 if out["holds"] else 1
 
 
+def _state(r):
+    """One anchor lineage's line of `check`'s answer."""
+    if r["problem"]:
+        return r["problem"]
+    if r["missing"]:
+        return f"{len(r['missing'])} record(s) gone: " + ", ".join(m[:12] for m in r["missing"][:8])
+    return f"all {r['held']} anchored records held"
+
+
 def show(out, of, as_json):
     """Print what `check` answered."""
     if as_json:
         dump(out)
-    else:
-        print(f"store       {out['store'][:12]} at {out['commit'][:12] or of}: " + ("HELD" if out["holds"] else
-              "NOT HELD" if out["anchors"] else "NOT ANCHORED here"))
-        for r in out["anchors"]:
-            state = r["problem"] or (f"{len(r['missing'])} record(s) gone: " + ", ".join(m[:12] for m in r["missing"][:8])
-                                     if r["missing"] else f"all {r['held']} anchored records held")
-            print(f"anchor      {r['actor']} {r['lineage'][:12]} (last at {(r['at'] or '?')[:12]}): {state}")
-        if out["one_account"]:
-            print(f"one account {', '.join(out['one_account'])}: a key of the witnessed store's own trust; their anchor is its word")
+        return
+    word = "HELD" if out["holds"] else "NOT HELD" if out["anchors"] else "NOT ANCHORED here"
+    print(f"store       {out['store'][:12]} at {out['commit'][:12] or of}: {word}")
+    for r in out["anchors"]:
+        print(f"anchor      {r['actor']} {r['lineage'][:12]} (last at {(r['at'] or '?')[:12]}): {_state(r)}")
+    if out["one_account"]:
+        print(f"one account {', '.join(out['one_account'])}: a key of the witnessed store's own trust; their anchor is its word")
 
 
 if __name__ == "__main__":
