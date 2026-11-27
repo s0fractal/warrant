@@ -1,0 +1,217 @@
+{
+ "base": "32ce7587a14e822e4298b714985067308bd62650",
+ "duty": "9c7598ecdb5b2b2d1ee3027a046a1cb741a5140d5f634a4ee4ebed78d2d8cefb",
+ "expected": {
+  "d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d": "PINS_NOT_CHECKED",
+  "feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e": "PINS_NOT_CHECKED"
+ },
+ "observed": "Both of those rows are ELIGIBLE, exit 0, grounded true. Text also explicitly prints ELIGIBLE. The fixture directory has no checkout or .git. assess --store on that same fixture passes every row of the vector.",
+ "reason": "warrant show is a reader that prints reliance without comparing any checkout. On the unchanged shared pins vector it reports both live pinned claims ELIGIBLE in JSON and text, violating docs/V3.md section 10 and the obligation. The same bytes through assess --store correctly report PINS_NOT_CHECKED.",
+ "reproducer": {
+  "command": "TMPDIR=<review working directory>/tmp python3 show_pins_test.py <checkout at M>",
+  "expected_exit_at_M": 1,
+  "filename": "show_pins_test.py",
+  "output": "FAIL F1 show must honor the shared pins vector in JSON and text: [{\"expected\": \"PINS_NOT_CHECKED\", \"json\": \"ELIGIBLE\", \"lineage\": \"d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d\", \"text_reports_ELIGIBLE\": true}, {\"expected\": \"PINS_NOT_CHECKED\", \"json\": \"ELIGIBLE\", \"lineage\": \"feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e\", \"text_reports_ELIGIBLE\": true}]\n",
+  "source": "\"\"\"Run at M: python3 show_pins_test.py /path/to/warrant; FAIL F1 reproduces G14's open defect.\"\"\"\nimport json\nimport os\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\n\nroot = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parents[1]\nvector = json.loads((root / \"tests/vectors/pins-not-checked.json\").read_text())\nbad = []\nwith tempfile.TemporaryDirectory(prefix=\"show-pins-\") as tmp:\n    here = Path(tmp)\n    store = here / \"store\"\n    store.mkdir()\n    (store / \"records.jsonl\").write_text(\"\\n\".join(vector[\"lines\"]) + \"\\n\")\n    for name in (\"trust\", \"profile\"):\n        (here / (name + \".json\")).write_text(json.dumps(vector[\"v3\"][name]))\n    common = [\"--store\", str(store), \"--trust\", str(here / \"trust.json\"), \"--profile\", str(here / \"profile.json\")]\n\n    def run(*args):\n        return subprocess.run([sys.executable, \"-B\", \"-m\", \"warrant\", *args, *common],\n                              cwd=here, env={**os.environ, \"PYTHONPATH\": str(root)},\n                              capture_output=True, text=True, check=True).stdout\n\n    assessed = json.loads(run(\"assess\"))\n    control = {lineage: row[\"reliance\"] for lineage, row in assessed[\"lineages\"].items()}\n    assert control == vector[\"expect\"], (\"assess control differs\", control)\n    for lineage, expected in vector[\"expect\"].items():\n        shown = json.loads(run(\"show\", lineage, \"--json\"))[\"lineage\"][\"reliance\"]\n        if shown != expected:\n            text = run(\"show\", lineage)\n            bad.append({\"lineage\": lineage, \"expected\": expected, \"json\": shown,\n                        \"text_reports_ELIGIBLE\": \", ELIGIBLE (\" in text})\n    assert len([x for x in vector[\"expect\"].values() if x == \"PINS_NOT_CHECKED\"]) == 2\nprint((\"FAIL F1 \" if bad else \"ok   F1 \") + \"show must honor the shared pins vector in JSON and text: \" + json.dumps(bad, sort_keys=True))\nsys.exit(1 if bad else 0)\n"
+ },
+ "residual": "D remains open until show (and any other reliance-reporting boundary) obeys the format rule; this review files a challenge only and changes no code.",
+ "review": "G14 roadmap verdict by codex",
+ "target": "3a57ee3170979b905484d7c1ec0bb144af523575a1148ab6b11ebffc416429f4",
+ "validation": {
+  "limits": [
+   "No full repository-wide suite or full mutant matrix was run.",
+   "An initial broader mutant-map run was interrupted; no result from it is credited.",
+   "The nine-verifier-mutant harness run killed seven; UM90 and UM91 exited with FileNotFoundError before VP3 and are not credited from that run. Both were then rerun in a separate copy against VP3 alone, whose baseline passed, and each printed FAIL VP3 (exit 1)."
+  ],
+  "passed": [
+   "roadmap due --actor codex --json exactly matches D, T, evidence, refs, subject and requires at M; MCP context confirms PENDING waiting for one roadmap/acceptor attest, no open requirements",
+   "Read D, T and all five evidence records from the store; read cited PRs 434, 528, 590, 604, 622 on GitHub and their merge commits and relevant merged source at M",
+   "WARRANT_SECTION=operations python3 tests/agent_test.py: 23 ok lines, including A45, all passed",
+   "python3 tests/verify_test.py: 65 ok lines, including VP1, VP2, VP3 and standalone replay checks, all passed",
+   "impl_js_test browser_pins_vector_cases, js_pins_vector_cases, browser_pins_cases: 18 ok lines, J23/J26/J11, all passed; node available, no skip",
+   "T275,T276,T277 killed by A45 and T188 by DR30: harness run restricted to operations and pinned_cases, baseline sections passed",
+   "V107,V108,V109,T346,T347,A211,UM92 killed by the named harness cases",
+   "UM90 and UM91 killed by VP3 in isolated targeted runs with clean VP3 baseline",
+   "roadmap check: 128 lineages, 0 problems; claims check: 148 live, 0 problems"
+  ],
+  "vector_mutants": [
+   {
+    "detail": "",
+    "failed": [
+     "A45"
+    ],
+    "id": "T275",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "operations"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "A45"
+    ],
+    "id": "T276",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "operations"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "A45"
+    ],
+    "id": "T277",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "operations"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "DR30"
+    ],
+    "id": "T188",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "pinned_cases"
+    ]
+   }
+  ],
+  "verify_mutants": [
+   {
+    "detail": "",
+    "failed": [
+     "U21"
+    ],
+    "id": "V107",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "main"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "U21"
+    ],
+    "id": "V108",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "main"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "VP2"
+    ],
+    "id": "V109",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "main"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "VP1"
+    ],
+    "id": "T346",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "main"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "VP1"
+    ],
+    "id": "T347",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "main"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "VP1"
+    ],
+    "id": "A211",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "main"
+    ]
+   },
+   {
+    "detail": "in main\n    single_cases()\n    ~~~~~~~~~~~~^^\n  File \"/Users/s0fractal/.warrant/work/codex/3a57ee317097/mutants-3/tests/verify_test.py\", line 682, in single_cases\n    work = Path(tempfile.mkdtemp(dir=TMP))\n                ~~~~~~~~~~~~~~~~^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.15/3.15.2/Frameworks/Python.framework/Versions/3.15/lib/python3.15/tempfile.py\", line 435, in mkdtemp\n    _os.mkdir(file, 0o700)\n    ~~~~~~~~~^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/Users/s0fractal/.warrant/work/codex/3a57ee317097/mutants-tmp-3/warrant-verify-5_rr3pps/tmpvv52bpj4'\n",
+    "failed": [],
+    "id": "UM90",
+    "outcome": "SURVIVED",
+    "rc": 1,
+    "sections": [
+     "main"
+    ]
+   },
+   {
+    "detail": "in main\n    single_cases()\n    ~~~~~~~~~~~~^^\n  File \"/Users/s0fractal/.warrant/work/codex/3a57ee317097/mutants-2/tests/verify_test.py\", line 682, in single_cases\n    work = Path(tempfile.mkdtemp(dir=TMP))\n                ~~~~~~~~~~~~~~~~^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.15/3.15.2/Frameworks/Python.framework/Versions/3.15/lib/python3.15/tempfile.py\", line 435, in mkdtemp\n    _os.mkdir(file, 0o700)\n    ~~~~~~~~~^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/Users/s0fractal/.warrant/work/codex/3a57ee317097/mutants-tmp-2/warrant-verify-3_4i6y_u/tmpma9nit8y'\n",
+    "failed": [],
+    "id": "UM91",
+    "outcome": "SURVIVED",
+    "rc": 1,
+    "sections": [
+     "main"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "VP3"
+    ],
+    "id": "UM92",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "main"
+    ]
+   }
+  ],
+  "vp3_reruns": [
+   {
+    "failed": [
+     "VP3"
+    ],
+    "id": "UM90",
+    "outcome": "KILLED",
+    "rc": 1
+   },
+   {
+    "failed": [
+     "VP3"
+    ],
+    "id": "UM91",
+    "outcome": "KILLED",
+    "rc": 1
+   }
+  ]
+ },
+ "verdict": "challenge",
+ "where": [
+  "warrant/cli.py:188-206 (show takes view.report() and prints raw reliance)",
+  "warrant/cli.py:225 (show_text prints that reliance)"
+ ]
+}
