@@ -1137,6 +1137,8 @@ MUTANTS = [
     ("UM96", "warrant_agent/whatif.py", "    D.reading(rep, ws.repo)", "    pass", VERIFY, ["VP5"]),
     ("UM97", "warrant/drift.py", "        rep[\"checkout\"] = None if root is None else checkout(root)\n        not_checked(rep)\n",
      "        rep[\"checkout\"] = None if root is None else checkout(root)\n", VERIFY, ["VP5"]),
+    ("UM99", "warrant_agent/serve.py", "        D.not_checked(over)              # compared", "        pass                             # compared", VERIFY, ["VP7"]),
+    ("UM100", "warrant_agent/changes.py", "    D.reading(rep, root)      # a past view", "    pass                      # a past view", VERIFY, ["VP7"]),
     ("UM90", VF, "        if files is None and not checker:\n", "        if files is None:\n", VERIFY, ["VP3"]),
     ("UM91", VF, 'pins = {"verdict": "NONE", "acceptances": []} if retired else _pins(view, i, acc, checkout)',
      "pins = _pins(view, i, acc, checkout)", VERIFY, ["VP3"]),
