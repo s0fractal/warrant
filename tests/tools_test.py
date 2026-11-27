@@ -1084,6 +1084,19 @@ def drift_impact_cases():
           states == ["open", "done"] and o in dd0.get("changed", []) and one == 'digraph warrant {\n'
           f'  "{"a" * 64}" [label="entity obligation@1"];\n  "{"b" * 64}" [label="schema"];\n'
           f'  "{"a" * 64}" -> "{"b" * 64}" [label="schema"];\n}}\n', (states, dd0.get("changed"), one))
+    g1 = Repo(git_init=True)
+    o1 = g1.entity("alice", "obligation@1", {"state": "open", "statement": "relied on", "serves": []})
+    v1 = g1.entity("alice", "obligation@1", {"state": "done", "statement": "relied on", "serves": []}, lineage=o1)
+    g1.attest("bob", v1)
+    b1 = g1.commit("done, accepted")
+    g1.put("bob", "challenge", {"statement": "an objection, no new version", "target": v1}, refs=[v1])
+    h1 = g1.commit("challenged")
+    reps1 = [RP.Repo(g1.root).report(GT.store_at(g1.root, c)[0])["lineages"][o1] for c in (b1, h1)]
+    _, _, _, dd1 = TG.ask(RP.Repo(g1.root), "delta", [f"{b1}..{h1}"])
+    check("DR39 delta's `changed` names a lineage whose reliance alone moved (a standing challenge, no new version: the "
+          "same state and leaf), read against the two reports, through `tools/graph.py delta` (Codex df9befb1)",
+          [(x["state"], x["leaf"]) for x in reps1] == [("done", v1)] * 2 and reps1[0]["reliance"] != reps1[1]["reliance"]
+          and o1 in dd1.get("changed", []), (reps1, dd1.get("changed")))
     views = TG.render(RP.Repo(r.root))
     snap = RP.Repo(r.root).report()["snapshot"]
     lines = {n: t.split("\n")[2] for n, t in views.items()}

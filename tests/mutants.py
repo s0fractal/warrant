@@ -1160,6 +1160,8 @@ MUTANTS = [
     ("BM4", "warrant/board.py", 'fence = "`" * max(3, 1 + max((len(r) for r in runs), default=0))', 'fence = "```"', TOOLS, ["BD3"]),
     ("BM5", "warrant/board.py", '.replace("@", "@" + ZWSP)', "", TOOLS, ["BD3"]),
     ("BM6", "warrant/board.py", "m = PR_REF.match(r) if isinstance(r, str) else None", "m = PR_REF.search(r) if isinstance(r, str) else None", TOOLS, ["BD3"]),
+    ("T372", "warrant/graph.py", 'and (rep0["lineages"][L]["state"], rep0["lineages"][L]["reliance"], rep0["lineages"][L]["leaf"])\n                     != (lin["state"], lin["reliance"], lin["leaf"]))',
+     'and (rep0["lineages"][L]["state"], rep0["lineages"][L]["leaf"])\n                     != (lin["state"], lin["leaf"]))', TOOLS, ["DR39"]),
     ("BM7", "warrant/board.py", 'diff = [m for m in ("title", "body") if item[m] != row[m]]', "diff = []", TOOLS, ["BD5"]),
     ("BM8", "warrant/board.py", '    for rid in todo["archive"]:\n        call(ARCHIVE', '    for rid in []:\n        call(ARCHIVE', TOOLS, ["BD5"]),
     ("BM9", "warrant/board.py", "return dict(doc, digest=C.doc_id(doc))", 'return dict(doc, digest=C.doc_id(doc["stores"]))', TOOLS, ["BD2"]),
@@ -1409,6 +1411,13 @@ def jobs():
     return max(1, n or min(os.cpu_count() or 1, 4))
 
 
+# Git's automatic maintenance runs detached after a commit and writes .git/objects/maintenance.lock in a temporary
+# repository a test is already removing: the test then fails on "No such file or directory" and its mutant reads as
+# SURVIVED (WM14 on #605, UM10 on #607, 2026-11-26). The runs a mutant makes start no maintenance.
+NO_GIT_MAINTENANCE = {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "maintenance.auto", "GIT_CONFIG_VALUE_0": "false",
+                      "GIT_CONFIG_KEY_1": "gc.auto", "GIT_CONFIG_VALUE_1": "0"}
+
+
 def run(test, cwd, tmp=TMP, extra=None):
     """(exit status, output); a run past the timeout is status None with what it printed (TIMEOUT, never a kill).
     `extra`: the WARRANT_SECTION / WARRANT_STOP / WARRANT_CASE_MAP / WARRANT_LIST_SECTIONS of tests/world.py."""
@@ -1416,7 +1425,7 @@ def run(test, cwd, tmp=TMP, extra=None):
     try:
         r = subprocess.run([sys.executable, "-B", test], cwd=cwd, capture_output=True, text=True, timeout=900,
                            env={"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "PYTHONDONTWRITEBYTECODE": "1",
-                                "HOME": str(Path.home()), "TMPDIR": str(tmp), **(extra or {})})
+                                "HOME": str(Path.home()), "TMPDIR": str(tmp), **NO_GIT_MAINTENANCE, **(extra or {})})
     except subprocess.TimeoutExpired as e:
         return None, (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode(errors="replace")
     return r.returncode, r.stdout + r.stderr
