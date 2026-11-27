@@ -1142,6 +1142,27 @@ def drift_impact_cases():
           "same reliance), so each of state, reliance and leaf is compared on its own (DR39, DR41, DR42)",
           [x["state"] for x in reps4] == ["open", "done"] and [x["leaf"] for x in reps4] == [d4, d4]
           and reps4[0]["reliance"] == reps4[1]["reliance"] and o4 in dd4.get("changed", []), (reps4, dd4.get("changed")))
+    g5 = Repo(git_init=True)
+    x5 = g5.entity("alice", "obligation@1", {"state": "open", "statement": "target", "serves": []})
+    y5 = g5.entity("alice", "obligation@1", {"state": "open", "statement": "dependent", "serves": []}, refs=[x5])
+    b5 = g5.commit("before an attest")
+    g5.attest("bob", x5)
+    m5 = g5.commit("an attest, no state change")
+    g5.put("carol", "challenge", {"statement": "an objection", "target": y5}, refs=[y5])
+    h5 = g5.commit("a challenge, no new version")
+    imp = {rng: TG.ask(RP.Repo(g5.root), "impact", [rng])[3] for rng in (f"{b5}..{m5}", f"{m5}..{b5}", f"{m5}..{h5}")}
+    named = {rng: [(x["lineage"], x["rests_on_it"]) for x in d.get("lineages", [])] for rng, d in imp.items()}
+    dl = TG.ask(RP.Repo(g5.root), "delta", [f"{b5}..{m5}"])[3]
+    check("DR44 impact follows an attest or a challenge to its target's lineage when nothing else moved (no lineage in "
+          "delta's changed, added or removed): an added attest names its target with what rests on it, the reverse "
+          "range names it from the removed attest in the earlier report, a challenge-only range names the challenged "
+          "lineage (Codex 0ae33889 on G11)",
+          dl.get("changed") == [] and dl.get("lineages_added") == [] and named[f"{b5}..{m5}"] == [(x5, [y5])]
+          and named[f"{m5}..{b5}"] == [(x5, [y5])] and named[f"{m5}..{h5}"] == [(y5, [])], (dl, named))
+    gone = {x["lineage"]: x["gone"] for x in TG.ask(RP.Repo(g2.root), "impact", [f"{h2}..{b2}"])[3].get("lineages", [])}
+    check("DR45 impact over a range that removes a lineage reads it in the earlier report and says it is gone; a "
+          "lineage still there is not",
+          gone.get(p2) is True and gone.get(o2) is False, gone)
     views = TG.render(RP.Repo(r.root))
     snap = RP.Repo(r.root).report()["snapshot"]
     lines = {n: t.split("\n")[2] for n, t in views.items()}
