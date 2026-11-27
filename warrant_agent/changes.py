@@ -15,6 +15,7 @@ import os
 import time
 from pathlib import Path
 
+from warrant import drift as D
 from warrant import home as H
 from warrant import repo as RP
 from warrant import records as R
@@ -47,6 +48,7 @@ def report_of(root, snap):
     v = EN.View(snap, trust, profile)
     rep = v.report()
     rep["_recs"], rep["_basis"] = v.recs, v.basis
+    D.reading(rep, root)      # a past view's reliance as now's: its pins compared with this checkout, else PINS_NOT_CHECKED (Codex 2c59d04e)
     return rep
 
 

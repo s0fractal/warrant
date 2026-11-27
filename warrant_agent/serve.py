@@ -984,7 +984,8 @@ class App:
         snaps = {n: Repo(self.space.roots[n]).store.snapshot() for n in names}
         trust, profile, _ = Repo(self.space.roots[self.mine]).config()
         t, p, conflicts = OVL.receiver(trust, profile, {n: Repo(self.space.roots[n]).config()[0] for n in names})
-        over = OVL.assess(snaps, t, p)
+        over = OVL.assess(snaps, t, p)   # the engine's union, as site/reader.mjs compares it; shown here with no pins
+        D.not_checked(over)              # compared (several stores, no one checkout): never ELIGIBLE (Codex 2c59d04e)
         base = self.space.report(store)
         card = lambda schema: LZ.card_of(self.pick(schema, None)[1])
         rows = [x for x in VW.delta(sys.modules[__name__], base, over, card)[0] if x["lineage"] in base["lineages"]]
