@@ -71,14 +71,22 @@ class Marks:
         return set(got) if isinstance(got, list) else None
 
     def set(self, reader, marks):
-        doc = self.load()
-        doc[reader or ""] = {s: sorted(ids) for s, ids in marks.items()}
+        import fcntl
+
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write(json.dumps(doc))
-        os.replace(tmp, self.path)
+        lock = self.path.with_name(self.path.name + ".lock")
+        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            doc = self.load()
+            doc[reader or ""] = {s: sorted(ids) for s, ids in marks.items()}
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            out = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(out, "w") as f:
+                f.write(json.dumps(doc))
+            os.replace(tmp, self.path)
+        finally:
+            os.close(fd)
 
 
 def since_text(mark_at):
