@@ -1,0 +1,132 @@
+{
+ "cause": "Reading.header includes repository from .warrant/v3.json, but across.identity hashes only snapshots, code, adapter, query, trust, profile and checkout. Repository metadata is not bound. The unbound header also consumes the page byte budget.",
+ "checks": {
+  "agent": {
+   "failed": 0,
+   "passed": 56,
+   "sections": [
+    "operations",
+    "across_cases",
+    "audit_cases",
+    "tails_cases"
+   ]
+  },
+  "claims_check": "148 live claims; 0 problems",
+  "mutants": [
+   {
+    "detail": "",
+    "failed": [
+     "X15b"
+    ],
+    "id": "T320",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "across_cases"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "DR25c"
+    ],
+    "id": "T324",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "drift_impact_cases"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "VB1"
+    ],
+    "id": "T361",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "view_binding_cases"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "VB1"
+    ],
+    "id": "T362",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "view_binding_cases"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "VB2"
+    ],
+    "id": "T366",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "view_binding_cases"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "VB2"
+    ],
+    "id": "T367",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "view_binding_cases"
+    ]
+   },
+   {
+    "detail": "",
+    "failed": [
+     "DR43"
+    ],
+    "id": "T379",
+    "outcome": "KILLED",
+    "rc": 1,
+    "sections": [
+     "drift_impact_cases"
+    ]
+   }
+  ],
+  "roadmap_check": "128 lineages; 0 problems",
+  "tools": {
+   "failed": 0,
+   "passed": 23,
+   "sections": [
+    "drift_impact_cases",
+    "view_binding_cases"
+   ]
+  }
+ },
+ "commit": "30009a9178c17bf36a86dc0b9781e0bbb1acb693",
+ "duty": "d6f9652ec1a7e12cb54b68644845a85108857400f12c2930f03ea1aed7288cc0",
+ "expected": "Any response bytes or pagination change must change root or lens; bind the repository/header metadata or stop allowing it to change the identified response.",
+ "limits": "Targeted review and tests, not a full-suite or full-mutant run. The fixed shallow-history, dirty-worktree, acceptance-tree and page-offset cases passed; this challenge is a separate unbound-input counterexample. No production code changes made.",
+ "observed": "With the same five-record store and receiver, changing only .warrant/v3.json repository from example/one to example/ plus 80 b characters preserves root and lens. Under max_bytes=2216, the first response returns five nodes and next=null; the second returns four nodes and next=4 with the same root and lens.",
+ "repository": "s0fractal/warrant",
+ "reproduction": {
+  "command": "TMPDIR=\"$REVIEW_WORK\" python3 \"$REVIEW_WORK/across_metadata_test.py\" (from the M checkout)",
+  "interface": "warrant_agent.api.call, across query open; unsigned fixture keys only",
+  "mcp_python_stdout": "FAIL F1 same root/lens, different repository metadata {\"root\": \"e02f63092e22dca8b7746c4b71bb00bf524055b1011d2ddc0a4b7372b29d4bde\", \"lens\": \"cc7c1bcc1b2db148ba0da26379d98b021677bb1f16b8233febb6981b80dbb14b\", \"repositories\": [\"example/one\", \"example/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]}\nFAIL F2 same root/lens and page budget, different returned nodes {\"root\": \"e02f63092e22dca8b7746c4b71bb00bf524055b1011d2ddc0a4b7372b29d4bde\", \"lens\": \"5017245066219daf6e0428f75059580c52a2668a59c24fa3ae41ec00cdaf4ba8\", \"query\": {\"query\": \"open\", \"max_bytes\": 2216}, \"node_counts\": [5, 4], \"next\": [null, 4]}\n",
+  "source": "\"\"\"G11 counterexample at 30009a9178c17bf36a86dc0b9781e0bbb1acb693.\nRun from that checkout with this script outside it; no production store is changed.\n\"\"\"\nimport json\nimport sys\nfrom pathlib import Path\nsys.path[:0] = [str(Path.cwd() / 'tests'), str(Path.cwd())]\nfrom world import Repo\nfrom warrant_agent import api\nfrom warrant_agent.config import Config\n\nr = Repo(name='example/one')\nfor n in range(5):\n    r.entity('alice', 'obligation@1', {'state': 'open', 'statement': f'item {n}', 'serves': []})\ncfg = Config({'agent_api': 'warrant-agent/3', 'workspaces': {\n    'w': {'repo': str(r.root), 'operations': ['graph']}}})\n\ndef ask(request):\n    reply = api.call(cfg, 'across', request)\n    assert 'ok' in reply, reply\n    return reply['ok']\n\ndef canonical(x):\n    return json.dumps(x, sort_keys=True, separators=(',', ':')).encode()\n\nq = {'query': 'open'}\na = ask(q)\nr.write_config('example/' + 'b' * 80)\nb = ask(q)\nassert a['root'] == b['root'] and a['lens'] == b['lens']\nassert canonical(a) != canonical(b)\nprint('FAIL F1 same root/lens, different repository metadata', json.dumps({\n    'root': a['root'], 'lens': a['lens'],\n    'repositories': [a['stores'][0]['repository'], b['stores'][0]['repository']]}))\n\n# The unbound metadata also consumes the byte budget and changes the result page.\nr.write_config('example/one')\nq = {'query': 'open', 'max_bytes': len(json.dumps(a, sort_keys=True)) + 20}\nc = ask(q)\nr.write_config('example/' + 'b' * 80)\nd = ask(q)\nassert c['root'] == d['root'] and c['lens'] == d['lens']\nassert len(c['nodes']) != len(d['nodes']), (len(c['nodes']), len(d['nodes']), q)\nprint('FAIL F2 same root/lens and page budget, different returned nodes', json.dumps({\n    'root': c['root'], 'lens': c['lens'], 'query': q,\n    'node_counts': [len(c['nodes']), len(d['nodes'])], 'next': [c['next'], d['next']]}))\n",
+  "system_python_stdout": "FAIL F1 same root/lens, different repository metadata {\"root\": \"e02f63092e22dca8b7746c4b71bb00bf524055b1011d2ddc0a4b7372b29d4bde\", \"lens\": \"19e1c530f021b1c2b9b7c459790c2be6d389bfcd588d2ca8873c18407cebb758\", \"repositories\": [\"example/one\", \"example/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]}\nFAIL F2 same root/lens and page budget, different returned nodes {\"root\": \"e02f63092e22dca8b7746c4b71bb00bf524055b1011d2ddc0a4b7372b29d4bde\", \"lens\": \"709599658a1d54f88d81be00245d7960b4e96ed75c27afa67719db5498462417\", \"query\": {\"query\": \"open\", \"max_bytes\": 2216}, \"node_counts\": [5, 4], \"next\": [null, 4]}\n"
+ },
+ "review": "roadmap verdict by codex",
+ "statement": "G11 remains incomplete: across results can have identical root and lens but different bytes and different result pages when only repository metadata changes.",
+ "target": "45e127f400129ad37a43785466c3ac20f0baee542f738908b44a1b40c4d1197d",
+ "where": [
+  "warrant/across.py:114-120",
+  "warrant/across.py:297-304",
+  "warrant/across.py:337-380"
+ ]
+}
