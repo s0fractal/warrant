@@ -618,7 +618,7 @@ MUTANTS = [
     ("WF3", "warrant_agent/work.py", '    need(leaves is None or isinstance(leaves, bool), "BAD_REQUEST", "leaves is a boolean")',
      "    pass", AGENT, ["WF2"]),
     ('A204', 'warrant_agent/work.py', 'needle, lin_of, rows = text.lower() if text else None, _lineages(rep), []', 'needle, lin_of, rows = text if text else None, _lineages(rep), []', AGENT, ['WK1']),
-    ('A205', 'warrant_agent/work.py', '(req.get("leaves") and (lin is None or not lin["leaf"]))', '(False)', AGENT, ['WK2']),
+    ('A205', 'warrant_agent/work.py', '(leaves and (lin is None or not lin["leaf"]))', '(False)', AGENT, ['WK2']),
     ('A206', 'warrant_agent/work.py', 'or not x.get("stands", True) or c in answered:', 'or not x.get("stands", True):', AGENT, ['WK3']),
     ('A207', 'warrant_agent/work.py', '        if nodes.get(v, {}).get("schema") == RV.PR_HEAD:\n            continue\n', '', AGENT, ['WK3']),
     ('A208', 'warrant_agent/work.py', '                evidence.append(L)\n', '', AGENT, ['WK2']),
