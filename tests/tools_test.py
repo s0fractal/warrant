@@ -1030,7 +1030,7 @@ def drift_impact_cases():
           D.impact_lines(m0).startswith("impact: 0 affected\n") and [s["lineage"] for s in m["stale"]] == [L]
           and m["affected"] == sorted([o, o2]) and free not in m["affected"]
           and text.startswith("impact: 1 stale claim(s) -> 2 lineage(s) resting on them\n")
-          and {"verdict": "CHANGED", "path": "lib/code.py", "detail": f"since {head[:12]}"} in m["stale"][0]["files"], (m0, m, text))
+          and {"verdict": "CHANGED", "path": "lib/code.py", "detail": ""} in m["stale"][0]["files"], (m0, m, text))
     check("DR19 given BASE, the changed files no acceptance names are listed, since nothing resting on them can be seen",
           m["changed"] == ["README", "lib/code.py"] and m["in_no_acceptance"] == ["README"]
           and "2 file(s), 1 in no acceptance: README" in text, m)
@@ -1053,6 +1053,15 @@ def drift_impact_cases():
     check("DR25 `tools/graph.py impact BASE..HEAD` gives under `drift` the answer `warrant drift --impact BASE..HEAD` gives: "
           "one definition of what a change makes stale, read from the commits, with no harness run",
           g.get("drift") == m and "claims_by_mutated_file" not in g and roots == {"base": base, "head": head}, (g.get("drift"), m))
+    shallow = Path(tempfile.mkdtemp()) / "shallow"
+    git(r.root, "clone", "-q", "--depth", "1", f"file://{r.root}", str(shallow))
+    full_m, shallow_m = (json.dumps(D.impact(RP.Repo(x).report(), x), sort_keys=True) for x in (r.root, shallow))
+    check("DR43 impact reads no history: a clone holding HEAD alone (--depth 1, the accepted commit not in it) gives the "
+          "bytes the full clone gives, its stale file's detail empty in both (Codex 609bf20e: with history read, the "
+          "detail named a different commit under the same root and lens); when each file changed is `warrant drift`'s",
+          full_m == shallow_m and '"verdict": "CHANGED"' in full_m and git(shallow, "rev-parse", "--is-shallow-repository") == "true",
+          (full_m[:400], shallow_m[:400]))
+    shutil.rmtree(shallow.parent, ignore_errors=True)
     from warrant import gate as GT
     from warrant import graph as G
     _, droots, dq, dd = TG.ask(RP.Repo(r.root), "delta", [f"{base}..{head}"])

@@ -231,8 +231,10 @@ def impact(rep, root, head="HEAD", base=None, readings=None):
     report, gated at `head`."""
     from . import across as A
     gate(rep, root, head)
-    now = drift(rep, root, head)
-    before = drift(rep, root, base) if base else {}
+    # no history read (since=False): the answer is the trees at BASE and HEAD alone, which its root binds, so a clone
+    # with less history gives the same bytes (Codex 609bf20e); when each file changed is `warrant drift`'s to say
+    now = drift(rep, root, head, since=False)
+    before = drift(rep, root, base, since=False) if base else {}
     read = [x for x in readings or [] if x.why is None]
     others = [x for x in read if (x.root is None or os.path.realpath(x.root) != os.path.realpath(root))]
     stale, already = [], []
