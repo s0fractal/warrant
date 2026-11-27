@@ -30,6 +30,7 @@ from warrant import jcs as C
 from warrant import graph as G
 from warrant import home as H
 from warrant import records as R
+from warrant import drift as D
 from warrant import sources as SRC
 from warrant.repo import Failed, Repo, load_key
 from warrant_agent import glossary as GL
@@ -255,7 +256,7 @@ class Space:
             tips = tuple((x["name"], SRC._commit(root, x["ref"])) for x in SRC.declared(SRC.config_doc(root)))
         except (ValueError, OSError) as e:
             tips = (("refused", str(e)[:200]),)
-        return files, tips
+        return files, tips, D.checkout(root)["tree"]     # the gate compares HEAD's tree: a new commit is a new report
 
     def report(self, name):
         root = self.roots[name]
@@ -266,6 +267,7 @@ class Space:
         try:
             repo = Repo(root)
             rep = repo.report()
+            D.reading(rep, root)  # reliance as status reads it: the gate beside a checkout, else PINS_NOT_CHECKED (Codex e91f50f1)
             rep["_trust"], rep["_profile"] = repo.config()[:2]   # named by digest in the report; the frontier and voices read them
         except (Failed, OSError, ValueError) as e:
             rep = {"_error": f"{type(e).__name__}: {e}"}
