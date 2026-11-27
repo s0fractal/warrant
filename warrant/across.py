@@ -261,14 +261,7 @@ def reach(reps, targets):
         for a, rel, b in rep["graph"]["edges"]:
             if rel in G.WALK:
                 into.setdefault(b, set()).add(a)
-    depth, todo = dict.fromkeys(targets, 0), sorted(set(targets))
-    while todo and len(depth) < G.MAX_NODES:
-        cur = todo.pop(0)
-        for a in sorted(into.get(cur, ())):
-            if a not in depth:
-                depth[a] = depth[cur] + 1
-                todo.append(a)
-    return depth, not todo
+    return G.bounded_depth(targets, lambda cur: sorted(into.get(cur, ())), G.MAX_NODES)
 
 
 def _rests(readings, target, schema):
