@@ -36,7 +36,7 @@ DIGESTS = {
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "a2984deb5d8f0b4b925bbfe44b088e79f1f6959462730a759f6f2d53e92fe500",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
-    "warrant/graph.py": "c64082aa9a07b5da2e1b92dca19dc5dc39b48e8ce8cc1e963dfec8043bf06078",
+    "warrant/graph.py": "f54a1f5f6d7ad81b0542bdad86e435729d2c997940a580f54e561f3cb398255e",
     "warrant/store.py": "f569d538c09f7b6049e2c8a0ea9fcc8add176d4e7adb166511aba42604f62588",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
     "warrant/verify.py": "a660f13568a6748548740a0e62f45bb26cbeb5dd0d20808b48b7cedd2bfcee6e",
@@ -989,18 +989,34 @@ def around(rep, i):
             "in": sorted([r, a] for r, a in into.get(i, []))}
 
 
+def bounded_depth(targets, neighbors, limit):
+    """Breadth-first distances in discovery order, and whether any reachable node was omitted."""
+    roots = sorted(set(targets))
+    depth = dict.fromkeys(roots[:limit], 0)
+    if len(roots) > limit:
+        return depth, False
+    pending = list(depth)
+    for cur in pending:
+        for nxt in neighbors(cur):
+            if nxt in depth:
+                continue
+            if len(depth) == limit:
+                return depth, False
+            depth[nxt] = depth[cur] + 1
+            pending.append(nxt)
+    return depth, True
+
+
 def _walk(rep, i, edges):
     nodes, out, into = index(rep)
     adj = out if edges == "out" else into
-    seen, order, todo = {i}, [], [i]
-    while todo and len(order) < MAX_NODES:
-        cur = todo.pop(0)
-        for rel, nxt in sorted(adj.get(cur, [])):
-            if rel in WALK and nxt not in seen:
-                seen.add(nxt)
-                order.append(nxt)
-                todo.append(nxt)
-    return {"from": i, "nodes": [describe(rep, nodes, x) for x in order], "complete": not todo}
+
+    def neighbors(cur):
+        return (nxt for rel, nxt in sorted(adj.get(cur, [])) if rel in WALK)
+
+    # The source has its own `from` slot and does not consume a result row.
+    depth, complete = bounded_depth([i], neighbors, MAX_NODES + 1)
+    return {"from": i, "nodes": [describe(rep, nodes, x) for x in depth if x != i], "complete": complete}
 
 
 def path(rep, i):

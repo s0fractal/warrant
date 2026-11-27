@@ -681,6 +681,25 @@ def roadmap_parity_cases():
           same and rep["lineages"][o2]["state"] == "done" and RM.check(rep) == [], (o1, o2, c1, c2, accepted))
 
 
+def find_exact_cases():
+    repo = Repo()
+    body = {"state": "open", "repository": "s0fractal/warrant", "title": "the change", "serves": []}
+    pr = repo.entity("alice", "pr-head@1", dict(body, pr=1))
+    cfg = cfg_of(repo)
+
+    def query(**filters):
+        return api.call(cfg, "find", {"workspace": "w", "schema": "pr-head@1", **filters})
+
+    number, boolean = [ok(query(where={"pr": val})).get("records") for val in (1, True)]
+    check("WF1 find distinguishes JSON true from the integer 1 in exact body filters",
+          [row["id"] for row in (number or [])] == [pr] and boolean == [], (number, boolean))
+    bad = [err(query(**args)) for args in ({"where": []}, {"where": False}, {"where": 0}, {"where": ""},
+                                           {"leaves": "false"}, {"leaves": 1}, {"leaves": []})]
+    good = [ok(query(**args)).get("count") for args in ({"where": {}}, {"where": None}, {"leaves": False}, {"leaves": None})]
+    check("WF2 find refuses malformed body and leaf filters without broadening the query",
+          bad == ["BAD_REQUEST"] * 7 and good == [1] * 4, (bad, good))
+
+
 def work_cases():
     """The work loop (warrant_agent.work): find a record by what it says, an inbox over every workspace, and an act
     previewed, then filed all at once, as the CLI files it."""
@@ -1427,6 +1446,32 @@ def across_cases():
     words = {w: GL.explain(w) for w in A.REFERENCE_STATES}
     check("X23 the words of a reference are in the glossary, and UNAVAILABLE says it does not establish that nothing exists",
           all(words.values()) and "not say" in words["UNAVAILABLE"]["does_not_establish"], words)
+
+
+def graph_walk_budget_cases():
+    from unittest.mock import patch
+    repo = Repo()
+    body = {"state": "open", "statement": "walk", "serves": []}
+    root = repo.entity("alice", "obligation@1", body)
+    children = [repo.entity("alice", "obligation@1", dict(body, statement=str(i)), refs=[root]) for i in range(5)]
+    cfg = _stores(("w", repo))
+
+    with patch.object(G, "MAX_NODES", 3):
+        wide = ok(api.call(cfg, "graph", {"workspace": "w", "op": "why", "target": root})).get("data", {})
+        across = _ans(cfg, {"query": "rests", "target": root})
+    check("GW1 why keeps its first three breadth-first rows and marks a wide fork incomplete",
+          [n["id"] for n in wide.get("nodes", [])] == sorted(children)[:3] and wide.get("complete") is False, wide)
+    check("GW2 across counts its target in the three-row budget even when a single node has more children",
+          set(_by_id(across)) == {root, *sorted(children)[:2]} and across.get("total") == 3
+          and across.get("complete") is False, across)
+
+    with patch.object(G, "MAX_NODES", 5):
+        exact = ok(api.call(cfg, "graph", {"workspace": "w", "op": "why", "target": root})).get("data", {})
+    with patch.object(G, "MAX_NODES", 6):
+        exact_across = _ans(cfg, {"query": "rests", "target": root})
+    check("GW3 an exact fit is complete both with and without a target row",
+          exact.get("complete") is True and [n["id"] for n in exact.get("nodes", [])] == sorted(children)
+          and exact_across.get("complete") is True and exact_across.get("total") == 6, (exact, exact_across))
 
 
 def bench_cases():
@@ -2477,6 +2522,7 @@ if __name__ == "__main__":
         memory_cases,
         roadmap_parity_cases,
         work_cases,
+        find_exact_cases,
         remote_cases, rely_cases,
         agent_whatif_cases,
         delegate_section_cases,
@@ -2485,6 +2531,7 @@ if __name__ == "__main__":
         mcp_cases,
         home_cases,
         across_cases,
+        graph_walk_budget_cases,
         receiver_cases,
         bench_cases,
         serve_cases,

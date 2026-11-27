@@ -152,8 +152,10 @@ python3 -m warrant.board sync --owner s0fractal --project N --root . --root ../m
   a roadmap item has no checker, and claims are not on the board.
 - **GitHub's own `Status` is not ours.** A new project fills it with "Todo" for every item added; a sync clears it on
   our rows, whose status is `Warrant status`.
-- **A hand edit is no record.** A sync puts every cell back and its plan names the cells that differed. An item with
-  no `Warrant ID` is a person's own: counted, never touched. A row the manifest no longer holds is archived.
+- **A hand edit is no record.** A sync puts every cell back and its plan names the cells that differed. A draft
+  created by an interrupted sync carries a pending lineage marker in its body until its fields are saved. A retry
+  finishes that draft in place. An item with neither `Warrant ID` nor the pending marker is counted and left alone.
+  A row the manifest no longer holds is archived.
 - **Record text is data.** In a row's body it lies inside a code fence longer than any run of backticks in it, so the
   board mentions nobody and links nothing from it; only a reference of the exact shape `owner/name#N` becomes a link.
   Each row links to the reader (docs/VERIFY.md), where the same lineage is assessed in the visitor's own browser.
