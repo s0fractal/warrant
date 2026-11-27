@@ -1,0 +1,239 @@
+{
+ "duty": "8c856b3b26355a6eaf27b32cc1404ada26b7528b6e567dc78f84bd0da0a7dc0e",
+ "explanation": "DR38 moves state, leaf and reliance together. DR39 isolates reliance. DR40 isolates added/removed records and lineages. None isolates a leaf change while state and reliance remain fixed. A51 compares against the same G.delta function. The two complete suites pass with that function damaged, which is why their current assertions do not establish this property.",
+ "finding": "The obligation's requirement that each claimed graph property be burned by a mutant is not complete. Removing just the leaf comparison from warrant.graph.delta's changed predicate survives both complete test files. A same-state, same-reliance successor is then omitted from changed by the library, tools/graph.py and the agent graph operation. The current implementation at M handles this correctly; this finding is the missing regression and mutant, not a current production-output defect.",
+ "master": "45303c96867fe14a43449396cedc9d2e6df2b612",
+ "mcp_cases": "Tool 'warrant_read' failed: 'Error executing tool warrant_read: {\"error\": \"NOT_FOUND\", \"message\": \"00000000 names 0 records or blobs here\"}'\nok   M02 stdio MCP: warrant_act previews then files an acceptance as the configured signer; warrant_inbox answers over the workspaces; warrant_find names both of the signer's attests; warrant_delegate answers grants; warrant_pact answers status\nok   M01 stdio MCP: sixteen tools; prepare and commit sign as the configured signer; a refusal is a tool error with its JSON\nall passed\n",
+ "mcp_graph_at_M": "ok MCP graph path \nok MCP graph why \nok MCP graph frontier \nok MCP graph export \nok MCP graph export json\nok MCP graph export dot\nok MCP graph delta \nok MCP graph impact \n",
+ "mcp_graph_probe_source": "import json,os,pathlib,subprocess,sys\nroot=pathlib.Path.cwd();sys.path[:0]=[str(root/'tests'),str(root)]\nfrom world import Repo\nfrom warrant import graph as G\nfrom warrant import repo as RP\nfrom warrant import gate as GT\nw=pathlib.Path(__file__).resolve().parent\nr=Repo(git_init=True)\na=r.entity('alice','obligation@1',{'state':'open','statement':'A','serves':[]})\nb=r.entity('alice','obligation@1',{'state':'open','statement':'B','serves':[]},refs=[a]);base=r.commit('A and B')\nc=r.entity('alice','obligation@1',{'state':'open','statement':'C','serves':[]},refs=[b]);head=r.commit('C rests on B rests on A')\nconfig=w/'graph-config.json';config.write_text(json.dumps({'agent_api':'warrant-agent/3','workspaces':{'probe':{'repo':str(r.root),'operations':['graph']}}}))\ncall='/Users/s0fractal/.warrant/codex-marketplace/integrations/warrant-review/skills/warrant-review/scripts/warrant-mcp-call'\nrep=RP.Repo(r.root).report()\nfor req,expected in [({'op':'path','target':c},G.path(rep,c)),({'op':'why','target':a},G.why(rep,a)),({'op':'frontier','actor':'bob'},G.frontier(rep,r.profile,'bob')),({'op':'export'},rep['graph']),({'op':'export','format':'json'},rep['graph']),({'op':'export','format':'dot'},G.dot(rep['graph'])),({'op':'delta','range':f'{base}..{head}'},G.delta(*[RP.Repo(r.root).report(GT.store_at(r.root,x)[0]) for x in (base,head)])),({'op':'impact','range':f'{base}..{head}'},G.impact(*[RP.Repo(r.root).report(GT.store_at(r.root,x)[0]) for x in (base,head)]))]:\n req=dict(req,workspace='probe')\n out=subprocess.run([sys.executable,call,'--config',str(config),'graph',json.dumps(req)],env=dict(os.environ,PYTHONPATH=str(root)),capture_output=True,text=True)\n assert out.returncode==0,(req,out.stdout,out.stderr)\n got=json.loads(out.stdout)\n assert got==expected,(req,got)\n print('ok MCP graph',req['op'],req.get('format',''),flush=True)\n",
+ "mcp_graph_scope": "All eight requests (path, why, frontier, export default/json/dot, delta, impact) compared with the shared graph through real stdio MCP on a signed-store fixture. The plugin client was used with WARRANT_AGENT_MCP naming a wrapper for this pinned checkout source under the plugin Python, because the default installed server is older than M. The same wrapper is used to prepare and commit this verdict.",
+ "mcp_server_wrapper": "#!/bin/sh\nexport PYTHONPATH=/Users/s0fractal/Projects/.worktrees/codex-review/accept-7c21bc4eb97c-0-45303c96867f\nexec /Users/s0fractal/.warrant/codex-mcp/bin/python -B -m warrant_agent.mcp_server \"$@\"\n",
+ "mcp_suite_note": "The Python 3.15.2 full agent runs skipped M01 because their environment lacks the MCP SDK. M01 and M02 were separately run and passed on unmutated M using the plugin's Python 3.13.15, with WARRANT_SECTION=mcp_cases. See separate log below.",
+ "mutant_patch": "--- a/warrant/graph.py\n+++ b/warrant/graph.py\n@@ -227,8 +227,8 @@\n def delta(rep0, rep1):\n     n0, n1 = {n[0] for n in rep0[\"graph\"][\"nodes\"]}, {n[0] for n in rep1[\"graph\"][\"nodes\"]}\n     changed = sorted(L for L, lin in rep1[\"lineages\"].items() if L in rep0[\"lineages\"]\n-                     and (rep0[\"lineages\"][L][\"state\"], rep0[\"lineages\"][L][\"reliance\"], rep0[\"lineages\"][L][\"leaf\"])\n-                     != (lin[\"state\"], lin[\"reliance\"], lin[\"leaf\"]))\n+                     and (rep0[\"lineages\"][L][\"state\"], rep0[\"lineages\"][L][\"reliance\"])\n+                     != (lin[\"state\"], lin[\"reliance\"]))\n     return {\"added\": sorted(n1 - n0), \"removed\": sorted(n0 - n1), \"changed\": changed,\n             \"lineages_added\": sorted(set(rep1[\"lineages\"]) - set(rep0[\"lineages\"])),\n             \"lineages_removed\": sorted(set(rep0[\"lineages\"]) - set(rep1[\"lineages\"]))}\n",
+ "observed_full_suite_control": "baseline tests/agent_test.py exit 0 seconds 10.36 pass 235 fail []\nbaseline tests/tools_test.py exit 0 seconds 37.08 pass 253 fail []\n",
+ "observed_full_suite_mutant": "leaf tests/agent_test.py exit 0 seconds 10.36 pass 235 fail []\nleaf tests/tools_test.py exit 0 seconds 37.08 pass 253 fail []\n",
+ "observed_probe_control": "ok   F1 delta must report a same-state, same-reliance successor in changed\n{\"agent\": {\"added\": [\"68541816d619aadc79da25332dd4883f1c28441514f17531d7f81651eaa63c37\"], \"changed\": [\"1e390fb2aa03a7d5d8b64b9ac0b4aab856deaf8e41667120edfc6eca64a01eb8\"], \"lineages_added\": [], \"lineages_removed\": [], \"removed\": []}, \"library\": {\"added\": [\"68541816d619aadc79da25332dd4883f1c28441514f17531d7f81651eaa63c37\"], \"changed\": [\"1e390fb2aa03a7d5d8b64b9ac0b4aab856deaf8e41667120edfc6eca64a01eb8\"], \"lineages_added\": [], \"lineages_removed\": [], \"removed\": []}, \"lineage\": \"1e390fb2aa03a7d5d8b64b9ac0b4aab856deaf8e41667120edfc6eca64a01eb8\", \"new_leaf\": \"68541816d619aadc79da25332dd4883f1c28441514f17531d7f81651eaa63c37\", \"old_leaf\": \"1e390fb2aa03a7d5d8b64b9ac0b4aab856deaf8e41667120edfc6eca64a01eb8\", \"reliance\": [\"ELIGIBLE\", \"ELIGIBLE\"], \"states\": [\"open\", \"open\"], \"tool\": {\"added\": [\"68541816d619aadc79da25332dd4883f1c28441514f17531d7f81651eaa63c37\"], \"changed\": [\"1e390fb2aa03a7d5d8b64b9ac0b4aab856deaf8e41667120edfc6eca64a01eb8\"], \"lineages_added\": [], \"lineages_removed\": [], \"removed\": []}}\n",
+ "observed_probe_mutant": "FAIL F1 delta must report a same-state, same-reliance successor in changed\n{\"agent\": {\"added\": [\"68541816d619aadc79da25332dd4883f1c28441514f17531d7f81651eaa63c37\"], \"changed\": [], \"lineages_added\": [], \"lineages_removed\": [], \"removed\": []}, \"library\": {\"added\": [\"68541816d619aadc79da25332dd4883f1c28441514f17531d7f81651eaa63c37\"], \"changed\": [], \"lineages_added\": [], \"lineages_removed\": [], \"removed\": []}, \"lineage\": \"1e390fb2aa03a7d5d8b64b9ac0b4aab856deaf8e41667120edfc6eca64a01eb8\", \"new_leaf\": \"68541816d619aadc79da25332dd4883f1c28441514f17531d7f81651eaa63c37\", \"old_leaf\": \"1e390fb2aa03a7d5d8b64b9ac0b4aab856deaf8e41667120edfc6eca64a01eb8\", \"reliance\": [\"ELIGIBLE\", \"ELIGIBLE\"], \"states\": [\"open\", \"open\"], \"tool\": {\"added\": [\"68541816d619aadc79da25332dd4883f1c28441514f17531d7f81651eaa63c37\"], \"changed\": [], \"lineages_added\": [], \"lineages_removed\": [], \"removed\": []}}\n",
+ "probe_source": "import importlib.util,json,pathlib,sys\nroot=pathlib.Path(sys.argv[1]); sys.path[:0]=[str(root/'tests'),str(root)]\nfrom world import Repo\nfrom warrant import graph as G\nfrom warrant import repo as RP\nfrom warrant import gate as GT\nfrom warrant_agent import api\nfrom warrant_agent.config import Config\nfrom agent_test import cfg_of\nspec=importlib.util.spec_from_file_location('graph_tool',root/'tools/graph.py');tool=importlib.util.module_from_spec(spec);spec.loader.exec_module(tool)\nr=Repo(git_init=True)\no=r.entity('alice','obligation@1',{'state':'open','statement':'first wording','serves':[]})\nb=r.commit('first version')\nv=r.entity('alice','obligation@1',{'state':'open','statement':'revised wording','serves':[]},lineage=o)\nh=r.commit('same-state successor')\nreps=[RP.Repo(r.root).report(GT.store_at(r.root,c)[0]) for c in (b,h)]\nlib=G.delta(*reps)\nvia=api.call(cfg_of(r),'graph',{'workspace':'w','op':'delta','range':f'{b}..{h}'}).get('ok',{})\nt=tool.ask(RP.Repo(r.root),'delta',[f'{b}..{h}'])[3]\nassert [(x['lineages'][o]['state'],x['lineages'][o]['reliance']) for x in reps]==[('open','ELIGIBLE')]*2\nassert [x['lineages'][o]['leaf'] for x in reps]==[o,v]\npassed=all(o in x.get('changed',[]) for x in [lib,via.get('data',{}),t])\nprint(('ok   ' if passed else 'FAIL ')+'F1 delta must report a same-state, same-reliance successor in changed')\nprint(json.dumps({'lineage':o,'old_leaf':o,'new_leaf':v,'states':[x['lineages'][o]['state'] for x in reps],'reliance':[x['lineages'][o]['reliance'] for x in reps],'library':lib,'agent':via.get('data',via),'tool':t},sort_keys=True))\nsys.exit(0 if passed else 1)\n",
+ "probe_usage": "TMPDIR=<review working directory>/tmp python3 -B leaf_probe.py <checkout>; run against M then a copy of M with mutant_patch applied. The fixture creates signed records and two Git commits; it checks the two reports keep state=open and reliance=ELIGIBLE and advance leaf. F1 must pass on M and fail on the mutant.",
+ "registered_mutant_scope": "The repository harness was used with copies and TMPDIR under this review's work directory and its clean-section discovery restricted to tools_test drift_impact_cases, impact_cases, sources_cases and agent_test operations, horizon_cases. All 16 selected mutants were KILLED by their named cases; the rest of the mutant matrix was not run.",
+ "registered_mutants": [
+  {
+   "detail": "",
+   "failed": [
+    "DR25b"
+   ],
+   "id": "T321",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "A51"
+   ],
+   "id": "T322",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "horizon_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "A51"
+   ],
+   "id": "T323",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "horizon_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR17b"
+   ],
+   "id": "T325",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "A51"
+   ],
+   "id": "T326",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "horizon_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR25b"
+   ],
+   "id": "T327",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "SR8"
+   ],
+   "id": "T354",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "sources_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR17c"
+   ],
+   "id": "T355",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "A52"
+   ],
+   "id": "X43",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "operations"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR38"
+   ],
+   "id": "T364",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR38"
+   ],
+   "id": "T365",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR39"
+   ],
+   "id": "T372",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR40"
+   ],
+   "id": "T373",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR40"
+   ],
+   "id": "T374",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR40"
+   ],
+   "id": "T375",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ]
+  },
+  {
+   "detail": "",
+   "failed": [
+    "DR40"
+   ],
+   "id": "T376",
+   "outcome": "KILLED",
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ]
+  }
+ ],
+ "required_completion": "Add an independent same-state, same-reliance successor check through the tool or agent, and register the exact leaf-comparison removal mutant so it fails that check. Keep the check green on the current implementation.",
+ "review": "codex roadmap verdict on G11 obligation 8c856b3b",
+ "scope": "Inspected the one shared graph, CLI and agent/MCP dispatch, tests and mutants, T and its seven evidence records, and local Git history for the named changes. No claim that all repository suites or the full mutant matrix were run; no live GitHub CI claim. Roadmap and claims checks passed before filing.",
+ "suite_and_mutant_driver_source": "import importlib.util,json,os,pathlib,subprocess,sys,time\nROOT=pathlib.Path.cwd()\nWORK=pathlib.Path(__file__).resolve().parent\nos.environ.update(TMPDIR=str(WORK/'tmp'),PYTHONDONTWRITEBYTECODE='1',GIT_CONFIG_COUNT='2',GIT_CONFIG_KEY_0='maintenance.auto',GIT_CONFIG_VALUE_0='false',GIT_CONFIG_KEY_1='gc.auto',GIT_CONFIG_VALUE_1='0')\n(WORK/'tmp').mkdir(exist_ok=True)\nspec=importlib.util.spec_from_file_location('mutants',ROOT/'tests/mutants.py');M=importlib.util.module_from_spec(spec);spec.loader.exec_module(M)\nM.COPY=WORK/'mutants'; M.TMP=WORK/'mutants-tmp'\nmode=sys.argv[1]\nif mode=='registered':\n orig=M.sections_of\n allowed={'tests/tools_test.py':{'drift_impact_cases','impact_cases','sources_cases'},'tests/agent_test.py':{'operations','horizon_cases'}}\n M.sections_of=lambda test,cwd,tmp:[s for s in orig(test,cwd,tmp) if s in allowed[test]]\n ids=['T321','T322','T323','T325','T326','T327','T354','T355','X43','T364','T365','T372','T373','T374','T375','T376']\n rows=M.run_mutants(ids)\n (WORK/'registered-matrix.json').write_text(json.dumps(rows,indent=1))\n print('RESULT',len(rows or []),all(x['outcome']=='KILLED' for x in rows or []),flush=True)\nelse:\n copy=WORK/('baseline' if mode=='baseline' else 'leaf-mutant')\n subprocess.run(['git','clone','--quiet','--no-hardlinks','--no-checkout',str(ROOT),str(copy)+'-git'],check=True)\n copy=pathlib.Path(str(copy)+'-git')\n subprocess.run(['git','-C',str(copy),'checkout','--quiet','--detach','45303c96867fe14a43449396cedc9d2e6df2b612'],check=True)\n if mode=='leaf':\n  f=copy/'warrant/graph.py';s=f.read_text()\n  old='and (rep0[\"lineages\"][L][\"state\"], rep0[\"lineages\"][L][\"reliance\"], rep0[\"lineages\"][L][\"leaf\"])\\n                     != (lin[\"state\"], lin[\"reliance\"], lin[\"leaf\"]))'\n  new='and (rep0[\"lineages\"][L][\"state\"], rep0[\"lineages\"][L][\"reliance\"])\\n                     != (lin[\"state\"], lin[\"reliance\"]))'\n  assert s.count(old)==1\n  f.write_text(s.replace(old,new))\n for test in ['tests/agent_test.py','tests/tools_test.py']:\n  start=time.monotonic()\n  log=WORK/(mode+'-'+pathlib.Path(test).stem+'.log')\n  with log.open('w') as out:\n   r=subprocess.run([sys.executable,'-B',test],cwd=copy,env=dict(os.environ),stdout=out,stderr=subprocess.STDOUT)\n  text=log.read_text();print(mode,test,'exit',r.returncode,'seconds',round(time.monotonic()-start,2),'pass',sum(x.startswith('ok   ') for x in text.splitlines()),'fail',[x for x in text.splitlines() if x.startswith('FAIL ')],flush=True)\n",
+ "suite_environment": {
+  "PYTHONDONTWRITEBYTECODE": "1",
+  "TMPDIR": "review working directory/tmp",
+  "git.gc.auto": "0",
+  "git.maintenance.auto": "false",
+  "python": "3.15.2 (main, Oct 25 2026, 16:57:51) [Clang 21.0.0 (clang-2100.3.34.2)]",
+  "source": "independent full Git clones checked out detached at M; mutant clone differs only by mutant_patch"
+ },
+ "suite_log_sha256": {
+  "baseline-agent_test.log": "d74eaa45d88fd9d97c29149674f0fed38c80bce7342b7acc6a4647e0ce0b4b9c",
+  "baseline-tools_test.log": "2d4e5a4184f636611163bcea736fd2eca53208836a48611b8e23687bd8da9b09",
+  "leaf-agent_test.log": "d74eaa45d88fd9d97c29149674f0fed38c80bce7342b7acc6a4647e0ce0b4b9c",
+  "leaf-tools_test.log": "2d4e5a4184f636611163bcea736fd2eca53208836a48611b8e23687bd8da9b09"
+ },
+ "target": "7c21bc4eb97ca29d472a69cad4da5523cb8e8ef8ac6416a3fed8e1efa12e0d20",
+ "tree": "89ca739eca92e36873fea4637c7bf37c9563fc3e",
+ "where": [
+  "warrant/graph.py:227-234",
+  "tests/tools_test.py:1064-1113",
+  "tests/agent_test.py:133-156"
+ ]
+}
