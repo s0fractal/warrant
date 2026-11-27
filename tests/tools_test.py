@@ -1159,6 +1159,20 @@ def drift_impact_cases():
           "lineage (Codex 0ae33889 on G11)",
           dl.get("changed") == [] and dl.get("lineages_added") == [] and named[f"{b5}..{m5}"] == [(x5, [y5])]
           and named[f"{m5}..{b5}"] == [(x5, [y5])] and named[f"{m5}..{h5}"] == [(y5, [])], (dl, named))
+    g6 = Repo(git_init=True)
+    o6 = g6.entity("alice", "obligation@1", {"state": "open", "statement": "accepted, then challenged", "serves": []})
+    d6 = g6.entity("alice", "obligation@1", {"state": "done", "statement": "accepted, then challenged", "serves": []}, lineage=o6)
+    g6.attest("bob", d6)
+    b6 = g6.commit("accepted")
+    g6.put("bob", "challenge", {"statement": "a counted objection", "target": d6}, refs=[d6])
+    h6 = g6.commit("a counted challenge")
+    row = next((x for x in TG.ask(RP.Repo(g6.root), "impact", [f"{b6}..{h6}"])[3].get("lineages", []) if x["lineage"] == o6), {})
+    at5 = RP.Repo(g6.root).report(GT.store_at(g6.root, h6)[0])["lineages"][o6]
+    check("DR46 an impact row carries its lineage's schema, state and reliance as the later report reads them: a "
+          "lineage under a counted challenge reads CHALLENGED there, never ELIGIBLE (Codex 7a789347: reliance forced to "
+          "ELIGIBLE survived every check)",
+          at5["reliance"] == "CHALLENGED" and (row.get("schema"), row.get("state"), row.get("reliance"))
+          == ("obligation@1", "done", "CHALLENGED") and at5["state"] == "done", (row, at5))
     gone = {x["lineage"]: x["gone"] for x in TG.ask(RP.Repo(g2.root), "impact", [f"{h2}..{b2}"])[3].get("lineages", [])}
     check("DR45 impact over a range that removes a lineage reads it in the earlier report and says it is gone; a "
           "lineage still there is not",
@@ -1261,13 +1275,32 @@ def drift_impact_cases():
     rep = RP.Repo(r.root).report()
     D.gate(rep, r.root, head)
     q = {"query": "impact", "head": head, "base": base, "across": True}
-    want = A.identity({"here": rep, "there": readings["there"].rep}, [], rep["code"], None, q) if hasattr(A, "identity") else None
+    want = A.identity({"here": rep, "there": readings["there"].rep}, [], rep["code"], None, q,
+                      {"there": readings["there"].shown()}) if hasattr(A, "identity") else None
     check("DR29 an answer with Home's stores binds every store it read as `across` does: a record added in another store "
           "changes its root, a store that cannot be read is named and changes it too",
           "crashed" not in a and "crashed" not in b and "crashed" not in c
           and a["data"]["stale"][0]["elsewhere"] != b["data"]["stale"][0]["elsewhere"] and a["root"] != b["root"]
           and (b["root"], b["lens"]) == want and [u["store"] for u in c["data"].get("unavailable", [])] == ["gone"]
           and c["root"] != b["root"], (a.get("root"), b.get("root"), want, c.get("data", {}).get("unavailable")))
+
+
+def across_metadata_cases():
+    """Codex 45e127f4: an across answer's header names each store's repository and the names it was read as; its lens
+    binds them, so two answers that print other headers never share a root and a lens. Only the repository named in
+    .warrant/v3.json changes here (no record, no trust, no profile)."""
+    r = Repo(name="s0fractal/one")
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "a record", "serves": []})
+    home = {"repositories": {"r": {"path": str(r.root)}}}
+    a1 = A.answer(A.home_readings(home), {"query": "stores"})
+    doc = json.loads((r.dot / "v3.json").read_text())
+    (r.dot / "v3.json").write_text(json.dumps(dict(doc, repository="s0fractal/two")))
+    a2 = A.answer(A.home_readings(home), {"query": "stores"})
+    heads = [[x.get("repository") for x in a["stores"]] for a in (a1, a2)]
+    check("DR47 across binds the repository a store's header names: renaming it alone keeps the root and changes the "
+          "lens, the headers differing as the lens does",
+          heads == [["s0fractal/one"], ["s0fractal/two"]] and a1["root"] == a2["root"] and a1["lens"] != a2["lens"],
+          (heads, a1["root"] == a2["root"], a1["lens"] == a2["lens"]))
 
 
 def view_binding_cases():
@@ -2411,10 +2444,11 @@ def resolve_cases():
     renamed = H.add_repository(H.add_repository(H.empty(), str(a.root), "zz"), str(b.root), "b")
     s1, s2, s3 = (AC.answer(AC.home_readings(d), {"query": "stores"}) for d in (once, twice, renamed))
     check("RV4 one store registered twice counts once (Codex on ec6d1ebe's closure): resolve counts its citations once, "
-          "and across reads it as one store, its names under `read_as`, with the root and lens of the store read once under "
-          "any name",
+          "and across reads it as one store, its names under `read_as`, with the root of the store read once under any "
+          "name; the names its header prints are in the lens, so another header is another lens (Codex 45e127f4: one "
+          "root and lens, two byte strings)",
           c1 == c2 and [x["store"] for x in s2["stores"]] == ["a", "b"] and s2["stores"][0].get("read_as") == ["a", "again"]
-          and (s1["root"], s1["lens"]) == (s2["root"], s2["lens"]) == (s3["root"], s3["lens"]), (c1, c2, s2["stores"]))
+          and s1["root"] == s2["root"] == s3["root"] and len({s1["lens"], s2["lens"], s3["lens"]}) == 3, (c1, c2, s2["stores"]))
     mirror = Repo(name="s0fractal/a")
     shutil.copytree(a.dot, mirror.dot, dirs_exist_ok=True)
     rules = json.loads((mirror.dot / "v3.json").read_text())
@@ -3713,6 +3747,7 @@ if __name__ == "__main__":
         receipt_cases,
         board_cases,
         board_retry_cases,
+        across_metadata_cases,
         narrow_cases,
         resolve_cases,
         harness_cases,

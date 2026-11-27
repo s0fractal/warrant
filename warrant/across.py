@@ -108,6 +108,11 @@ class Reading:
         """What decides this reading besides the records: the receiver and the checkout the freshness gate read."""
         return {"trust": self.view.trust, "profile": self.view.profile, "checkout": self.rep.get("checkout")}
 
+    def shown(self):
+        """What this reading's header names besides the records and the receiver: the repository its v3.json names and
+        the names it was read as. The answer's lens binds them (across.identity)."""
+        return {"repository": _short(self.repository) if isinstance(self.repository, str) else None, "names": self.names}
+
     def holds(self, i):
         return i in self.view.snap.lines or i in self.view.snap.blobs
 
@@ -294,13 +299,17 @@ def _dumped(x):
     return len(json.dumps(x, sort_keys=True))
 
 
-def identity(reps, unavailable, code, adapter, query):
+def identity(reps, unavailable, code, adapter, query, shown=None):
     """(root, lens) of an answer read from `reps`, {store: report}: `root` names every store's snapshot and every store
-    not read, `lens` the code, the adapter, the query and every store's trust, profile and checkout. `drift --impact
-    --across` binds what it read by the same form."""
+    not read, `lens` the code, the adapter, the query and every store's trust, profile and checkout, and `shown`,
+    {store: what its header names besides the records} (Reading.shown: the repository and the names it was read as),
+    so two answers that print other headers never share a lens (Codex 45e127f4). `drift --impact --across` binds what
+    it read by the same form."""
+    shown = shown or {}
     root = C.doc_id({"stores": {n: rep["snapshot"] for n, rep in reps.items()}, "unavailable": unavailable})
     lens = C.doc_id({"code": code, "adapter": adapter, "query": query, "stores": {
-        n: {"trust": rep["trust"], "profile": rep["profile"], "checkout": rep.get("checkout")} for n, rep in reps.items()}})
+        n: {"trust": rep["trust"], "profile": rep["profile"], "checkout": rep.get("checkout"), **shown.get(n, {})}
+        for n, rep in reps.items()}})
     return root, lens
 
 
@@ -367,7 +376,8 @@ def answer(readings, q, budget=BUDGET, adapter=None):
            "unavailable": unavailable, "total": len(ids), "offset": q.get("offset", 0), "next": len(ids), **extra, "nodes": [],
            # the page is part of the lens: two pages of one query read different rows (Codex da1681d5)
            **dict(zip(("root", "lens"), identity({x.key: x.rep for x in read}, unavailable, code, adapter,
-                                                 dict(query, page={"offset": q.get("offset", 0), "budget": budget}))))}
+                                                 dict(query, page={"offset": q.get("offset", 0), "budget": budget}),
+                                                 {x.key: x.shown() for x in read})))}
     used, pos = _dumped(out), out["offset"]
     if used > budget:
         raise Refusal("RESOURCE_LIMIT", f"the answer's header is {used} bytes; {budget} are allowed")
