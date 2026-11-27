@@ -3181,6 +3181,36 @@ def board_cases():
           (edited["update"], edited["archive"], edited["foreign"]))
 
 
+def board_stale_cases():
+    """The board's cards and the generated ROADMAP.md read reliance as `status` does (G14): an accepted obligation whose
+    acceptance names a file's bytes the checkout's HEAD no longer holds reads STALE there, never ELIGIBLE (Codex
+    e91f50f1's family: readers that showed the engine's reliance unread by the freshness gate)."""
+    import importlib.util
+    r = Repo(git_init=True)
+    claims_config(r)                 # tools/graph.py renders CLAIMS.md beside ROADMAP.md
+    (r.root / "docs").mkdir()
+    (r.root / "docs" / "V3.md").write_text(SPEC)
+    g = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a goal"})
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "pinned", "answers": g, "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "pinned", "answers": g, "serves": []}, lineage=o)
+    (r.root / "x.py").write_text("x = 1\n")
+    c0 = r.commit("the bytes accepted")
+    r.attest("bob", d, commit=c0, files={"x.py": git(r.root, "rev-parse", f"{c0}:x.py")})
+    r.commit("accepted on x.py")
+    fresh = {x["id"]: x["reliance"] for x in BD.manifest([r.root])["rows"]}
+    (r.root / "x.py").write_text("x = 2\n")
+    r.commit("x.py changed")
+    stale = {x["id"]: x["reliance"] for x in BD.manifest([r.root])["rows"]}
+    spec = importlib.util.spec_from_file_location("graph_tool", ROOT / "tools" / "graph.py")
+    TG = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TG)
+    road = TG.render(RP.Repo(r.root))["ROADMAP.md"]
+    line = next((x for x in road.splitlines() if o[:12] in x), "")
+    check("BD20 a board card and ROADMAP.md read a pinned obligation STALE once HEAD no longer holds the bytes its "
+          "acceptance names, ELIGIBLE while it does (the freshness gate, as status applies it)",
+          fresh.get(o) == "ELIGIBLE" and stale.get(o) == "STALE" and "(STALE" in line, (fresh, stale, line))
+
+
 def board_retry_cases():
     repo = Repo()
     initial = {"state": "open", "statement": "first version", "serves": []}
@@ -3746,6 +3776,7 @@ if __name__ == "__main__":
         bridge_step_cases,
         receipt_cases,
         board_cases,
+        board_stale_cases,
         board_retry_cases,
         across_metadata_cases,
         narrow_cases,

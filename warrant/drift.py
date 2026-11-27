@@ -151,6 +151,27 @@ def not_checked(rep):
     return out
 
 
+def reading(rep, root=None):
+    """The freshness a reader that shows reliance applies to `rep` (with `_recs`): beside a checkout whose HEAD has a
+    tree, the gate (`gate`); with none, `not_checked`, so a pinned lineage reads PINS_NOT_CHECKED, never ELIGIBLE
+    (docs/V3.md §10). One predicate for the readers that once applied neither (Codex 3a57ee31, e91f50f1)."""
+    if root is not None and _own_checkout(root):
+        gate(rep, root)
+    else:
+        rep["checkout"] = None if root is None else checkout(root)
+        not_checked(rep)
+
+
+def _own_checkout(root):
+    """Whether `root` is itself a Git checkout's top with a HEAD tree: a store in a plain folder that some enclosing
+    repository holds has no checkout of its own beside it (its HEAD is another repository's)."""
+    try:
+        top = git(root, "rev-parse", "--show-toplevel")
+    except subprocess.CalledProcessError:
+        return False
+    return os.path.realpath(top) == os.path.realpath(root) and checkout(root)["tree"] is not None
+
+
 def checkout(root, at="HEAD"):
     """What the gate read beside the store: HEAD's tree and whether this checkout has claims. The answer's identity
     binds it (Codex finding ccc4e8145ed2): the same store can answer ELIGIBLE and STALE at two heads."""

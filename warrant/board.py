@@ -37,6 +37,7 @@ import textwrap
 import urllib.parse
 from pathlib import Path
 
+from . import drift as D
 from . import jcs as C
 from . import shapes as S
 from .repo import Failed, Repo, dump, main
@@ -159,6 +160,7 @@ def manifest(roots, reader=None):
         repo = Repo(root)
         _, _, name = repo.config()
         rep = repo.report()
+        D.reading(rep, repo.root)    # a card's reliance as status reads it: the freshness gate (G14), docs/V3.md §10
         merge = Path(repo.root) / ".warrant" / "merge.json"
         branch = json.loads(merge.read_text()).get("base") if merge.is_file() else None
         base = f"https://raw.githubusercontent.com/{name}/{branch}/" if name and isinstance(branch, str) else None

@@ -1208,6 +1208,84 @@ def pins_show_cases():
           and all(f"{v['expect'][L]} (" in texts[L] for L in v["expect"]), (shown, home, {L[:12]: texts[L][:300] for L in texts}))
 
 
+def pins_serve_cases():
+    """Codex e91f50f1: `warrant serve` (its Space's report) and the agent's whatif over a store alone hold to the shared
+    vector too: a pinned lineage PINS_NOT_CHECKED, never ELIGIBLE (warrant.drift.reading)."""
+    from warrant_agent import serve as SV
+    v = json.loads((ROOT / "tests" / "vectors" / "pins-not-checked.json").read_text())
+    d = Path(TMP) / "pins-serve"
+    s = d / ".warrant"
+    s.mkdir(parents=True)
+    (s / "records.jsonl").write_text("\n".join(v["lines"]) + "\n")
+    (s / "v3.json").write_text(json.dumps(v["v3"]))
+    for k in ("trust", "profile"):
+        (d / f"{k}.json").write_text(json.dumps(v["v3"][k]))
+    rep = SV.Space({"v": str(d)}).report("v")
+    served = {L: rep["lineages"][L]["reliance"] for L in v["expect"]} if "_error" not in rep else rep
+    cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {
+        "store": str(s), "trust": str(d / "trust.json"), "profile": str(d / "profile.json"), "operations": ["context"]}}})
+    pinned = sorted(L for L, x in v["expect"].items() if x == "PINS_NOT_CHECKED")
+    recs = [json.loads(x)["record"] for x in v["lines"]]
+    shown = {}
+    for r in recs:
+        if r["kind"] == "attest" and r["body"].get("target") in pinned:
+            rows = (api.call(cfg, "whatif", {"workspace": "w", "without": [R.rid(r)]}).get("ok") or {}).get("changes", [])
+            shown.update({x["lineage"]: x["from"][1] for x in rows if x["lineage"] in pinned})
+    check("VP5 `warrant serve`'s report of a store alone reads every row of the shared vector as it expects, and the "
+          "agent's whatif over it shows each pinned lineage now PINS_NOT_CHECKED, never ELIGIBLE (Codex e91f50f1)",
+          served == v["expect"] and shown == {L: "PINS_NOT_CHECKED" for L in pinned}, (served, shown))
+    outer = Path(TMP) / "outer-repo"
+    inner = outer / "sub"
+    (inner / ".warrant").mkdir(parents=True)
+    (inner / ".warrant" / "records.jsonl").write_text("\n".join(v["lines"]) + "\n")
+    (inner / ".warrant" / "v3.json").write_text(json.dumps(v["v3"]))
+    git(outer, "init", "-q")
+    git(outer, "add", ".")
+    git(outer, "-c", "commit.gpgsign=false", "commit", "-qm", "a repository holding a store folder")
+    rep2 = SV.Space({"v": str(inner)}).report("v")
+    inside = {L: rep2["lineages"][L]["reliance"] for L in v["expect"]} if "_error" not in rep2 else rep2
+    check("VP6 a store folder an enclosing repository holds has no checkout of its own beside it: its pinned lineages read "
+          "PINS_NOT_CHECKED, not the gate against that other repository's HEAD (drift.reading: the folder must be its "
+          "checkout's top)", inside == v["expect"], inside)
+
+
+def pins_overlay_history_cases():
+    """Codex 2c59d04e (its reproducer, ported): `warrant serve`'s overlay and an exact historical lineage page over two
+    non-Git copies of the shared vector compare no checkout, so a pinned lineage shows PINS_NOT_CHECKED in both, never a
+    PINS_NOT_CHECKED -> ELIGIBLE promotion or an ELIGIBLE past (warrant_agent.overlay.assess, changes.report_of)."""
+    import re
+    from warrant_agent import changes as CH
+    from warrant_agent import serve as SV
+    v = json.loads((ROOT / "tests" / "vectors" / "pins-not-checked.json").read_text())
+    pinned = sorted(L for L, w in v["expect"].items() if w == "PINS_NOT_CHECKED")
+    base = Path(TMP) / "pins-overlay"
+    roots = {}
+    for name in ("publisher", "reader"):
+        dot = base / name / ".warrant"
+        dot.mkdir(parents=True)
+        (dot / "v3.json").write_text(json.dumps(v["v3"]))
+        (dot / "records.jsonl").write_text("\n".join(v["lines"]) + "\n")
+        roots[name] = str(base / name)
+    space = SV.Space(roots)
+    app = SV.App(space, mine="reader", reader="reader", marks=CH.Marks(base / "marks.json"))
+    code, page = app.page_overlay({"store": "publisher"})
+    promoted = re.sub("<[^>]+>", "", page).count("PINS_NOT_CHECKED → ELIGIBLE")
+    snap = RP.Repo(roots["publisher"]).store.snapshot()
+    viewed = RP.Repo(roots["reader"]).store.append(
+        R.record("attest", "bob", 1800000013, {"target": pinned[0], "verdict": "seen", "lens": "builtin", "root": snap.digest},
+                 refs=[pinned[0]]), KEYS["bob"], v["v3"]["trust"])
+    then = app.seen_then("publisher", viewed)
+    shown = []
+    for L in pinned:
+        c, pg = app.page_lineage("publisher", L, {"asof": viewed})
+        m = re.search(r'data-floor="reliance"><span class="tag ([A-Z_]+)"', pg)
+        shown.append(m.group(1) if c == 200 and m else c)
+    check("VP7 `warrant serve`'s overlay and an exact historical lineage page compare no checkout over a store alone: no "
+          "PINS_NOT_CHECKED -> ELIGIBLE promotion, and the past page shows each pinned lineage PINS_NOT_CHECKED (Codex 2c59d04e)",
+          code == 200 and promoted == 0 and then is not None and then[0]["snapshot"] == snap.digest
+          and shown == ["PINS_NOT_CHECKED"] * len(pinned), (code, promoted, shown))
+
+
 def pins_earlier_version_cases():
     """Codex eb81cfd8: an obligation's open root and its done successor, accepted with a file pin, both asked with no
     checkout: the lineage reads PINS_NOT_CHECKED in either answer, through the API and the standalone verifier."""
@@ -1300,6 +1378,8 @@ def main():
         anchor_init_cases()
         pins_reader_cases()
         pins_show_cases()
+        pins_serve_cases()
+        pins_overlay_history_cases()
         pins_earlier_version_cases()
         pins_predicate_cases()
     finally:
