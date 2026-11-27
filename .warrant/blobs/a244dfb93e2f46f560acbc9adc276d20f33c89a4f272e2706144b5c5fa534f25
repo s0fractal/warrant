@@ -1,0 +1,129 @@
+G14 roadmap verdict evidence: the owed format rule is not yet satisfied.
+
+Repository: s0fractal/warrant
+M: 0c86424f330fdf513b115980d7f61c9071205cbe
+Tree: f7ec93d09aa59fcab5a5c1835e321c8235955569
+D: 9c7598ecdb5b2b2d1ee3027a046a1cb741a5140d5f634a4ee4ebed78d2d8cefb
+T: 2c59d04e37df2d33e2ecb51922155fbcd0b6bc59158d50e2024f2f17a0af113a
+Reviewer: codex
+
+P2: warrant serve still displays ELIGIBLE on pinned lineages with no checkout in its overlay and historical views.
+
+The format rule and shared vector exist. The due facts, duty, T, seven evidence records, and all seven merged PRs (#434, #528, #590, #604, #622, #627, #633) were checked. M contains the cited merges. MCP context confirms T is a pending done version of D, quorum 1 roadmap/acceptor, no open requirements, no acceptance or challenge of T before this verdict. Its author is claude, and codex is the configured reviewer. The existing fixes do not cover all displayed reader paths.
+
+F1: copy the unchanged tests/vectors/pins-not-checked.json lines and v3 rules into two ordinary non-Git folders, publisher and reader. Their rules and records are identical. Space.report('publisher') passes the entire vector. App.page_overlay({'store':'publisher'}) with mine='reader' returns HTTP 200 and displays TWO transitions 'PINS_NOT_CHECKED -> ELIGIBLE' (with the Unicode right arrow), also promoting grounded False to True. No Git tree is present or compared. Expected: the two pinned claims remain PINS_NOT_CHECKED on both sides. This is a displayed reader result, not an engine-only API result.
+Cause: warrant_agent/overlay.py:59-64 builds a raw report and returns it without not_checked. warrant_agent/serve.py:987-990 compares that with the correctly gated normal report and renders the promotion through change_html.
+
+F2: a signed fixture 'seen' view in the separate reader store names the publisher's exact snapshot. App.page_lineage('publisher', L, {'asof':viewed}) returns HTTP 200 and displays ELIGIBLE in data-floor='reliance' for BOTH pinned claims. The reconstruction has EXACTLY the snapshot named by the view; this is not an approximate-history artifact. The normal lineage page correctly shows PINS_NOT_CHECKED. Expected: the historical page also shows PINS_NOT_CHECKED unless it actually compares the pins.
+Cause: warrant_agent/changes.py:45-50 returns a raw report. warrant_agent/serve.py:797 constructs the historical report through it and :807-810 chooses it in place of Space.report. The same ungated helper also supplies past_report and the browser what-if hypotheses; those additional paths are identified by static inspection, not claimed as additional executed failures here.
+
+The runnable script below uses the existing shared vector and only deterministic fixture keys (bob seed 02 repeated 32 times, the test vector's own key). It writes fixture stores only in its supplied review work directory, makes no network requests and does not write to the reviewed checkout. Its normal run must print FAIL F1 and FAIL F2 on M and exit 1. --control wraps OVL.assess and CH.report_of with drift.not_checked in memory; both cases then pass with exit 0. This control identifies the absent reader boundary checks; it is not a repository patch.
+
+Run:
+  python3 pins_serve_views_test.py CHECKOUT REVIEW_WORK_DIR
+  python3 pins_serve_views_test.py CHECKOUT REVIEW_WORK_DIR --control
+
+Observed at M:
+FAIL F1 overlay must not promote unchecked pins: 2 PINS_NOT_CHECKED -> ELIGIBLE transitions
+FAIL F2 exact historical lineage pages must show PINS_NOT_CHECKED: ['ELIGIBLE', 'ELIGIBLE']
+Control:
+ok   F1 overlay must not promote unchecked pins: 0 PINS_NOT_CHECKED -> ELIGIBLE transitions
+ok   F2 exact historical lineage pages must show PINS_NOT_CHECKED: ['PINS_NOT_CHECKED', 'PINS_NOT_CHECKED']
+
+Validation:
+- tests/verify_test.py: all 68 printed checks pass, including VP1-VP6, the standalone verifier, and the older-root and legacy-acceptance cases.
+- tests/agent_test.py sections operations, serve_cases, changes_cases, overlay_cases, whatif_cases: all 49 printed checks pass (including A45). The existing view tests do not catch F1/F2.
+- tests/impl_js_test.py functions browser_pins_vector_cases, js_pins_vector_cases, browser_pins_cases: all 18 printed checks pass (J23, J26, J11); this was a targeted run, not the whole JavaScript suite.
+- roadmap check: 128 lineages, zero problems. claims check: 148 live claims, zero problems.
+- No checker seed or replay signing used. No code/test changes, git commit, push, or PR opening performed.
+
+Selected mutant run (verbatim):
+UM95 KILLED warrant_agent/serve.py by tests/verify_test.py ['VP5']
+UM97 KILLED warrant/drift.py by tests/verify_test.py ['VP5']
+UM96 KILLED warrant_agent/whatif.py by tests/verify_test.py ['VP5']
+UM98 KILLED warrant/drift.py by tests/verify_test.py ['VP6']
+UM93 KILLED warrant/cli.py by tests/verify_test.py ['VP4']
+UM94 KILLED warrant/across.py by tests/verify_test.py ['VP4']
+UM90 KILLED warrant/verify.py by tests/verify_test.py ['VP3']
+UM91 KILLED warrant/verify.py by tests/verify_test.py ['VP3']
+V107 KILLED warrant/verify.py by tests/verify_test.py ['VP1', 'U21']
+V108 KILLED warrant/verify.py by tests/verify_test.py ['VP1', 'U21']
+T346 KILLED warrant/cli.py by tests/verify_test.py ['VP1']
+T347 KILLED warrant/cli.py by tests/verify_test.py ['VP1']
+V109 KILLED warrant/verify.py by tests/verify_test.py ['VP2']
+UM92 KILLED warrant/verify.py by tests/verify_test.py ['VP3']
+A211 KILLED warrant_agent/api.py by tests/verify_test.py ['VP1']
+15 of 15 killed
+
+Runnable reproducer:
+```python
+"""G14 counterexamples at master 0c86424f330fdf513b115980d7f61c9071205cbe.
+Usage: python3 pins_serve_views_test.py CHECKOUT REVIEW_WORK_DIR [--control]
+Normal run prints FAIL F1 and FAIL F2 at M, exits 1. --control adds the
+missing not_checked calls in memory, prints ok for both, exits 0.
+Only fixture stores in REVIEW_WORK_DIR are written; no network or real keys.
+"""
+import json
+import re
+import sys
+import tempfile
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root))
+from warrant import drift as D, keys as K, records as R
+from warrant.repo import Repo
+from warrant_agent import changes as CH, overlay as OVL, serve as SV
+
+if '--control' in sys.argv:
+    def checked(fn):
+        def call(*args, **kwargs):
+            rep = fn(*args, **kwargs)
+            D.not_checked(rep)
+            return rep
+        return call
+    OVL.assess = checked(OVL.assess)
+    CH.report_of = checked(CH.report_of)
+
+v = json.loads((root/'tests/vectors/pins-not-checked.json').read_text())
+pinned = sorted(L for L, w in v['expect'].items() if w == 'PINS_NOT_CHECKED')
+with tempfile.TemporaryDirectory(dir=sys.argv[2]) as tmp:
+    base = Path(tmp)
+    roots = {}
+    for name in ('publisher', 'reader'):
+        r = base/name
+        dot = r/'.warrant'
+        dot.mkdir(parents=True)
+        (dot/'v3.json').write_text(json.dumps(v['v3']))
+        (dot/'records.jsonl').write_text('\n'.join(v['lines'])+'\n')
+        roots[name] = str(r)
+    space = SV.Space(roots)
+    app = SV.App(space, mine='reader', reader='reader', marks=CH.Marks(base/'marks.json'))
+    # Baseline: the same pages' ordinary store reading passes the entire vector.
+    assert {L: x['reliance'] for L, x in space.report('publisher')['lineages'].items()} == v['expect']
+    code, page = app.page_overlay({'store': 'publisher'})
+    assert code == 200
+    plain = re.sub('<[^>]+>', '', page)
+    bad_overlay = plain.count('PINS_NOT_CHECKED → ELIGIBLE')
+    print(('FAIL' if bad_overlay else 'ok  ')+' F1 overlay must not promote unchecked pins: '
+          +str(bad_overlay)+' PINS_NOT_CHECKED -> ELIGIBLE transitions')
+    # A real signed fixture view is in the reader's separate store. Its root is
+    # the publisher's snapshot, so the historical reconstruction is exact.
+    snap = Repo(roots['publisher']).store.snapshot()
+    viewed = Repo(roots['reader']).store.append(
+        R.record('attest', 'bob', 1800000013,
+                 {'target':pinned[0], 'verdict':'seen', 'lens':'builtin', 'root':snap.digest}, refs=[pinned[0]]),
+        K.Key.from_seed_hex('02'*32), v['v3']['trust'])
+    then = app.seen_then('publisher', viewed)
+    assert then is not None and then[0]['snapshot'] == snap.digest
+    shown = []
+    for L in pinned:
+        code, page = app.page_lineage('publisher', L, {'asof':viewed})
+        assert code == 200
+        m = re.search(r'data-floor="reliance"><span class="tag ([A-Z_]+)"', page)
+        assert m is not None
+        shown.append(m.group(1))
+    bad_past = shown != ['PINS_NOT_CHECKED']*len(pinned)
+    print(('FAIL' if bad_past else 'ok  ')+' F2 exact historical lineage pages must show PINS_NOT_CHECKED: '+str(shown))
+    sys.exit(1 if bad_overlay or bad_past else 0)
+```
