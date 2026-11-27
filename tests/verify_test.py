@@ -1182,6 +1182,32 @@ def pins_reader_cases():
           and all("PINS_NOT_CHECKED" in ans["roots"][L]["why_not"] for L in pinned), (got, inspect, ans.get("rely")))
 
 
+def pins_show_cases():
+    """Codex 3a57ee31: every reader of a store alone holds to the shared vector, `warrant show` (JSON and text) and a
+    Home reading with no checkout (warrant.across.Reading) too: a pinned lineage PINS_NOT_CHECKED, never ELIGIBLE."""
+    from warrant import across as A
+    from warrant.store import Store
+    v = json.loads((ROOT / "tests" / "vectors" / "pins-not-checked.json").read_text())
+    p = Path(TMP) / "pins-show"
+    s = p / "store"
+    s.mkdir(parents=True)
+    (s / "records.jsonl").write_text("\n".join(v["lines"]) + "\n")
+    (s / "v3.json").write_text(json.dumps(v["v3"]))
+    run = lambda *x: subprocess.run([sys.executable, "-m", "warrant", "show", *x, "--store", str(s)], cwd=p,
+                                    env={**os.environ, "PYTHONPATH": str(ROOT)}, capture_output=True, text=True)
+    shown, texts = {}, {}
+    for L in v["expect"]:
+        j = run(L, "--json")
+        shown[L] = (json.loads(j.stdout).get("lineage") or {}).get("reliance") if j.returncode == 0 else j.stderr[-200:]
+        texts[L] = run(L).stdout
+    rd = A.Reading("vector", lambda: (Store(s).snapshot(), v["v3"]["trust"], v["v3"]["profile"], None))
+    home = {L: rd.rep["lineages"][L]["reliance"] for L in v["expect"]} if rd.rep else rd.why
+    check("VP4 `warrant show --store` (JSON and text) and a Home reading with no checkout read every lineage of the shared "
+          "vector as it expects: each pinned one PINS_NOT_CHECKED, never ELIGIBLE (Codex 3a57ee31)",
+          shown == v["expect"] and home == v["expect"]
+          and all(f"{v['expect'][L]} (" in texts[L] for L in v["expect"]), (shown, home, {L[:12]: texts[L][:300] for L in texts}))
+
+
 def pins_earlier_version_cases():
     """Codex eb81cfd8: an obligation's open root and its done successor, accepted with a file pin, both asked with no
     checkout: the lineage reads PINS_NOT_CHECKED in either answer, through the API and the standalone verifier."""
@@ -1273,6 +1299,7 @@ def main():
         anchor_address_cases()
         anchor_init_cases()
         pins_reader_cases()
+        pins_show_cases()
         pins_earlier_version_cases()
         pins_predicate_cases()
     finally:
