@@ -33,11 +33,14 @@ def _git_lines(root: Path, *args: str) -> list[str]:
 
 
 def changed_files(root: Path, base: str = "master") -> list[str]:
-    """Sorted unique repo-relative paths changed vs `base`, including staged and unstaged edits."""
+    """Sorted unique repo-relative paths changed vs `base`, including staged, unstaged and untracked files."""
+    if base.startswith("-"):
+        raise ValueError(f"base ref must not start with '-': {base!r}")
     found = set()
     found.update(_git_lines(root, "diff", "--name-only", f"{base}...HEAD"))
     found.update(_git_lines(root, "diff", "--name-only"))
     found.update(_git_lines(root, "diff", "--cached", "--name-only"))
+    found.update(_git_lines(root, "ls-files", "--others", "--exclude-standard"))  # new files before `git add`
     return sorted(found)
 
 
@@ -70,7 +73,9 @@ def check_mutants_fresh(root: Path, files: list[str], mutants=None) -> dict:
     cache: dict[str, str | None] = {}
 
     for row in rows:
-        mid, rel_path, find, _replace, test_file, _cases = row
+        mid, rel_path, find, replace, test_file, _cases = row
+        # the harness form: one (find, replace), or a list of (find, replace) pairs applied together
+        pairs = find if isinstance(find, list) else [(find, replace)]
         if rel_path not in touched:
             continue
         affected_mutants.append(mid)
@@ -82,11 +87,13 @@ def check_mutants_fresh(root: Path, files: list[str], mutants=None) -> dict:
         if text is None:
             stale.append({"id": mid, "file": rel_path, "reason": "FILE_MISSING"})
             continue
-        count = text.count(find)
-        if count == 0:
-            stale.append({"id": mid, "file": rel_path, "reason": "FIND_NOT_FOUND"})
-        elif count > 1:
-            ambiguous.append({"id": mid, "file": rel_path, "reason": f"MATCHES_{count}_TIMES"})
+        for part, (old, _new) in enumerate(pairs):
+            count = text.count(old)
+            where = "" if len(pairs) == 1 else f" (pair {part})"
+            if count == 0:
+                stale.append({"id": mid, "file": rel_path, "reason": "FIND_NOT_FOUND" + where})
+            elif count > 1:
+                ambiguous.append({"id": mid, "file": rel_path, "reason": f"MATCHES_{count}_TIMES" + where})
 
     ok = not stale and not ambiguous
     return {
@@ -132,7 +139,7 @@ def run_check(root: Path = ROOT, *, base: str = "master", files: list[str] | Non
     if not verify["ok"]:
         hints.append("python3 tools/build_verify.py")
     if mut["stale"] or mut["ambiguous"]:
-        bad_ids = [x["id"] for x in mut["stale"] + mut["ambiguous"]]
+        bad_ids = list(dict.fromkeys(x["id"] for x in mut["stale"] + mut["ambiguous"]))
         hints.append(f"retarget stale/ambiguous mutants in tests/mutants.py: {', '.join(bad_ids)}")
     if not boundary["ok"]:
         hints.append("fix core boundary violation reported by tests/boundary_test.py (warrant/ must not import warrant_agent/)")

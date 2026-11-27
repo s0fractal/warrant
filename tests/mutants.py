@@ -1407,6 +1407,18 @@ MUTANTS = [
      '    same = out.is_file() and out.read_text(encoding="utf-8") == expected',
      "    same = True",
      "tests/check_pr_test.py", ["CP03"]),
+    ("CP4", "tools/check_pr.py",
+     "        pairs = find if isinstance(find, list) else [(find, replace)]",
+     "        pairs = [(find[0][0], None)] if isinstance(find, list) else [(find, replace)]",
+     "tests/check_pr_test.py", ["CP06"]),
+    ("CP5", "tools/check_pr.py",
+     '    found.update(_git_lines(root, "ls-files", "--others", "--exclude-standard"))',
+     "    pass",
+     "tests/check_pr_test.py", ["CP07"]),
+    ("CP6", "tools/check_pr.py",
+     '    if base.startswith("-"):',
+     "    if False:",
+     "tests/check_pr_test.py", ["CP08"]),
 ]
 
 
