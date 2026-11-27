@@ -1394,6 +1394,19 @@ MUTANTS = [
      "    eff_as_of = as_of if as_of is not None else verified_as_of",
      "    eff_as_of = as_of if as_of is not None else view.as_of",
      "tests/pulse_test.py", ["PL12"]),
+    # contributor pre-flight check (tools/check_pr.py)
+    ("CP1", "tools/check_pr.py",
+     "        if count == 0:",
+     "        if False:",
+     "tests/check_pr_test.py", ["CP02"]),
+    ("CP2", "tools/check_pr.py",
+     "        elif count > 1:",
+     "        elif False:",
+     "tests/check_pr_test.py", ["CP02"]),
+    ("CP3", "tools/check_pr.py",
+     '    same = out.is_file() and out.read_text(encoding="utf-8") == expected',
+     "    same = True",
+     "tests/check_pr_test.py", ["CP03"]),
 ]
 
 
