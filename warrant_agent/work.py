@@ -76,11 +76,15 @@ def find(api, cfg, req):
     ws.permit("context")
     _, view, _, _ = api._assess(ws)
     rep = api._report(ws, view)
-    where, text = req.get("where") or {}, req.get("text")
+    where, text = req.get("where"), req.get("text")
+    if where is None:
+        where = {}
     need(isinstance(where, dict) and all(isinstance(k, str) and (v is None or isinstance(v, (str, int, bool)))
                                          for k, v in where.items()),
          "BAD_REQUEST", "where is an object of body fields to exact strings, integers, booleans or null")
     need(text is None or (isinstance(text, str) and 0 < len(text) <= 200), "BAD_REQUEST", "text is 1 to 200 characters")
+    leaves = req.get("leaves")
+    need(leaves is None or isinstance(leaves, bool), "BAD_REQUEST", "leaves is a boolean")
     limit = req.get("limit", 50)
     need(isinstance(limit, int) and not isinstance(limit, bool) and 1 <= limit <= FIND_MAX, "BAD_REQUEST",
          f"limit is 1 to {FIND_MAX}")
@@ -91,14 +95,14 @@ def find(api, cfg, req):
         b = r.get("body") or {}
         if any(req.get(k) is not None and r.get(k) != req[k] for k in ("schema", "kind", "actor")):
             continue
-        if any(k not in b or b[k] != v for k, v in where.items()):
+        if any(k not in b or type(b[k]) is not type(v) or b[k] != v for k, v in where.items()):
             continue
         if needle and needle not in json.dumps(b, ensure_ascii=False).lower():
             continue
         row = _row(rep, lin_of, i, r)
         lin = row.get("lineage")
         if (req.get("state") is not None and (lin is None or lin["state"] != req["state"])) or \
-                (req.get("leaves") and (lin is None or not lin["leaf"])):
+                (leaves and (lin is None or not lin["leaf"])):
             continue
         rows.append(row)
     rows.sort(key=lambda x: (-x["at"], x["id"]))

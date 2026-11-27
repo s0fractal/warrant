@@ -652,6 +652,25 @@ def roadmap_parity_cases():
           same and rep["lineages"][o2]["state"] == "done" and RM.check(rep) == [], (o1, o2, c1, c2, accepted))
 
 
+def find_exact_cases():
+    repo = Repo()
+    body = {"state": "open", "repository": "s0fractal/warrant", "title": "the change", "serves": []}
+    pr = repo.entity("alice", "pr-head@1", dict(body, pr=1))
+    cfg = cfg_of(repo)
+
+    def query(**filters):
+        return api.call(cfg, "find", {"workspace": "w", "schema": "pr-head@1", **filters})
+
+    number, boolean = [ok(query(where={"pr": val})).get("records") for val in (1, True)]
+    check("WF1 find distinguishes JSON true from the integer 1 in exact body filters",
+          [row["id"] for row in (number or [])] == [pr] and boolean == [], (number, boolean))
+    bad = [err(query(**args)) for args in ({"where": []}, {"where": False}, {"where": 0}, {"where": ""},
+                                           {"leaves": "false"}, {"leaves": 1}, {"leaves": []})]
+    good = [ok(query(**args)).get("count") for args in ({"where": {}}, {"where": None}, {"leaves": False}, {"leaves": None})]
+    check("WF2 find refuses malformed body and leaf filters without broadening the query",
+          bad == ["BAD_REQUEST"] * 7 and good == [1] * 4, (bad, good))
+
+
 def work_cases():
     """The work loop (warrant_agent.work): find a record by what it says, an inbox over every workspace, and an act
     previewed, then filed all at once, as the CLI files it."""
@@ -2473,6 +2492,7 @@ if __name__ == "__main__":
         memory_cases,
         roadmap_parity_cases,
         work_cases,
+        find_exact_cases,
         remote_cases, rely_cases,
         agent_whatif_cases,
         delegate_section_cases,
