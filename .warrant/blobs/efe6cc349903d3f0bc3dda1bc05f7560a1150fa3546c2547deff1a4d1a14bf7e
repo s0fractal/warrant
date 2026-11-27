@@ -1,0 +1,129 @@
+# Codex challenge of G14 pins-format closure
+
+Base M: 88f72c94dba50682eb5904bc6ebec872be970ed4
+Duty D: 9c7598ecdb5b2b2d1ee3027a046a1cb741a5140d5f634a4ee4ebed78d2d8cefb
+Version T: a9aa65e7090a7a53e0885f7c9230f7d4db21ade870d15eb8f3bed62e0d177cda
+
+Verdict: challenge. The format rule exists, but all reader boundaries do not implement its predicate.
+
+1. Unchecked legacy pins still grant reliance. A live backed claim accepted by the fixture claims-checker with verdict accept and a full commit id, without files (the legacy form), is covered by warrant.drift.covered. drift.not_checked, agent handoff inspect, and the JS reader all report PINS_NOT_CHECKED. Python warrant.verify.verify, python -m warrant verify, and warrant_verify.py instead report lineage.reliance ELIGIBLE, pins NONE, no why_not, rely true; both commands exit 0 without any checkout. The verifier skips the acceptance at warrant/verify.py:352-354 because files is None. Its independent pin predicate therefore disagrees with drift.pinned (warrant/drift.py:73-87), which explicitly includes the checker's earlier acceptances even without files. This directly leaves D's commit-pin case unfinished. These are deterministic test identities, not repository actor keys. This is not a claim that M's own store currently contains such a legacy acceptance.
+
+2. Python verification does not pass the complete shared vector. Ask for every lineage in tests/vectors/pins-not-checked.json. The retired claim 6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3 is expected ELIGIBLE (outside drift.covered) but Python verify and the standalone verifier show PINS_NOT_CHECKED. JavaScript matches the vector. verify._root at warrant/verify.py:390-417 applies _pins without the covered/retired predicate. VP1 at tests/verify_test.py:1154-1155 and 1170 selects only expected PINS_NOT_CHECKED roots, so it cannot detect this vector mismatch.
+
+Expected repair: make no-checkout Python verification use the same covered/pinned predicate as the other readers (including legacy checker acceptances and the retired-claim exception), for the effective version whichever version is asked. Hold all reader projections to every row of the vector and add the legacy case, with a mutant. Generic nonchecker acceptances with no files must keep their existing unpinned behavior.
+
+Verified provenance: detached HEAD and clean initial tree at M; origin s0fractal/warrant; roadmap due matches D/T/evidence/refs/subject/requires; MCP codex signer has roadmap/acceptor, and T is PENDING for one matching attest with no requirements. The four evidence ids resolve to signed PR lineage records, not blobs. Read the records, PR descriptions (#434, #528, #590, #604), and relevant merge diffs; all four merges are ancestors of M.
+
+Checks at M: agent_test operations including A45 passed; verify_test pins_reader_cases VP1 and pins_earlier_version_cases VP2 passed; impl_js_test browser_pins_vector_cases J23 and js_pins_vector_cases J26 passed. Registered replacements T275/T276/T277 and V109 were applied in memory, each in a fresh Python process: their named A45/VP2 assertion failed (not the official mutant harness). Full suites and the complete mutant matrix were not run. roadmap check: 128 lineages, zero problems. claims check: 148 live, zero problems. Those green checks do not remove either counterexample.
+
+Reproduce from M: save the Python block as a file outside the checkout, then run python3 -B FILE /absolute/path/to/checkout. It puts fixtures only in ~/.warrant/work/codex/a9aa65e7090a, uses only tests/world.py deterministic test keys, and changes no checkout files. Its assertions confirm the observed defects; it exits 0 when both reproduce.
+
+```python
+"""Run from the exact checkout: python3 -B /path/to/reproduce.py ."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(sys.argv[1]).resolve()
+WORK = Path.home() / '.warrant/work/codex/a9aa65e7090a'
+WORK.mkdir(parents=True, exist_ok=True)
+os.environ['TMPDIR'] = str(WORK)
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+tempfile.tempdir = str(WORK)
+sys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]
+import tools_test as TT
+from warrant import claims as C, drift as D, verify as V
+from warrant.repo import Repo
+from warrant_agent import api
+from warrant_agent.config import Config
+
+def projected(answer, roots):
+    return {i: answer['roots'][i]['lineage']['reliance'] for i in roots}
+
+def cli_readers(package, config, directory):
+    p = directory / 'package.json'
+    c = directory / 'v3.json'
+    p.write_text(json.dumps(package))
+    c.write_text(json.dumps(config))
+    commands = {
+        'python CLI': [sys.executable, '-B', '-m', 'warrant', 'verify', str(p), '--config', str(c)],
+        'standalone': [sys.executable, '-I', '-S', str(ROOT / 'warrant_verify.py'), str(p), '--config', str(c)],
+        'JavaScript': ['node', str(ROOT / 'impl-js/warrant.mjs'), 'verify', str(p), '--config', str(c)],
+    }
+    out = {}
+    for name, command in commands.items():
+        run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
+        answer = json.loads(run.stdout)
+        out[name] = {'exit': run.returncode, 'reliance': projected(answer, package['roots'])}
+        if 'rely' in answer:
+            out[name]['rely'] = answer['rely']
+    return out
+
+with tempfile.TemporaryDirectory(dir=WORK) as temporary:
+    directory = Path(temporary)
+    vector = json.loads((ROOT / 'tests/vectors/pins-not-checked.json').read_text())
+    package = {'warrant': 'package/3', 'lines': vector['lines'], 'blobs': {}, 'roots': sorted(vector['expect'])}
+    answer = V.verify(json.dumps(package).encode(), vector['v3']['trust'], vector['v3']['profile'])
+    mismatch = {i: {'expected': vector['expect'][i], 'actual': answer['roots'][i]['lineage']['reliance']}
+                for i in vector['expect'] if vector['expect'][i] != answer['roots'][i]['lineage']['reliance']}
+    readers = cli_readers(package, vector['v3'], directory)
+    print('FULL_VECTOR ' + json.dumps({'discrepancies': mismatch, 'readers': readers}, sort_keys=True))
+    assert len(mismatch) == 1
+    retired = next(iter(mismatch))
+    assert mismatch[retired] == {'expected': 'ELIGIBLE', 'actual': 'PINS_NOT_CHECKED'}
+    assert readers['python CLI']['reliance'][retired] == readers['standalone']['reliance'][retired] == 'PINS_NOT_CHECKED'
+    assert readers['JavaScript']['reliance'][retired] == 'ELIGIBLE'
+
+    # Only deterministic fixture keys from tests/world.py are used here.
+    fixture = TT.checker_repo()
+    target = TT.claim(fixture)
+    commit = fixture.commit('legacy checker acceptance pins its commit, no file list')
+    TT.put_as(fixture, C.CHECKER, {'target': target, 'verdict': 'accept', 'commit': commit}, [target])
+    report = Repo(fixture.root).report()
+    assert report['versions'][target]['guard'] == 'MET'
+    assert target in D.covered(report)
+    D.not_checked(report)
+    expected = report['lineages'][target]['reliance']
+    package = {'warrant': 'package/3', 'roots': [target], 'blobs': {},
+               'lines': [line.decode().strip() for line in fixture.store.snapshot().raw]}
+    config = json.loads((fixture.dot / 'v3.json').read_text())
+    answer = V.verify(json.dumps(package).encode(), fixture.trust, fixture.profile)
+    store_config = Config({'agent_api': 'warrant-agent/3', 'workspaces': {'w': {
+        'repo': str(fixture.root), 'operations': ['handoff']}}})
+    inspection = api.call(store_config, 'handoff', {'workspace': 'w', 'op': 'inspect', 'alone': True, 'package': package})['ok']
+    readers = cli_readers(package, config, directory)
+    result = {'expected': expected, 'api': {'reliance': projected(answer, [target]), 'rely': answer['rely'],
+              'pins': answer['roots'][target]['pins'], 'why_not': answer['roots'][target]['why_not']},
+              'handoff': projected(inspection, [target]), 'readers': readers}
+    print('LEGACY_CHECKER ' + json.dumps(result, sort_keys=True))
+    assert expected == inspection['roots'][target]['lineage']['reliance'] == 'PINS_NOT_CHECKED'
+    assert answer['roots'][target]['lineage']['reliance'] == 'ELIGIBLE' and answer['rely'] is True
+    assert readers['python CLI']['exit'] == readers['standalone']['exit'] == 0
+    assert readers['standalone']['reliance'][target] == 'ELIGIBLE'
+    assert readers['JavaScript']['reliance'][target] == 'PINS_NOT_CHECKED'
+print('REPRODUCED: Python verification disagrees with the full vector and grants reliance on an unchecked legacy checker acceptance.')
+```
+
+Observed output:
+
+```text
+FULL_VECTOR {"discrepancies": {"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": {"actual": "PINS_NOT_CHECKED", "expected": "ELIGIBLE"}}, "readers": {"JavaScript": {"exit": 0, "reliance": {"1a1e0862d19e246edfe76dda36b9a9ee0f906868c98bac206bdef2c59a2da9df": "ELIGIBLE", "6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": "ELIGIBLE", "6fefa27b36695558a6b5819a2e9d1b76255daed93c70cad0cc5383afb2824d2d": "PENDING", "d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d": "PINS_NOT_CHECKED", "feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e": "PINS_NOT_CHECKED"}}, "python CLI": {"exit": 1, "reliance": {"1a1e0862d19e246edfe76dda36b9a9ee0f906868c98bac206bdef2c59a2da9df": "ELIGIBLE", "6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": "PINS_NOT_CHECKED", "6fefa27b36695558a6b5819a2e9d1b76255daed93c70cad0cc5383afb2824d2d": "PENDING", "d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d": "PINS_NOT_CHECKED", "feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e": "PINS_NOT_CHECKED"}, "rely": false}, "standalone": {"exit": 1, "reliance": {"1a1e0862d19e246edfe76dda36b9a9ee0f906868c98bac206bdef2c59a2da9df": "ELIGIBLE", "6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": "PINS_NOT_CHECKED", "6fefa27b36695558a6b5819a2e9d1b76255daed93c70cad0cc5383afb2824d2d": "PENDING", "d1860987535d7db9766993069b5436ea00bbf2c37de295d9475e7f0874764b6d": "PINS_NOT_CHECKED", "feea192bc880192beb2e85471e68696d5c1d406ad324b893022b6cb58e88235e": "PINS_NOT_CHECKED"}, "rely": false}}}
+LEGACY_CHECKER {"api": {"pins": {"acceptances": [], "verdict": "NONE"}, "reliance": {"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": "ELIGIBLE"}, "rely": true, "why_not": []}, "expected": "PINS_NOT_CHECKED", "handoff": {"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": "PINS_NOT_CHECKED"}, "readers": {"JavaScript": {"exit": 0, "reliance": {"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": "PINS_NOT_CHECKED"}}, "python CLI": {"exit": 0, "reliance": {"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": "ELIGIBLE"}, "rely": true}, "standalone": {"exit": 0, "reliance": {"6d1f302603cf7ed2f9d8cd0c7199ebaf22d22b1bd80c1f6870d05fdd547428d3": "ELIGIBLE"}, "rely": true}}}
+REPRODUCED: Python verification disagrees with the full vector and grants reliance on an unchecked legacy checker acceptance.
+```
+
+Mutant observations:
+
+```text
+T275 KILLED (registered replacement applied in memory) 1
+FAIL A45 a workspace of a store alone (no checkout beside it) passes tests/vectors/pins-not-checked.json: each lineage the freshness gate covers reads PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance (docs/V3.md §10): {'1a1e0862d19e': ('ELIGIBLE', 'ELIGIBLE'), '6d1f302603cf': ('ELIGIBLE', 'ELIGIBLE'), '6fefa27b3669': ('PENDING', 'PENDING'), 'd1860987535d': ('ELIGIBLE', 'PINS_NOT_CHECKED'), 'feea192bc880': ('ELIGIBLE', 'PINS_NOT_CHECKED')}
+T276 KILLED (registered replacement applied in memory) 1
+FAIL A45 a workspace of a store alone (no checkout beside it) passes tests/vectors/pins-not-checked.json: each lineage the freshness gate covers reads PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance (docs/V3.md §10): {'1a1e0862d19e': ('ELIGIBLE', 'ELIGIBLE'), '6d1f302603cf': ('ELIGIBLE', 'ELIGIBLE'), '6fefa27b3669': ('PENDING', 'PENDING'), 'd1860987535d': ('ELIGIBLE', 'PINS_NOT_CHECKED'), 'feea192bc880': ('ELIGIBLE', 'PINS_NOT_CHECKED')}
+T277 KILLED (registered replacement applied in memory) 1
+FAIL A45 a workspace of a store alone (no checkout beside it) passes tests/vectors/pins-not-checked.json: each lineage the freshness gate covers reads PINS_NOT_CHECKED, never ELIGIBLE, every other the engine's reliance (docs/V3.md §10): {'1a1e0862d19e': ('ELIGIBLE', 'ELIGIBLE'), '6d1f302603cf': ('PINS_NOT_CHECKED', 'ELIGIBLE'), '6fefa27b3669': ('PENDING', 'PENDING'), 'd1860987535d': ('PINS_NOT_CHECKED', 'PINS_NOT_CHECKED'), 'feea192bc880': ('PINS_NOT_CHECKED', 'PINS_NOT_CHECKED')}
+V109 KILLED (registered replacement applied in memory) 1
+FAIL VP2 a lineage whose effective version has a pinned acceptance reads PINS_NOT_CHECKED with no checkout whichever of its versions is asked (the open root too), through the API and the standalone verifier; the root stays NOT_EFFECTIVE and nothing is relied on (Codex eb81cfd8): ('ELIGIBLE', 'PINS_NOT_CHECKED', 1, '')
+```
