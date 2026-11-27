@@ -323,8 +323,9 @@ def identity(rep, root, readings, query):
     from . import across as A
     mine = _mine(readings, root)
     reps = {x.name: x.rep for x in readings if x.why is None and x.name not in mine}
+    shown = {x.name: x.shown() for x in readings if x.why is None and x.name in reps}
     reps[mine[0] if mine else HERE] = rep
-    return A.identity(reps, _unavailable(readings, root), rep["code"], None, query)
+    return A.identity(reps, _unavailable(readings, root), rep["code"], None, query, shown)
 
 
 def _mine(readings, root):
