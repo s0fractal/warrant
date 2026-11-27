@@ -1160,6 +1160,8 @@ MUTANTS = [
     ("BM4", "warrant/board.py", 'fence = "`" * max(3, 1 + max((len(r) for r in runs), default=0))', 'fence = "```"', TOOLS, ["BD3"]),
     ("BM5", "warrant/board.py", '.replace("@", "@" + ZWSP)', "", TOOLS, ["BD3"]),
     ("BM6", "warrant/board.py", "m = PR_REF.match(r) if isinstance(r, str) else None", "m = PR_REF.search(r) if isinstance(r, str) else None", TOOLS, ["BD3"]),
+    ("T372", "warrant/graph.py", 'and (rep0["lineages"][L]["state"], rep0["lineages"][L]["reliance"], rep0["lineages"][L]["leaf"])\n                     != (lin["state"], lin["reliance"], lin["leaf"]))',
+     'and (rep0["lineages"][L]["state"], rep0["lineages"][L]["leaf"])\n                     != (lin["state"], lin["leaf"]))', TOOLS, ["DR39"]),
     ("BM7", "warrant/board.py", 'diff = [m for m in ("title", "body") if item[m] != row[m]]', "diff = []", TOOLS, ["BD5"]),
     ("BM8", "warrant/board.py", '    for rid in todo["archive"]:\n        call(ARCHIVE', '    for rid in []:\n        call(ARCHIVE', TOOLS, ["BD5"]),
     ("BM9", "warrant/board.py", "return dict(doc, digest=C.doc_id(doc))", 'return dict(doc, digest=C.doc_id(doc["stores"]))', TOOLS, ["BD2"]),
