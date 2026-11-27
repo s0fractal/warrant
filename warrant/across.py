@@ -88,10 +88,12 @@ class Reading:
             self.view = E.View(snap, trust, profile)
             self.rep = self.view.report()
             self.identity = G.identity(self.rep, snap)["identity"]
+            self.rep["_recs"], self.rep["_basis"] = self.view.recs, self.view.basis
             if root is not None:
-                self.rep["_recs"], self.rep["_basis"] = self.view.recs, self.view.basis
                 D.gate(self.rep, root)
-                del self.rep["_recs"], self.rep["_basis"]
+            else:              # no checkout beside it: a pinned lineage reads PINS_NOT_CHECKED, never ELIGIBLE (§10)
+                D.not_checked(self.rep)
+            del self.rep["_recs"], self.rep["_basis"]
             # one identity read under other rules, or beside another checkout, is another reading: its key names the
             # receiver and the checkout too (Codex on #466, and 1ae0f910: a checkout decides STALE), so two readings of
             # one genesis never overwrite each other in root and lens, and no Home name chooses a reliance

@@ -192,6 +192,14 @@ def show(a):
     snap = Store(store).snapshot()
     view = E.View(snap, trust, profile)
     rep = view.report()
+    # reliance as `assess` and `status` read it (G14, docs/V3.md §10): a repository's store beside its checkout through
+    # the freshness gate, a store alone with a pinned lineage PINS_NOT_CHECKED, never ELIGIBLE (Codex 3a57ee31)
+    from . import drift as D
+    rep["_recs"], rep["_basis"] = view.recs, view.basis
+    if Path(store).name == ".warrant":
+        D.gate(rep, Path(store).resolve().parent)
+    else:
+        D.not_checked(rep)
     ids = [i for i in list(snap.lines) + list(snap.blobs) if i.startswith(a.id)]
     if len(set(ids)) != 1:
         raise Refused(f"{a.id[:64]!r} names {len(set(ids))} records or blobs in this store")

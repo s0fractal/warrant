@@ -1130,6 +1130,8 @@ MUTANTS = [
     ("UM42", "warrant_agent/api.py", '    if e.code == "TOO_LARGE":\n',
      '    if False:\n', VERIFY, ['U44']),
     ("UM43", "warrant_agent/api.py", '    return AgentError("BAD_REQUEST", str(e))', '    return AgentError("BAD_REQUEST", e.code)', VERIFY, ['U44']),
+    ("UM93", "warrant/cli.py", "    else:\n        D.not_checked(rep)\n    ids = ", "    else:\n        pass\n    ids = ", VERIFY, ["VP4"]),
+    ("UM94", "warrant/across.py", "                D.not_checked(self.rep)\n", "                pass\n", VERIFY, ["VP4"]),
     ("UM90", VF, "        if files is None and not checker:\n", "        if files is None:\n", VERIFY, ["VP3"]),
     ("UM91", VF, 'pins = {"verdict": "NONE", "acceptances": []} if retired else _pins(view, i, acc, checkout)',
      "pins = _pins(view, i, acc, checkout)", VERIFY, ["VP3"]),
