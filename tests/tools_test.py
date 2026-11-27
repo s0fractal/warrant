@@ -1066,11 +1066,14 @@ def drift_impact_cases():
     from warrant import graph as G
     _, droots, dq, dd = TG.ask(RP.Repo(r.root), "delta", [f"{base}..{head}"])
     rep_b, rep_h = (RP.Repo(r.root).report(GT.store_at(r.root, c)[0]) for c in (base, head))
+    for rp_, c in ((rep_b, base), (rep_h, head)):
+        D.reading(rp_, r.root, c)    # each end read against its own commit's tree, as the tool reads it (Codex 2e8f6421)
     _, _, eq, dots = TG.ask(RP.Repo(r.root), "export", ["--format", "dot"])
     _, _, jq0, js0 = TG.ask(RP.Repo(r.root), "export", [])
     _, _, jq1, js1 = TG.ask(RP.Repo(r.root), "export", ["--format", "json"])
     graph_h = RP.Repo(r.root).report()["graph"]
-    check("DR25b `tools/graph.py delta BASE..HEAD` is warrant.graph.delta of the two commits' stores (its query names both "
+    check("DR25b `tools/graph.py delta BASE..HEAD` is warrant.graph.delta of the two commits' stores, each gated at its "
+          "own commit (its query names both "
           "commits), and `export --format dot` names every node and edge of the record graph as Graphviz text",
           dd == G.delta(rep_b, rep_h) and dq == {"op": "delta", "range": f"{base}..{head}"} and droots == {"base": base, "head": head}
           and eq == {"op": "export", "format": "dot"} and dots.startswith("digraph warrant {\n") and dots.endswith("}\n")
@@ -3211,6 +3214,41 @@ def board_stale_cases():
           fresh.get(o) == "ELIGIBLE" and stale.get(o) == "STALE" and "(STALE" in line, (fresh, stale, line))
 
 
+def roadmap_reader_cases():
+    """Codex 2e8f6421: the roadmap reader (`warrant roadmap view`) and tools/graph.py's queries read reliance as status
+    does: in a checkout, a pinned obligation whose bytes changed is STALE (an impact range reads each end at its own
+    commit); a store with no checkout of its own reads it PINS_NOT_CHECKED, never ELIGIBLE."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("graph_tool", ROOT / "tools" / "graph.py")
+    TG = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TG)
+    r = Repo(git_init=True)
+    g = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "a goal"})
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "pinned", "answers": g, "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "pinned", "answers": g, "serves": []}, lineage=o)
+    (r.root / "x.py").write_text("x = 1\n")
+    c0 = r.commit("the bytes accepted")
+    r.attest("bob", d, commit=c0, files={"x.py": git(r.root, "rev-parse", f"{c0}:x.py")})
+    b = r.commit("accepted on x.py")
+    (r.root / "x.py").write_text("x = 2\n")
+    h = r.commit("x.py changed")
+    env = dict(os.environ, PYTHONPATH=str(ROOT))
+    view = lambda root: subprocess.run([sys.executable, "-m", "warrant.roadmap", "view"], cwd=root, capture_output=True, text=True,
+                                       env=dict(env, WARRANT_REPO_ROOT=str(root))).stdout
+    line = lambda text: next((x for x in text.splitlines() if o[:12] in x), "")
+    around = lambda root: json.dumps(TG.ask(RP.Repo(root), "around", [o])[3])
+    rows = {x["lineage"]: x["reliance"] for x in TG.ask(RP.Repo(r.root), "impact", [f"{b}..{h}"])[3].get("lineages", [])}
+    alone = Path(tempfile.mkdtemp()) / "alone"
+    shutil.copytree(r.dot, alone / ".warrant")
+    check("BD21 `warrant roadmap view` and tools/graph.py read a pinned obligation STALE in the checkout once its bytes "
+          "changed (an impact range at its own commits), and PINS_NOT_CHECKED from a copy of the store with no checkout "
+          "(Codex 2e8f6421: the roadmap reader showed it ELIGIBLE there)",
+          "(STALE" in line(view(r.root)) and '"STALE"' in around(r.root) and rows.get(o) == "STALE"
+          and "(PINS_NOT_CHECKED" in line(view(alone)) and '"PINS_NOT_CHECKED"' in around(alone),
+          (line(view(r.root)), line(view(alone)), rows, around(alone)[:300]))
+    shutil.rmtree(alone.parent, ignore_errors=True)
+
+
 def board_retry_cases():
     repo = Repo()
     initial = {"state": "open", "statement": "first version", "serves": []}
@@ -3777,6 +3815,7 @@ if __name__ == "__main__":
         receipt_cases,
         board_cases,
         board_stale_cases,
+        roadmap_reader_cases,
         board_retry_cases,
         across_metadata_cases,
         narrow_cases,

@@ -84,9 +84,22 @@ def witnesses(rep):
     return "\n".join(out) + "\n"
 
 
+def current(repo):
+    """The store's report now, its reliance as status reads it (drift.reading: the gate beside this checkout, else
+    PINS_NOT_CHECKED), so a query never shows a pinned lineage ELIGIBLE on bytes nobody compared (Codex 2e8f6421)."""
+    rep = repo.report()
+    DR.reading(rep, repo.root)
+    return rep
+
+
 def range_reports(repo, rng):
+    """Each end's report of the store at that commit, its reliance read against that commit's tree (drift.reading):
+    a pinned lineage is never ELIGIBLE on bytes nobody compared (Codex 2e8f6421)."""
     base, head, s0, s1 = RV.range_snapshots(repo.root, rng)
-    return base, head, [repo.report(s0), repo.report(s1)]
+    reps = [repo.report(s0), repo.report(s1)]
+    for rep, at in zip(reps, (base, head)):
+        DR.reading(rep, repo.root, at)
+    return base, head, reps
 
 
 def impact(repo, rng):
@@ -122,10 +135,10 @@ def ask(repo, cmd, rest):
         base, head, reps = range_reports(repo, rest[0])
         return reps[1], {"base": base, "head": head}, {"op": "delta", "range": f"{base}..{head}"}, G.delta(*reps)
     if cmd == "export" and rest in ([], ["--format", "json"], ["--format", "dot"]):
-        rep, fmt = repo.report(), rest[1] if rest else "json"
+        rep, fmt = current(repo), rest[1] if rest else "json"
         return rep, None, {"op": "export", "format": fmt}, G.dot(rep["graph"]) if fmt == "dot" else rep["graph"]
     if cmd in ("around", "path", "why", "grounded") and rest:
-        rep = repo.report()
+        rep = current(repo)
         # the target is resolved in what the report read: the store with its declared sources beside it (Codex 12f81d92)
         snap, _ = SRC.with_sources(repo.root, repo.store.snapshot(), SRC.config_doc(repo.root))
         ids = [i for i in list(snap.lines) + list(snap.blobs) if i.startswith(rest[0])]
@@ -133,7 +146,7 @@ def ask(repo, cmd, rest):
             raise Failed("TARGET", f"{rest[0]} names {len(set(ids))} records or blobs")
         return rep, None, {"op": cmd, "target": ids[0]}, getattr(G, cmd)(rep, ids[0])
     if cmd == "frontier" and rest:
-        rep = repo.report()
+        rep = current(repo)
         return rep, None, {"op": cmd, "actor": rest[0]}, G.frontier(rep, profile, rest[0])
     raise Failed("USAGE", __doc__.split("\n\n")[1])
 

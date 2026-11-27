@@ -151,12 +151,13 @@ def not_checked(rep):
     return out
 
 
-def reading(rep, root=None):
+def reading(rep, root=None, at="HEAD"):
     """The freshness a reader that shows reliance applies to `rep` (with `_recs`): beside a checkout whose HEAD has a
-    tree, the gate (`gate`); with none, `not_checked`, so a pinned lineage reads PINS_NOT_CHECKED, never ELIGIBLE
-    (docs/V3.md §10). One predicate for the readers that once applied neither (Codex 3a57ee31, e91f50f1)."""
+    tree, the gate (`gate`, at commit `at`: a report of the store at a commit is compared with that commit's tree);
+    with none, `not_checked`, so a pinned lineage reads PINS_NOT_CHECKED, never ELIGIBLE (docs/V3.md §10). One
+    predicate for the readers that once applied neither (Codex 3a57ee31, e91f50f1, 2e8f6421)."""
     if root is not None and _own_checkout(root):
-        gate(rep, root)
+        gate(rep, root, at)
     else:
         rep["checkout"] = None if root is None else checkout(root)
         not_checked(rep)
