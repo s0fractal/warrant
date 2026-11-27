@@ -1155,7 +1155,7 @@ MUTANTS = [
     ("BDR3", "warrant/board.py", "key = lin if lin == marked and S.hex64(lin)", "key = lin if S.hex64(lin)", TOOLS, ["BDR3"]),
     ("BM11", "warrant/board.py", "        for k in ([kind] if kind else OWNERS):", "        for k in OWNERS[1:]:", TOOLS, ["BD6"]),
     ("BM14", "warrant/board.py", '        diff += [THEIRS] if item["values"].get(THEIRS) else []', "", TOOLS, ["BD5"]),
-    ("BM15", "warrant/board.py", '        todo["update"][rid] = [name for name, _, _ in FIELDS] + [THEIRS]', '        todo["update"][rid] = [name for name, _, _ in FIELDS]', TOOLS, ["BD4"]),
+    ("BM15", "warrant/board.py", '        todo["update"][rid] = [name for name, _, _ in FIELDS] + [THEIRS, "body"]', '        todo["update"][rid] = [name for name, _, _ in FIELDS] + ["body"]', TOOLS, ["BD4"]),
     ("BM13", "warrant/board.py", "    if other:                                           # a field of ours' name", "    if False:                                           # a field of ours' name", TOOLS, ["BD7"]),
     ("BM12", "warrant/board.py", "        for k in ([kind] if kind else OWNERS):", "        for k in OWNERS:", TOOLS, ["BD6"]),
     ("BM10", "warrant/board.py", '    if todo["describe"]:', "    if True:", TOOLS, ["BD4"]),
