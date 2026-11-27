@@ -101,6 +101,35 @@ def ground_cases():
           and go == {"grounded": True, "failing": [], "failing_count": 0}, (gd, go))
 
 
+def grounded_scaling_cases():
+    from unittest.mock import patch
+    repo = Repo()
+    body = {"state": "open", "statement": "ground", "serves": []}
+    tail = repo.entity("alice", "obligation@1", body)
+    size = 48
+    for i in range(size - 1):
+        tail = repo.entity("alice", "obligation@1", dict(body, statement=f"ground {i}"), refs=[tail])
+    cfg = cfg_of(repo)
+    # Count graph-local sorted calls instead of depending on wall clock or machine speed.
+    with patch.object(G, "sorted", wraps=sorted, create=True) as scan:
+        result = ok(api.call(cfg, "graph", {"workspace": "w", "op": "grounded", "target": tail})).get("data")
+    check("GC1 grounded walks a long chain with a linear number of adjacency readings",
+          result == {"from": tail, "grounded": True, "closure": size, "failing": [], "outside": []}
+          and scan.call_count <= 2 * size + 1, (result, scan.call_count))
+
+    repo = Repo()
+    first = repo.entity("alice", "obligation@1", body)
+    other = repo.entity("alice", "obligation@1", dict(body, statement="other"), refs=[first])
+    later = repo.entity("alice", "obligation@1", body, lineage=first, refs=[other])
+    self_root = repo.entity("alice", "obligation@1", dict(body, statement="self"))
+    self_loop = repo.entity("alice", "obligation@1", dict(body, statement="self again"), lineage=self_root, refs=[self_root])
+    target = repo.entity("alice", "obligation@1", dict(body, statement="tail"), refs=[later, self_loop])
+    result = ok(api.call(cfg_of(repo), "graph", {"workspace": "w", "op": "grounded", "target": target})).get("data", {})
+    check("GC2 grounded names exactly the members of each cycle, including a self-loop and excluding the dependent tail",
+          result.get("grounded") is False and result.get("closure") == 4
+          and sorted(result.get("failing", [])) == sorted([[i, "CYCLE"] for i in (later, other, self_loop)]), result)
+
+
 def graph_range_cases():
     """graph op=impact and op=delta over BASE..HEAD of the workspace's checkout, op=export as JSON or DOT (obligation
     8c856b3b, Codex 08a4f30b: the operations it names were missing from the agent's graph)."""
@@ -2486,6 +2515,7 @@ if __name__ == "__main__":
     sys.exit(run_sections([
         operations,
         horizon_cases,
+        grounded_scaling_cases,
         refusal_cases,
         admission_cases,
         init_cases,
