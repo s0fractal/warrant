@@ -1110,6 +1110,29 @@ def drift_impact_cases():
           {p2, c2} <= set(fwd.get("added", [])) and fwd.get("removed") == [] and fwd.get("lineages_added") == [p2]
           and fwd.get("lineages_removed") == [] and {p2, c2} <= set(rev.get("removed", [])) and rev.get("added") == []
           and rev.get("lineages_removed") == [p2] and rev.get("lineages_added") == [], (fwd, rev))
+    g3 = Repo(git_init=True)
+    o3 = g3.entity("alice", "obligation@1", {"state": "open", "statement": "a successor", "serves": []})
+    b3 = g3.commit("open")
+    s3 = g3.entity("alice", "obligation@1", {"state": "open", "statement": "a successor, reworded", "serves": []}, lineage=o3)
+    h3 = g3.commit("same state, new version")
+    reps3 = [RP.Repo(g3.root).report(GT.store_at(g3.root, c)[0])["lineages"][o3] for c in (b3, h3)]
+    _, _, _, dd3 = TG.ask(RP.Repo(g3.root), "delta", [f"{b3}..{h3}"])
+    check("DR41 delta's `changed` names a lineage whose leaf alone moved (a successor in the same state, the same "
+          "reliance), read against the two reports, through `tools/graph.py delta` (Codex 2d69a8e6 on G11)",
+          [(x["state"], x["reliance"]) for x in reps3][0] == [(x["state"], x["reliance"]) for x in reps3][1]
+          and [x["leaf"] for x in reps3] == [o3, s3] and o3 in dd3.get("changed", []), (reps3, dd3.get("changed")))
+    g4 = Repo(git_init=True)
+    o4 = g4.entity("alice", "obligation@1", {"state": "open", "statement": "accepted later", "serves": []})
+    d4 = g4.entity("alice", "obligation@1", {"state": "done", "statement": "accepted later", "serves": []}, lineage=o4)
+    b4 = g4.commit("a done version waiting")
+    g4.attest("bob", d4)
+    h4 = g4.commit("accepted")
+    reps4 = [RP.Repo(g4.root).report(GT.store_at(g4.root, c)[0])["lineages"][o4] for c in (b4, h4)]
+    _, _, _, dd4 = TG.ask(RP.Repo(g4.root), "delta", [f"{b4}..{h4}"])
+    check("DR42 delta's `changed` names a lineage whose state alone moved (the waiting leaf accepted: the same leaf, the "
+          "same reliance), so each of state, reliance and leaf is compared on its own (DR39, DR41, DR42)",
+          [x["state"] for x in reps4] == ["open", "done"] and [x["leaf"] for x in reps4] == [d4, d4]
+          and reps4[0]["reliance"] == reps4[1]["reliance"] and o4 in dd4.get("changed", []), (reps4, dd4.get("changed")))
     views = TG.render(RP.Repo(r.root))
     snap = RP.Repo(r.root).report()["snapshot"]
     lines = {n: t.split("\n")[2] for n, t in views.items()}
