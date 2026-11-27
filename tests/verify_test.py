@@ -1207,6 +1207,48 @@ def pins_earlier_version_cases():
           (lin(api_ans, old), lin(alone, old), out.returncode, out.stderr[-300:]))
 
 
+def pins_predicate_cases():
+    """Codex a9aa65e7: verify's pin predicate is warrant.drift's. A claims checker's acceptance naming a commit and no
+    files (signed before files were named) pins its claim, so with no checkout it reads PINS_NOT_CHECKED, never ELIGIBLE;
+    a retired claim is not the gate's, so the shared vector's retired row reads the engine's ELIGIBLE. Both through the
+    API and the standalone verifier, every row of the vector asked."""
+    import tools_test as TT
+    from warrant import claims as CL
+    v = json.loads((ROOT / "tests" / "vectors" / "pins-not-checked.json").read_text())
+    vpath = Path(TMP) / "pins-vector-all.json"
+    vpath.write_text(json.dumps({"warrant": V.PACKAGE, "lines": v["lines"], "blobs": {}, "roots": sorted(v["expect"])}))
+    cfg = Path(TMP) / "pins-vector-v3.json"
+    cfg.write_text(json.dumps(v["v3"]))
+    with contextlib.redirect_stdout(io.StringIO()):
+        r = TT.checker_repo()
+        c = TT.claim(r)
+        TT.put_as(r, CL.CHECKER, {"target": c, "verdict": "accept", "commit": "ab" * 20}, [c])
+    lpath = Path(TMP) / "pins-legacy.json"
+    lpath.write_text(json.dumps({"warrant": V.PACKAGE, "roots": [c], "blobs": {},
+                                 "lines": [b.decode().strip() for b in r.store.snapshot().raw]}))
+    rel = lambda a, i: ((a.get("roots") or {}).get(i) or {}).get("lineage", {}).get("reliance")
+
+    def both(path, conf, trust, profile):
+        api_ans = V.verify(path.read_bytes(), trust, profile)
+        out = subprocess.run([sys.executable, "-I", "-S", str(ROOT / "warrant_verify.py"), str(path), "--config", str(conf)],
+                             capture_output=True, text=True)
+        return api_ans, (json.loads(out.stdout) if out.stdout.strip().startswith("{") else {"err": out.stderr[-300:]})
+    va, vs = both(vpath, cfg, v["v3"]["trust"], v["v3"]["profile"])
+    la, ls = both(lpath, r.dot / "v3.json", r.trust, r.profile)
+    r.commit("a checkout beside the legacy acceptance")
+    lc = V.verify(lpath.read_bytes(), r.trust, r.profile, checkout=V.read_checkout(r.root))
+    want = {L: v["expect"][L] for L in v["expect"]}
+    check("VP3 verify's pin predicate is drift's: every row of the shared vector (the retired claim ELIGIBLE) and a claims "
+          "checker's acceptance with a commit and no files (PINS_NOT_CHECKED with no checkout; beside one UNKNOWN, so STALE, as drift reads it), through the API and the "
+          "standalone verifier; verify's words for the checker, the claim schema and the closure are warrant.claims' (Codex a9aa65e7)",
+          {L: rel(va, L) for L in want} == want and {L: rel(vs, L) for L in want} == want
+          and [rel(la, c), rel(ls, c)] == ["PINS_NOT_CHECKED"] * 2 and la["rely"] is False and ls.get("rely") is False
+          and "PINS_NOT_CHECKED" in la["roots"][c]["why_not"]
+          and rel(lc, c) == "STALE" and lc["roots"][c]["pins"]["acceptances"][0]["verdict"] == "UNKNOWN"
+          and (V.CHECKER, V.CLAIM, V.CLOSURE) == (CL.CHECKER, CL.CLAIM, CL.CLOSURE),
+          ({L[:12]: (rel(va, L), rel(vs, L), want[L]) for L in want}, rel(la, c), rel(ls, c), rel(lc, c), ls.get("err")))
+
+
 def refused_code(fn):
     try:
         fn()
@@ -1232,6 +1274,7 @@ def main():
         anchor_init_cases()
         pins_reader_cases()
         pins_earlier_version_cases()
+        pins_predicate_cases()
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
     return finish("verify_test")
