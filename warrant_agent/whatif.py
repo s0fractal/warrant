@@ -15,6 +15,7 @@ own profile. The answer says what the engine would read, not that the act is rig
 import os
 import time
 
+from warrant import drift as D
 from warrant import engine as E
 from warrant import graph as G
 from warrant import keys as K
@@ -64,6 +65,7 @@ def _report(api, ws, snap, trust, profile):
     view = E.View(snap, trust, profile)
     rep = view.report()
     rep["_recs"], rep["_basis"] = view.recs, view.basis
+    D.reading(rep, ws.repo)       # the gate beside a checkout, PINS_NOT_CHECKED for a store alone (Codex e91f50f1)
     return rep
 
 

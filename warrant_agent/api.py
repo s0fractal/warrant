@@ -93,10 +93,7 @@ def _report(ws, view):
     the pins with: a lineage the gate covers reads PINS_NOT_CHECKED, never ELIGIBLE (docs/V3.md §10)."""
     rep = view.report()
     rep["_recs"], rep["_basis"] = view.recs, view.basis
-    if ws.repo is not None:
-        D.gate(rep, ws.repo)
-    else:
-        D.not_checked(rep)
+    D.reading(rep, ws.repo)
     del rep["_recs"], rep["_basis"]
     return rep
 

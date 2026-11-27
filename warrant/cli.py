@@ -196,10 +196,7 @@ def show(a):
     # the freshness gate, a store alone with a pinned lineage PINS_NOT_CHECKED, never ELIGIBLE (Codex 3a57ee31)
     from . import drift as D
     rep["_recs"], rep["_basis"] = view.recs, view.basis
-    if Path(store).name == ".warrant":
-        D.gate(rep, Path(store).resolve().parent)
-    else:
-        D.not_checked(rep)
+    D.reading(rep, Path(store).resolve().parent if Path(store).name == ".warrant" else None)
     ids = [i for i in list(snap.lines) + list(snap.blobs) if i.startswith(a.id)]
     if len(set(ids)) != 1:
         raise Refused(f"{a.id[:64]!r} names {len(set(ids))} records or blobs in this store")
@@ -350,7 +347,7 @@ def _assess(a):
         view = E.View(Store(store).snapshot(), trust, profile, None)
         rep = view.report()
         rep["_recs"], rep["_basis"] = view.recs, view.basis
-        D.gate(rep, Path(store).resolve().parent)
+        D.reading(rep, Path(store).resolve().parent)   # the gate when that folder is a checkout's top, else not_checked
         del rep["_recs"], rep["_basis"]
     else:                         # no checkout read beside it: a pinned lineage reads PINS_NOT_CHECKED (§10)
         from . import drift as D
@@ -380,7 +377,7 @@ def status(a):
     if a.as_of is None and Path(store).name == ".warrant":
         from . import drift as D
         rep["_recs"], rep["_basis"] = view.recs, view.basis
-        D.gate(rep, root)            # G14: a lineage whose acceptances name other bytes than HEAD's counts STALE here too
+        D.reading(rep, root)         # G14 (the gate when root is a checkout's top, else not_checked): a lineage whose acceptances name other bytes than HEAD's counts STALE here too
     else:                            # no checkout compared: a pinned lineage reads PINS_NOT_CHECKED, never ELIGIBLE (§10)
         from . import drift as D
         rep["_recs"], rep["_basis"] = view.recs, view.basis
