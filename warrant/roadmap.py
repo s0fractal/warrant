@@ -19,6 +19,7 @@ import re
 import sys
 
 from . import bootstrap as B
+from . import drift as D
 from . import records as R
 from .gate import due_for, schemas_due
 from .repo import Failed, Repo, dump, emit, env_root, load_key, main
@@ -141,6 +142,7 @@ def run(argv=None):
     a = ap.parse_args(argv)
     repo = Repo(root)
     rep = repo.report()
+    D.reading(rep, repo.root)        # reliance as status reads it: the gate beside a checkout, else PINS_NOT_CHECKED (Codex 2e8f6421)
     _, profile, _ = repo.config()
     if a.cmd == "due":
         _print_due(due(rep, profile, a.actor), a.json)
