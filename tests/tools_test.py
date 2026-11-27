@@ -1097,6 +1097,19 @@ def drift_impact_cases():
           "same state and leaf), read against the two reports, through `tools/graph.py delta` (Codex df9befb1)",
           [(x["state"], x["leaf"]) for x in reps1] == [("done", v1)] * 2 and reps1[0]["reliance"] != reps1[1]["reliance"]
           and o1 in dd1.get("changed", []), (reps1, dd1.get("changed")))
+    g2 = Repo(git_init=True)
+    o2 = g2.entity("alice", "obligation@1", {"state": "open", "statement": "both ways", "serves": []})
+    b2 = g2.commit("open")
+    p2 = g2.entity("alice", "obligation@1", {"state": "open", "statement": "a new lineage", "serves": []})
+    c2 = g2.put("bob", "challenge", {"statement": "an objection", "target": o2}, refs=[o2])
+    h2 = g2.commit("a lineage and a challenge")
+    fwd, rev = (TG.ask(RP.Repo(g2.root), "delta", [rng])[3] for rng in (f"{b2}..{h2}", f"{h2}..{b2}"))
+    check("DR40 delta both ways over one signed-store range: forward names the new records in `added` and the new "
+          "lineage in `lineages_added`, the reverse range names the same ones in `removed` and `lineages_removed`, "
+          "each side's opposite field empty (Codex be147659: `removed` could be emptied with every check green)",
+          {p2, c2} <= set(fwd.get("added", [])) and fwd.get("removed") == [] and fwd.get("lineages_added") == [p2]
+          and fwd.get("lineages_removed") == [] and {p2, c2} <= set(rev.get("removed", [])) and rev.get("added") == []
+          and rev.get("lineages_removed") == [p2] and rev.get("lineages_added") == [], (fwd, rev))
     views = TG.render(RP.Repo(r.root))
     snap = RP.Repo(r.root).report()["snapshot"]
     lines = {n: t.split("\n")[2] for n, t in views.items()}
