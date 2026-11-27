@@ -39,7 +39,7 @@ DIGESTS = {
     "warrant/graph.py": "f54a1f5f6d7ad81b0542bdad86e435729d2c997940a580f54e561f3cb398255e",
     "warrant/store.py": "f569d538c09f7b6049e2c8a0ea9fcc8add176d4e7adb166511aba42604f62588",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
-    "warrant/verify.py": "a660f13568a6748548740a0e62f45bb26cbeb5dd0d20808b48b7cedd2bfcee6e",
+    "warrant/verify.py": "98d2fb1c9c749c845334bfb6878a1af7912ceab919ec807fa41c6de316bbff70",
 }
 ORDER = ('jcs', 'shapes', 'keys', 'merkle', 'pins', 'records', 'graph', 'store', 'engine', 'verify')
 SOURCES = {}
@@ -2302,6 +2302,9 @@ from . import shapes as S
 from .store import Refused, Snapshot
 
 PACKAGE = "package/3"
+# warrant.claims' own words (it reads the repository, so this verifier does not import it; tests/verify_test VP3 holds
+# them equal): the claims checker's actor, the claim schema and the closure its files are compared under
+CHECKER, CLAIM, CLOSURE = "claims-checker", "claim@1", "imports/1"
 ANSWER = "verify/3"
 MAX_BYTES = 64 << 20
 MEMBERS = {"warrant", "roots", "lines", "blobs"}
@@ -2597,11 +2600,16 @@ def _pins(view, v, accepted, checkout):
     for a in accepted:
         b = view.recs[a["attest"]]["body"]
         files = b.get("files")
-        if files is None:
+        checker = a["actor"] == CHECKER
+        if files is None and not checker:
             continue
         pinning.add(a["actor"])
         commit = b.get("commit") if S.hex_of(b.get("commit"), 40) or S.hex_of(b.get("commit"), 64) else None
-        if P.unreadable(files):
+        if checker and (files is None or b.get("closure") != CLOSURE):
+            # the claims checker's acceptance signed before it named files, or naming only its test and mutated files:
+            # pinned all the same (warrant.drift.pinned), nothing to compare (Codex a9aa65e7)
+            word, listed = ("UNKNOWN" if read else "NOT_CHECKED"), []
+        elif P.unreadable(files):
             word, listed = "UNKNOWN", []
         elif not read:
             word, listed = "NOT_CHECKED", [{"path": p, "blob": x, "verdict": "NOT_CHECKED", "detail": ""} for p, x in sorted(files.items())]
@@ -2637,7 +2645,11 @@ def _root(snap, view, rep, nodes, out, i, checkout):
         L = n["lineage"]["root"]
         lin, g = rep["lineages"][L], n["guard"]
         acc = _accepted(view, i, g["accepted_by"])
-        pins = _pins(view, i, acc, checkout)
+        leaf = view.recs.get(lin["leaf"]) if lin["leaf"] else None
+        # a retired claim is not the freshness gate's (warrant.drift.covered): its pins are not read (Codex a9aa65e7)
+        retired = lin["schema"] == CLAIM and isinstance(leaf, dict) and isinstance(leaf.get("body"), dict) \
+            and leaf["body"].get("state") == "retired"
+        pins = {"verdict": "NONE", "acceptances": []} if retired else _pins(view, i, acc, checkout)
         root.update(guard=g, accepted=acc, pins=pins, challenges=_challenges(view, rep, set(lin["versions"])),
                     unavailable=_missing(snap, view, out, {i} | {a["attest"] for a in acc}),
                     lineage={"root": L, "state": lin["state"], "reliance": lin["reliance"], "verdict": lin["verdict"],
@@ -2653,7 +2665,7 @@ def _root(snap, view, rep, nodes, out, i, checkout):
         # the lineage's reliance is its effective version's, whichever version was asked: an earlier version need not
         # carry the effective one's pins (Codex eb81cfd8: an open root read ELIGIBLE beside a pinned done successor)
         eff = lin["effective"]
-        if eff == i:
+        if eff == i or retired:
             eff_pins = pins
         elif eff in rep["versions"]:
             eff_pins = _pins(view, eff, _accepted(view, eff, rep["versions"][eff]["accepted_by"]), checkout)
