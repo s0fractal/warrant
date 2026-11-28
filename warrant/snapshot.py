@@ -187,6 +187,8 @@ def run(argv=None):
         dump(prove(repo, a.use, a.roots))
         return 0
     rep = repo.report()
+    from . import drift as D
+    D.reading(rep, repo.root)         # a witness lineage's reliance as status reads it (Codex 5afe86ba)
     out = {"roots": roots_now(repo), "witnesses": {}}
     for L, lin in rep["lineages"].items():
         if lin["schema"] == NAME:
