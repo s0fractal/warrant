@@ -7,12 +7,23 @@ To ask whether you may rely on something in this repository (a release, a goal, 
 need no clone and no configuration:
 
     pip install --pre "warrant-graph>=3.0.0a10"                          # rely: 3.0.0a10 and later
-    warrant-agent rely github.com/s0fractal/warrant "warrant-graph==3.0.0a9"
+    warrant-agent rely github.com/s0fractal/warrant "warrant-graph==3.0.0a10"
 
-It answers RELY, RELY ON RECORDS, WAITING, NOT DONE, SUPERSEDED or DO NOT RELY, with who accepted it and what stands
-against it, read under the publisher's rules (`.warrant/v3.json`). The same command reads any repository that keeps a
-`.warrant/` store, e.g. `warrant-agent rely github.com/s0fractal/minds ba1c174a`.
+It answers RELY, RELY ON RECORDS, WAITING, NOT DONE, SUPERSEDED or DO NOT RELY, with who accepted it, what stands
+against it, and whether external `anchor@1` witnesses still match the served store (`--anchor ADDRESS` to add your own).
+The same command reads any repository that keeps a `.warrant/` store, e.g. `warrant-agent rely github.com/s0fractal/minds ba1c174a`.
 
+## Repository map (where to look first)
+- **Core protocol (~2,500 lines):** `warrant/{jcs,keys,records,shapes,store,engine,graph,anchor,verify}.py` (no imports from `warrant_agent/`, enforced by `tests/boundary_test.py`)
+- **Agent & remote interface:** `warrant_agent/{rely,anchor,remote,api,mcp_server}.py`
+- **Repository governance loop:** `warrant/{gate,review,claims,roadmap,board,drift}.py`
+- **Protocol extensions:** `warrant/{delegate,pact,witness,dream,pulse}.py`
+
+## Filing a counterexample or pull request (no permission needed)
+- **Object to any record under your own key:** `warrant init --voices && warrant say RECORD_ID "why"`
+- **Before opening a PR:** run `python3 tools/check_pr.py` (checks `warrant_verify.py` freshness, stale mutants in `tests/mutants.py`, and core boundary `B1` in <1s).
+
+## Docs
 - [README](https://github.com/s0fractal/warrant/blob/master/README.md): what Warrant is, install, verifying a release
 - [First contact for an agent](https://github.com/s0fractal/warrant/blob/master/docs/AGENT.md): reading another agent's store, and answering it from yours
 - [Specification](https://github.com/s0fractal/warrant/blob/master/docs/V3.md)
