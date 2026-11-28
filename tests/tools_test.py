@@ -1334,6 +1334,25 @@ def replace_refs_cases():
           plain == replaced and L in plain and '"already_stale": []' in plain, (plain[:300], replaced[:300]))
 
 
+def lens_as_of_cases():
+    """Codex 943a49fe: the assessment's as_of cutoff decides which records a query reads, so it is in the lens: the same
+    snapshot and why query at two cutoffs give two lenses (and two answers); at one cutoff, one lens."""
+    from warrant import engine as E
+    from warrant import graph as G
+    r = Repo()
+    a = r.entity("alice", "obligation@1", {"state": "open", "statement": "A", "serves": []})
+    early = r.t
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "B rests on A", "serves": []}, refs=[a])
+    late = r.t
+    snap = r.store.snapshot()
+    q = {"op": "why", "target": a}
+    ans = [G.answer(rep, q, G.why(rep, a), None) for rep in (E.assess(snap, r.trust, r.profile, as_of=t) for t in (early, late, late))]
+    check("DR49 a query's lens binds the assessment's as_of: one snapshot and why query at two cutoffs give one root, "
+          "two lenses and two answers; the same cutoff twice gives the same bytes (Codex 943a49fe)",
+          ans[0]["root"] == ans[1]["root"] and ans[0]["lens"] != ans[1]["lens"] and ans[0]["data"] != ans[1]["data"]
+          and ans[1] == ans[2], [x["lens"][:12] for x in ans])
+
+
 def view_binding_cases():
     """A view's lens binds every byte that decides it besides the records, trust and profile: the working tree outside
     the store (two different uncommitted edits are two lenses, not one `dirty` flag), .warrant/claims.json (which shapes
@@ -3887,6 +3906,7 @@ if __name__ == "__main__":
         board_retry_cases,
         across_metadata_cases,
         replace_refs_cases,
+        lens_as_of_cases,
         narrow_cases,
         resolve_cases,
         harness_cases,

@@ -36,7 +36,7 @@ DIGESTS = {
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
     "warrant/pins.py": "3bf63dd46c03961531cc22a5cf131422a21d3d45feaea4ed2cb50b0e1ba90155",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
-    "warrant/graph.py": "f54a1f5f6d7ad81b0542bdad86e435729d2c997940a580f54e561f3cb398255e",
+    "warrant/graph.py": "77ec66da843431e57467fd8f10b140c985a0d55f991310dee2cf9d172d403197",
     "warrant/store.py": "f569d538c09f7b6049e2c8a0ea9fcc8add176d4e7adb166511aba42604f62588",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
     "warrant/verify.py": "98d2fb1c9c749c845334bfb6878a1af7912ceab919ec807fa41c6de316bbff70",
@@ -1445,8 +1445,10 @@ def frame(rep, roots):
 
 
 def answer(rep, query, data, adapter):
+    # as_of decides which records the assessment reads (engine._authentic): two cutoffs of one snapshot are two
+    # answers (Codex 943a49fe); with none given it is the snapshot's latest record time, so it moves with the root
     lens = C.doc_id({"code": rep["code"], "adapter": adapter, "trust": rep["trust"], "profile": rep["profile"],
-                     "query": query, **({"checkout": rep["checkout"]} if "checkout" in rep else {})})
+                     "as_of": rep["as_of"], "query": query, **({"checkout": rep["checkout"]} if "checkout" in rep else {})})
     return {"root": rep["snapshot"], "lens": lens, "query": query, "data": data}
 '''
 

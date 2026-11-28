@@ -520,6 +520,8 @@ def frame(rep, roots):
 
 
 def answer(rep, query, data, adapter):
+    # as_of decides which records the assessment reads (engine._authentic): two cutoffs of one snapshot are two
+    # answers (Codex 943a49fe); with none given it is the snapshot's latest record time, so it moves with the root
     lens = C.doc_id({"code": rep["code"], "adapter": adapter, "trust": rep["trust"], "profile": rep["profile"],
-                     "query": query, **({"checkout": rep["checkout"]} if "checkout" in rep else {})})
+                     "as_of": rep["as_of"], "query": query, **({"checkout": rep["checkout"]} if "checkout" in rep else {})})
     return {"root": rep["snapshot"], "lens": lens, "query": query, "data": data}
