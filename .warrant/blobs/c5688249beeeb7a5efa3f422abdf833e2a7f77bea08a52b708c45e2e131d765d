@@ -1,0 +1,253 @@
+# G11 roadmap verdict: challenge by codex
+
+Repository: s0fractal/warrant
+Master M: e9eda91fbacd48863286dedddc2a911de1f75530
+Obligation D: d6f9652ec1a7e12cb54b68644845a85108857400f12c2930f03ea1aed7288cc0
+Version T: 943a49fee15f3b41b04ac6e6b392c0504d4134852fdf28594dcda90ecac5ee5e
+
+## Blocking counterexample
+
+The obligation's same-root/same-lens/same-bytes condition is false for historical assessments through the Python graph-query library.
+
+`warrant/graph.py:522-525` hashes code, adapter, trust, profile, query and optional checkout into lens, but omits `rep["as_of"]`. Root is the unchanged snapshot digest. `warrant/engine.py:56-67,91-97` excludes records dated after as_of, so this missing parameter changes the graph. The assessment id already includes as_of (`warrant/engine.py:460-461`), but graph.answer binds neither that id nor as_of. docs/V3.md section 10 explicitly supports assess(snapshot, trust, profile, as_of).
+
+A signed fixture has A and then B referencing A. Assess the exact same snapshot under identical trust/profile at A's time and B's time; ask the exact same why(A) query, with the same adapter. The first result has no dependents; the second names B. Both answers have the same full root and lens, with different canonical SHA-256 digests. No code, trust, profile, store bytes or query argument is changed. The control adds the cutoff to the query; its lenses differ.
+
+This is a missing deciding parameter, sufficient to disprove D's unqualified determinism guarantee. A cache keyed by the advertised pair can return an answer from the wrong temporal horizon. This reproduction is limited to the public Python assessment/query functions: it does not claim that the latest-only agent graph operation exposes an as_of request, or that the four current Markdown views fail determinism. No implementation fix was made in this verdict worktree.
+
+## Runnable regression
+
+From M, save the following as as_of_repro.py in the review working directory and run it with Python and cryptography installed, with TMPDIR set to that directory. It uses only the repository's deterministic test fixture keys, creates and removes its fixture there, and prints FAIL F1 and exits 1 at M. It writes no repository code or records.
+
+```python
+"""G11: as_of is a deciding parameter missing from graph.answer's lens.
+Run from the reviewed worktree; fixture records use test keys only.
+"""
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path.cwd() / "tests"))
+from world import Repo
+from warrant import engine as E, graph as G, jcs as C
+
+r = Repo()
+a = r.entity("alice", "obligation@1", {"state": "open", "statement": "A", "serves": []})
+early_at = r.t
+b = r.entity("alice", "obligation@1", {"state": "open", "statement": "B rests on A", "serves": []}, refs=[a])
+late_at = r.t
+snap = r.store.snapshot()
+reports = [E.assess(snap, r.trust, r.profile, as_of=t) for t in (early_at, late_at)]
+query = {"op": "why", "target": a}
+answers = [G.answer(rep, query, G.why(rep, a), "g11-as-of-reproducer/1") for rep in reports]
+keys = [(a["root"], a["lens"]) for a in answers]
+same_key = keys[0] == keys[1]
+same_bytes = C.canon(answers[0]) == C.canon(answers[1])
+control = [G.answer(rep, dict(query, as_of=rep["as_of"]), G.why(rep, a), "g11-as-of-reproducer/1") for rep in reports]
+result = {"as_of": [rep["as_of"] for rep in reports], "root": answers[0]["root"],
+          "lens": [a["lens"] for a in answers], "assessment": [rep["assessment"] for rep in reports],
+          "query": query, "nodes": [[n["id"] for n in a["data"]["nodes"]] for a in answers],
+          "sha256": [hashlib.sha256(C.canon(a)).hexdigest() for a in answers],
+          "same_key": same_key, "same_bytes": same_bytes,
+          "control_lenses_differ": control[0]["lens"] != control[1]["lens"]}
+print(json.dumps(result, sort_keys=True, indent=2))
+passed = not same_key or same_bytes
+print(("ok   " if passed else "FAIL ") + "F1 graph.answer binds the assessment cutoff: identical root and lens imply identical canonical bytes")
+raise SystemExit(0 if passed else 1)
+```
+
+Observed under Python 3.15.2:
+
+```text
+{
+  "as_of": [
+    1800000006,
+    1800000007
+  ],
+  "assessment": [
+    "9bc4f5cfb77f42e211220790fc7634aeded8c3b7d989ad5cb7a69ae982458e1e",
+    "e4007359c7f5b6e1c8f696378782e42ba0c210dea2c969b74557095b8aaf52a4"
+  ],
+  "control_lenses_differ": true,
+  "lens": [
+    "80bca018a44a3a1df0d31c59af02f9c5be79b4e72b523107f1eaae2d15370f72",
+    "80bca018a44a3a1df0d31c59af02f9c5be79b4e72b523107f1eaae2d15370f72"
+  ],
+  "nodes": [
+    [],
+    [
+      "0599dff5b8692d54d909d68f53674c5e299f6289e014525f02c7022469fd50ab"
+    ]
+  ],
+  "query": {
+    "op": "why",
+    "target": "7e46a8550c02b89fcf926aeefef762f1306eacd573bf58d25f83f3122b51e935"
+  },
+  "root": "2be804b05115e08a5480f369082051a65de94a06f1d8d9b5c7a4aaba7152ab1c",
+  "same_bytes": false,
+  "same_key": true,
+  "sha256": [
+    "d712981ac28bafd8d7cd94c0cc0e41df31190f532aa31e44caed0f88a5dbedb8",
+    "37f18660b06b6ba02ce44dfcd4a1137fabb858b257429d40a4c05910b1fb82cf"
+  ]
+}
+FAIL F1 graph.answer binds the assessment cutoff: identical root and lens imply identical canonical bytes
+```
+
+## Scope and verification
+
+The clean detached worktree and origin URL were checked. `python3 -m warrant.roadmap due --actor codex --json` at M matched D, T, statement, all six evidence ids, eight references, null subject and empty requires. Worktree-specific MCP context under the base's source confirmed T is the leaf and its guard waits for one roadmap/acceptor acceptance. Signer codex was verified against the base's key binding by MCP configuration. The installed MCP package was older than M, so the plugin's stdio client was pointed at a launcher importing this worktree's source; no operator configuration or key was changed.
+
+Read the cited evidence records and the merged changes from #477, #486, #591, #604, #626, #634 and #644, plus commit 1d9a32a699af823d4f402d4865dfd7e9207f0310. Audited graph.answer and graph operations, the agent graph adapter, tools/graph.py rendering, claims.trees_read, across.identity, drift impact and Git reads, and the corresponding tests and mutants.
+
+Passed focused checks (87 checks total, no failures):
+- tests/tools_test.py: WARRANT_SECTION=drift_impact_cases,view_binding_cases,replace_refs_cases,across_metadata_cases,impact_foreign_verdict_cases (28 checks).
+- tests/agent_test.py: WARRANT_SECTION=horizon_cases,across_cases,graph_walk_budget_cases (36 checks).
+- tests/agent_test.py: WARRANT_SECTION=operations (23 checks, including A15/A52).
+- Four generated Markdown views from tools/graph.py views-json were identical under PYTHONHASHSEED=1 and 2, with full root/lens headers. Output files stayed in the review working directory.
+- Selected mutation harness run: T320, T324, T361, T362, T366, T367, T379, T390, T398, T399, X43: 11/11 KILLED by their named FAIL cases, after clean baseline sections/combinations. The harness copies/TMPDIR were relocated to the review working directory and the copies were given isolated local Git clones at M so tests that read HEAD could run. An initial relocated run was refused BASELINE_RED because that copy had no Git HEAD; no kill was counted from it.
+- roadmap check: 128 lineages, zero problems. claims check: 148 live claims, zero problems (checked again after filing).
+
+New adversarial check: F1 FAILS, with the cutoff-bearing query as a separating control. Full suites and the complete mutant matrix were not run. No GitHub approval, commit, push, merge or pull request was made by this reviewer.
+
+Selected mutant results:
+```json
+{
+ "definition": "a6544206d6adb8cc03f1cdd0588316f8ff8dfc82dac8b3c18edf779fe58fcb25",
+ "rows": [
+  {
+   "id": "T320",
+   "outcome": "KILLED",
+   "failed": [
+    "X15b"
+   ],
+   "rc": 1,
+   "sections": [
+    "across_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T324",
+   "outcome": "KILLED",
+   "failed": [
+    "DR25c"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T361",
+   "outcome": "KILLED",
+   "failed": [
+    "VB1"
+   ],
+   "rc": 1,
+   "sections": [
+    "view_binding_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T362",
+   "outcome": "KILLED",
+   "failed": [
+    "VB1"
+   ],
+   "rc": 1,
+   "sections": [
+    "view_binding_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T366",
+   "outcome": "KILLED",
+   "failed": [
+    "VB2"
+   ],
+   "rc": 1,
+   "sections": [
+    "view_binding_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T367",
+   "outcome": "KILLED",
+   "failed": [
+    "VB2"
+   ],
+   "rc": 1,
+   "sections": [
+    "view_binding_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T379",
+   "outcome": "KILLED",
+   "failed": [
+    "DR43"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T390",
+   "outcome": "KILLED",
+   "failed": [
+    "DR47"
+   ],
+   "rc": 1,
+   "sections": [
+    "across_metadata_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T398",
+   "outcome": "KILLED",
+   "failed": [
+    "DR48"
+   ],
+   "rc": 1,
+   "sections": [
+    "replace_refs_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T399",
+   "outcome": "KILLED",
+   "failed": [
+    "DR48"
+   ],
+   "rc": 1,
+   "sections": [
+    "replace_refs_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "X43",
+   "outcome": "KILLED",
+   "failed": [
+    "A52"
+   ],
+   "rc": 1,
+   "sections": [
+    "operations"
+   ],
+   "detail": ""
+  }
+ ]
+}
+```
