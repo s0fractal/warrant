@@ -45,8 +45,8 @@ def code_id(root):
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(d) / "index"))
-        subprocess.run(["git", "-C", str(root), "add", "-A", "--", ".", ":!.warrant"], env=env, capture_output=True, check=True)
-        tree = subprocess.run(["git", "-C", str(root), "write-tree"], env=env, capture_output=True, text=True,
+        subprocess.run(["git", "--no-replace-objects", "-C", str(root), "add", "-A", "--", ".", ":!.warrant"], env=env, capture_output=True, check=True)
+        tree = subprocess.run(["git", "--no-replace-objects", "-C", str(root), "write-tree"], env=env, capture_output=True, text=True,
                               check=True).stdout.strip()
     claims = Path(root) / ".warrant" / "claims.json"
     digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None  # noqa: E731

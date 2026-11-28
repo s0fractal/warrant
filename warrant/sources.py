@@ -51,7 +51,7 @@ def declared(doc):
 
 
 def _git(root, *a):
-    return subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout
+    return subprocess.run(["git", "--no-replace-objects", "-C", str(root), *a], capture_output=True, check=True).stdout
 
 
 def _commit(root, ref):

@@ -34,7 +34,7 @@ DIGESTS = {
     "warrant/shapes.py": "290685204b8457314661d2055ab973115a4c1356f6e03ed8b5cae2ad6f0a4761",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/merkle.py": "2864fb67dfb255ce59df7805b99d0e8f7ea85bf5833a366606d1bcf72eb90fa3",
-    "warrant/pins.py": "a2984deb5d8f0b4b925bbfe44b088e79f1f6959462730a759f6f2d53e92fe500",
+    "warrant/pins.py": "3bf63dd46c03961531cc22a5cf131422a21d3d45feaea4ed2cb50b0e1ba90155",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
     "warrant/graph.py": "f54a1f5f6d7ad81b0542bdad86e435729d2c997940a580f54e561f3cb398255e",
     "warrant/store.py": "f569d538c09f7b6049e2c8a0ea9fcc8add176d4e7adb166511aba42604f62588",
@@ -693,7 +693,7 @@ FRESH = ("UNCHANGED", "MOVED")
 def git(root, *a, raw=False):
     # NOSONAR S8705: every option is a caller's literal; a commit or object id read from a record is checked as a full
     # hex id before it reaches Git (shapes.hex_of), and a path read from one follows "--" under --literal-pathspecs
-    out = subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout  # NOSONAR S8705
+    out = subprocess.run(["git", "--no-replace-objects", "-C", str(root), *a], capture_output=True, check=True).stdout  # NOSONAR S8705
     return out if raw else out.decode().strip()
 
 

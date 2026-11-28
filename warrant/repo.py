@@ -33,7 +33,7 @@ def default_root():
     """WARRANT_REPO_ROOT, else the top of the Git checkout around the current directory, else that directory."""
     if os.environ.get("WARRANT_REPO_ROOT"):
         return Path(os.environ["WARRANT_REPO_ROOT"])
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
+    r = subprocess.run(["git", "--no-replace-objects", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     return Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else Path.cwd()
 
 

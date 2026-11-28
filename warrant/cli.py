@@ -407,7 +407,7 @@ def open_brakes(root):
     (revert_plan: `revertable`, or why not); None outside a git checkout."""
     from . import gate as GT
     try:
-        head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD^{commit}"], capture_output=True, text=True,
+        head = subprocess.run(["git", "--no-replace-objects", "-C", str(root), "rev-parse", "HEAD^{commit}"], capture_output=True, text=True,
                               check=True).stdout.strip()
         out = []
         for b in GT.brakes(root, head):
