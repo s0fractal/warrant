@@ -1201,6 +1201,7 @@ MUTANTS = [
     ("T398", "warrant/pins.py", 'subprocess.run(["git", "--no-replace-objects", "-C", str(root), *a], capture_output=True, check=True).stdout  # NOSONAR',
      'subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout  # NOSONAR', TOOLS, ["DR48"]),
     ("T399", "warrant/gate.py", 'subprocess.run(["git", "--no-replace-objects", *map(str, args)]', 'subprocess.run(["git", *map(str, args)]', TOOLS, ["DR48"]),
+    ("T400", "warrant_agent/work.py", "    rep = api._report(ws, view2)      # the filed", "    rep = view2.report()              # the filed", AGENT, ["A55"]),
     ("T373", "warrant/graph.py", '"removed": sorted(n0 - n1)', '"removed": []', TOOLS, ["DR40"]),
     ("T374", "warrant/graph.py", '"added": sorted(n1 - n0)', '"added": []', TOOLS, ["DR40"]),
     ("T375", "warrant/graph.py", '"lineages_added": sorted(set(rep1["lineages"]) - set(rep0["lineages"]))', '"lineages_added": []', TOOLS, ["DR40"]),

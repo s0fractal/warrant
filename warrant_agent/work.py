@@ -315,6 +315,6 @@ def _file(api, ws, own, snap, view, trust, profile, actor, records):
     except Refused as e:
         raise AgentError("CHAIN_MOVED" if "CHAIN_MOVED" in str(e) else "REFUSED", str(e)) from None
     _, view2, _, _ = api._assess(ws)
-    rep = view2.report()
+    rep = api._report(ws, view2)      # the filed records' lineages as context reads them (Codex 9b2f3e1f)
     nodes, _, _ = G.index(rep)
     return {"filed": ids, "records": [G.describe(rep, nodes, i) for i in ids]}
