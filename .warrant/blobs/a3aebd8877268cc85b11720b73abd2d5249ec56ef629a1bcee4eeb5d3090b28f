@@ -1,0 +1,135 @@
+# G14 roadmap verdict: challenge
+
+Actor: codex
+Base M: 7f62077f3f0449a6fb4b2002ef3beb293b535132
+Duty D: 9c7598ecdb5b2b2d1ee3027a046a1cb741a5140d5f634a4ee4ebed78d2d8cefb
+Version T: a41c55aaa03fc67b7c805895a132512f3e277e3dc183179a30af378f032870af
+
+## What remains undone
+
+A no-checkout reader still reports ELIGIBLE on a lineage covered by the format's freshness predicate. warrant verify (CLI and API) and warrant_verify.py disagree with drift.covered()/not_checked() and the agent's store-only context.
+
+The fixture has a done obligation accepted by bob, whose roadmap/acceptor role meets its guard. A second signed acceptance by the fixture's claims-checker names files and a commit (F1), or only a legacy commit (F2). This checker is trusted and holds claim/verifier, but is not a roadmap/acceptor. These are synthetic test keys only; no operator or checker seed was read or used.
+
+warrant/drift.py:72-85 includes every SIGNED checker acceptance in pinned(), including these two; covered() includes the effective done obligation. With no checkout, not_checked() and the agent's context therefore report PINS_NOT_CHECKED. However warrant/verify.py:322-332 filters accepted rows through the target guard's accepted_by before _pins() (346-383) sees them. The checker row vanishes, _pins returns NONE, and both verifiers report ELIGIBLE with rely=true; the CLI and standalone exit 0. No checkout was supplied in any of these reads.
+
+Expected: the no-checkout verifier refuses reliance on every lineage the format's freshness gate covers, consistently with docs/V3.md:295-301. T explicitly claims verify uses drift's pin predicate; that remains false at M. Reconcile those predicates and their reader projections without inventing authority for an uncounted acceptance. This counterexample establishes the disagreement on valid signed fixture records; it does not claim these exact records currently exist in the live store.
+
+Controls: before the checker pin, all readers report ELIGIBLE and verifiers rely; a normal checker-accepted claim with a legacy commit reports PINS_NOT_CHECKED and both CLI verifiers exit 1. Both controls pass. The fixture assessment rejects no record and reports no problems.
+
+## Verification at M
+
+Verified detached HEAD and origin; roadmap due --actor codex matches D/T/evidence/refs/empty requires; MCP context shows T's guard PENDING, waiting for roadmap/acceptor, with no open required lineage. Read T and its twelve evidence records, the cited merged PRs and current implementation/specification paths. The cited merge commits are ancestors of M.
+
+Passed:
+- Full tests/verify_test.py.
+- Full tests/delegate_test.py, including DG20.
+- tests/agent_test.py sections operations and horizon_cases, including A45, A54 and A55.
+- tests/tools_test.py sections board_stale_cases, roadmap_reader_cases and review_snapshot_view_cases (BD20-BD22).
+- impl_js_test browser_reader_cases, browser_pins_cases, browser_pins_vector_cases and js_pins_vector_cases (including J10/J11/J23/J26).
+- Selected mutation run: 29/29 killed: T275 T276 T277 T188 V107 V108 V109 T346 T347 A211 UM90 UM91 UM92 UM93 UM94 UM95 UM96 UM97 UM98 UM99 UM100 T385 T391 T392 T393 T396 T397 T400 T402.
+- roadmap check: 128 lineages, zero problems; claims check: 148 live, zero problems (before filing).
+
+The full repository suite and full mutant matrix were not rerun. The new reproducer fails F1 and F2 at M despite the selected existing regressions passing. No production fix or test is staged in this verdict-only worktree.
+
+## Reproducer
+
+Save the following as reproduce.py outside the checkout. Run with TMPDIR set to the review work directory:
+
+    python3 reproduce.py /path/to/checkout-at-M
+
+It exits 1 at M and prints FAIL F1 and FAIL F2. Only isolated synthetic fixture stores are modified.
+
+```python
+"""Run: TMPDIR=<review-work-dir> python3 reproduce.py <checkout-at-M>.
+
+Uses deterministic TEST FIXTURE keys only, never an operator/checker seed.
+FAIL F1/F2 is the observed defect at M; the assertion expects the format rule.
+"""
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(sys.argv[1]).resolve()
+sys.path[:0] = [str(ROOT / "tests"), str(ROOT)]
+import tools_test as TT
+from warrant import claims as C, drift as D, repo as RP, verify as V
+from warrant_agent import api
+from warrant_agent.config import Config
+
+
+def read(r, lineage, target):
+    rep = RP.Repo(r.root).report()
+    assert not rep["rejected"] and not rep["problems"]
+    covered = lineage in D.covered(rep)
+    D.not_checked(rep)
+    for k, value in (("trust", r.trust), ("profile", r.profile)):
+        (r.root / f"{k}.json").write_text(json.dumps(value))
+    cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {
+        "store": str(r.dot), "trust": str(r.root / "trust.json"),
+        "profile": str(r.root / "profile.json"), "operations": ["context"]}}})
+    context = api.call(cfg, "context", {"workspace": "w", "targets": [target]})
+    context_rel = context["ok"]["targets"][target]["lineage"]["reliance"]
+    package = {"warrant": V.PACKAGE, "lines": [x.decode().strip() for x in r.store.snapshot().raw],
+               "blobs": {}, "roots": [target]}
+    path = r.root / "package.json"
+    path.write_text(json.dumps(package))
+    answer = V.verify(path.read_bytes(), r.trust, r.profile)
+    proc = subprocess.run([sys.executable, "-I", "-S", str(ROOT / "warrant_verify.py"),
+                           str(path), "--config", str(r.dot / "v3.json")], capture_output=True, text=True)
+    standalone = json.loads(proc.stdout)
+    cli = subprocess.run([sys.executable, "-m", "warrant", "verify", str(path),
+                          "--config", str(r.dot / "v3.json")], cwd=ROOT, capture_output=True, text=True)
+    cli_ans = json.loads(cli.stdout)
+    assert cli_ans["roots"][target]["lineage"]["reliance"] == answer["roots"][target]["lineage"]["reliance"]
+    assert cli_ans["rely"] == answer["rely"] and cli.returncode == (0 if answer["rely"] else 1)
+    return {"covered": covered, "drift": rep["lineages"][lineage]["reliance"], "context": context_rel,
+            "verify": answer["roots"][target]["lineage"]["reliance"], "verify_rely": answer["rely"],
+            "verify_pins": answer["roots"][target]["pins"]["verdict"],
+            "standalone": standalone["roots"][target]["lineage"]["reliance"],
+            "standalone_rely": standalone["rely"], "standalone_exit": proc.returncode,
+            "cli_exit": cli.returncode}
+
+
+failures = 0
+for case, with_files in (("F1", True), ("F2", False)):
+    r = TT.checker_repo()
+    body = {"state": "open", "statement": "pin predicate boundary", "serves": []}
+    lineage = r.entity("alice", "obligation@1", body)
+    target = r.entity("alice", "obligation@1", dict(body, state="done"), lineage=lineage)
+    r.attest("bob", target)
+    control = read(r, lineage, target)
+    assert not control["covered"] and control["context"] == control["verify"] == control["standalone"] == "ELIGIBLE"
+    assert control["verify_rely"] and control["standalone_rely"] and control["standalone_exit"] == 0
+    pin = {"target": target, "verdict": "accept", "commit": "ab" * 20}
+    if with_files:
+        pin.update(files={"x.py": "cd" * 20}, closure=C.CLOSURE)
+    # The fixture binds this actor's TEST key and claim/verifier role, but this
+    # obligation's guard names roadmap/acceptor. No checker role is invented.
+    TT.put_as(r, C.CHECKER, pin, [target])
+    got = read(r, lineage, target)
+    assert got["covered"] and got["drift"] == got["context"] == "PINS_NOT_CHECKED"
+    holds = got["verify"] == got["standalone"] == "PINS_NOT_CHECKED" and not got["verify_rely"] and not got["standalone_rely"]
+    print(("ok   " if holds else "FAIL ") + case + " " + json.dumps(got, sort_keys=True))
+    failures += not holds
+
+# Positive control: a normal checker-accepted claim is read conservatively.
+r = TT.checker_repo()
+claim = TT.claim(r)
+TT.put_as(r, C.CHECKER, {"target": claim, "verdict": "accept", "commit": "ab" * 20}, [claim])
+positive = read(r, claim, claim)
+assert positive["covered"] and positive["context"] == positive["verify"] == positive["standalone"] == "PINS_NOT_CHECKED"
+assert not positive["verify_rely"] and not positive["standalone_rely"] and positive["standalone_exit"] == 1
+print("ok   C1 counted checker legacy acceptance " + json.dumps(positive, sort_keys=True))
+sys.exit(1 if failures else 0)
+
+```
+
+Observed output:
+
+```text
+FAIL F1 {"cli_exit": 0, "context": "PINS_NOT_CHECKED", "covered": true, "drift": "PINS_NOT_CHECKED", "standalone": "ELIGIBLE", "standalone_exit": 0, "standalone_rely": true, "verify": "ELIGIBLE", "verify_pins": "NONE", "verify_rely": true}
+FAIL F2 {"cli_exit": 0, "context": "PINS_NOT_CHECKED", "covered": true, "drift": "PINS_NOT_CHECKED", "standalone": "ELIGIBLE", "standalone_exit": 0, "standalone_rely": true, "verify": "ELIGIBLE", "verify_pins": "NONE", "verify_rely": true}
+ok   C1 counted checker legacy acceptance {"cli_exit": 1, "context": "PINS_NOT_CHECKED", "covered": true, "drift": "PINS_NOT_CHECKED", "standalone": "PINS_NOT_CHECKED", "standalone_exit": 1, "standalone_rely": false, "verify": "PINS_NOT_CHECKED", "verify_pins": "NOT_CHECKED", "verify_rely": false}
+```
