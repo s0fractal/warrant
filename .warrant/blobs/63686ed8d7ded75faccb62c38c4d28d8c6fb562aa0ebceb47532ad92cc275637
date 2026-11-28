@@ -1,0 +1,567 @@
+Codex roadmap verdict: CHALLENGE
+
+Repository: s0fractal/warrant
+M: 08571db6352790c1584310d44b71517d734f0196
+D: 8c856b3b26355a6eaf27b32cc1404ada26b7528b6e567dc78f84bd0da0a7dc0e
+T: c1a49bde2306af104e4462c1afa182e9f73c0e57bb5de34d5127290d02745e78
+
+G11's range operations do not yet answer consistently under the checkout's receiver.
+
+At warrant_agent/api.py:235-249, _graph_range builds E.View(...).report() for each endpoint and immediately calls G.impact/G.delta. It does not apply drift.reading to those reports at their endpoint commits. By contrast tools/graph.py:range_reports applies DR.reading(rep, repo.root, at), and ordinary agent graph reads use _report, which also applies it.
+
+Counterexample, real signed fixture records (not a synthetic report):
+1. Create an obligation, close it, and have its counted acceptor pin lib/a.py at commit X. Commit the accepted store as BASE.
+2. Change lib/a.py and commit HEAD without changing records. CLI delta lists the obligation in changed, and CLI impact reads it STALE. Agent graph delta returns changed=[] and agent impact returns lineages=[].
+3. Append an uncounted note attest targeting the closed version and commit again. Both impact implementations now name the lineage, but the CLI reports STALE while the agent reports ELIGIBLE. This is also reproduced over the stdio warrant_graph tool loaded from M, not just the Python API. Thus the range reader can advertise reliance that the same checkout's ordinary reader refuses.
+
+Expected: compare pinned acceptances with each endpoint's own tree before delta/impact, as tools/graph.py already does. Regression coverage should exercise agent graph delta and impact on this pinned range, including an impact row that would otherwise be falsely ELIGIBLE, and kill a mutant removing that comparison. The present A51 uses an unpinned obligation, so it does not detect the omission. This challenge concerns D's agent range operations; it does not issue a verdict on the other due G11/G14 lineages.
+
+Checked at M:
+- Re-resolved HEAD and origin; initial worktree clean; warrant.roadmap due --actor codex --json matches D, T, goal G11, statement, evidence, refs and empty requirements/subject.
+- MCP workspace with codex's configured key confirms roadmap/acceptor; MCP context shows T's pending one-acceptance guard, no open requirements and no challenges before this verdict.
+- Read docs/AGENT.md, docs/V3.md and docs/REPOSITORY.md; the shared graph implementation is now warrant/graph.py, with CLI and agent consumers. Read the named evidence records and traced their PR head lineages/commits, and inspected the merged implementations, cases and mutant definitions.
+- python3 tests/tools_test.py: exit 0, 262 ok checks, no FAIL.
+- SDK-enabled Python tests/agent_test.py: exit 0, 237 ok checks, no FAIL (M01 included).
+- 28 selected registered mutants: all KILLED at their named cases (matrix below). Harness source from M, scratch copies outside the worktree, with read-only .git pointers to M to preserve the harness's Git context. The first scratch baseline lacked Git context and was refused; no mutant credit was taken from it. The rerun passed all section baselines and combinations and killed 28/28.
+- Standalone counterexample below prints FAIL F1 and FAIL F2 at M. Its stdio extension also prints FAIL F3 for the same stale impact row. The installed server predates range support; the successful stdio reproduction explicitly launched python -m warrant_agent.mcp_server with PYTHONPATH set to this M worktree.
+- warrant.roadmap check: 128 lineages, 0 problems; warrant.claims check: 148 live, 0 problems (before filing; repeated after filing in final report).
+- No claim of full CI, all mutants, or verification of unrelated functionality. No code changes, git commits, pushes or PR creation.
+
+Reproduction: save the following outside the checkout, run from this checkout at M with TMPDIR pointing into the review scratch directory. It uses repository test fixtures and the production agent backend; each fixture record has a real signature. FAIL lines are the counterexample, not failing CI staged in the repository.
+
+```python
+import importlib.util
+import json
+import os
+import sys
+from pathlib import Path
+ROOT = Path.cwd()
+sys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]
+from world import Repo, git
+from warrant import repo as RP
+from warrant_agent import api
+from warrant_agent.config import Config
+spec = importlib.util.spec_from_file_location('graph_tool', ROOT / 'tools/graph.py')
+TG = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(TG)
+r = Repo(git_init=True)
+(r.root / 'lib').mkdir()
+(r.root / 'lib/a.py').write_text('A = 1\n')
+x = r.commit('accepted bytes')
+o = r.entity('alice', 'obligation@1', {'state':'open', 'statement':'pinned work', 'serves':[]})
+d = r.entity('alice', 'obligation@1', {'state':'done', 'statement':'pinned work', 'serves':[]}, lineage=o)
+r.attest('bob', d, commit=x, files={'lib/a.py':git(r.root, 'rev-parse', f'{x}:lib/a.py')})
+b = r.commit('pinned acceptance')
+(r.root / 'lib/a.py').write_text('A = 2\n')
+h = r.commit('changed pinned bytes, no record changes')
+cfg = Config({'agent_api':'warrant-agent/3','workspaces':{'w':{'repo':str(r.root),'operations':['graph']}}})
+cli = TG.ask(RP.Repo(r.root), 'delta', [f'{b}..{h}'])[3]
+agent = api.call(cfg, 'graph', {'workspace':'w','op':'delta','range':f'{b}..{h}'})
+cli_imp = TG.ask(RP.Repo(r.root), 'impact', [f'{b}..{h}'])[3]
+agent_imp = api.call(cfg, 'graph', {'workspace':'w','op':'impact','range':f'{b}..{h}'})
+print(json.dumps({'obligation':o, 'base':b, 'head':h, 'cli_delta':cli,'agent_delta':agent,'cli_impact':cli_imp,'agent_impact':agent_imp}, indent=1))
+print('FAIL F1 agent delta must name a lineage whose pinned reliance changed' if o not in agent.get('ok',{}).get('data',{}).get('changed',[]) else 'ok   F1')
+# Force a row without changing the pinned acceptance, state, version or challenge.
+r.put('eve','attest',{'target':d,'verdict':'note'},refs=[d])
+h2 = r.commit('an uncounted note on stale work')
+cli_row = next(z for z in TG.ask(RP.Repo(r.root),'impact',[f'{h}..{h2}'])[3]['lineages'] if z['lineage']==o)
+agent_rows = api.call(cfg,'graph',{'workspace':'w','op':'impact','range':f'{h}..{h2}'})['ok']['data']['lineages']
+agent_row = next(z for z in agent_rows if z['lineage']==o)
+print(json.dumps({'cli_impact_row':cli_row,'agent_impact_row':agent_row},indent=1))
+print('FAIL F2 agent impact must report the pinned stale lineage STALE' if agent_row['reliance']!='STALE' else 'ok   F2')
+
+```
+
+Observed output (including the stdio extension):
+```text
+{
+ "obligation": "e40d9382c23bed4822fb2a2120b4c5c4ad7af9c46499b49fed9126afe32cbff7",
+ "base": "00226863ba9ba9cebc8759688983bbcd08150f0d",
+ "head": "6fd0c5f56ed6bfa7cc5d0d707fcd55a89b37f47f",
+ "cli_delta": {
+  "added": [],
+  "removed": [],
+  "changed": [
+   "e40d9382c23bed4822fb2a2120b4c5c4ad7af9c46499b49fed9126afe32cbff7"
+  ],
+  "lineages_added": [],
+  "lineages_removed": []
+ },
+ "agent_delta": {
+  "ok": {
+   "root": {
+    "snapshot": "aa767db3867ddd32b90bc2cbd8c0f5b4cf12346800cd09f6cbb4eb475eedff6a",
+    "base": "00226863ba9ba9cebc8759688983bbcd08150f0d",
+    "head": "6fd0c5f56ed6bfa7cc5d0d707fcd55a89b37f47f"
+   },
+   "lens": "797b48bc12ce7544131deb2cb08c4215d92f9bb8f1baaae454b82beaca760a60",
+   "query": {
+    "op": "delta",
+    "range": "00226863ba9ba9cebc8759688983bbcd08150f0d..6fd0c5f56ed6bfa7cc5d0d707fcd55a89b37f47f"
+   },
+   "data": {
+    "added": [],
+    "removed": [],
+    "changed": [],
+    "lineages_added": [],
+    "lineages_removed": []
+   }
+  }
+ },
+ "cli_impact": {
+  "delta": {
+   "added": [],
+   "removed": [],
+   "changed": [
+    "e40d9382c23bed4822fb2a2120b4c5c4ad7af9c46499b49fed9126afe32cbff7"
+   ],
+   "lineages_added": [],
+   "lineages_removed": []
+  },
+  "lineages": [
+   {
+    "lineage": "e40d9382c23bed4822fb2a2120b4c5c4ad7af9c46499b49fed9126afe32cbff7",
+    "schema": "obligation@1",
+    "state": "done",
+    "reliance": "STALE",
+    "gone": false,
+    "rests_on_it": [],
+    "complete": true
+   }
+  ],
+  "drift": {
+   "head": "6fd0c5f56ed6bfa7cc5d0d707fcd55a89b37f47f",
+   "base": "00226863ba9ba9cebc8759688983bbcd08150f0d",
+   "stale": [
+    {
+     "lineage": "e40d9382c23bed4822fb2a2120b4c5c4ad7af9c46499b49fed9126afe32cbff7",
+     "id": "e40d9382c23b",
+     "verdict": "CHANGED",
+     "commit": "38d8115c34a8466567f7022d28b7d746ca4d08fa",
+     "files": [
+      {
+       "verdict": "CHANGED",
+       "path": "lib/a.py",
+       "detail": ""
+      }
+     ],
+     "complete": true,
+     "rests_on_it": []
+    }
+   ],
+   "affected": [],
+   "stores": [],
+   "complete": true,
+   "already_stale": [],
+   "changed": [
+    "lib/a.py"
+   ],
+   "in_no_acceptance": []
+  }
+ },
+ "agent_impact": {
+  "ok": {
+   "root": {
+    "snapshot": "aa767db3867ddd32b90bc2cbd8c0f5b4cf12346800cd09f6cbb4eb475eedff6a",
+    "base": "00226863ba9ba9cebc8759688983bbcd08150f0d",
+    "head": "6fd0c5f56ed6bfa7cc5d0d707fcd55a89b37f47f"
+   },
+   "lens": "b28db4c31127d9a57c3e2c5377eb1f6ce14427a1c63ca209331449e818970149",
+   "query": {
+    "op": "impact",
+    "range": "00226863ba9ba9cebc8759688983bbcd08150f0d..6fd0c5f56ed6bfa7cc5d0d707fcd55a89b37f47f"
+   },
+   "data": {
+    "delta": {
+     "added": [],
+     "removed": [],
+     "changed": [],
+     "lineages_added": [],
+     "lineages_removed": []
+    },
+    "lineages": []
+   }
+  }
+ }
+}
+FAIL F1 agent delta must name a lineage whose pinned reliance changed
+{
+ "cli_impact_row": {
+  "lineage": "e40d9382c23bed4822fb2a2120b4c5c4ad7af9c46499b49fed9126afe32cbff7",
+  "schema": "obligation@1",
+  "state": "done",
+  "reliance": "STALE",
+  "gone": false,
+  "rests_on_it": [],
+  "complete": true
+ },
+ "agent_impact_row": {
+  "lineage": "e40d9382c23bed4822fb2a2120b4c5c4ad7af9c46499b49fed9126afe32cbff7",
+  "schema": "obligation@1",
+  "state": "done",
+  "reliance": "ELIGIBLE",
+  "gone": false,
+  "rests_on_it": [],
+  "complete": true
+ }
+}
+FAIL F2 agent impact must report the pinned stale lineage STALE
+MCP stderr 
+{
+ "mcp_impact_row": {
+  "lineage": "e40d9382c23bed4822fb2a2120b4c5c4ad7af9c46499b49fed9126afe32cbff7",
+  "schema": "obligation@1",
+  "state": "done",
+  "reliance": "ELIGIBLE",
+  "gone": false,
+  "rests_on_it": [],
+  "complete": true
+ }
+}
+FAIL F3 stdio warrant_graph impact must report pinned stale work STALE
+```
+
+Selected mutant matrix:
+```json
+{
+ "definition": "fe61c138267bf29586bff5e67fed4508748b137f8f9754c9fd6b4ad2b3b0c8e1",
+ "rows": [
+  {
+   "id": "X43",
+   "outcome": "KILLED",
+   "failed": [
+    "A52"
+   ],
+   "rc": 1,
+   "sections": [
+    "operations"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "GW1",
+   "outcome": "KILLED",
+   "failed": [
+    "GW1"
+   ],
+   "rc": 1,
+   "sections": [
+    "graph_walk_budget_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "GW2",
+   "outcome": "KILLED",
+   "failed": [
+    "GW3"
+   ],
+   "rc": 1,
+   "sections": [
+    "graph_walk_budget_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T124",
+   "outcome": "KILLED",
+   "failed": [
+    "DR17"
+   ],
+   "rc": 1,
+   "sections": [
+    "impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T321",
+   "outcome": "KILLED",
+   "failed": [
+    "DR25b"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T322",
+   "outcome": "KILLED",
+   "failed": [
+    "A51"
+   ],
+   "rc": 1,
+   "sections": [
+    "horizon_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T323",
+   "outcome": "KILLED",
+   "failed": [
+    "A51"
+   ],
+   "rc": 1,
+   "sections": [
+    "horizon_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T325",
+   "outcome": "KILLED",
+   "failed": [
+    "DR17b"
+   ],
+   "rc": 1,
+   "sections": [
+    "impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T326",
+   "outcome": "KILLED",
+   "failed": [
+    "A51"
+   ],
+   "rc": 1,
+   "sections": [
+    "horizon_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T327",
+   "outcome": "KILLED",
+   "failed": [
+    "DR25b"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T354",
+   "outcome": "KILLED",
+   "failed": [
+    "SR8"
+   ],
+   "rc": 1,
+   "sections": [
+    "sources_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T355",
+   "outcome": "KILLED",
+   "failed": [
+    "DR17c"
+   ],
+   "rc": 1,
+   "sections": [
+    "impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T364",
+   "outcome": "KILLED",
+   "failed": [
+    "DR38"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T365",
+   "outcome": "KILLED",
+   "failed": [
+    "DR38"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T372",
+   "outcome": "KILLED",
+   "failed": [
+    "DR39"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T373",
+   "outcome": "KILLED",
+   "failed": [
+    "DR40"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T374",
+   "outcome": "KILLED",
+   "failed": [
+    "DR40"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T375",
+   "outcome": "KILLED",
+   "failed": [
+    "DR40"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T376",
+   "outcome": "KILLED",
+   "failed": [
+    "DR40"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T377",
+   "outcome": "KILLED",
+   "failed": [
+    "DR41"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T378",
+   "outcome": "KILLED",
+   "failed": [
+    "DR42"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T381",
+   "outcome": "KILLED",
+   "failed": [
+    "DR44"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T382",
+   "outcome": "KILLED",
+   "failed": [
+    "DR44"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T383",
+   "outcome": "KILLED",
+   "failed": [
+    "DR44"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T384",
+   "outcome": "KILLED",
+   "failed": [
+    "DR45"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T387",
+   "outcome": "KILLED",
+   "failed": [
+    "DR46"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T388",
+   "outcome": "KILLED",
+   "failed": [
+    "DR46"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  },
+  {
+   "id": "T389",
+   "outcome": "KILLED",
+   "failed": [
+    "DR46"
+   ],
+   "rc": 1,
+   "sections": [
+    "drift_impact_cases"
+   ],
+   "detail": ""
+  }
+ ]
+}
+```
