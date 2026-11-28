@@ -1,0 +1,156 @@
+G14 roadmap closure counterexample
+
+Actor: codex. Base M: e840770c0ca2d321d0b5e06d50c926e44f2c83a3
+Tree: 7c2a4c35e6945fafb3df406347904423104de025
+D: 9c7598ecdb5b2b2d1ee3027a046a1cb741a5140d5f634a4ee4ebed78d2d8cefb
+T: ee3ee05aa6d1ca0812570d7a1bd6cabc175343c7128cffd1f64e6a84377ecf55
+Verdict: challenge. D is not discharged at M.
+
+Defect: the public delegation reader reports ELIGIBLE for an effective version
+accepted on pinned files when it has compared no checkout. This is a reader
+boundary, not a request for a different raw engine report.
+
+Where:
+- warrant/delegate.py:823-824 and 945-946 build the two raw reports.
+- warrant/delegate.py:801-814,960 copy their unlowered reliance into changes.
+- warrant_agent/delegate.py:38-50 expose those changes from delegate/op=assess.
+- warrant/delegate.py:1084-1096 expose the same changes in CLI JSON and text.
+
+The fixture extends the existing DG02 scenario with a valid delegated acceptance
+whose body names commit ab*20 and files {x.py: cd*20}. The task's done version is
+accepted_by bob-sub under its active, scoped grant. The store is a non-Git folder;
+no tree is read beside it. The API's changes.to and the CLI's JSON/text all show
+[done, ELIGIBLE]. Adding _recs/_basis from the same admitted records to the delegated
+report and applying drift.covered identifies this lineage; drift.not_checked
+changes it to PINS_NOT_CHECKED. The control with the same acceptance and no files
+correctly stays ELIGIBLE. Thus this is precisely the freshness gate's predicate,
+not merely an acceptance ignored by its guard. The expected result is
+[done, PINS_NOT_CHECKED] at both public reader boundaries, preserving the actual
+scoped view's records, bases and authorization. A pinned result must not be
+refreshed by merely calling the static api._report, which cannot admit the delegate.
+
+Rule: docs/V3.md section 10 requires every reader showing reliance with no checkout
+to show a lineage the section 15 freshness gate covers as PINS_NOT_CHECKED, never
+ELIGIBLE. The obligation explicitly covers any new reader, not only named tools.
+T's listed fixes are present, but do not enforce this on the delegation reader.
+
+Checks completed before filing:
+- Revalidated clean HEAD=M, origin, roadmap due --actor codex, D/T and all eleven
+  evidence record IDs. MCP context: T guard PENDING, one roadmap/acceptor acceptance
+  missing, no open requirements and no challenge on T. MCP workspace signer codex.
+- Read the eleven named PR descriptions via the GitHub connector and verified
+  all eleven merge commits (including afc9c654) are ancestors of M.
+- Read docs/V3.md sections 10 and 15, the shared pins vector and reader paths.
+- Full verify_test: 69 passing assertions, including VP1-VP7 and API/standalone.
+- agent_test sections operations, admission_cases, work_cases: 30 passing assertions,
+  including A45, A54, A55.
+- tools_test sections board_stale_cases, roadmap_reader_cases,
+  review_snapshot_view_cases: BD20, BD21, BD22 pass.
+- impl_js_test browser_pins_vector_cases, js_pins_vector_cases,
+  browser_reader_cases, browser_pins_cases, browser_others_cases: 39 assertions pass,
+  including J23/J26 (shared vector), J9-J12.
+- Full delegate_test: DG01-DG19 pass, despite this counterexample.
+- claims check: 148 live, 0 problems; roadmap check: 128 lineages, 0 problems.
+- The new reproducer exits 1 with FAIL F1 and FAIL F2 at M; its unpinned control passes.
+
+No implementation or test file was added to the worktree. This evidence embeds
+the runnable test rather than staging red CI. Existing suites passing does not
+establish closure; the reproducible public reader bypass blocks this verdict.
+Only the challenge and this cited blob are intended for publication.
+
+Run from M with TMPDIR pointing at a scratch directory outside the checkout:
+    python3 /path/to/delegate_pins_test.py
+
+Reproducer (synthetic keys only):
+
+```python
+"""G14 counterexample at e840770c0ca2d321d0b5e06d50c926e44f2c83a3.
+
+Run from the checkout: TMPDIR=<scratch> python3 <this-file>
+Uses synthetic fixture keys only; writes fixtures beneath TMPDIR, never to the checkout.
+Expected at M: FAIL F1 and FAIL F2, exit 1; unpinned controls pass.
+"""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path.cwd()
+sys.path[:0] = [str(ROOT / "tests"), str(ROOT)]
+import delegate_test as DT
+from warrant import delegate as DG, drift as DR, keys as K, records as R
+from warrant.store import Snapshot
+from warrant_agent import api
+from warrant_agent.config import Config
+
+
+def probe(pinned):
+    fixture_keys = iter(K.Key.from_seed_hex(f"{i:02x}" * 32) for i in range(1, 5))
+    old_key = DT._key
+    try:
+        DT._key = lambda: next(fixture_keys)
+        w = DT._setup_base()
+    finally:
+        DT._key = old_key
+    sub = K.Key.from_seed_hex("05" * 32)
+    grant = DG.grant_record("bob", "bob-sub", sub.public, ["acceptor"], ["attest"],
+                            100, 200, max_depth=0, schemas=["task@1"],
+                            lineages=[w["task_root"]], at=100)
+    body = {"target": w["task_done"], "verdict": "accept"}
+    if pinned:
+        body.update(commit="ab" * 20, files={"x.py": "cd" * 20})
+    accept = R.record("attest", "bob-sub", 150, body, refs=[w["task_done"]])
+    lines = w["lines"] + [DT._line(grant, w["keys"]["bob"]), DT._line(accept, sub)]
+    snap = Snapshot(lines, {})
+    res = DG.assess_delegated(snap, w["trust"], w["profile"], 150)
+    rep = res["delegated_report"]
+    rep["_recs"] = {i: es[0]["record"] for i, es in snap.lines.items()}
+    rep["_basis"] = {n[0]: n[5] for n in rep["graph"]["nodes"]}
+    covered = w["task_root"] in DR.covered(rep)
+    DR.not_checked(rep)
+    expected = rep["lineages"][w["task_root"]]["reliance"]
+    assert expected == ("PINS_NOT_CHECKED" if pinned else "ELIGIBLE")
+    with tempfile.TemporaryDirectory(prefix="g14-delegate-") as td:
+        root = Path(td)
+        assert not DR._own_checkout(root)
+        dot = root / ".warrant"
+        dot.mkdir()
+        (dot / "records.jsonl").write_bytes(b"".join(lines))
+        (dot / "v3.json").write_text(json.dumps({"warrant": "repository/3", "repository": "g14-counterexample",
+                                                "trust": w["trust"], "profile": w["profile"]}))
+        cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {"repo": str(root)}}})
+        ans = api.call(cfg, "delegate", {"workspace": "w", "op": "assess", "as_of": 150})["ok"]
+        assert len(ans["admitted"]) == 1 and not ans["refused"]
+        cmd = [sys.executable, "-m", "warrant", "delegate", "--root", str(root), "assess", "--as-of", "150"]
+        cli = subprocess.run(cmd + ["--json"], cwd=ROOT, capture_output=True, text=True, check=True)
+        text = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=True).stdout
+        changes = lambda a: next(x for x in a["changes"] if x["lineage"] == w["task_root"])["to"]
+        got = {"api": changes(ans), "cli_json": changes(json.loads(cli.stdout)), "cli_text": text.strip(),
+               "covered": covered, "expected": ["done", expected]}
+        print(json.dumps({"pinned": pinned, **got}, sort_keys=True))
+        return got
+
+
+control = probe(False)
+assert control["api"] == control["cli_json"] == ["done", "ELIGIBLE"]
+print("ok   C1 unpinned acceptance remains ELIGIBLE in both readers")
+got = probe(True)
+fails = 0
+for case, key in (("F1", "api"), ("F2", "cli_json")):
+    ok = got[key] == got["expected"]
+    print(("ok   " if ok else "FAIL ") + case + " delegate assess " + key + ": " + repr(got[key])
+          + "; expected " + repr(got["expected"]) + "; no checkout compared")
+    fails += not ok
+sys.exit(bool(fails))
+```
+
+Observed output:
+```text
+{"api": ["done", "ELIGIBLE"], "cli_json": ["done", "ELIGIBLE"], "cli_text": "as_of 150 \u00b7 grants 1 (active 1) \u00b7 admitted 1 \u00b7 refused 0 \u00b7 changes 1\n  b3ecaf7f998e (task@1): ['open', 'ELIGIBLE'] -> ['done', 'ELIGIBLE']", "covered": false, "expected": ["done", "ELIGIBLE"], "pinned": false}
+ok   C1 unpinned acceptance remains ELIGIBLE in both readers
+{"api": ["done", "ELIGIBLE"], "cli_json": ["done", "ELIGIBLE"], "cli_text": "as_of 150 \u00b7 grants 1 (active 1) \u00b7 admitted 1 \u00b7 refused 0 \u00b7 changes 1\n  b3ecaf7f998e (task@1): ['open', 'ELIGIBLE'] -> ['done', 'ELIGIBLE']", "covered": true, "expected": ["done", "PINS_NOT_CHECKED"], "pinned": true}
+FAIL F1 delegate assess api: ['done', 'ELIGIBLE']; expected ['done', 'PINS_NOT_CHECKED']; no checkout compared
+FAIL F2 delegate assess cli_json: ['done', 'ELIGIBLE']; expected ['done', 'PINS_NOT_CHECKED']; no checkout compared
+```
