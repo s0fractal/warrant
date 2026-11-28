@@ -1,0 +1,68 @@
+# G11 roadmap verdict: generated CLI views remain unbound
+
+Actor: codex
+Base M: 4641ff354b5a4c846cd28f46100fe2b7ccae6bc6
+Base tree: dbaf7efbc0d8dfaefaad7b65a91425817a6e424e
+Obligation D: d6f9652ec1a7e12cb54b68644845a85108857400f12c2930f03ea1aed7288cc0
+Closure T: e283140f1b8ae74792ac679abf42eb01d0f5318b879cea3142a17ebaa1f3cfc0
+
+## Finding
+
+D requires generated views to carry a full root and a lens of the deciding code path, its parameters, trust, profile and pins. At M, all three public commands `python3 -m warrant.roadmap view`, `python3 -m warrant.claims view`, and `python3 -m warrant.review view` successfully generate Markdown with only a 12-character snapshot prefix and no lens. The first two also print only a 12-character assessment prefix. These are public CLI outputs, not just unwrapped internal helper returns; each command also exposes `--out`.
+
+The wrapper `tools/graph.py render` adds a full root/lens at lines 66-70, but these public commands do not call it. Thus fixing that wrapper did not finish the generated-view part of D. Consumers of these outputs cannot identify the full store state and deciding lens from the view itself. This finding does not assert a new collision in the wrapped views.
+
+## Locations
+
+- warrant/roadmap.py:88-89 (abbreviated header), :156-157 (direct emission).
+- warrant/claims.py:331-332 (abbreviated header), :644-645 (direct emission).
+- warrant/review.py:221 (abbreviated header), :309-312 (direct emission).
+- tools/graph.py:56-71 (binding is in the separate wrapper).
+
+## Reproducer
+
+Run this Python program from a checkout at M. It invokes only read operations and writes no repository files. F1-F3 fail at M, while all commands themselves exit 0.
+
+```python
+"""G11 counterexample at master 4641ff354b5a4c846cd28f46100fe2b7ccae6bc6.
+Run from its checkout: python3 /path/to/this.py
+Public generated views must carry a full root and a lens of what decided them.
+"""
+import json,re,subprocess
+from pathlib import Path
+ROOT=Path.cwd()
+failed=[]
+for case,module in [('F1','roadmap'),('F2','claims'),('F3','review')]:
+ command=['python3','-m','warrant.'+module,'view']
+ r=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
+ header=r.stdout.split('\n\n',2)[:2]
+ bound=bool(re.search(r'root [`]?[0-9a-f]{64}[`]?',r.stdout) and re.search(r'lens [`]?[0-9a-f]{64}[`]?',r.stdout))
+ ok=r.returncode==0 and bound
+ print(('ok   ' if ok else 'FAIL ')+case+' '+' '.join(command)+' carries full root and lens',flush=True)
+ print(json.dumps(dict(exit=r.returncode,bytes=len(r.stdout.encode()),header=header)),flush=True)
+ if not ok: failed.append(case)
+raise SystemExit(bool(failed))
+```
+
+Observed output:
+
+```text
+FAIL F1 python3 -m warrant.roadmap view carries full root and lens
+{"exit": 0, "bytes": 45417, "header": ["# Roadmap", "Generated from `.warrant/records.jsonl` (snapshot `ca22df47431d`, assessment `28604095ca63`); a build artifact, never committed. Completeness: UNATTESTED."]}
+FAIL F2 python3 -m warrant.claims view carries full root and lens
+{"exit": 0, "bytes": 58975, "header": ["# Claims of docs/V3.md", "Generated from `.warrant/records.jsonl` (snapshot `ca22df47431d`, assessment `28604095ca63`); a build artifact, never committed."]}
+FAIL F3 python3 -m warrant.review view carries full root and lens
+{"exit": 0, "bytes": 75429, "header": ["# Reviews", "Generated from `.warrant/records.jsonl` (snapshot `ca22df47431d`); a build artifact."]}
+```
+
+## Positive control and validation
+
+`python3 tools/graph.py views-json`, under PYTHONHASHSEED 1, 2 and 314159, returned identical dictionaries of all four generated views. Each wrapped view's third line matched `root <full 64 hex> / lens <full 64 hex>` (with the wrapper's Markdown delimiters). This confines the finding to the public CLI view routes.
+
+- Full tests/tools_test.py: exit 0; 265 printed checks passed.
+- tests/agent_test.py sections operations, across_cases, graph_walk_budget_cases: exit 0; 52 printed checks passed. Other agent sections and the full core/gate suites were not run in this review.
+- Targeted repository mutants T320, T324, T361, T362, T366, T367, T379, T390, T398, T399, T401: 11/11 killed by their named cases. The initial run placed harness copies outside Git and was refused BASELINE_RED before mutant results; rerunning with scratch clones at M provided the successful results. No refused run is counted as a kill.
+- Before verdict: roadmap check (128 lineages), claims check (148 live): 0 problems.
+- Verified due's D, T, statement, evidence, refs, subject none and requires none at M; MCP context showed T PENDING for one roadmap/acceptor acceptance. Read the seven evidence records, the eight cited PR descriptions and corresponding merged code at M, and commit 1d9a32a699af823d4f402d4865dfd7e9207f0310.
+
+No code change, fix, repository test, commit, push or pull request is part of this verdict. This is a schema-free challenge of roadmap version T, not a finding@1 against a PR head. The remaining work is to put the full provenance envelope on these public generated views and test those consumer entry points.
