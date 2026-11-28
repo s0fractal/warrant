@@ -642,7 +642,9 @@ def run(argv=None):
     if a.cmd == "check":
         return _check_cmd(repo, root)
     if a.cmd == "view":
-        emit(view(repo.report(), repo.root), a.out, root)
+        from . import views as VW         # the view's full root and lens under its title (Codex e283140f)
+        rep = repo.report()
+        emit(VW.bound(rep, repo.root, {"CLAIMS.md": view(rep, repo.root)})["CLAIMS.md"], a.out, root)
         return 0
     key = load_key(a.key, root)
     if a.cmd == "replay":

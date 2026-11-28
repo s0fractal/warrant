@@ -35,7 +35,7 @@ def delegate(api, cfg, req):
             "active": sum(1 for g in grants.values() if g["status"] == "ACTIVE"),
         }
         return api._budget(out, ws.limits["context_bytes"])
-    res = D.assess_delegated(snap, trust, profile, eff_as_of)
+    res = D.assess_delegated(snap, trust, profile, eff_as_of, ws.repo)
     out = {
         "warrant": "delegation/1",
         "op": "assess",

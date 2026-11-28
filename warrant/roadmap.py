@@ -154,7 +154,8 @@ def run(argv=None):
         print(f"roadmap: {sum(1 for x in rep['lineages'].values() if x['schema'] in SCHEMAS)} lineages, {len(bad)} problem(s)")
         return 1 if bad else 0
     if a.cmd == "view":
-        emit(view(rep), a.out, root)
+        from . import views as VW         # the view's full root and lens under its title (Codex e283140f)
+        emit(VW.bound(rep, repo.root, {"ROADMAP.md": view(rep)})["ROADMAP.md"], a.out, root)
         return 0
     key = load_key(a.key, root)
     rec = _release(rep, a, profile) if a.cmd == "release" else {"oblige": _obligation, "close": _closure, "revise": _revision}[a.cmd](rep, a)
