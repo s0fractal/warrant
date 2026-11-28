@@ -815,13 +815,25 @@ def _diff_reports(before, after, admitted_by_lineage):
     return out
 
 
-def assess_delegated(snap, trust, profile, as_of=None):
-    """Assess `snap` under static `(trust, profile)` extended with verified, scoped `grant@1` delegations.
+def _read(view, root):
+    """The view's report, its reliance read as status reads it (warrant.drift.reading): the freshness gate beside the
+    checkout `root`, PINS_NOT_CHECKED with none (Codex ee3ee05a: delegate assess read pinned lineages ELIGIBLE)."""
+    from . import drift as DR
+    rep = view.report()
+    rep["_recs"], rep["_basis"] = view.recs, view.basis
+    DR.reading(rep, root)
+    del rep["_recs"], rep["_basis"]
+    return rep
+
+
+def assess_delegated(snap, trust, profile, as_of=None, root=None):
+    """Assess `snap` under static `(trust, profile)` extended with verified, scoped `grant@1` delegations; `root`, the
+    checkout beside the store (or None), is what both reports' pins are compared with.
 
     Returns canonical dict:
       `as_of`, `grants`, `admitted`, `refused`, `changes`, `provenance`, `static_report`, `delegated_report`."""
     base_view = E.View(snap, trust, profile, as_of)
-    base_rep = base_view.report()
+    base_rep = _read(base_view, root)
     eff_as_of = base_view.as_of
     grants = resolve_grants(snap, trust, profile, eff_as_of)
     from . import pact as P                       # here, not at the top: pact imports this module
@@ -943,7 +955,7 @@ def assess_delegated(snap, trust, profile, as_of=None):
     aug_trust = {"warrant": "trust/3", "keys": aug_keys}
     aug_profile = dict(profile, roles=aug_roles)
     del_view = _ScopedView(aug_snap, aug_trust, aug_profile, eff_as_of, admitted)
-    del_rep = del_view.report()
+    del_rep = _read(del_view, root)
 
     # Track which grants contributed to which lineage
     admitted_by_lineage = {}
@@ -1081,7 +1093,7 @@ def run(argv):
                 )
         return 0
 
-    res = assess_delegated(snap, trust, profile, a.as_of)
+    res = assess_delegated(snap, trust, profile, a.as_of, repo.root)
     summary = {k: res[k] for k in ("warrant", "as_of", "grants", "admitted", "refused", "changes", "provenance")}
     if a.json:
         print(json.dumps(summary, indent=1, sort_keys=True))

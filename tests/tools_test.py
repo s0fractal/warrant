@@ -1353,6 +1353,27 @@ def lens_as_of_cases():
           and ans[1] == ans[2], [x["lens"][:12] for x in ans])
 
 
+def cli_view_binding_cases():
+    """Codex e283140f: the public `warrant roadmap view`, `warrant claims view` and `warrant review view` carry under
+    their title the full root and lens tools/graph.py render puts there (warrant.views.bound), not a 12-character
+    snapshot prefix alone."""
+    import re
+    r = claims_repo()
+    git(r.root, "init", "-q", "-b", "master")
+    r.commit("a store")
+    env = dict(os.environ, PYTHONPATH=str(ROOT), WARRANT_REPO_ROOT=str(r.root))
+    snap = RP.Repo(r.root).report()["snapshot"]
+    lines = {}
+    for m in ("roadmap", "claims", "review"):
+        out = subprocess.run([sys.executable, "-m", f"warrant.{m}", "view"], cwd=r.root, capture_output=True, text=True, env=env)
+        lines[m] = (out.returncode, out.stdout.split("\n")[2] if out.stdout.count("\n") > 2 else out.stderr[-200:])
+    pat = re.compile(r"root `([0-9a-f]{64})` · lens `([0-9a-f]{64})`\Z")
+    check("BD23 `warrant roadmap view`, `warrant claims view` and `warrant review view` each carry the store's full root "
+          "and a lens under the title, three views, three lenses (Codex e283140f)",
+          all(c == 0 and pat.fullmatch(x) and pat.fullmatch(x).group(1) == snap for c, x in lines.values())
+          and len({pat.fullmatch(x).group(2) for _, x in lines.values() if pat.fullmatch(x)}) == 3, lines)
+
+
 def view_binding_cases():
     """A view's lens binds every byte that decides it besides the records, trust and profile: the working tree outside
     the store (two different uncommitted edits are two lenses, not one `dirty` flag), .warrant/claims.json (which shapes
@@ -3907,6 +3928,7 @@ if __name__ == "__main__":
         across_metadata_cases,
         replace_refs_cases,
         lens_as_of_cases,
+        cli_view_binding_cases,
         narrow_cases,
         resolve_cases,
         harness_cases,

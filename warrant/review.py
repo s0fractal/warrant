@@ -309,7 +309,8 @@ def run(argv=None):
     if a.cmd == "view":
         from . import drift as D
         D.reading(rep, repo.root)     # the view's reliance as status reads it (Codex 5afe86ba)
-        emit(view(rep), a.out, root)
+        from . import views as VW         # the view's full root and lens under its title (Codex e283140f)
+        emit(VW.bound(rep, repo.root, {"REVIEWS.md": view(rep)})["REVIEWS.md"], a.out, root)
         return 0
     key = load_key(a.key, root)
     _, _, name = repo.config()

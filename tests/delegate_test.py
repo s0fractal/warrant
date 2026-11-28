@@ -455,8 +455,28 @@ def delegate_cases():
               (p1.returncode, p2.returncode, p3.returncode, p4.returncode, p1.stderr, out_assess.get("changes"), out_grants.get(gid)))
 
 
+def delegate_pins_cases():
+    """Codex ee3ee05a: a delegate's acceptance naming files pins the lineage it closes, so with no checkout compared
+    the delegated report reads it PINS_NOT_CHECKED, never ELIGIBLE (warrant.drift.reading, as status reads it)."""
+    w = _setup_base()
+    ksub = _key()
+    g = D.grant_record("bob", "bob-sub", ksub.public, ["acceptor"], ["attest"], 100, 200, max_depth=0,
+                       schemas=["task@1"], lineages=[w["task_root"]], at=100)
+    att = R.record("attest", "bob-sub", 150, {"target": w["task_done"], "verdict": "accept", "commit": "ab" * 20,
+                                              "files": {"x.py": "cd" * 20}}, refs=[w["task_done"]])
+    snap = Snapshot(w["lines"] + [_line(g, w["keys"]["bob"]), _line(att, ksub)], {})
+    res = D.assess_delegated(snap, w["trust"], w["profile"], as_of=150)
+    del_lin = res["delegated_report"]["lineages"].get(w["task_root"], {})
+    row = next((c for c in res["changes"] if c.get("lineage") == w["task_root"]), {})
+    check("DG20 a delegate's acceptance that names files, read with no checkout: the delegated lineage is done and "
+          "PINS_NOT_CHECKED, never ELIGIBLE, in the delegated report and in its change row (Codex ee3ee05a)",
+          del_lin.get("state") == "done" and del_lin.get("reliance") == "PINS_NOT_CHECKED"
+          and "PINS_NOT_CHECKED" in json.dumps(row), (del_lin, row))
+
+
 def main():
     delegate_cases()
+    delegate_pins_cases()
     return finish("delegate_test")
 
 

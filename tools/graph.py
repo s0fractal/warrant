@@ -32,25 +32,14 @@ from warrant import roadmap as RM          # noqa: E402
 from warrant import sources as SRC         # noqa: E402
 from warrant.repo import Failed, Repo, dump, main  # noqa: E402
 from warrant import graph as G             # noqa: E402
+from warrant import views as VW            # noqa: E402
 
 VIEWS = ("CLAIMS.md", "ROADMAP.md", "REVIEWS.md", "WITNESSES.md")
 
 
 def code_id(root):
-    """What decides a view besides the records, trust and profile: the working tree outside the store as one git tree id
-    (a temporary index over every file Git would add, so two different uncommitted edits are two ids, not one `dirty`
-    flag), the bytes of .warrant/claims.json (which shapes CLAIMS.md; the store's directory is not in that tree) and
-    the bytes of the tools/graph.py that runs, which may come from another checkout (Codex 21eb439d on G11)."""
-    import hashlib
-    import tempfile
-    with tempfile.TemporaryDirectory() as d:
-        env = dict(os.environ, GIT_INDEX_FILE=str(Path(d) / "index"))
-        subprocess.run(["git", "--no-replace-objects", "-C", str(root), "add", "-A", "--", ".", ":!.warrant"], env=env, capture_output=True, check=True)
-        tree = subprocess.run(["git", "--no-replace-objects", "-C", str(root), "write-tree"], env=env, capture_output=True, text=True,
-                              check=True).stdout.strip()
-    claims = Path(root) / ".warrant" / "claims.json"
-    digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None  # noqa: E731
-    return {"tree": tree, "claims": digest(claims), "tool": digest(Path(__file__).resolve())}
+    """warrant.views.code_id with this tool's bytes as the renderer (Codex 21eb439d on G11)."""
+    return VW.code_id(root, Path(__file__).resolve())
 
 
 def render(repo):
@@ -62,13 +51,7 @@ def render(repo):
     rep = repo.report()
     views = {"CLAIMS.md": CL.view(rep, repo.root), "ROADMAP.md": RM.view(rep), "REVIEWS.md": RV.view(rep),
              "WITNESSES.md": witnesses(rep)}
-    code = json.dumps(dict(code_id(repo.root), trees=CL.trees_read(rep, repo.root)), sort_keys=True)
-    out = {}
-    for n, text in views.items():
-        a = G.answer(rep, {"op": "view", "name": n}, None, code)
-        head, _, rest = text.partition("\n")
-        out[n] = f"{head}\n\nroot `{a['root']}` · lens `{a['lens']}`\n{rest}"
-    return out
+    return VW.bound(rep, repo.root, views, Path(__file__).resolve())
 
 
 def witnesses(rep):
