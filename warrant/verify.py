@@ -350,7 +350,13 @@ def _pins(view, v, accepted, checkout):
     bytes (unchanged or moved), and STALE when it is not."""
     rows, fresh, pinning = [], set(), set()
     read = checkout is not None and checkout["tree"] is not None
-    for a in accepted:
+    # the claims checker's signed acceptances pin whether or not the version's guard counts them (warrant.drift.pinned):
+    # one outside the guard was dropped here before (Codex a41c55aa)
+    counted = {a["attest"] for a in accepted}
+    extra = [{"attest": a, "actor": CHECKER} for a in sorted(view.attests.get(v, []))
+             if a not in counted and view.recs[a]["actor"] == CHECKER and view.basis.get(a) == "SIGNED"
+             and view.recs[a]["body"].get("verdict") == "accept"]
+    for a in accepted + extra:
         b = view.recs[a["attest"]]["body"]
         files = b.get("files")
         checker = a["actor"] == CHECKER
@@ -376,8 +382,11 @@ def _pins(view, v, accepted, checkout):
         return {"verdict": "NONE", "acceptances": []}
     if not read:
         return {"verdict": "NOT_CHECKED", "acceptances": rows}
+    if extra and not fresh:           # drift.gate: a covered lineage is stale unless some pinned acceptance is unchanged
+        return {"verdict": "STALE", "acceptances": rows}
     still = fresh | ({a["actor"] for a in accepted} - pinning)
-    return {"verdict": "FRESH" if len(still) >= view.recs[v]["guard"]["quorum"] else "STALE", "acceptances": rows}
+    g = view.recs[v]["guard"]
+    return {"verdict": "FRESH" if len(still) >= (g["quorum"] if g else 1) else "STALE", "acceptances": rows}
 
 
 def _root(snap, view, rep, nodes, out, i, checkout):

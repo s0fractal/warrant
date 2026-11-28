@@ -39,7 +39,7 @@ DIGESTS = {
     "warrant/graph.py": "77ec66da843431e57467fd8f10b140c985a0d55f991310dee2cf9d172d403197",
     "warrant/store.py": "f569d538c09f7b6049e2c8a0ea9fcc8add176d4e7adb166511aba42604f62588",
     "warrant/engine.py": "955df6cfaee275464f2e62cccb6af9daa8950743e2d5b02c88c14a249647f047",
-    "warrant/verify.py": "98d2fb1c9c749c845334bfb6878a1af7912ceab919ec807fa41c6de316bbff70",
+    "warrant/verify.py": "ef799170ea9504f49389b0a22c4a3199a792d4751a478ddeabd5f57498366982",
 }
 ORDER = ('jcs', 'shapes', 'keys', 'merkle', 'pins', 'records', 'graph', 'store', 'engine', 'verify')
 SOURCES = {}
@@ -2599,7 +2599,13 @@ def _pins(view, v, accepted, checkout):
     bytes (unchanged or moved), and STALE when it is not."""
     rows, fresh, pinning = [], set(), set()
     read = checkout is not None and checkout["tree"] is not None
-    for a in accepted:
+    # the claims checker's signed acceptances pin whether or not the version's guard counts them (warrant.drift.pinned):
+    # one outside the guard was dropped here before (Codex a41c55aa)
+    counted = {a["attest"] for a in accepted}
+    extra = [{"attest": a, "actor": CHECKER} for a in sorted(view.attests.get(v, []))
+             if a not in counted and view.recs[a]["actor"] == CHECKER and view.basis.get(a) == "SIGNED"
+             and view.recs[a]["body"].get("verdict") == "accept"]
+    for a in accepted + extra:
         b = view.recs[a["attest"]]["body"]
         files = b.get("files")
         checker = a["actor"] == CHECKER
@@ -2625,8 +2631,11 @@ def _pins(view, v, accepted, checkout):
         return {"verdict": "NONE", "acceptances": []}
     if not read:
         return {"verdict": "NOT_CHECKED", "acceptances": rows}
+    if extra and not fresh:           # drift.gate: a covered lineage is stale unless some pinned acceptance is unchanged
+        return {"verdict": "STALE", "acceptances": rows}
     still = fresh | ({a["actor"] for a in accepted} - pinning)
-    return {"verdict": "FRESH" if len(still) >= view.recs[v]["guard"]["quorum"] else "STALE", "acceptances": rows}
+    g = view.recs[v]["guard"]
+    return {"verdict": "FRESH" if len(still) >= (g["quorum"] if g else 1) else "STALE", "acceptances": rows}
 
 
 def _root(snap, view, rep, nodes, out, i, checkout):

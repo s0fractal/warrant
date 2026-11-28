@@ -1286,6 +1286,40 @@ def pins_overlay_history_cases():
           and shown == ["PINS_NOT_CHECKED"] * len(pinned), (code, promoted, shown))
 
 
+def pins_checker_outside_guard_cases():
+    """Codex a41c55aa: the claims checker's signed acceptance pins its claim whether or not the version's guard counts
+    the checker (warrant.drift.pinned), so verify with no checkout reads such a claim PINS_NOT_CHECKED, never ELIGIBLE,
+    through the API and the standalone verifier: with files named, and a legacy one naming a commit alone."""
+    import tools_test as TT
+    from warrant import claims as CL
+    got = {}
+    for name, extra in (("files", {"files": {"x.py": "cd" * 20}, "closure": CL.CLOSURE}), ("legacy", {})):
+        with contextlib.redirect_stdout(io.StringIO()):
+            r = TT.checker_repo()
+        r.profile["roles"]["claim/verifier"] = ["carol"]        # the checker trusted, outside the claim's guard
+        r.write_config()
+        c = TT.claim(r)
+        r.attest("carol", c)
+        TT.put_as(r, CL.CHECKER, dict({"target": c, "verdict": "accept", "commit": "ab" * 20}, **extra), [c])
+        path = Path(TMP) / f"pins-outside-{name}.json"
+        path.write_text(json.dumps({"warrant": V.PACKAGE, "roots": [c], "blobs": {},
+                                    "lines": [b.decode().strip() for b in r.store.snapshot().raw]}))
+        api_ans = V.verify(path.read_bytes(), r.trust, r.profile)
+        out = subprocess.run([sys.executable, "-I", "-S", str(ROOT / "warrant_verify.py"), str(path), "--config", str(r.dot / "v3.json")],
+                             capture_output=True, text=True)
+        alone = json.loads(out.stdout) if out.stdout.strip().startswith("{") else {}
+        rel = lambda a: ((a.get("roots") or {}).get(c) or {}).get("lineage", {}).get("reliance")
+        got[name] = (rel(api_ans), rel(alone), api_ans.get("rely"), alone.get("rely"))
+        r.commit("a checkout beside it")
+        beside = V.verify(path.read_bytes(), r.trust, r.profile, checkout=V.read_checkout(r.root))
+        got[name + " beside"] = rel(beside)
+    check("VP8 a claims checker acceptance outside the claim's guard still pins it: verify with no checkout reads the "
+          "claim PINS_NOT_CHECKED and answers no rely, through the API and the standalone verifier, for a file pin and "
+          "a legacy commit pin; beside a checkout whose tree lacks those bytes, STALE, as drift.gate reads it (Codex a41c55aa)",
+          got["files"] == got["legacy"] == ("PINS_NOT_CHECKED", "PINS_NOT_CHECKED", False, False)
+          and got["files beside"] == got["legacy beside"] == "STALE", got)
+
+
 def pins_earlier_version_cases():
     """Codex eb81cfd8: an obligation's open root and its done successor, accepted with a file pin, both asked with no
     checkout: the lineage reads PINS_NOT_CHECKED in either answer, through the API and the standalone verifier."""
@@ -1380,6 +1414,7 @@ def main():
         pins_show_cases()
         pins_serve_cases()
         pins_overlay_history_cases()
+        pins_checker_outside_guard_cases()
         pins_earlier_version_cases()
         pins_predicate_cases()
     finally:
