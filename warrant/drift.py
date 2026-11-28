@@ -369,8 +369,9 @@ def impact_lines(m, res=None):
         out.append("a file no witness reads and no mutant mutates is in no acceptance: give BASE..HEAD to list the changed ones")
     if res is not None:
         ck = res.get("checkout") or {}
-        out.append(f"root {str(res.get('root'))[:12]} · lens {str(res.get('lens'))[:12]} · checkout tree "
-                   f"{str(ck.get('tree'))[:12]}" + (" with claims" if ck.get("claims") else " without claims"))
+        # full ids: a result names what decided it whole, in text as in JSON (Codex ca975fe9)
+        out.append(f"root {res.get('root')} · lens {res.get('lens')} · checkout tree {ck.get('tree')}"
+                   + (" with claims" if ck.get("claims") else " without claims"))
     return "\n".join(out) + "\n"
 
 

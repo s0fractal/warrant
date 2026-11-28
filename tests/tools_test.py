@@ -1446,9 +1446,9 @@ def impact_foreign_verdict_cases():
         last = None
     check("DR36 with Home's stores a foreign attest and a foreign challenge on the stale claim, in no lineage, are named "
           "as resting on it with store, kind and actor; the text answer's last line names root, lens and the checkout "
-          "read (Codex 9319a330 on G14)",
+          "read, each in full (Codex 9319a330 on G14; ca975fe9: they were cut to 12 characters)",
           seen == sorted([("there", said, "attest"), ("there", objected, "challenge")]) and m["stores"] == ["there"]
-          and last == f"root {'a' * 12} · lens {'b' * 12} · checkout tree {'c' * 12} with claims"
+          and last == f"root {'a' * 64} · lens {'b' * 64} · checkout tree {'c' * 40} with claims"
           and D.impact_lines(m).splitlines()[-1] != last, (seen, last))
     from warrant import bootstrap as BS
     far = Repo()
