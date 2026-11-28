@@ -188,6 +188,13 @@ def seen_bounds():
     check("A54 commit's answer reads the filed version's lineage as context does: with no checkout compared, a lineage "
           "whose effective version is pinned reads PINS_NOT_CHECKED there, never ELIGIBLE (Codex c1a49bde's family)",
           filed.get("root") == po and filed.get("effective") == pd and filed.get("reliance") == "PINS_NOT_CHECKED", filed)
+    req = {"workspace": "w", "act": "close", "obligation": po, "established": ["replacement closure"], "evidence": [pd]}
+    pre = ok(api.call(pc, "act", req))
+    acted = ok(api.call(pc, "act", dict(req, records=pre.get("records")))).get("records") or [{}]
+    ctx = ok(api.call(pc, "context", {"workspace": "w", "targets": [po]})).get("targets", {}).get(po, {}).get("lineage", {})
+    check("A55 act's filing answer reads the filed records' lineage as context does: a replacement closure waiting, the "
+          "pinned version effective, both read PINS_NOT_CHECKED with no checkout compared (Codex 9b2f3e1f: act said ELIGIBLE)",
+          acted[0].get("lineage", {}).get("reliance") == "PINS_NOT_CHECKED" == ctx.get("reliance"), (acted[0].get("lineage"), ctx))
 
 
 def operations():
