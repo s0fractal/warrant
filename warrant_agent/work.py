@@ -178,7 +178,7 @@ def inbox(api, cfg, req):
 
 def _git(root, *a):
     try:
-        return subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True, text=True).stdout.strip()
+        return subprocess.run(["git", "--no-replace-objects", "-C", str(root), *a], capture_output=True, check=True, text=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError) as e:
         raise AgentError("BAD_REQUEST", f"git {a[0]}: {getattr(e, 'stderr', '') or e}"[:300]) from None
 

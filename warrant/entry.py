@@ -95,7 +95,7 @@ def mcp(root):
 def repository_name(root):
     """owner/name of the remote `origin` on GitHub, else the directory's name."""
     try:
-        url = subprocess.run(["git", "-C", str(root), "remote", "get-url", "origin"], capture_output=True, text=True,
+        url = subprocess.run(["git", "--no-replace-objects", "-C", str(root), "remote", "get-url", "origin"], capture_output=True, text=True,
                              check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         url = ""

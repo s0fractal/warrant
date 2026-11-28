@@ -124,7 +124,7 @@ def published_version(python, root, run=subprocess.run):
 
 
 def git_bytes(root, cmd, *args, options=()):
-    r = subprocess.run(["git", cmd, *options, "--end-of-options", *args], capture_output=True, cwd=root, check=False)
+    r = subprocess.run(["git", "--no-replace-objects", cmd, *options, "--end-of-options", *args], capture_output=True, cwd=root, check=False)
     if r.returncode:
         raise Unmade(f"git {cmd} {' '.join(args)}: {r.stderr.decode(errors='replace').strip()[-300:]}")
     return r.stdout

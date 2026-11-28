@@ -1306,6 +1306,34 @@ def across_metadata_cases():
           (heads, a1["root"] == a2["root"], a1["lens"] == a2["lens"]))
 
 
+def replace_refs_cases():
+    """Codex da4e7577 (its reproducer, in process): a local `git replace` of BASE by a commit with HEAD's tree changed an
+    impact answer under the same root and lens. Every Git read of warrant passes --no-replace-objects, so the answer is
+    the bytes the named commits hold, with or without the replacement."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("graph_tool", ROOT / "tools" / "graph.py")
+    TG = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TG)
+    r, L = drift_repo()
+    base = r.commit("fresh base")
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    head = r.commit("changed head")
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "only in the replacement", "serves": []})
+    later = r.commit("a tree with another record")   # the replacement holds HEAD's code and another store
+    other = git(r.root, "commit-tree", git(r.root, "rev-parse", f"{later}^{{tree}}"), "-m", "a different base tree")
+    ask = lambda: json.dumps(TG.ask(RP.Repo(r.root), "impact", [f"{base}..{head}"])[1:], sort_keys=True)
+    plain = ask()
+    git(r.root, "replace", base, other)
+    try:
+        replaced = ask()
+    finally:
+        git(r.root, "replace", "-d", base)
+    check("DR48 a local Git replace ref does not change what warrant reads: an impact answer over BASE..HEAD is the same "
+          "bytes with BASE replaced by a commit holding HEAD's code and another store (the pins and the store at BASE "
+          "both read as named), its newly stale claim still stale (Codex da4e7577)",
+          plain == replaced and L in plain and '"already_stale": []' in plain, (plain[:300], replaced[:300]))
+
+
 def view_binding_cases():
     """A view's lens binds every byte that decides it besides the records, trust and profile: the working tree outside
     the store (two different uncommitted edits are two lenses, not one `dirty` flag), .warrant/claims.json (which shapes
@@ -3858,6 +3886,7 @@ if __name__ == "__main__":
         review_snapshot_view_cases,
         board_retry_cases,
         across_metadata_cases,
+        replace_refs_cases,
         narrow_cases,
         resolve_cases,
         harness_cases,
