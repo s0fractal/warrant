@@ -1,0 +1,128 @@
+{
+ "cause": "Both commands get Repo.report() and render its raw engine reliance. Neither passes the report through drift.reading. The universal reader rule applies to every schema whose effective version has a counted pinned acceptance, including pr-head@1 and a guarded snapshot@1.",
+ "findings": [
+  {
+   "case": "F1",
+   "expected": "PINS_NOT_CHECKED, as warrant.drift.reading reports for the same accepted head. No checkout exists beside that store.",
+   "observed": "State head, reliance ELIGIBLE; command exits 0.",
+   "trigger": "A valid pr-head@1 head is accepted by its pr/acceptor with files naming a real committed x.py blob. Only its store is copied into a non-Git folder. Run python3 -m warrant.review --root FOLDER view.",
+   "where": [
+    "warrant/review.py:308",
+    "warrant/review.py:310",
+    "warrant/review.py:226"
+   ]
+  },
+  {
+   "case": "F2",
+   "expected": "STALE, as warrant.drift.reading reports for the same lineage and current checkout.",
+   "observed": "State head, reliance ELIGIBLE.",
+   "trigger": "In the original fixture checkout, change x.py after the pinned acceptance and commit the new bytes. Run review view.",
+   "where": [
+    "warrant/review.py:308",
+    "warrant/review.py:310",
+    "warrant/review.py:226"
+   ]
+  },
+  {
+   "case": "F3",
+   "expected": "PINS_NOT_CHECKED, as warrant.drift.reading reports. The additional guard and acceptance are admitted, with no rejected records or problems.",
+   "observed": "witnesses[LINEAGE].reliance is ELIGIBLE; command exits 0.",
+   "trigger": "File snapshot@1 with an additional valid roadmap/acceptor guard, accepted by bob with files naming a real committed x.py blob. Copy the store into a non-Git folder. Run python3 -m warrant.snapshot --root FOLDER show --json.",
+   "where": [
+    "warrant/snapshot.py:189",
+    "warrant/snapshot.py:194"
+   ]
+  }
+ ],
+ "lineage": "9c7598ecdb5b2b2d1ee3027a046a1cb741a5140d5f634a4ee4ebed78d2d8cefb",
+ "master": "fad9b3d508676e483da86674ecd8dddc04910dc9",
+ "provenance": "HEAD and origin checked; roadmap due and MCP context match D/T, T waits only for codex. Read all nine evidence records and the nine referenced merged PRs. Their merge commits are all ancestors of M. No code changed and no commit, push, or pull request created.",
+ "recommended_completion": "Apply drift.reading to these reader reports before rendering and add regression cases with mutants for both entry points. Keep the pure engine unchanged.",
+ "repository": "s0fractal/warrant",
+ "reproduction": {
+  "command": "python3 repro.py /path/to/warrant-at-fad9b3d508676e483da86674ecd8dddc04910dc9",
+  "note": "Fixtures use deterministic synthetic test actors from tests/world.py. All records are signed, accepted, admitted with no problems, and pins name actual Git blobs. Script exit 0 means the probe completed; its FAIL lines identify unmet rules.",
+  "output": "FAIL F1 review view without checkout: observed=ELIGIBLE; expected=PINS_NOT_CHECKED\n# Reviews\n\nGenerated from `.warrant/records.jsonl` (snapshot `bc1181b44657`); a build artifact.\n\n## fixture/pins#1: pinned review\nState head, reliance ELIGIBLE\n- head `cfde89c4389a` at `ca764dc418d2`: MET, accepted by bob\n\n\nFAIL F2 review view after pinned file changes: observed=ELIGIBLE; expected=STALE\nFAIL F3 snapshot show without checkout: observed=ELIGIBLE; expected=PINS_NOT_CHECKED\n",
+  "source": "\"\"\"Run: python3 repro.py /path/to/warrant-at-fad9b3d50867.\nAll synthetic keys, stores and Git commits live beside this script and are removed afterward.\nFAIL is the observed unmet G14 rule; this script is review evidence, not a source change.\n\"\"\"\nimport json\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\nfrom pathlib import Path\nROOT = Path(sys.argv[1]).resolve()\nsys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]\nfrom world import Repo, git\nfrom warrant.repo import Repo as ReaderRepo\nfrom warrant import drift as D, snapshot as SN\n\n\ndef checked(root, lineage):\n    rep = ReaderRepo(root).report()\n    assert not rep['rejected'] and not rep['problems'], (rep['rejected'], rep['problems'])\n    D.reading(rep, root)\n    return rep['lineages'][lineage]['reliance']\n\n\ndef cli(module, root, *args):\n    p = subprocess.run([sys.executable, '-m', module, '--root', str(root), *args],\n                       cwd=ROOT, capture_output=True, text=True)\n    assert p.returncode == 0, (p.returncode, p.stdout, p.stderr)\n    return p.stdout\n\n\ndef result(case, got, expected):\n    print(('ok  ' if got == expected else 'FAIL') + f' {case}: observed={got}; expected={expected}', flush=True)\n\n\nwith tempfile.TemporaryDirectory(prefix='g14-repro-', dir=Path(__file__).resolve().parent) as tmp:\n    base = Path(tmp)\n    r = Repo(base=base, git_init=True, name='fixture/pins')\n    (r.root / 'x.py').write_text('x = 1\\n')\n    c = r.commit('synthetic accepted bytes')\n    files = {'x.py': git(r.root, 'rev-parse', f'{c}:x.py')}\n    opened = r.entity('alice', 'pr-head@1',\n                      {'state': 'open', 'repository': 'fixture/pins', 'pr': 1, 'title': 'pinned review', 'serves': []})\n    head = r.entity('alice', 'pr-head@1',\n                    {'state': 'head', 'commit': c, 'tree': git(r.root, 'rev-parse', f'{c}^{{tree}}'), 'answers': []}, lineage=opened)\n    r.attest('bob', head, commit=c, files=files)\n    r.commit('synthetic pinned acceptance')\n    assert checked(r.root, opened) == 'ELIGIBLE'\n    plain = base / 'store-only'\n    shutil.copytree(r.dot, plain / '.warrant')\n    expected = checked(plain, opened)\n    assert expected == 'PINS_NOT_CHECKED'\n    review = cli('warrant.review', plain, 'view')\n    got = next(line.split('reliance ')[1].split()[0] for line in review.splitlines() if line.startswith('State '))\n    result('F1 review view without checkout', got, expected)\n    print(review)\n    (r.root / 'x.py').write_text('x = 2\\n')\n    r.commit('synthetic changed pinned bytes')\n    expected = checked(r.root, opened)\n    assert expected == 'STALE'\n    review = cli('warrant.review', r.root, 'view')\n    got = next(line.split('reliance ')[1].split()[0] for line in review.splitlines() if line.startswith('State '))\n    result('F2 review view after pinned file changes', got, expected)\n\n    s = Repo(base=base, git_init=True, name='fixture/snapshot')\n    (s.root / 'x.py').write_text('x = 1\\n')\n    c = s.commit('synthetic snapshot bytes')\n    s.put('alice', 'schema', SN.SCHEMA)\n    body = SN.body(s.store.snapshot(), s.trust, 'fixture/snapshot', c)\n    guard = {'roles': ['roadmap/acceptor'], 'quorum': 1, 'match': {'verdict': 'accept'}, 'requires': []}\n    target = s.put('alice', 'entity', body, SN.NAME, guard=guard)\n    s.attest('bob', target, commit=c, files={'x.py': git(s.root, 'rev-parse', f'{c}:x.py')})\n    alone = base / 'snapshot-only'\n    shutil.copytree(s.dot, alone / '.warrant')\n    expected = checked(alone, target)\n    assert expected == 'PINS_NOT_CHECKED'\n    answer = json.loads(cli('warrant.snapshot', alone, 'show', '--json'))\n    result('F3 snapshot show without checkout', answer['witnesses'][target]['reliance'], expected)\n"
+ },
+ "reviewer": "codex",
+ "rules": [
+  "docs/V3.md section 10: a reader with no checkout MUST show a covered lineage PINS_NOT_CHECKED, never ELIGIBLE.",
+  "docs/V3.md section 15: the freshness gate reads every counted pinned acceptance, whatever the schema."
+ ],
+ "statement": "G14 remains incomplete: review view and snapshot show report ELIGIBLE on pinned lineages without comparing a checkout.",
+ "target": "5afe86ba241b1550c072ece84f1dbff77cd42d42c14bee25f2efcc3db0109d84",
+ "validation": {
+  "mutant_method": "Registered find/replace definitions from tests/mutants.py, run in an isolated tracked-tree copy. operations and roadmap_reader_cases each passed unmutated with the target cases printed before mutation. Only FAIL of each registered case counted as a kill.",
+  "mutants": [
+   {
+    "failed": [
+     "A45"
+    ],
+    "id": "T275",
+    "outcome": "KILLED",
+    "rc": 1,
+    "section": "operations"
+   },
+   {
+    "failed": [
+     "A45"
+    ],
+    "id": "T276",
+    "outcome": "KILLED",
+    "rc": 1,
+    "section": "operations"
+   },
+   {
+    "failed": [
+     "A45"
+    ],
+    "id": "T277",
+    "outcome": "KILLED",
+    "rc": 1,
+    "section": "operations"
+   },
+   {
+    "failed": [
+     "BD21"
+    ],
+    "id": "T391",
+    "outcome": "KILLED",
+    "rc": 1,
+    "section": "roadmap_reader_cases"
+   },
+   {
+    "failed": [
+     "BD21"
+    ],
+    "id": "T392",
+    "outcome": "KILLED",
+    "rc": 1,
+    "section": "roadmap_reader_cases"
+   },
+   {
+    "failed": [
+     "BD21"
+    ],
+    "id": "T393",
+    "outcome": "KILLED",
+    "rc": 1,
+    "section": "roadmap_reader_cases"
+   }
+  ],
+  "not_run": [
+   "Full mutant matrix",
+   "impl_js_test repository-store mutations excluded by --quick",
+   "Other repository suites"
+  ],
+  "passed": [
+   "python3 tests/agent_test.py",
+   "python3 tests/verify_test.py",
+   "python3 tests/tools_test.py",
+   "python3 tests/impl_js_test.py --quick",
+   "python3 -m warrant.roadmap check",
+   "python3 -m warrant.claims check"
+  ]
+ },
+ "verdict": "challenge"
+}
