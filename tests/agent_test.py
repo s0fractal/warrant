@@ -177,6 +177,17 @@ def seen_bounds():
     out = api.call(cfg, "commit", {"workspace": "w", "record": p.get("record")})
     check("A49 250 uncounted and 250 counted challenges: the acceptance leaves out a `seen` that would not fit and commits",
           "seen" not in (p.get("record") or {}).get("body", {}) and "ok" in out and not repo.report()["problems"], out)
+    pin = Repo()
+    po = pin.entity("alice", "obligation@1", {"state": "open", "statement": "pinned", "serves": []})
+    pd = pin.entity("alice", "obligation@1", {"state": "done", "statement": "pinned", "serves": []}, lineage=po)
+    pin.attest("bob", pd, commit="ab" * 20, files={"x.py": "cd" * 20})
+    pc = cfg_of(pin, actor="alice")
+    pp = ok(api.call(pc, "prepare", {"workspace": "w", "kind": "entity", "schema": "obligation@1", "lineage": pd,
+                                     "body": {"state": "done", "statement": "pinned, reworded", "serves": []}}))
+    filed = (ok(api.call(pc, "commit", {"workspace": "w", "record": pp.get("record")})).get("filed") or {}).get("lineage", {})
+    check("A54 commit's answer reads the filed version's lineage as context does: with no checkout compared, a lineage "
+          "whose effective version is pinned reads PINS_NOT_CHECKED there, never ELIGIBLE (Codex c1a49bde's family)",
+          filed.get("root") == po and filed.get("effective") == pd and filed.get("reliance") == "PINS_NOT_CHECKED", filed)
 
 
 def operations():

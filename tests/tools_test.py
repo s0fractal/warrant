@@ -3238,14 +3238,53 @@ def roadmap_reader_cases():
     line = lambda text: next((x for x in text.splitlines() if o[:12] in x), "")
     around = lambda root: json.dumps(TG.ask(RP.Repo(root), "around", [o])[3])
     rows = {x["lineage"]: x["reliance"] for x in TG.ask(RP.Repo(r.root), "impact", [f"{b}..{h}"])[3].get("lineages", [])}
+    from warrant_agent import api
+    from warrant_agent.config import Config
+    acfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {"repo": str(r.root), "operations": ["context", "graph"]}}})
+    a_imp, a_dl = ((api.call(acfg, "graph", {"workspace": "w", "op": op, "range": f"{b}..{h}"}).get("ok") or {}).get("data", {})
+                   for op in ("impact", "delta"))
+    agent_rows = {x["lineage"]: x["reliance"] for x in a_imp.get("lineages", [])}
     alone = Path(tempfile.mkdtemp()) / "alone"
     shutil.copytree(r.dot, alone / ".warrant")
     check("BD21 `warrant roadmap view` and tools/graph.py read a pinned obligation STALE in the checkout once its bytes "
           "changed (an impact range at its own commits), and PINS_NOT_CHECKED from a copy of the store with no checkout "
-          "(Codex 2e8f6421: the roadmap reader showed it ELIGIBLE there)",
+          "(Codex 2e8f6421: the roadmap reader showed it ELIGIBLE there); the agent's graph op reads the same range so "
+          "(Codex c1a49bde: its delta and impact skipped the gate at each end)",
           "(STALE" in line(view(r.root)) and '"STALE"' in around(r.root) and rows.get(o) == "STALE"
+          and agent_rows.get(o) == "STALE" and o in a_dl.get("changed", [])
           and "(PINS_NOT_CHECKED" in line(view(alone)) and '"PINS_NOT_CHECKED"' in around(alone),
-          (line(view(r.root)), line(view(alone)), rows, around(alone)[:300]))
+          (line(view(r.root)), line(view(alone)), rows, agent_rows, a_dl.get("changed"), around(alone)[:300]))
+    shutil.rmtree(alone.parent, ignore_errors=True)
+
+
+def review_snapshot_view_cases():
+    """Codex 5afe86ba: `warrant review view` and `warrant snapshot show` read reliance as status does: from a copy of
+    the store with no checkout, a pinned pull request head and a snapshot the claims checker accepted read
+    PINS_NOT_CHECKED, never ELIGIBLE."""
+    from warrant import snapshot as SN
+    with contextlib.redirect_stdout(io.StringIO()):
+        r = checker_repo()
+    r.profile["roles"]["witness"] = ["carol"]
+    r.write_config()
+    r.put("alice", "schema", SN.SCHEMA)
+    p = r.entity("alice", "pr-head@1", {"state": "open", "repository": "s0fractal/warrant", "pr": 7, "title": "pinned", "serves": []})
+    hv = r.entity("alice", "pr-head@1", {"state": "head", "commit": "ab" * 20, "tree": "cd" * 20}, lineage=p)
+    r.attest("bob", hv, commit="ab" * 20, files={"x.py": "ef" * 20})
+    r.commit("a store")
+    s1 = SN.witness(RP.Repo(r.root), "carol", KEYS["carol"])
+    put_as(r, CL.CHECKER, {"target": s1, "verdict": "accept", "commit": "ab" * 20}, [s1])
+    r.commit("a snapshot the checker accepted")
+    alone = Path(tempfile.mkdtemp()) / "alone"
+    shutil.copytree(r.dot, alone / ".warrant")
+    env = dict(os.environ, PYTHONPATH=str(ROOT), WARRANT_REPO_ROOT=str(alone))
+    run = lambda *x: subprocess.run([sys.executable, "-m", *x], cwd=alone, capture_output=True, text=True, env=env).stdout
+    reviews = run("warrant.review", "view")
+    snaps = run("warrant.snapshot", "show", "--json")
+    shown = (json.loads(snaps).get("witnesses", {}).get(s1) or {}).get("reliance") if snaps.strip().startswith("{") else snaps[-200:]
+    check("BD22 from a copy of the store with no checkout, `review view` shows a pinned pull request head and `snapshot "
+          "show` a checker-accepted snapshot PINS_NOT_CHECKED, never ELIGIBLE (Codex 5afe86ba)",
+          "#7: pinned\nState head, reliance PINS_NOT_CHECKED" in reviews and shown == "PINS_NOT_CHECKED",
+          (reviews[-400:], shown))
     shutil.rmtree(alone.parent, ignore_errors=True)
 
 
@@ -3816,6 +3855,7 @@ if __name__ == "__main__":
         board_cases,
         board_stale_cases,
         roadmap_reader_cases,
+        review_snapshot_view_cases,
         board_retry_cases,
         across_metadata_cases,
         narrow_cases,

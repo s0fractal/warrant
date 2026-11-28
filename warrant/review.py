@@ -307,6 +307,8 @@ def run(argv=None):
         return 0
     rep = repo.report()
     if a.cmd == "view":
+        from . import drift as D
+        D.reading(rep, repo.root)     # the view's reliance as status reads it (Codex 5afe86ba)
         emit(view(rep), a.out, root)
         return 0
     key = load_key(a.key, root)

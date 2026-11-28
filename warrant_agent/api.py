@@ -242,7 +242,13 @@ def _graph_range(ws, op, rng):
         base, head, s0, s1 = RV.range_snapshots(ws.repo, rng)
     except RV.Failed as e:
         raise AgentError("BAD_REQUEST", str(e)) from None
-    reps = [E.View(s, trust, profile).report() for s in (s0, s1)]
+    reps = []
+    for s, at in ((s0, base), (s1, head)):
+        v = E.View(s, trust, profile)
+        rep = v.report()
+        rep["_recs"], rep["_basis"] = v.recs, v.basis
+        D.reading(rep, ws.repo, at)   # each end against its own commit's tree, as tools/graph.py reads it (Codex c1a49bde)
+        reps.append(rep)
     data = G.impact(*reps) if op == "impact" else G.delta(*reps)
     out = G.answer(reps[1], {"op": op, "range": f"{base}..{head}"}, data, adapter_id())
     out["root"] = {"snapshot": out["root"], "base": base, "head": head}
@@ -500,7 +506,7 @@ def commit(cfg, req):
     except Refused as e:
         raise AgentError("CHAIN_MOVED" if "CHAIN_MOVED" in str(e) else "REFUSED", str(e)) from None
     snap, view, _, _ = _assess(ws)
-    rep = view.report()
+    rep = _report(ws, view)          # the filed record's lineage reliance as context reads it (gate / PINS_NOT_CHECKED)
     nodes, _, _ = G.index(rep)
     return {"id": i, "filed": G.describe(rep, nodes, i), "rejected": rep["rejected"].get(i)}
 
